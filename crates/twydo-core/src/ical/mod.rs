@@ -6,6 +6,8 @@
 
 use thiserror::Error;
 
+pub mod value;
+
 /// A parsed resource: the top-level `VCALENDAR` component.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Calendar {
