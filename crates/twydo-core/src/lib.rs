@@ -4,3 +4,4 @@ pub mod config;
 pub mod ical;
 pub mod model;
 pub mod vdir;
+pub mod views;
