@@ -832,3 +832,46 @@ fn build_view_is_deterministic() {
         assert_eq!(a, b);
     }
 }
+
+#[test]
+fn unknown_tzid_warning_recorded_on_task() {
+    let mut t = TaskBuilder::new("win-tz", "inbox").build();
+    t.due = Some(IcalDateTime::Zoned {
+        local: local("2026-11-04 08:00"),
+        tzid: "W. Europe Standard Time".to_string(),
+    });
+    let s = snapshot(vec![t], &[]);
+    let i = idx(&s, "win-tz");
+    let w: Vec<&String> = s.tasks[i]
+        .warnings
+        .iter()
+        .filter(|w| w.contains("unknown TZID"))
+        .collect();
+    assert_eq!(w.len(), 1, "{:?}", s.tasks[i].warnings);
+    // Read in local time: 08:00 New York today, so overdue in Today.
+    let r = build_view(&s, &View::Today, now(), &no_expand());
+    assert_eq!(
+        flat(&s, &r),
+        vec![(DateGroup::Overdue, "win-tz".to_string(), 0)]
+    );
+}
+
+#[test]
+fn future_start_checklist_item_hidden_under_parent() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("cl", "inbox")
+                .kind(TaskKind::Checklist)
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("now-item", "inbox").parent("cl").build(),
+            TaskBuilder::new("later-item", "inbox")
+                .parent("cl")
+                .start("2026-11-10")
+                .build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::Today, now(), &no_expand());
+    assert_eq!(uids(&s, &r), vec!["cl", "now-item"]);
+}
