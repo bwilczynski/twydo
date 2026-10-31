@@ -3,7 +3,7 @@ import io
 import os
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "capture_fixture.py"
@@ -19,7 +19,7 @@ ICS = (
 
 def run(argv):
     out = io.StringIO()
-    with redirect_stdout(out):
+    with redirect_stdout(out), redirect_stderr(io.StringIO()):
         code = cf.main(argv)
     return code, out.getvalue()
 
@@ -78,6 +78,15 @@ class CaptureTests(unittest.TestCase):
         after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in sorted(self.src.iterdir())}
         self.assertEqual(before, after)
 
+    def test_refuses_nonempty_step_and_bad_names(self):
+        (self.src / "a.ics").write_text(ICS.format(due="1"))
+        self.assertEqual(self.capture("01-x")[0], 0)
+        self.assertEqual(self.capture("01-x")[0], 2)
+        self.assertEqual(self.capture("../x")[0], 2)
+        code, _ = run(["capture", str(self.src), str(self.out), "--scenario", "a/b",
+                       "--step", "01", "--device", "mac", "--action", "x"])
+        self.assertEqual(code, 2)
+
 
 class ScanTests(unittest.TestCase):
     def setUp(self):
@@ -125,6 +134,33 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("changes.diff:1:", out)
         self.assertIn("changes.diff:2:", out)
+
+    def test_scan_missing_or_empty_dir_is_error(self):
+        code, _ = run(["scan", str(self.dir / "nope")])
+        self.assertEqual(code, 2)
+        code, _ = run(["scan", str(self.dir)])
+        self.assertEqual(code, 2)
+
+    def test_scan_lists_free_text_for_confirmation(self):
+        (self.dir / "displayname").write_text("Synthetic List\n")
+        (self.dir / "a.ics").write_text(
+            "BEGIN:VTODO\r\nSUMMARY:S\r\nCOMMENT:comment-val\r\nCATEGORIES:cat-val\r\n"
+            "X-WR-CALNAME:calname-val\r\nX-2DOAPP-METADATA:@tasktype:0\r\nEND:VTODO\r\n")
+        code, out = run(["scan", str(self.dir)])
+        self.assertEqual(code, 0, out)
+        for v in ("Synthetic List", "comment-val", "cat-val", "calname-val", "@tasktype:0"):
+            self.assertIn(v, out)
+
+    def test_scan_dotless_email_but_not_tokens(self):
+        (self.dir / "a.ics").write_text("SUMMARY:mail x@localhost\r\nDESCRIPTION:y@nas\r\n")
+        code, out = run(["scan", str(self.dir)])
+        self.assertEqual(code, 1)
+        self.assertIn("a.ics:1:", out)
+        self.assertIn("a.ics:2:", out)
+        (self.dir / "a.ics").write_text("DESCRIPTION:@tasktype:0 @startdate:2026-11-04\r\n"
+                                        "X-2DOAPP-METADATA:@startdate:2026-11-04\r\n")
+        code, out = run(["scan", str(self.dir)])
+        self.assertEqual(code, 0, out)
 
 
 if __name__ == "__main__":

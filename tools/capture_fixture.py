@@ -23,10 +23,11 @@ from pathlib import Path
 ALLOWED_FILES = {"displayname", "color", "step.toml", "changes.diff"}
 FORBIDDEN_PROPS = {"ORGANIZER", "ATTENDEE", "X-APPLE-ABUID", "X-APPLE-STRUCTURED-LOCATION",
                    "LOCATION", "URL"}
-EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+EMAIL_RE = re.compile(r"\w[\w.+-]*@[\w-]+(?:\.[\w-]+)*")
 URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://([^/\s\"'<>?#]*)")
 PROP_RE = re.compile(r"^([A-Za-z0-9-]+)[;:]")
 SAFE_HOSTS = ("example.com", "example.org")
+CONFIRM_PROPS = {"SUMMARY", "DESCRIPTION", "COMMENT", "CATEGORIES"}
 REMINDER = "Confirm every line above is synthetic before committing."
 
 
@@ -74,11 +75,26 @@ def build_diff(prev: dict, new: dict) -> str:
     return "".join(out)
 
 
+def bad_name(value: str) -> bool:
+    return "/" in value or "\\" in value or ".." in value or not value
+
+
 def cmd_capture(args) -> int:
+    for label, value in (("scenario", args.scenario), ("step", args.step)):
+        if bad_name(value):
+            print(f"error: invalid --{label}: {value!r}", file=sys.stderr)
+            return 2
     src = Path(args.collection)
+    if not src.is_dir():
+        print(f"error: not a directory: {src}", file=sys.stderr)
+        return 2
     new = collect(src)
     scenario_dir = Path(args.out_root) / args.scenario
     step_dir = scenario_dir / args.step
+    if step_dir.exists() and any(step_dir.iterdir()):
+        print(f"error: step directory already exists and is not empty: {step_dir}",
+              file=sys.stderr)
+        return 2
     prev_dir = previous_step(scenario_dir, args.step)
     prev = collect(prev_dir) if prev_dir else {}
     step_dir.mkdir(parents=True, exist_ok=True)
@@ -88,8 +104,8 @@ def cmd_capture(args) -> int:
     (step_dir / "step.toml").write_text(
         f"scenario = {toml_str(args.scenario)}\nstep = {toml_str(args.step)}\n"
         f"device = {toml_str(args.device)}\naction = {toml_str(args.action)}\n"
-        f"captured_at = {toml_str(captured)}\n")
-    (step_dir / "changes.diff").write_text(build_diff(prev, new))
+        f"captured_at = {toml_str(captured)}\n", encoding="utf-8")
+    (step_dir / "changes.diff").write_text(build_diff(prev, new), encoding="utf-8")
     print(f"captured {len(new)} file(s) to {step_dir}")
     return 0
 
@@ -112,8 +128,15 @@ def host_ok(host: str) -> bool:
 
 def cmd_scan(args) -> int:
     root = Path(args.dir)
+    if not root.is_dir():
+        print(f"error: not a directory: {root}", file=sys.stderr)
+        return 2
+    paths = sorted(p for p in root.rglob("*") if p.is_file())
+    if not paths:
+        print("error: no files to scan", file=sys.stderr)
+        return 2
     findings, summaries = [], {}
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    for path in paths:
         rel = path.relative_to(root)
         if path.name not in ALLOWED_FILES and path.suffix != ".ics":
             findings.append(f"{rel}:1: file type not allowed in fixtures")
@@ -121,6 +144,8 @@ def cmd_scan(args) -> int:
         is_ics = path.suffix == ".ics"
         is_diff = path.name == "changes.diff"
         text = path.read_text(encoding="utf-8", errors="replace")
+        if path.name == "displayname":
+            summaries.setdefault(("DISPLAYNAME", text.strip()), None)
         for n, line in logical_lines(text, unfold=is_ics):
             if is_diff and line[:1] in "+- " and not line.startswith(("+++", "---")):
                 line = line[1:]
@@ -135,7 +160,7 @@ def cmd_scan(args) -> int:
                     findings.append(f"{rel}:{n}: URL outside example.com/example.org")
             if "@actionvalue:" in line:
                 findings.append(f"{rel}:{n}: @actionvalue: metadata")
-            if is_ics and name in ("SUMMARY", "DESCRIPTION"):
+            if is_ics and (name in CONFIRM_PROPS or name.startswith("X-")):
                 summaries.setdefault((name, line.split(":", 1)[1] if ":" in line else ""), None)
     for f in findings:
         print(f)
