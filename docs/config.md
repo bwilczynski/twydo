@@ -8,7 +8,7 @@ names the key. Twydo only reads this file.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `vdir` | path | required | Root of the vdir: one subdirectory per list, one `.ics` per task. |
+| `vdir` | path | required | Root of the vdir: one subdirectory per list, one `.ics` per task. A leading `~` or `~/` expands to `$HOME`. |
 | `timezone` | IANA name | system zone, else UTC | Zone used for "today" and floating times. |
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. |
 | `morning_time` | `"HH:MM"` | `"09:00"` | Time used for date-only tasks that need one (e.g. reminders). |
@@ -54,5 +54,3 @@ sort = { field = "title", descending = false }
 name = "Home"
 lists = ["inbox", "personal"]
 ```
-
-Note: `~` is not expanded yet; use an absolute path.

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveTime, Weekday};
-use twydo_core::config::{Config, SortField};
+use twydo_core::config::{Config, SortField, expand_tilde};
 
 fn parse(s: &str) -> Result<Config, twydo_core::config::ConfigError> {
     let d = tempfile::tempdir().unwrap();
@@ -83,5 +83,23 @@ fn config_path_honours_xdg() {
     assert_eq!(
         Config::path_from(Some(Path::new("")), home),
         PathBuf::from("/home/u/.config/twydo/config.toml")
+    );
+}
+
+#[test]
+fn config_expands_tilde() {
+    let home = Path::new("/home/u");
+    assert_eq!(
+        expand_tilde(Path::new("~/v/t"), home),
+        PathBuf::from("/home/u/v/t")
+    );
+    assert_eq!(expand_tilde(Path::new("~"), home), PathBuf::from("/home/u"));
+    assert_eq!(
+        expand_tilde(Path::new("/abs/~/x"), home),
+        PathBuf::from("/abs/~/x")
+    );
+    assert_eq!(
+        expand_tilde(Path::new("~bob/x"), home),
+        PathBuf::from("~bob/x")
     );
 }

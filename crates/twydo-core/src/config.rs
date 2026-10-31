@@ -149,10 +149,14 @@ impl Config {
             path: path.to_path_buf(),
             source,
         })?;
-        toml::from_str(&text).map_err(|source| ConfigError::Parse {
+        let mut cfg: Config = toml::from_str(&text).map_err(|source| ConfigError::Parse {
             path: path.to_path_buf(),
             source,
-        })
+        })?;
+        if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+            cfg.vdir = expand_tilde(&cfg.vdir, Path::new(&home));
+        }
+        Ok(cfg)
     }
 
     /// Configured zone, else the system zone, else UTC.
@@ -171,5 +175,16 @@ impl Config {
     /// Prefs for a list; lists without an entry get the defaults.
     pub fn list_prefs(&self, id: &str) -> ListPrefs {
         self.lists.get(id).cloned().unwrap_or_default()
+    }
+}
+
+/// Expand a leading `~` or `~/` against `home`. Other paths (including `~user`) are unchanged.
+pub fn expand_tilde(path: &Path, home: &Path) -> PathBuf {
+    if path == Path::new("~") {
+        home.to_path_buf()
+    } else if let Ok(rest) = path.strip_prefix("~") {
+        home.join(rest)
+    } else {
+        path.to_path_buf()
     }
 }

@@ -45,8 +45,9 @@ fn is_hidden(name: &std::ffi::OsStr) -> bool {
     name.to_string_lossy().starts_with('.')
 }
 
-/// Sorted regular entries (following no symlinks) of `dir` that satisfy `want`.
-fn entries(dir: &Path, want: impl Fn(&fs::FileType) -> bool) -> io::Result<Vec<(String, PathBuf)>> {
+/// Sorted non-hidden entries of `dir` with their metadata, following symlinks.
+/// A dangling symlink carries its error.
+fn entries(dir: &Path) -> io::Result<Vec<(String, PathBuf, io::Result<fs::Metadata>)>> {
     let mut out = Vec::new();
     for e in fs::read_dir(dir)? {
         let e = e?;
@@ -54,11 +55,11 @@ fn entries(dir: &Path, want: impl Fn(&fs::FileType) -> bool) -> io::Result<Vec<(
         if is_hidden(&name) {
             continue;
         }
-        if e.file_type().is_ok_and(|t| want(&t)) {
-            out.push((name.to_string_lossy().into_owned(), e.path()));
-        }
+        let path = e.path();
+        let meta = fs::metadata(&path);
+        out.push((name.to_string_lossy().into_owned(), path, meta));
     }
-    out.sort();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
 }
 
@@ -66,23 +67,39 @@ fn entries(dir: &Path, want: impl Fn(&fs::FileType) -> bool) -> io::Result<Vec<(
 /// Never writes: files are opened for reading only.
 pub fn load(root: &Path) -> io::Result<LoadReport> {
     let mut report = LoadReport::default();
-    for (id, dir) in entries(root, |t| t.is_dir())? {
+    for (id, dir, meta) in entries(root)? {
+        match meta {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => continue,
+            Err(e) => {
+                report.errors.push((dir, e.to_string()));
+                continue;
+            }
+        }
         report.collections.push(Collection {
             display_name: read_trimmed(&dir.join("displayname")),
             color: read_trimmed(&dir.join("color")).and_then(|c| parse_color(&c)),
             id: id.clone(),
             path: dir.clone(),
         });
-        let files = match entries(&dir, |t| t.is_file()) {
+        let files = match entries(&dir) {
             Ok(f) => f,
             Err(e) => {
                 report.errors.push((dir.clone(), e.to_string()));
                 continue;
             }
         };
-        for (name, path) in files {
+        for (name, path, meta) in files {
             if !name.ends_with(".ics") {
                 continue;
+            }
+            match meta {
+                Ok(m) if m.is_file() => {}
+                Ok(_) => continue,
+                Err(e) => {
+                    report.errors.push((path, e.to_string()));
+                    continue;
+                }
             }
             match fs::read(&path) {
                 Err(e) => report.errors.push((path, e.to_string())),
