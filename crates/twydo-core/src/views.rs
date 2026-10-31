@@ -64,7 +64,16 @@ impl Snapshot {
             }
         }
 
+        let tz = config.tz();
         for (i, t) in tasks.iter_mut().enumerate() {
+            // Record timezone fallbacks (e.g. an unknown TZID read in local time) once.
+            for v in [&t.due, &t.start, &t.completed].into_iter().flatten() {
+                if let (_, Some(w)) = v.resolve(tz)
+                    && !t.warnings.contains(&w)
+                {
+                    t.warnings.push(w);
+                }
+            }
             if broken[i] {
                 t.warnings.push(BROKEN_PARENT.to_string());
             }
@@ -323,6 +332,7 @@ fn eligible(s: &Snapshot, idx: usize, v: &View, c: &Clock) -> bool {
     }
 }
 
+/// Checklist items are never counted, even when shown at depth 0.
 fn counts_with(s: &Snapshot, v: &View, c: &Clock) -> Counts {
     let mut out = Counts::default();
     for i in 0..s.tasks.len() {
@@ -598,7 +608,7 @@ pub fn build_view(
                 .children(idx)
                 .iter()
                 .copied()
-                .filter(|&k| s.tasks[k].status == Status::Open)
+                .filter(|&k| s.tasks[k].status == Status::Open && !c.future_start(&s.tasks[k]))
                 .collect();
             items.sort_by(|&a, &b| compare(s, &c, plan.key, plan.descending, a, b));
             rows.extend(items.into_iter().map(|k| Row {
