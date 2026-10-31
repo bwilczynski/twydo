@@ -10,8 +10,13 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Calendar {
     pub root: Component,
+    /// Leading UTF-8 BOM and blank lines before `BEGIN:VCALENDAR`, kept for serialization.
+    prefix: Vec<u8>,
+    /// Blank lines after `END:VCALENDAR`, kept for serialization.
+    trailer: Vec<u8>,
 }
 
+/// `serialize` writes the original raw bytes of every line (edits arrive in Plan 4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
     /// Uppercased component name.
@@ -24,12 +29,15 @@ pub struct Component {
     layout: Vec<Slot>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Slot {
     Prop,
     Child,
+    /// A blank line: ignored semantically, re-emitted verbatim.
+    Blank(Vec<u8>),
 }
 
+/// `serialize` writes the original raw bytes of the line (edits arrive in Plan 4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property {
     /// Uppercased property name.
@@ -93,6 +101,7 @@ impl Component {
                     self.children[c].write_to(out);
                     c += 1;
                 }
+                Slot::Blank(raw) => out.extend_from_slice(raw),
                 _ => {}
             }
         }
@@ -237,6 +246,12 @@ fn marker(content: &[u8], keyword: &str) -> Option<String> {
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Calendar, ParseError> {
+    let (prefix, bytes) = match bytes.strip_prefix(b"\xEF\xBB\xBF") {
+        Some(rest) => (b"\xEF\xBB\xBF".to_vec(), rest),
+        None => (Vec::new(), bytes),
+    };
+    let mut prefix = prefix;
+    let mut trailer = Vec::new();
     let lines = logical_lines(bytes);
     let last_line = bytes.iter().filter(|&&b| b == b'\n').count()
         + usize::from(bytes.last().is_some_and(|&b| b != b'\n'));
@@ -244,11 +259,16 @@ pub fn parse(bytes: &[u8]) -> Result<Calendar, ParseError> {
     let mut root: Option<Component> = None;
 
     for l in &lines {
+        if l.content.is_empty() {
+            match stack.last_mut() {
+                Some(top) => top.layout.push(Slot::Blank(l.raw.clone())),
+                None if root.is_some() => trailer.extend_from_slice(&l.raw),
+                None => prefix.extend_from_slice(&l.raw),
+            }
+            continue;
+        }
         if root.is_some() {
             return Err(err(l.line, "content after END:VCALENDAR"));
-        }
-        if l.content.is_empty() {
-            return Err(err(l.line, "empty line"));
         }
         if let Some(name) = marker(&l.content, "BEGIN") {
             if stack.is_empty() && name != "VCALENDAR" {
@@ -291,14 +311,19 @@ pub fn parse(bytes: &[u8]) -> Result<Calendar, ParseError> {
     }
 
     match (root, stack.last()) {
-        (Some(root), _) => Ok(Calendar { root }),
+        (Some(root), _) => Ok(Calendar {
+            root,
+            prefix,
+            trailer,
+        }),
         (None, Some(open)) => Err(err(last_line, format!("missing END:{}", open.name))),
         (None, None) => Err(err(1, "no VCALENDAR found")),
     }
 }
 
 pub fn serialize(cal: &Calendar) -> Vec<u8> {
-    let mut out = Vec::new();
+    let mut out = cal.prefix.clone();
     cal.root.write_to(&mut out);
+    out.extend_from_slice(&cal.trailer);
     out
 }
