@@ -2,13 +2,15 @@
 """Reconcile a decoded 2Do inventory with a migrated vdir export.
 
 Usage:
-  reconcile.py <inventory.2do.json> <export.json> [--show-titles] [--config config.toml]
+  reconcile.py <inventory.2do.json> <export.json> [--show-titles] [--config config.toml] [--tz IANA]
 
   inventory.2do.json  output of tools/decode_2do_dropbox.py
   export.json         output of `tdo export-json` (schema v1)
 
 WARNING: the output contains personal data (list names, UIDs, and task titles with
 --show-titles). Keep it in the terminal or outside this repository; never commit it.
+
+Times are compared in --tz (default: `timezone` from --config, else the machine's zone).
 
 Prints a summary, per-list counts, the special lists that are not collections, and one
 line per mismatch (`<uid>: <field>: source=<v> dest=<v>`). Writes no files.
@@ -22,6 +24,7 @@ import tomllib
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 DAY_ORDER = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 # 01-features.md section 6: Sun 1, Sat 2, Fri 4, Thu 8, Wed 16, Tue 32, Mon 64.
@@ -30,9 +33,13 @@ SPECIAL_FLAGS = ("isinboxcal", "istodaycal", "isallcal", "isscheduled", "donecal
 NO_TIME = {"", "999999", "-1", "0"}
 
 
-def _ordinal(val: int) -> int:
-    """Ordinal 1-4 as is; anything else (5 included) means last."""
-    return val if 1 <= val <= 4 else -1
+def _ordinal(val: int, top: int = 4) -> int:
+    """Ordinal 1..top as is; anything else means last (-1).
+
+    260-266 pass 1-5 through (5 = fifth). 268/269 ("ordinal, else last") pass 1-4; their
+    ordinal 5 is ambiguous (unverified) and is handled by the comparison.
+    """
+    return val if 1 <= val <= top else -1
 
 
 def repeat_to_rrule(repeattype, repeatval, endtype, remaining, enddate):
@@ -46,7 +53,7 @@ def repeat_to_rrule(repeattype, repeatval, endtype, remaining, enddate):
         rule = f"FREQ={['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'][repeattype - 256]}{iv}"
     elif 260 <= repeattype <= 266:
         day = DAY_ORDER[repeattype - 260]
-        rule = f"FREQ=MONTHLY;BYDAY={_ordinal(repeatval)}{day}"
+        rule = f"FREQ=MONTHLY;BYDAY={_ordinal(repeatval, 5)}{day}"
     elif repeattype == 267:
         rule = f"FREQ=MONTHLY{iv};BYMONTHDAY=-1"
     elif repeattype == 268:
@@ -99,7 +106,12 @@ def source_due_time(duetime):
     v = (duetime or "").strip()
     if v in NO_TIME:
         return None
-    n = int(v)
+    try:
+        n = int(v)
+    except ValueError:
+        raise ValueError(f"invalid duetime {v!r}") from None
+    if not (0 <= n <= 2359 and n % 100 < 60):
+        raise ValueError(f"invalid duetime {v!r}")
     return f"{n // 100:02d}:{n % 100:02d}"
 
 
@@ -114,14 +126,29 @@ def _int(v, default=0):
         return default
 
 
-def dest_date(v):
-    return v[:10] if v else None
+def _parse_dest(v, tz):
+    """Exported value to (date, 'HH:MM' or None) in tz. Aware values are converted to tz;
+    floating values are taken as wall time; date-only values have no time."""
+    if not v:
+        return None, None
+    if "T" not in v:
+        return v[:10], None
+    d = datetime.fromisoformat(v)
+    if d.tzinfo is not None:
+        d = d.astimezone(tz)
+    return d.date().isoformat(), d.strftime("%H:%M")
 
 
-def dest_time(v, is_date):
-    if not v or is_date or "T" not in v:
-        return None
-    return v.split("T", 1)[1][:5]
+def dest_date(v, tz):
+    return _parse_dest(v, tz)[0]
+
+
+def dest_time(v, is_date, tz):
+    return None if is_date else _parse_dest(v, tz)[1]
+
+
+def local_tz(name=None):
+    return ZoneInfo(name) if name else datetime.now().astimezone().tzinfo
 
 
 def source_start(raw):
@@ -134,15 +161,15 @@ def source_start(raw):
         return None
 
 
-def start_matches(src, dst, dst_is_date):
+def start_matches(src, dst, dst_is_date, tz):
     """Compare a source start instant with the exported start value."""
     if src is None or dst is None:
         return src is None and dst is None
     if dst_is_date:
-        return src.astimezone().date().isoformat() == dst[:10]
+        return src.astimezone(tz).date().isoformat() == dst[:10]
     d = datetime.fromisoformat(dst)
     if d.tzinfo is None:
-        return src.astimezone().replace(tzinfo=None, microsecond=0) == d
+        return src.astimezone(tz).replace(tzinfo=None, microsecond=0) == d
     return int(src.timestamp()) == int(d.timestamp())
 
 
@@ -150,13 +177,16 @@ def special_kind(lst):
     return lst.get("issmartcalendar") == "1" or any(lst.get(f) == "1" for f in SPECIAL_FLAGS)
 
 
-def expected_rule(t):
+def expected_rule(t, alt_ordinal5=False):
     rt = _int(t.get("repeattype"))
     if rt == 0:
         return None
     end = _int(t.get("recurrenceendtype"))
     remaining = _int(t.get("recurrenceendrepeats"), None) if t.get("recurrenceendrepeats") not in (None, "") else None
-    return repeat_to_rrule(rt, _int(t.get("repeatval")), end, remaining, enddate_of(t))
+    rule = repeat_to_rrule(rt, _int(t.get("repeatval")), end, remaining, enddate_of(t))
+    if alt_ordinal5 and rule:
+        rule = rule.replace("BYSETPOS=-1", "BYSETPOS=5")
+    return rule
 
 
 def enddate_of(t):
@@ -166,21 +196,26 @@ def enddate_of(t):
     return raw
 
 
-def compare(s, d, uid_map):
-    """Yield (field, source_value, dest_value) for each difference."""
+def compare(s, d, uid_map, tz, notes):
+    """Yield (field, source_value, dest_value) for each difference; append to notes."""
+    uid = s.get("uid")
     s_done = s.get("iscomp") == "1"
     d_done = d.get("status") == "completed"
     if s_done != d_done:
         yield "completed", s_done, d_done
-    s_due, d_due = (s.get("due") or None), dest_date(d.get("due"))
+    s_due, d_due = (s.get("due") or None), dest_date(d.get("due"), tz)
     if s_due != d_due:
         yield "due", s_due, d_due
-    s_time = source_due_time(s.get("duetime")) if s_due else None
-    d_time = dest_time(d.get("due"), d.get("due_is_date"))
+    try:
+        s_time = source_due_time(s.get("duetime")) if s_due else None
+    except ValueError as e:
+        notes.append(f"warning: {uid}: {e}; treated as no time")
+        s_time = None
+    d_time = dest_time(d.get("due"), d.get("due_is_date"), tz)
     if s_time != d_time:
         yield "due_time", s_time, d_time
     s_start = source_start(s.get("startdatetime"))
-    if not start_matches(s_start, d.get("start"), d.get("start_is_date")):
+    if not start_matches(s_start, d.get("start"), d.get("start_is_date"), tz):
         yield "start", s_start.isoformat() if s_start else None, d.get("start")
 
     rt = _int(s.get("repeattype"))
@@ -190,6 +225,11 @@ def compare(s, d, uid_map):
     else:
         sb, se = split_end(canonical_rrule(want)) if want else ("", "")
         db, de = split_end(canonical_rrule(d["rrule"])) if d.get("rrule") else ("", "")
+        if rt in (268, 269) and _int(s.get("repeatval")) == 5:
+            notes.append(f"note: {uid}: ambiguous ordinal 5 (unverified); accepting BYSETPOS=5 or -1")
+            alt = split_end(canonical_rrule(expected_rule(s, True)))[0]
+            if db == alt:
+                sb = db
         if sb != db:
             yield "repeat", want, d.get("rrule")
         if se != de:
@@ -207,7 +247,9 @@ def compare(s, d, uid_map):
         yield "alarms", n_src, n_dst
 
 
-def reconcile(inv, exp, config=None, show_titles=False):
+def reconcile(inv, exp, config=None, show_titles=False, tz=None):
+    tz = tz or local_tz()
+    notes = []
     out = []
     lists = inv.get("lists", [])
     list_title = {l.get("uid"): l.get("title", "") for l in lists}
@@ -231,7 +273,7 @@ def reconcile(inv, exp, config=None, show_titles=False):
     pool = defaultdict(list)
     for d in dst_by_uid.values():
         pool[(norm_title(col_name.get(d.get("collection"), "")), norm_title(d.get("summary")),
-              dest_date(d.get("due")))].append(d)
+              dest_date(d.get("due"), tz))].append(d)
     unmatched_src = []
     fallback = 0
     for t, _ in rest:
@@ -253,24 +295,28 @@ def reconcile(inv, exp, config=None, show_titles=False):
     for d in unmatched_dst:
         mism.append(f"{d['uid']}: presence: source=absent dest=present{name(d)}")
     for t, d in pairs:
-        for field, a, b in compare(t, d, uid_map):
+        for field, a, b in compare(t, d, uid_map, tz, notes):
             mism.append(f"{t['uid']}: {field}: source={a} dest={b}{name(t)}")
-    if config is not None:
-        prefs = config.get("lists", {})
-        by_name = {v: k for k, v in col_name.items()}
-        for l in real_lists:
-            cid = by_name.get(l.get("title", ""))
-            if cid is None:
-                continue
-            s_arch = l.get("isarchived") == "1"
+    prefs = (config or {}).get("lists", {})
+    by_name = {v: k for k, v in col_name.items()}
+    for l in real_lists:
+        s_arch = l.get("isarchived") == "1"
+        cid = by_name.get(l.get("title", ""))
+        suffix = f" ({l.get('title')})" if show_titles else ""
+        if cid is None:
+            if s_arch:
+                mism.append(f"{l['uid']}: archived: source=1 dest=no matching collection{suffix}")
+        elif config is not None:
             d_arch = bool(prefs.get(cid, {}).get("archived", False))
             if s_arch != d_arch:
-                mism.append(f"{l['uid']}: archived: source={int(s_arch)} dest={int(d_arch)}"
-                            + (f" ({l.get('title')})" if show_titles else ""))
+                mism.append(f"{l['uid']}: archived: source={int(s_arch)} dest={int(d_arch)}{suffix}")
 
     out.append("== Summary ==")
     out.append(f"source live: {len(src) - len(completed)}")
+    occ = [t for t in completed if t.get("ruid")]
     out.append(f"source completed: {len(completed)}")
+    out.append(f"  completed (repeat occurrences, ruid set): {len(occ)}")
+    out.append(f"  completed (other): {len(completed) - len(occ)}")
     out.append(f"source children: {len(children)}")
     out.append(f"source deleted-skipped: {len(deleted)}")
     out.append(f"destination tasks: {len(dst)}")
@@ -292,10 +338,19 @@ def reconcile(inv, exp, config=None, show_titles=False):
 
     out.append("")
     out.append("== Special lists (not a collection; no vdir counterpart expected) ==")
+    refs = Counter(t.get("caluid") for t in src)
     for l in sorted(special, key=lambda l: l.get("title", "")):
-        out.append(f"{l.get('title', '')} [{l.get('uid', '')}]")
+        why = ("smart list: saved search, no collection" if l.get("issmartcalendar") == "1"
+               else "built-in view in Twydo; tasks live in their real lists")
+        out.append(f"{l.get('title', '')} [{l.get('uid', '')}]: "
+                   f"{refs.get(l.get('uid'), 0)} source tasks reference it; {why}")
     if not special:
         out.append("(none)")
+
+    if notes:
+        out.append("")
+        out.append("== Notes and warnings ==")
+        out.extend(notes)
 
     out.append("")
     out.append("== Mismatches ==")
@@ -309,6 +364,7 @@ def main(argv=None):
     ap.add_argument("export")
     ap.add_argument("--show-titles", action="store_true")
     ap.add_argument("--config", help="Twydo config.toml (for list archived preferences)")
+    ap.add_argument("--tz", help="IANA timezone for time comparison (default: config timezone, else local)")
     args = ap.parse_args(argv)
     inv = json.loads(Path(args.inventory).read_text())
     exp = json.loads(Path(args.export).read_text())
@@ -316,7 +372,12 @@ def main(argv=None):
         print(f"unsupported export schema {exp.get('schema')!r}", file=sys.stderr)
         return 2
     config = tomllib.loads(Path(args.config).read_text()) if args.config else None
-    lines, n = reconcile(inv, exp, config, args.show_titles)
+    try:
+        tz = local_tz(args.tz or (config or {}).get("timezone"))
+    except Exception as e:
+        print(f"invalid timezone: {e}", file=sys.stderr)
+        return 2
+    lines, n = reconcile(inv, exp, config, args.show_titles, tz)
     print("\n".join(lines))
     return 0 if n == 0 else 1
 
