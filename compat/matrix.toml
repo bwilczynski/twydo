@@ -1,5 +1,6 @@
 # Compatibility matrix template (phase-0 gate). Fill in verdicts from real device runs.
 # Verdicts: unverified | pass | fail | unsupported.  See docs/superpowers/specs (section 6).
+# mod:* rows verify repeat modifiers; a class with a modifier passes only if its base row and every modifier row pass.
 matrix_version = 1
 
 [environment]
@@ -104,6 +105,30 @@ class = "unrecognized"
 preserve = "unsupported"
 execute = "unsupported"
 edit = "unsupported"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "mod:from-completion"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "mod:count"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "mod:until"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
 evidence = []
 notes = ""
 

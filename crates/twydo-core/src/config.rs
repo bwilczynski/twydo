@@ -20,6 +20,8 @@ pub enum ConfigError {
         path: PathBuf,
         source: toml::de::Error,
     },
+    #[error("{}: {message}", path.display())]
+    Invalid { path: PathBuf, message: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
