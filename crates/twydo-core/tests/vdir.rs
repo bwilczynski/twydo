@@ -128,3 +128,28 @@ fn loading_does_not_touch_files() {
     load(sample()).unwrap();
     assert_eq!(before, snapshot(sample()));
 }
+
+#[cfg(unix)]
+#[test]
+fn load_follows_symlinks() {
+    use std::os::unix::fs::symlink;
+    let d = tempfile::tempdir().unwrap();
+    let real = d.path().join("elsewhere");
+    write(&real.join("a.ics"), GOOD);
+    let root = d.path().join("root");
+    fs::create_dir(&root).unwrap();
+    symlink(&real, root.join("linked")).unwrap();
+    write(&d.path().join("target.ics"), &GOOD.replace("g1", "g2"));
+    write(&root.join("plain/x.ics"), &GOOD.replace("g1", "g3"));
+    symlink(d.path().join("target.ics"), root.join("plain/link.ics")).unwrap();
+    symlink(
+        d.path().join("missing.ics"),
+        root.join("plain/dangling.ics"),
+    )
+    .unwrap();
+    let r = load(&root).unwrap();
+    assert_eq!(r.collections.len(), 2);
+    assert_eq!(r.tasks.len(), 3);
+    assert_eq!(r.errors.len(), 1);
+    assert_eq!(r.errors[0].0, root.join("plain/dangling.ics"));
+}
