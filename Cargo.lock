@@ -1571,6 +1571,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "twydo-core",
+ "unicode-width",
 ]
 
 [[package]]
