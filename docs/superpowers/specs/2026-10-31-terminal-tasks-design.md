@@ -1,7 +1,7 @@
-# Terminal tasks app (2Do replacement): design
+# Twydo (terminal 2Do replacement): design
 
 Date: 2026-10-31 · Status: revised after RE review; CalDAV compatibility gate pending
-Working name: **`tick`** (placeholder, builder may rename)
+App name: **Twydo** · pronounced **“twhy-doo”** · terminal command: **`tdo`**
 
 Background research on 2Do, recovered from the shipped app, is in `docs/reference/2do/`
 (01 features, 02 data model, 03 look and feel, 04 shortcuts, 05 data, 06 sync, 07 RE notes).
@@ -72,10 +72,14 @@ be used occasionally against the same data.
 4. **Parent tasks need a manual final tick**, like 2Do. No auto-close for now.
 5. **Adding tasks:** `o` in the app opens a one-line natural-language input with a preview.
    A global hotkey for quick entry is a later addition.
-6. **2Do on the Mac is retired** once `tick` is working. Until then it supplies compatibility
-   fixtures and performs the migration (§10). After that, the only writers are `tick` (Linux and macOS) and, occasionally,
+6. **2Do on the Mac is retired** once Twydo is working. Until then it supplies compatibility
+   fixtures and performs the migration (§10). After that, the only writers are Twydo (Linux and macOS) and, occasionally,
    the 2Do iPhone app.
 7. **Notifications are plain reminders in v1**: no Complete or Snooze buttons.
+8. **App name: Twydo**, pronounced “twhy-doo”, with `tdo` as the terminal command.
+   Chosen for its short, distinctive spelling and similar feel to 2Do; the name hints at
+   doing things again, matching recurring tasks. This replaces the placeholder `tick`.
+   The shorter command `tdo` echoes “to-do”; configuration stays under `~/.config/twydo/`.
 
 ## 5. Decisions made by me (open to change)
 
@@ -90,7 +94,7 @@ be used occasionally against the same data.
   Serialize runner invocations and coordinate them with local edits, undo, and recovery.
   Show last successful sync, pending changes, conflicts, and failures; retry transient failures
   with backoff. A sync failure must not disable reminders from the local data.
-- **Notifications:** a separate small command (`tick notify`) run every minute by a **systemd user
+- **Notifications:** a separate small command (`tdo notify`) run every minute by a **systemd user
   timer** (Linux) or a **launchd agent** (macOS). It reads the vdir and calls `notify-send` (Linux,
   shows in Omarchy's mako) or `osascript` (macOS). It records what it has sent in a small state file
   to deduplicate successful deliveries across ordinary restarts. Crash recovery favours a possible
@@ -127,7 +131,7 @@ be used occasionally against the same data.
   list's CalDAV `calendar-color` and are drawn in true colour as the coloured bar.
 - **Natural-language input:** dates via a chrono-style parser plus the 2Do shortcuts documented
   in 01 §16 (`3d`, `2w`, `15th`, `fri 5pm`, `every month`, `list(Bills)`).
-- **Config:** TOML at `~/.config/tick/config.toml` (vdir path, notifier settings, week start,
+- **Config:** TOML at `~/.config/twydo/config.toml` (vdir path, notifier settings, week start,
   work days, optional default due time, default destination list, keymap overrides).
   List groups, list/project manual ordering, sort preferences, and archive/visibility fallbacks
   live in documented TOML keyed by stable collection/task identity when no verified shared
@@ -150,8 +154,8 @@ start dates, multiple/absolute/relative alarms, and unknown properties. Do not p
 in fixtures. Record unsupported or unverified cases explicitly.
 
 The matrix covers create, edit, complete, reopen, move, and delete. Phase 0 records the Mac/iPhone
-baseline, expected resource changes, and the acceptance cases for tick. Before enabling a tick
-operation, verify it in both directions, including a subsequent iPhone edit on tick-written data.
+baseline, expected resource changes, and the acceptance cases for Twydo. Before enabling a Twydo
+operation, verify it in both directions, including a subsequent iPhone edit on Twydo-written data.
 Passing unchanged round trips is insufficient. Capturing the baseline and acceptance cases is a
 prerequisite; testing the implementation against them follows implementation and precedes release.
 
@@ -317,7 +321,7 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
 - **Round trips:** an unchanged resource is byte-equal, including timestamps; an edit changes only
   intended properties and their verified metadata counterparts. Test unknown parameters/components,
   Unicode, folded lines, new identities, parent links, and conflicting metadata representations.
-- **Interop:** create/edit/complete/reopen/move/delete from both tick and iPhone, sync, then edit
+- **Interop:** create/edit/complete/reopen/move/delete from both Twydo and iPhone, sync, then edit
   again from the other side. Check history, next occurrence, child dates/repeats, alarms, and metadata.
 - **Failures/conflicts:** concurrent desktop/phone completion, completion-versus-edit,
   delete-versus-edit, partial upload, and interruptions at each local journal stage. Both versions
@@ -355,7 +359,7 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
    inventory before connecting the production iPhone with the verified initial-sync choice.
    Begin daily use only after all active obligations pass. Keep backups and a tested restore path.
    Disable Mac 2Do sync and retire it only after acceptance, with no pending/unresolved operations.
-7. Later: global quick-entry hotkey (Hyprland bind or macOS shortcut launching `tick add`).
+7. Later: global quick-entry hotkey (Hyprland bind or macOS shortcut launching `tdo add`).
 
 ## 11. Left to the builder
 
