@@ -15,6 +15,7 @@ Status: **design spec written; workspace scaffolded, implementation in progress*
 | [`docs/superpowers/specs/2026-10-31-terminal-tasks-design.md`](docs/superpowers/specs/2026-10-31-terminal-tasks-design.md) | **The spec**: what to build, decisions, contracts, tests, phases |
 | [`docs/design/tui-layout.md`](docs/design/tui-layout.md) | The chosen screen layout |
 | [`docs/reference/2do/`](docs/reference/2do/README.md) | Reverse-engineered 2Do behaviour, formats and encodings (reference) |
+| [`docs/phase0/README.md`](docs/phase0/README.md) | Phase-0 compatibility gate checklist (user and agent steps) |
 | [`tools/decode_2do_dropbox.py`](tools/decode_2do_dropbox.py) | Read/write 2Do's Dropbox sync files (migration inventory) |
 
 ## Layout
