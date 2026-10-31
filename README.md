@@ -4,8 +4,8 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 **macOS**. Tasks are stored as standard iCalendar (`VTODO`) and synced through CalDAV, so the
 2Do iPhone app keeps working against the same data. Command: `tdo`.
 
-Status: **design spec written; no code yet.** Next step is the implementation plan,
-starting with the phase-0 CalDAV compatibility gate.
+Status: **design spec written; workspace scaffolded, implementation in progress** (plans in
+`docs/superpowers/plans/`), starting with the phase-0 CalDAV compatibility gate.
 
 ## Start here
 
