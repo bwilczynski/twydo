@@ -1,0 +1,45 @@
+# OS / tooling
+.DS_Store
+__pycache__/
+*.pyc
+target/
+
+# Brainstorming companion output (may contain real data)
+.superpowers/
+
+# Personal data: never commit
+*.2do.json
+private/
+*.local.md
+*.ghidra-snapshot
+production-export/
+
+# Local vendor reference images
+/docs/reference/2do/screenshots/
+
+# Decoded inventories and raw calendar / Dropbox exports
+/out.json
+*.ics
+*.tod
+*.col
+*.cat
+*.cal
+*.loc
+*.cag
+*.tsm
+*.tmg
+*.tvn
+*.tsl
+/2Do/
+/Apps/2Do/
+*.2DoBackupArchive*
+*.2DoBackupPackage*
+*.2DoBackupSnapshot*
+
+# Local credentials and sync configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/vdirsyncer.conf
