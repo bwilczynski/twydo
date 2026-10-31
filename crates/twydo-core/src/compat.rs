@@ -28,6 +28,7 @@ impl Verdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuleEntry {
     pub class: String,
     pub preserve: Verdict,
@@ -40,6 +41,7 @@ pub struct RuleEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationEntry {
     pub case: String,
     pub op: String,
@@ -54,6 +56,7 @@ pub struct OperationEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EdgeCase {
     pub id: String,
     #[serde(default)]
@@ -64,6 +67,7 @@ pub struct EdgeCase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Matrix {
     pub matrix_version: u32,
     #[serde(default)]
@@ -82,10 +86,20 @@ impl Matrix {
             path: p.to_path_buf(),
             source,
         })?;
-        toml::from_str(&text).map_err(|source| ConfigError::Parse {
+        let m: Matrix = toml::from_str(&text).map_err(|source| ConfigError::Parse {
             path: p.to_path_buf(),
             source,
-        })
+        })?;
+        let mut seen = std::collections::BTreeSet::new();
+        for r in &m.rule {
+            if !seen.insert(r.class.as_str()) {
+                return Err(ConfigError::Invalid {
+                    path: p.to_path_buf(),
+                    message: format!("duplicate [[rule]] class {:?}", r.class),
+                });
+            }
+        }
+        Ok(m)
     }
 
     pub fn rule(&self, class: &str) -> Option<&RuleEntry> {
@@ -112,8 +126,30 @@ mod tests {
             };
             assert_eq!((r.preserve, r.execute, r.edit), (want, want, want));
         }
-        assert_eq!(m.rule.len(), RULE_CLASSES.len());
+        for c in ["mod:from-completion", "mod:count", "mod:until"] {
+            let r = m.rule(c).unwrap_or_else(|| panic!("missing {c}"));
+            assert_eq!(
+                (r.preserve, r.execute, r.edit),
+                (
+                    Verdict::Unverified,
+                    Verdict::Unverified,
+                    Verdict::Unverified
+                )
+            );
+        }
+        assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
         assert_eq!(m.operation.len(), 66);
         assert_eq!(m.edge_case.len(), 11);
+    }
+
+    #[test]
+    fn duplicate_rule_and_unknown_field_rejected() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("m.toml");
+        let rule = "[[rule]]\nclass = \"days\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n";
+        std::fs::write(&p, format!("matrix_version = 1\n{rule}{rule}")).unwrap();
+        assert!(matches!(Matrix::load(&p), Err(ConfigError::Invalid { .. })));
+        std::fs::write(&p, format!("matrix_version = 1\n{rule}bogus = 1\n")).unwrap();
+        assert!(Matrix::load(&p).is_err());
     }
 }
