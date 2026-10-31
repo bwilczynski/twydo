@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Twydo//Synthetic//EN
+BEGIN:VTODO
+UID:synthetic-1
+SUMMARY:Synthetic long summary abcdefghij abcdefghij abcdefghij abcdefghij 
+ abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefghij abcdefgh
+ ij abcdefghij 
+STATUS:NEEDS-ACTION
+END:VTODO
+END:VCALENDAR
