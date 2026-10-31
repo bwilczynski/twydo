@@ -1,0 +1,2 @@
+# Exact bytes (CRLF vs LF) of test data must never be converted.
+crates/twydo-core/tests/data/** -text

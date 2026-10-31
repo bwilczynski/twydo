@@ -1,0 +1,9 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VTODO
+UID:synthetic-3
+DESCRIPTION:first part
+	, second part
+	 and third
+END:VTODO
+END:VCALENDAR
