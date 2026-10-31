@@ -43,3 +43,7 @@ production-export/
 *.pem
 *.key
 /vdirsyncer.conf
+
+# Synthetic test data and vetted phase-0 fixtures only
+!/crates/twydo-core/tests/data/**/*.ics
+!/fixtures/phase0/**/*.ics

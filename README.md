@@ -1,8 +1,8 @@
-# tick: a terminal task app to replace 2Do
+# Twydo: a terminal task app to replace 2Do
 
 A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Linux/Hyprland)** and
 **macOS**. Tasks are stored as standard iCalendar (`VTODO`) and synced through CalDAV, so the
-2Do iPhone app keeps working against the same data. Working name `tick`.
+2Do iPhone app keeps working against the same data. Command: `tdo`.
 
 Status: **design spec written; no code yet.** Next step is the implementation plan,
 starting with the phase-0 CalDAV compatibility gate.
@@ -25,5 +25,8 @@ docs/
   superpowers/specs/   design spec (source of truth)
   design/              chosen UI layout
   reference/2do/       2Do reverse-engineering reference (01–07)
+crates/
+  twydo-core/          library: data model, storage, views
+  tdo/                 binary: CLI and TUI
 tools/                 helper scripts
 ```
