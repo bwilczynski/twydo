@@ -16,7 +16,7 @@ pub const EXIT_ERROR: i32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    #[error("no config at {}; pass --vdir", .0.display())]
+    #[error("no config at {}; pass --vdir, or create it with: vdir = \"<path to your vdir>\" (see docs/config.md)", .0.display())]
     NoConfig(std::path::PathBuf),
     #[error(transparent)]
     Config(#[from] ConfigError),
