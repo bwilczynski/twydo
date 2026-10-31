@@ -1,0 +1,87 @@
+use std::path::{Path, PathBuf};
+
+use chrono::{NaiveTime, Weekday};
+use twydo_core::config::{Config, SortField};
+
+fn parse(s: &str) -> Result<Config, twydo_core::config::ConfigError> {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("config.toml");
+    std::fs::write(&p, s).unwrap();
+    Config::load(&p)
+}
+
+#[test]
+fn config_defaults_and_unknown_key() {
+    let c = parse("vdir = \"/x\"").unwrap();
+    assert_eq!(c.vdir, PathBuf::from("/x"));
+    assert_eq!(c.timezone, None);
+    assert_eq!(c.week_start, Weekday::Mon);
+    assert_eq!(c.morning_time, NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+    assert_eq!(c.default_list, None);
+    assert!(c.lists.is_empty() && c.groups.is_empty());
+    let p = c.list_prefs("anything");
+    assert!(p.show_in_all && p.show_in_today && p.show_in_done);
+    assert!(!p.archived && !p.hidden);
+    assert_eq!(p.sort.field, SortField::Due);
+    assert!(!p.sort.descending);
+
+    let e = parse("vdri = \"/x\"").unwrap_err().to_string();
+    assert!(e.contains("vdri"), "{e}");
+}
+
+#[test]
+fn config_full_example() {
+    let c = parse(
+        r#"
+vdir = "/x"
+timezone = "America/New_York"
+week_start = "Sunday"
+morning_time = "07:30"
+default_list = "inbox"
+
+[lists.bills]
+hidden = true
+show_in_today = false
+sort = { field = "title", descending = true }
+
+[[groups]]
+name = "Home"
+lists = ["inbox", "personal"]
+"#,
+    )
+    .unwrap();
+    assert_eq!(c.week_start, Weekday::Sun);
+    assert_eq!(c.morning_time, NaiveTime::from_hms_opt(7, 30, 0).unwrap());
+    assert_eq!(c.tz(), chrono_tz::America::New_York);
+    let b = c.list_prefs("bills");
+    assert!(b.hidden && !b.show_in_today && b.show_in_all);
+    assert_eq!(b.sort.field, SortField::Title);
+    assert!(b.sort.descending);
+    assert_eq!(c.groups[0].lists, ["inbox", "personal"]);
+}
+
+#[test]
+fn config_rejects_bad_values() {
+    assert!(parse("vdir = \"/x\"\nweek_start = \"funday\"").is_err());
+    assert!(parse("vdir = \"/x\"\nmorning_time = \"25:00\"").is_err());
+    assert!(parse("vdir = \"/x\"\ntimezone = \"Mars/Base\"").is_err());
+    assert!(parse("vdir = \"/x\"\n[lists.a]\nsort = { field = \"x\" }").is_err());
+    assert!(parse("").is_err());
+}
+
+#[test]
+fn config_path_honours_xdg() {
+    let home = Path::new("/home/u");
+    assert_eq!(
+        Config::path_from(Some(Path::new("/tmp/c")), home),
+        PathBuf::from("/tmp/c/twydo/config.toml")
+    );
+    assert_eq!(
+        Config::path_from(None, home),
+        PathBuf::from("/home/u/.config/twydo/config.toml")
+    );
+    assert_eq!(
+        Config::path_from(Some(Path::new("")), home),
+        PathBuf::from("/home/u/.config/twydo/config.toml")
+    );
+}

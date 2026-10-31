@@ -7,4 +7,10 @@ rust-version.workspace = true
 [dependencies]
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
+iana-time-zone = "0.1.65"
+serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
+toml = "1.1.8"
+
+[dev-dependencies]
+tempfile = "3.27.0"
