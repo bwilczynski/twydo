@@ -1,0 +1,834 @@
+# Compatibility matrix template (phase-0 gate). Fill in verdicts from real device runs.
+# Verdicts: unverified | pass | fail | unsupported.  See docs/superpowers/specs (section 6).
+matrix_version = 1
+
+[environment]
+mac_2do = ""
+iphone_2do = ""
+ios = ""
+macos = ""
+server = ""
+server_version = ""
+vdirsyncer = ""
+
+[[rule]]
+class = "days"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "weeks"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "weekdays-set"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-day-1-28"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-day-29-31"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-last-day"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-nth-weekday"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-nth-workday"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "months-nth-weekend-day"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "years"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "years-feb-29"
+preserve = "unverified"
+execute = "unverified"
+edit = "unverified"
+evidence = []
+notes = ""
+
+[[rule]]
+class = "unrecognized"
+preserve = "unsupported"
+execute = "unsupported"
+edit = "unsupported"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "one-time"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "monthly"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "yearly"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "from-completion"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "recurring-project"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "checklist"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "project-recurring-child"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "date-only"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "timed"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "start-date"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "create"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "edit"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "complete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "reopen"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "move"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[operation]]
+case = "alarms"
+op = "delete"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = ""
+
+[[edge_case]]
+id = "monthly-15th-three-months-late"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "monthly-31st"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "yearly-feb-29"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "missing-fifth-weekday"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "from-completion-anchor"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "end-after-n"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "end-on-date"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "parent-mixed-children"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "project-child-own-recurrence"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "start-due-alarm-offsets"
+observed = ""
+verdict = "unverified"
+evidence = []
+
+[[edge_case]]
+id = "reopen-undo-before-after-sync"
+observed = ""
+verdict = "unverified"
+evidence = []

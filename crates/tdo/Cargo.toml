@@ -5,5 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
 twydo-core = { path = "../twydo-core" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
