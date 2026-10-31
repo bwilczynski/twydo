@@ -144,6 +144,19 @@ impl Config {
         base.join("twydo").join("config.toml")
     }
 
+    /// Defaults with the given vdir (system timezone, no list prefs).
+    pub fn with_vdir(vdir: PathBuf) -> Config {
+        Config {
+            vdir,
+            timezone: None,
+            week_start: default_week_start(),
+            morning_time: default_morning(),
+            default_list: None,
+            lists: BTreeMap::new(),
+            groups: Vec::new(),
+        }
+    }
+
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
         let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Read {
             path: path.to_path_buf(),
