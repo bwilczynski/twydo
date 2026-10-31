@@ -69,6 +69,30 @@ fn roundtrip_interleaved_children_and_props_without_final_eol() {
 }
 
 #[test]
+fn roundtrip_trailing_blank_line() {
+    assert_roundtrip("trailing_blank.ics");
+    assert_roundtrip("trailing_ws.ics");
+}
+
+#[test]
+fn roundtrip_leading_bom() {
+    let b = data("bom.ics");
+    assert!(b.starts_with(b"\xEF\xBB\xBF"));
+    assert_roundtrip("bom.ics");
+    assert_eq!(parse(&b).unwrap().root.name, "VCALENDAR");
+}
+
+#[test]
+fn roundtrip_blank_line_inside() {
+    assert_roundtrip("blank_inside.ics");
+    let cal = parse(&data("blank_inside.ics")).unwrap();
+    assert_eq!(
+        cal.root.children_named("VTODO").next().unwrap().props.len(),
+        1
+    );
+}
+
+#[test]
 fn quoted_param_values_parse() {
     let cal = parse(&data("unknown.ics")).unwrap();
     let p = cal.root.props_named("X-FOO").next().unwrap();
@@ -96,7 +120,7 @@ fn malformed_inputs_are_errors() {
         b"BEGIN:VCALENDAR\r\nEND:VTODO\r\n",
         b"BEGIN:VCALENDAR\r\nnocolon\r\nEND:VCALENDAR\r\n",
         b"BEGIN:VCALENDAR\r\nX;P=\"unterminated:v\r\nEND:VCALENDAR\r\n",
-        b"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\nX:after\r\n",
+        b"BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n\r\nX:after\r\n",
         b"BEGIN:VCALENDAR\r\nX:\xff\r\nEND:VCALENDAR\r\n",
     ] {
         assert!(parse(bad).is_err(), "{:?}", String::from_utf8_lossy(bad));
