@@ -38,45 +38,58 @@ mkdir -p "$P0"/{backup,inventory,vdir,staging,reports}
    Output: `$P0/inventory/inventory.2do.json` (counts and errors print to the terminal). Contains
    personal data, so it never enters the repository.
 
-## Step 2. Isolated CalDAV test account on the NAS
-
-1. 👤 On the Synology NAS, create a **dedicated test user** and an empty calendar/task collection for
-   it. Do not reuse your production account or calendar. Note the CalDAV URL (it goes only into
-   `~/.config/vdirsyncer/config`).
-2. 👤 Confirm Synology Calendar accepts `VTODO`: create a task from 2Do against this account (step 3
-   must be done first) and see it arrive on the server. If it does not, run Radicale in a container
-   instead and use that URL.
-3. 👤 Record the server name and version (and the Calendar package version) in `compat/matrix.toml`
-   `[environment]` (`server`, `server_version`).
-
-Outputs: test account, empty collection, server name/version.
-
-## Step 3. Restorable 2Do test setup
+## Step 2. Restorable 2Do test setup
 
 1. 👤 Prepare a setup where switching providers cannot replace production data: a **separate macOS
-   user** (or a restored backup) running 2Do, and an **iPhone 2Do profile not connected to production
-   data** (a device or profile with no Dropbox/production sync).
+   user** (or a restored backup) running 2Do, and a **spare iPhone or a fresh 2Do install** with no Dropbox or production sync. **Stop and ask** before
+   switching sync provider on any iPhone that holds production data.
 2. 👤 Record the app versions: Mac 2Do, iPhone 2Do, iOS and macOS. Put them in `compat/matrix.toml`
    `[environment]` (`mac_2do`, `iphone_2do`, `ios`, `macos`).
 3. 👤 Check that the production Dropbox sync is **off** in the test setup before continuing.
 
 Outputs: test setup, environment versions.
 
+## Step 3. Isolated CalDAV test account on the NAS
+
+1. 👤 On the Synology NAS, create a **dedicated test user** and an empty calendar/task collection for
+   it. Do not reuse your production account or calendar. Note the CalDAV URL (it goes only into
+   `~/.config/vdirsyncer/config`).
+2. 👤 Confirm Synology Calendar accepts `VTODO`: create a task from the test 2Do (step 2) against this account and see it arrive on the server. If it does not, run Radicale in a container
+   instead and use that URL.
+3. 👤 Record the server name and version (and the Calendar package version) in `compat/matrix.toml`
+   `[environment]` (`server`, `server_version`).
+
+Outputs: test account, empty collection, server name/version.
+
 ## Step 4. Upload to the test account and pull with vdirsyncer
 
-1. 👤 In the test 2Do on the Mac, restore the backed-up data. Add the test CalDAV account and push
-   the data with 2Do's upload flow. Use *Replace Server Data* **only** on the empty test collection.
+1. 👤 **Stop and confirm** before pushing: (a) the 2Do account/sync provider selected is the **test**
+   one (not Dropbox, not production), and (b) the destination collection on the NAS is **empty**. Only
+   then restore the backed-up data in the test 2Do on the Mac, add the test CalDAV account and push
+   with 2Do's upload flow. Use *Replace Server Data* **only** on that empty test collection.
 2. 🤖 Install vdirsyncer and set it up outside the repo:
 
    ```sh
    mkdir -p ~/.config/vdirsyncer
    cp contrib/vdirsyncer/config.example ~/.config/vdirsyncer/config
    $EDITOR ~/.config/vdirsyncer/config   # URL, USERNAME, password.fetch command, vdir path = $P0/vdir/
+   # (the file uses a literal ~/twydo-phase0/vdir/; keep it equal to $P0/vdir/)
    vdirsyncer --version                  # record in compat/matrix.toml [environment] vdirsyncer
    vdirsyncer discover twydo
    vdirsyncer sync twydo
    vdirsyncer metasync twydo
    ```
+
+   In the config, `a` is the NAS (CalDAV) and `b` is the local vdir, with `collections = ["from a", "from b"]`,
+   so the first discover/sync pulls the NAS collections into the vdir.
+3. 🤖 Check the pull worked:
+
+   ```sh
+   ls "$P0"/vdir/*/*.ics | head && ls "$P0"/vdir/*/*.ics | wc -l
+   ```
+
+   **Stop if there are no `.ics` files** (check the URL, credentials, and that the 2Do push finished) and
+   ask before continuing.
 
    Output: `$P0/vdir/<collection>/` with `*.ics`, `displayname`, `color`.
 
@@ -106,10 +119,10 @@ Do these on the **test setup only**, with synthetic titles. After **every** step
 export COLL="$P0/vdir/<collection>"      # the test collection directory
 vdirsyncer sync twydo && vdirsyncer metasync twydo
 python3 tools/capture_fixture.py capture "$COLL" "$P0/staging" \
-  --scenario <scenario-id> --step <NN-slug> --device mac|iphone|twydo --action "<what was done>"
+  --scenario <scenario-id> --step <NN-slug> --device mac --action "<what was done>"
 ```
 
-- `--device` is where the action happened. Use `twydo` only for edits made by Twydo (none exist in
+- `--device` is where the action happened: `mac`, `iphone` or `twydo` (the example uses `mac`; change it per step). Use `twydo` only for edits made by Twydo (none exist in
   Plan 1, so the `twydo_*` matrix columns stay `unverified` for now).
 - Step names sort lexically: `01-create`, `02-complete`, and so on. `changes.diff` compares against
   the previous step of the same scenario.
@@ -125,8 +138,9 @@ move, delete` for its `case`; record the results in the `mac_to_iphone` / `iphon
 
 1. **one-time** (`one-time`). Create `Test one-time` on Mac, sync, capture. Phone: sync, check it
    arrived, edit the title, sync, capture. Phone: complete, sync, capture. Mac: reopen, sync, capture.
-   Mac: move it to a second test list, sync, capture (the move shows as a new collection folder; capture
-   both collections). Phone: delete, sync, capture. Then repeat create/edit with the roles swapped
+   Mac: move it to a second test list, sync, then capture the source collection as `05-move-source` and the
+   destination collection as `06-move-dest` (a move shows as a delete in one collection folder and a new
+   resource in the other; point `capture` at each folder in turn; the later steps then use `07-...`). Phone: delete, sync, capture. Then repeat create/edit with the roles swapped
    (create on phone, edit on Mac).
 2. **monthly** (`monthly`). Create `Test monthly` repeating monthly on Mac, sync, capture. Phone: edit
    notes, sync, capture. Phone: complete (note whether it spawns a copy or advances the date), sync,
@@ -214,23 +228,35 @@ move, delete` for its `case`; record the results in the `mac_to_iphone` / `iphon
 
 ### 6e. Conflict scenarios (record vdirsyncer's default behaviour; spec sections 5 and 9)
 
-Make the two edits **while offline or before either side syncs**, then sync Mac first, then the phone,
-then run `vdirsyncer sync twydo` and capture the vdir **and** save its output
-(`vdirsyncer sync twydo 2>&1 | tee "$P0/reports/conflict-<id>.txt"`). Use scenario ids `conflict-*`.
+Both 2Do clients talk only to the NAS, so a vdirsyncer conflict needs one side to change the **vdir**.
+Each scenario therefore pairs a **direct edit of the test task's `.ics` in the test vdir** (🤖, simulating
+a Twydo write; synthetic test task only) with a **2Do change synced to the server** (👤). Do not run
+`vdirsyncer sync` between the two changes. Scenario ids start with `conflict-`.
 
-27. **conflict-concurrent-completion** (`conflict-concurrent-completion`). Create a recurring task and
-    sync everywhere. Turn network off on both devices. Complete it on Mac and on the phone. Reconnect,
-    sync Mac, then phone, then vdirsyncer. Record: error text, which side's version is in the vdir, whether
-    the other side is lost, whether other items keep syncing.
-28. **conflict-completion-vs-edit** (`conflict-completion-vs-edit`). Same set-up. On Mac complete the task;
-    on the phone, edit its notes. Reconnect and sync, then record the same four facts.
-29. **conflict-delete-vs-edit** (`conflict-delete-vs-edit`). Same set-up. On Mac delete the task; on the
-    phone edit its title. Reconnect and sync, then record: does the deletion win, does the edit resurrect
-    the task, is anything silently discarded, is an error shown? Run it once more with the roles swapped.
+Common set-up: create synthetic `Test conflict <n>` as a recurring task plus a second unrelated
+`Test bystander <n>`; sync 2Do and vdirsyncer until both sides agree; capture it as `01-base`. Then:
 
-For each conflict, note in `compat/matrix.toml` `notes` (and in the committed fixtures' `step.toml`
-actions) whether vdirsyncer's default meets the spec: both versions preserved and other resources still
-syncing. If it does not, that is the expected input for Plan 3's conflict store.
+1. 🤖 Make the vdir change (below) in `$COLL/<uid>.ics`; capture as `02-vdir-change`.
+2. 👤 Make the 2Do change (below) on the Mac (or phone) and let 2Do sync to the server. Also change
+   `Test bystander <n>` in 2Do, so you can see that other items keep syncing.
+3. 🤖 `vdirsyncer sync twydo 2>&1 | tee "$P0/reports/conflict-<id>.txt"`, then capture as `03-after-sync`.
+4. Record: the **exact error text**, **which side's version remains in the vdir**, whether the other
+   version is lost anywhere, and that the bystander task synced.
+
+27. **conflict-concurrent-completion**. vdir change: edit the `.ics` to mark it completed (`STATUS:COMPLETED`,
+    a `COMPLETED:` stamp, `PERCENT-COMPLETE:100`). 2Do change: complete the same task.
+28. **conflict-completion-vs-edit**. vdir change: mark completed as above. 2Do change: edit the task's notes
+    (not complete it). Run a second pass with the roles swapped (vdir edits the `DESCRIPTION`, 2Do completes).
+29. **conflict-delete-vs-edit**. vdir change: delete the task's `.ics`. 2Do change: edit its title. Run a
+    second pass swapped (2Do deletes, vdir edits `SUMMARY`).
+
+Extra observations (optional, 2Do/server behaviour, not vdirsyncer conflicts): complete the same
+recurring task on Mac and phone while both are offline, then reconnect; and delete on one device while
+editing on the other. Capture with `--scenario conflict-mac-vs-iphone-<id>` and note what the server kept.
+
+For each conflict, note in `compat/matrix.toml` `notes` whether vdirsyncer's default meets the spec: both
+versions preserved and other resources still syncing. If not, that is the expected input for Plan 3's
+conflict store.
 
 ## Step 7. Privacy scan and commit fixtures
 

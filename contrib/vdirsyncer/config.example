@@ -6,10 +6,11 @@
 status_path = "~/.local/share/vdirsyncer/status/"
 
 [pair twydo]
-a = "twydo_local"
-b = "twydo_remote"
-collections = ["from a"]
+a = "twydo_remote"
+b = "twydo_local"
+collections = ["from a", "from b"]
 metadata = ["displayname", "color"]
+# `a` is the NAS (CalDAV), `b` the local vdir, so the first discover/sync pulls the NAS collections.
 # Deliberately NO conflict_resolution line.
 # Spec section 5 forbids `conflict_resolution = "a wins"` / "b wins": either silently discards
 # one side, possibly a completion, a recurrence advancement or a deletion. With no setting,
