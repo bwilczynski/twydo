@@ -1,6 +1,7 @@
 //! Task model: VTODO components interpreted as Twydo tasks.
 
 pub mod meta;
+pub mod repeat;
 pub mod task;
 
 pub use meta::{Metadata, parse_metadata};
