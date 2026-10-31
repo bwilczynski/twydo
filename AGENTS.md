@@ -1,7 +1,7 @@
 # Agent handoff
 
 You are picking up a project whose **design is done and no code exists yet**. Your job is to plan
-and then build `tick`, a terminal task app replacing 2Do for one user.
+and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one user.
 
 ## Read in this order
 
