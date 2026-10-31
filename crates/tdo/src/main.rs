@@ -1,8 +1,7 @@
-mod cli;
-
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use tdo::cli;
 
 #[derive(Parser)]
 #[command(name = "tdo", version, about = "Twydo: a terminal task app")]
