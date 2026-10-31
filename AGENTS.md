@@ -1,6 +1,6 @@
 # Agent handoff
 
-You are picking up a project whose **design is done and no code exists yet**. Your job is to plan
+You are picking up a project whose **design is done and implementation is in progress** (see `docs/superpowers/plans/`). Your job is to plan
 and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one user.
 
 ## Read in this order
@@ -35,7 +35,11 @@ and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one 
 - The spec refers to acceptance cases **P1, P2, L1** by label. Their real names live outside the repo in
   `../rea-private/acceptance-cases.md` (on the user's machine only). You may read it locally for
   acceptance testing; never copy its contents into the repo.
-- Code lives in this repository (proposal: a Cargo workspace at the root). The user may say otherwise.
+- Code lives in this repository as a Cargo workspace at the root:
+  - `crates/twydo-core/`: core library (data model, storage, views)
+  - `crates/tdo/`: the `tdo` binary (CLI and TUI)
+  - `compat/`: phase-0 compatibility-gate kit (checklists, matrix template; planned)
+  - `tools/`: helper scripts; `docs/`: spec, design, 2Do reference, plans
 - The spec's "decisions made by the user" (§4) are fixed; "decisions made by me" (§5) are proposals you
   may refine with justification, except where §11 says they cannot be overridden (compatibility gate,
   preservation, conflict, recovery and notification contracts).
