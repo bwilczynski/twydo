@@ -55,6 +55,7 @@ fn titles(a: &App) -> Vec<String> {
 }
 
 #[test]
+#[allow(non_snake_case)]
 fn jk_gg_G_move_and_clamp() {
     let mut a = app();
     assert_eq!(a.visible_rows().len(), 3); // overdue, later today, today
