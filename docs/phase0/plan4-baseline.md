@@ -98,3 +98,47 @@ Session 2026-11-01, iPhone 2Do 3.91 against Synology Calendar, vdirsyncer 0.21.0
 - **vdirsyncer:** when the last task of a collection is deleted remotely, `vdirsyncer sync`
   stops with "Storage … was completely emptied" and needs `--force-delete` for that collection.
   The Plan 3 sync runner must handle this case.
+
+# Twydo → iPhone verification (Plan 4 Task 12)
+
+Twydo now performs the operations (`tdo op`), and the iPhone checks them. Then the iPhone edits
+the Twydo-written tasks and Twydo reads them back. A case/op passes when both directions look
+right. Same test account, same two lists, single-letter titles.
+
+## Setup (🤖)
+
+A separate config folder keeps `test` write mode away from any default config:
+
+```sh
+export XDG_CONFIG_HOME=~/twydo-phase0/xdg
+mkdir -p $XDG_CONFIG_HOME/twydo
+cat > $XDG_CONFIG_HOME/twydo/config.toml <<'TOML'
+vdir = "~/twydo-phase0/vdir"
+state_dir = "~/twydo-phase0/state"
+[writes]
+mode = "test"
+TOML
+cargo build -q -p tdo && alias tdo=$PWD/target/debug/tdo
+```
+
+After each round: 🤖 `vdirsyncer sync twydo`, capture both lists with `--device twydo` (Twydo
+rounds) or `--device iphone` (phone rounds) into scenarios `twydo-list1` / `twydo-list2`, and
+🤖 `tdo export-json` to check how Twydo reads the result.
+
+## Rounds
+
+| Round | Who | Actions | Check |
+|---|---|---|---|
+| 00-setup | 👤 | in `Twydo test`: create `S` due 2026-12-10 repeat monthly; `T` due 2026-12-15 repeat yearly | — |
+| 01-create | 🤖 | `tdo op add --list <list1> --title P --due 2026-12-03`; `Q --due 2026-12-03T17:30`; `R --start 2026-12-01 --due 2026-12-03` | 👤 P, Q, R appear with those dates; Q at 17:30 (note whether the phone shows an alert); R has its start date |
+| 02-edit | 🤖 | P: `--title P2 --notes "x, y"`; Q: `--due 2026-12-03T18:45`; R: `--start 2026-12-02`; S: `--notes n`; T: `--every 2` | 👤 each change shows; T repeats every 2 years |
+| 03-phone-edit | 👤 | P2 → title `P3`; Q → time 19:00; R → remove the start date | 🤖 `export-json` shows P3, Q at 19:00, R without start |
+| 04-complete | 🤖 | complete P3; complete S; Q: `--due 2026-12-03` (date only); delete R | 👤 P3 completed; S due 2027-01-10 with one completed copy; Q date-only, and whether an alert is left; R gone |
+| 05-undo-before-sync | 🤖 | complete T, then immediately `tdo op undo <that op id>` **before** syncing; reopen P3; move Q to `Twydo test 2` | 👤 T unchanged (due 2026-12-15, no copy); P3 open; Q in list 2 |
+| 06-undo-after-sync | 🤖 | `tdo op undo` the S completion from round 04; `tdo op undo` the Q move from round 05 | 👤 S back to 2026-12-10 with no stray completed copy; Q back in `Twydo test` |
+| 07-phone-edit | 👤 | S → notes `m`; Q → title `Q2` | 🤖 `export-json` shows both |
+| 08-delete | 🤖 | delete P3, Q2, S, T | 👤 both lists empty (vdirsyncer may need `--force-delete` per list) |
+
+## Results
+
+(Filled in after the session: per case/op, `twydo_to_iphone` / `iphone_to_twydo` and evidence.)
