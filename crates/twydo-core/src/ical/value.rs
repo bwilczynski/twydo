@@ -8,7 +8,7 @@ use chrono::{
 use chrono_tz::Tz;
 use thiserror::Error;
 
-use super::Property;
+use super::{Param, Property};
 
 /// A DATE / DATE-TIME value as written, before any timezone resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,4 +216,49 @@ pub fn unescape_text(s: &str) -> String {
         }
     }
     out
+}
+
+/// Escape TEXT: `\` `;` `,` and newline become `\\` `\;` `\,` `\n`. A `\r\n` pair is one newline.
+pub fn escape_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            ';' => out.push_str("\\;"),
+            ',' => out.push_str("\\,"),
+            '\r' => {
+                if it.peek() == Some(&'\n') {
+                    it.next();
+                }
+                out.push_str("\\n");
+            }
+            '\n' => out.push_str("\\n"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Parameters and value text for a DATE / DATE-TIME property, as 2Do writes them.
+pub fn format_date_time(v: &IcalDateTime) -> (Vec<Param>, String) {
+    const DT: &str = "%Y%m%dT%H%M%S";
+    match v {
+        IcalDateTime::Date(d) => (
+            vec![Param {
+                name: "VALUE".into(),
+                values: vec!["DATE".into()],
+            }],
+            d.format("%Y%m%d").to_string(),
+        ),
+        IcalDateTime::Floating(dt) => (vec![], dt.format(DT).to_string()),
+        IcalDateTime::Utc(dt) => (vec![], format!("{}Z", dt.format(DT))),
+        IcalDateTime::Zoned { local, tzid } => (
+            vec![Param {
+                name: "TZID".into(),
+                values: vec![tzid.clone()],
+            }],
+            local.format(DT).to_string(),
+        ),
+    }
 }
