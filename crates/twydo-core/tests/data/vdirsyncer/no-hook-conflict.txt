@@ -1,0 +1,8 @@
+Syncing twydo/Twydo test
+Syncing twydo/c1
+Doing conflict resolution for item u1...
+error: twydo/c1: One item changed on both sides. Resolve this conflict manually, or by setting the `conflict_resolution` parameter in your config file.
+error: See also https://vdirsyncer.pimutils.org/en/stable/config.html#pair-section
+error: Item ID: u1
+error: Item href on side A: u1.ics
+error: Item href on side B: u1.ics

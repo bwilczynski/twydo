@@ -1,0 +1,5 @@
+Syncing twydo/Twydo test
+Syncing twydo/c1
+Doing conflict resolution for item u1...
+error: Unknown error occurred for twydo/c1: Command '['/tmp/twydo-probe/hook.sh', '/tmp/vdirsyncer-conflict.XXXX/twydo_remote', '/tmp/vdirsyncer-conflict.XXXX/twydo_local']' returned non-zero exit status 3.
+error: Use `-vdebug` to see the full traceback.

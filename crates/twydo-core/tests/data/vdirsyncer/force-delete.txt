@@ -1,0 +1,4 @@
+Syncing twydo/c1
+Deleting item u1 from twydo_remote/c1
+Deleting item u2 from twydo_remote/c1
+Deleting item u3 from twydo_remote/c1

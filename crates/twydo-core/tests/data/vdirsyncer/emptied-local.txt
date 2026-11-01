@@ -1,0 +1,3 @@
+Syncing twydo/Twydo test
+Syncing twydo/c1
+error: twydo/c1: Storage "twydo_local/c1" was completely emptied. If you want to delete ALL entries on BOTH sides,then use `vdirsyncer sync --force-delete twydo/c1`. Otherwise delete the files for twydo/c1 in your status directory.
