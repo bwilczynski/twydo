@@ -195,10 +195,19 @@ fn one_pass(
         args.push("--force-delete".into());
         args.extend(force.iter().map(|c| format!("{}/{c}", sync.pair)));
     }
-    let ran = run_command(sync, &args, &hook_log)?;
-    let out = parse(&sync.pair, &ran.stderr);
-    // Emptied collections are only classified here (step 6); forcing them is Task 8.
+    let mut ran = run_command(sync, &args, &hook_log)?;
+    let mut out = parse(&sync.pair, &ran.stderr);
     report.forced.extend(force.iter().cloned());
+    // Local emptied by Twydo itself: rerun forced, once, still under the shared lock.
+    let auto = auto_force(sync, &out, &pending, ConflictStore::existing(state)?, force)?;
+    if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
+        let mut args = vec!["sync".to_string(), "--force-delete".to_string()];
+        args.extend(auto.iter().map(|c| format!("{}/{c}", sync.pair)));
+        let second = run_command(sync, &args, &hook_log)?;
+        merge_forced(&mut out, parse(&sync.pair, &second.stderr), &auto);
+        ran.outcome = second.outcome;
+        report.forced.extend(auto);
+    }
     report.metasync_error = match ran.outcome {
         Outcome::Exited(_) if sync.metasync => metasync(sync, &hook_log)?,
         _ => None,
@@ -263,6 +272,57 @@ fn one_pass(
     report.collections = collections;
     report.transient = transient;
     Ok(())
+}
+
+/// Collections to force-delete automatically: emptied on the local side, with a pending
+/// entry that removed the last task (`after: None`) and no unresolved conflict. An emptied
+/// collection without such an entry (files removed by hand, a broken vdir) is never forced.
+fn auto_force(
+    sync: &SyncConfig,
+    out: &SyncOutput,
+    pending: &[crate::store::journal::Entry],
+    conflicts: Option<ConflictStore>,
+    explicit: &[String],
+) -> Result<Vec<String>, SyncError> {
+    let unresolved = match conflicts {
+        Some(store) => store.unresolved()?,
+        None => Vec::new(),
+    };
+    let states = coll_states(out, &[], &sync.local_storage);
+    Ok(out
+        .emptied
+        .keys()
+        .filter(|c| states.get(*c) == Some(&CollState::EmptiedLocal))
+        .filter(|c| !explicit.contains(c))
+        .filter(|c| !unresolved.iter().any(|u| &u.collection == *c))
+        .filter(|c| {
+            pending.iter().any(|e| {
+                e.writes.iter().any(|w| {
+                    w.after.is_none()
+                        && Path::new(&w.path).parent().and_then(Path::to_str) == Some(c.as_str())
+                })
+            })
+        })
+        .cloned()
+        .collect())
+}
+
+/// Replaces what `first` says about the `forced` collections with what `second` says.
+fn merge_forced(first: &mut SyncOutput, second: SyncOutput, forced: &[String]) {
+    for c in forced {
+        first.synced.remove(c);
+        first.emptied.remove(c);
+        first.errors.remove(c);
+        first.unhooked.remove(c);
+    }
+    first.transfers.retain(|t| !forced.contains(&t.collection));
+    first.conflict_items.extend(second.conflict_items);
+    first.synced.extend(second.synced);
+    first.transfers.extend(second.transfers);
+    first.unhooked.extend(second.unhooked);
+    first.emptied.extend(second.emptied);
+    first.errors.extend(second.errors);
+    first.unattributed.extend(second.unattributed);
 }
 
 /// The transient failure of a run, if any (see [`run`], step 6).
