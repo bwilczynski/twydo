@@ -20,12 +20,14 @@ names the key. Twydo only reads this file.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `archived` | bool | `false` | Treat the list as archived. |
-| `hidden` | bool | `false` | Hide the list from the list pane. |
+| `archived` | bool | `false` | Treat the list as archived: like `hidden`, except its completed tasks stay in Done (subject to `show_in_done`). |
+| `hidden` | bool | `false` | Hide the list from the list pane, and its tasks from Today, All, Scheduled, Next 3 Days and Done. `:list <name>` still opens it. |
 | `show_in_all` | bool | `true` | Include its tasks in the All view. |
 | `show_in_today` | bool | `true` | Include its tasks in the Today view. |
 | `show_in_done` | bool | `true` | Include its tasks in the Done view. |
 | `sort` | `{ field, descending }` | `{ field = "due", descending = false }` | `field` is one of `due`, `start`, `creation`, `title`. |
+
+Hidden and archived lists do not notify (spec section 7; notifications arrive in Plan 2).
 
 These preferences are a local fallback. They are not stored in CalDAV and do not sync between
 devices (spec section 5).

@@ -1,7 +1,8 @@
 # Agent handoff
 
-You are picking up a project whose **design is done and implementation is in progress** (see `docs/superpowers/plans/`). Your job is to plan
-and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one user.
+You are picking up a project whose **design is done and implementation is in progress** (plans in
+`docs/superpowers/plans/`). Your job is to continue building Twydo (command `tdo`), a terminal task
+app replacing 2Do for one user, plan by plan.
 
 ## Read in this order
 
@@ -17,12 +18,14 @@ and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one 
 
 ## What to do next
 
-1. Write the implementation plan (if you use the superpowers workflow: `superpowers:writing-plans`,
-   saved under `docs/superpowers/plans/`).
+1. Read the current plan under `docs/superpowers/plans/` and continue from its first unfinished task.
+   Write the next plan (if you use the superpowers workflow: `superpowers:writing-plans`) only when
+   the current one is done.
 2. **Phase 0 is a gate that needs the user.** Setting up CalDAV on their Synology NAS, switching 2Do on
-   a test setup, and capturing iPhone behaviour are human actions. Plan them as explicit user steps,
-   prepare the tooling and checklists (fixture capture, compatibility matrix template, reconciliation
-   script), and don't start writable core work until the gate's outputs exist (spec §6, §10).
+   a test setup, and capturing iPhone behaviour are human actions, listed as user steps in
+   [`docs/phase0/README.md`](docs/phase0/README.md). The tooling (fixture capture, compatibility
+   matrix, reconciliation script, `tdo check`) exists; don't start writable core work until the
+   gate's outputs exist (spec §6, §10).
 3. Ask the user before any action that touches their production 2Do data, NAS or iPhone.
 
 ## Ground rules
@@ -38,8 +41,10 @@ and then build Twydo (command `tdo`), a terminal task app replacing 2Do for one 
 - Code lives in this repository as a Cargo workspace at the root:
   - `crates/twydo-core/`: core library (data model, storage, views)
   - `crates/tdo/`: the `tdo` binary (CLI and TUI)
-  - `compat/`: phase-0 compatibility-gate kit (checklists, matrix template)
-  - `tools/`: helper scripts; `docs/`: spec, design, 2Do reference, plans
+  - `compat/`: the phase-0 compatibility matrix (`matrix.toml`)
+  - `contrib/`: example configuration for external tools (vdirsyncer)
+  - `tools/`: helper scripts; `docs/`: spec, design, 2Do reference, plans, config, and the
+    phase-0 checklists (`docs/phase0/`)
 - The spec's "decisions made by the user" (§4) are fixed; "decisions made by me" (§5) are proposals you
   may refine with justification, except where §11 says they cannot be overridden (compatibility gate,
   preservation, conflict, recovery and notification contracts).
