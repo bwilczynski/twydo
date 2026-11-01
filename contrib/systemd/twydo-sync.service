@@ -5,5 +5,9 @@ Description=Twydo background sync (tdo sync --background)
 Type=oneshot
 # Adjust the path to where `tdo` is installed (this is the `cargo install` location).
 ExecStart=%h/.cargo/bin/tdo sync --background
+# Exit 1 means the run worked but something waits for you (an unresolved conflict, an
+# emptied list, or a failure that backs off; see `tdo status`). Without this the unit shows
+# failed every minute while a conflict is open. Exit 2 (configuration or IO error) still fails.
+SuccessExitStatus=1
 # Test setup only: point tdo at the phase-0 config (docs/sync.md).
 #Environment=XDG_CONFIG_HOME=%h/twydo-phase0/xdg

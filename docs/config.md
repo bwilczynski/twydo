@@ -51,7 +51,7 @@ and conflict handling are in [sync.md](sync.md).
 | `after_edit` | bool | `true` | Start a sync after a local edit. |
 | `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
-| `retention_days` | integer | `30` | How long resolved conflict versions are kept. |
+| `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |
 
 ## `[lists.<id>]`
 
