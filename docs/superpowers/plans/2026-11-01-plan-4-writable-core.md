@@ -47,8 +47,8 @@ and journal pruning (Plan 3); list management (Plan 5).
   `tdo: test write mode: unverified operations are enabled` to stderr.
 - **No library defaults for unresolved 2Do behaviour.** If a case has not been captured, block it
   with a reason. Do not guess.
-- **Hypotheses H1–H12 (Task 2) drive Tasks 5–7.** If a capture contradicts one, stop and amend this
-  plan before implementing the task that depends on it.
+- **Hypotheses H1–H12 (Task 2) drive Tasks 4–7 and 10.** Results are in `docs/phase0/plan4-baseline.md`;
+  H4, H5, H8 and H10 did not hold as first written, and the tasks below are amended to what 2Do does.
 - Ask the user before any action that touches production 2Do data, the NAS or the iPhone. Task 2
   and Task 12 use the **test account only**, with synthetic titles.
 - No personal data in the repo; fixtures are committed only after `tools/capture_fixture.py scan`
@@ -235,19 +235,19 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
       pub fn parse(raw_value: &str) -> Option<MetaJson>;   // raw (still TEXT-escaped) X-2DOAPP-METADATA value; None unless <2Do Meta> JSON object
       pub fn encode(&self) -> String;                      // inverse of parse
       pub fn get_i64(&self, key: &str) -> Option<i64>;
-      pub fn set_i64(&mut self, key: &str, v: i64);         // replace in place; append at end if absent
+      pub fn set_i64(&mut self, key: &str, v: i64);         // replace in place; if absent: `StartDate` goes right after `RecurrenceEndRepetitionsOrig`, any other key at the end (as 2Do orders them)
       pub fn set_str(&mut self, key: &str, v: &str);
       pub fn remove(&mut self, key: &str);
   }
-  pub fn default_task_meta(uid: &str) -> MetaJson;  // H10 key set and order, zero values, RUID = uid
+  pub fn default_task_meta() -> MetaJson;  // H10 (as captured): 2Do's plain-task key set and order, zero values, RUID = "" 
   ```
   Percent-encode every byte except ASCII letters, digits and `-._~`. The round-trip test below checks this rule against 2Do's own output.
 
 - [ ] **Step 1: Write the failing tests:**
   - `encode_parse_is_identity_on_fixtures`: for every `X-2DOAPP-METADATA` value in `fixtures/phase0/v1/**.ics`, `MetaJson::parse(v).unwrap().encode() == v`.
   - `set_keeps_key_order`: on the `rule-months-day-1-28/01-create` value, `set_i64("RecurrenceValue", 2)` → decoded JSON keys keep their order; `encode` equals the `03-edit` value of that resource.
-  - `remove_and_append`: `remove("StartDate")` on a value without it is a no-op; `set_i64("StartDate", 1796256000)` appends `StartDate` as the last key.
-  - `default_task_meta_matches_2do`: equals the decoded metadata of the H10 evidence resource with `RUID` replaced (taken from Task 2's one-time `01-create`).
+  - `remove_and_place`: `remove("StartDate")` on a value without it is a no-op. On plain task A's metadata (`fixtures/phase0/v1/plan4-list1/01-create/0a04f22aeb294b719633c978fe1975e5.ics`), `set_i64("StartDate", 1796083200)` encodes equal to task D's 01-create metadata (`855a275473c34da9840a6a76c5f18385.ics`). On task B's (`41b9cdfea48e46fd9da52f9337c3f6c4.ics`), `set_i64("duetime", 1730)` puts `duetime` last, and the result equals task C's 01-create metadata (`3b93fba16ec74e24b2da63a73c29ca8c.ics`).
+  - `default_task_meta_matches_2do`: `default_task_meta().encode()` equals task A's 01-create metadata value.
   - `non_json_is_none`: token-format `@tasktype:project` → `None`.
 - [ ] **Step 2:** Run `cargo test -p twydo-core --test meta_edit`. Expected: FAIL.
 - [ ] **Step 3:** Implement with `serde_json::Map` (preserve_order). Keep `prefix`/`suffix` verbatim.
@@ -282,15 +282,16 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
   Rules (from H1, H2, H7–H9, and `rule-*/03-edit`):
   - `Summary`: trimmed and nonempty, else `EmptyTitle`; written with `escape_text`.
   - `Description(None)`: an existing `DESCRIPTION` becomes empty (H2); if it is absent, it stays absent. `Some(s)`: set, inserted after `SUMMARY` if absent.
-  - `Due`: set or remove `DUE` (dropping `TZID`/`VALUE` params that no longer fit). When the task has `<2Do Meta>` JSON, `DTSTART` mirrors `DUE` (set, change and remove together). Without JSON metadata, `DTSTART` is a real start and stays untouched. A time of 00:00 → `Unsupported("a 00:00 due time is not supported yet (2Do's duetime encoding is not captured)")`.
-  - `Start`: requires `<2Do Meta>` JSON (token metadata → `Unsupported("this task's 2Do metadata format is read-only")`). Without any metadata, insert `default_task_meta(uid)` first. `Some(d)` → `StartDate` = epoch seconds of `d` 00:00 UTC; `None` → remove `StartDate`.
+  - `Due`: set or remove `DUE` (dropping `TZID`/`VALUE` params that no longer fit). When the task has `<2Do Meta>` JSON, `DTSTART` mirrors `DUE` (set, change and remove together), and JSON `duetime` = `hour*100 + minute` for `Due::Time` (00:00 → 0). For `Due::Date` or removal, `duetime` is removed, along with every `VALARM` that has `X-2DOAPP-ISAUTO:1` (2Do's automatic at-due-time alert; H8). Twydo never adds that alert itself. Without JSON metadata, `DTSTART` is a real start and stays untouched.
+  - `Start`: requires `<2Do Meta>` JSON (token metadata → `Unsupported("this task's 2Do metadata format is read-only")`). Without any metadata, insert `default_task_meta()` first. `Some(d)` → `StartDate` = epoch seconds of `d` 00:00 UTC; `None` → remove `StartDate`.
   - `RepeatInterval(n)`: `n >= 1`. `RRULE` gets `INTERVAL=n` appended (or replaced); `n == 1` removes `INTERVAL`. JSON `RecurrenceValue` = n.
   - Every successful call runs `touch` once.
 
-- [ ] **Step 1: Write the failing tests** (input resources come from Task 2 / phase-0 fixtures; `now` = the evidence step's `DTSTAMP`). Each one checks that the changed logical lines are exactly the expected set and that their values equal the evidence values:
-  - `summary_edit_matches_2do` (one-time 01→02), `notes_edit_and_clear_match_2do` (03, 04)
-  - `due_edit_and_remove_match_2do` (date-only 02, 03), `timed_due_edit_matches_2do` (timed 02, 03)
-  - `start_edit_and_remove_match_2do` (start-date 02, 03)
+- [ ] **Step 1: Write the failing tests** (inputs from `fixtures/phase0/v1/plan4-list1/<step>/<uid>.ics`; `now` = the evidence step's `DTSTAMP`). Each one checks that the changed logical lines are exactly the expected set and that their values equal the evidence values; 2Do's own reordering of `DTSTAMP`/`LAST-MODIFIED` is ignored by comparing logical lines by name:
+  - `summary_edit_matches_2do` (A `0a04…` 01→02), `notes_edit_and_clear_match_2do` (B `41b9…` 01→02, 02→03)
+  - `due_edit_and_remove_match_2do` (B 03→04, 04→05), `timed_due_edit_matches_2do` (C `3b93…` 01→02: `duetime` 1845; 02→03: date only, `duetime` and the auto VALARM removed)
+  - `start_edit_and_remove_match_2do` (D `855a…` 01→02, 02→03)
+  - `midnight_due_time_writes_duetime_0`: synthetic, `Due::Time(…T00:00)` → JSON `duetime` 0
   - `repeat_interval_edit_matches_2do`: `rule-months-day-1-28` 02→03 gives `RRULE:FREQ=MONTHLY;INTERVAL=2` and `RecurrenceValue` 2; the same for `rule-years`.
   - `empty_title_rejected`: `Summary("  ")` → `EmptyTitle`, calendar unchanged.
   - `dtstart_without_json_meta_is_left_alone`: a synthetic task with no metadata and its own `DTSTART` keeps `DTSTART` when `DUE` changes.
@@ -310,7 +311,7 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
 - Produces:
   ```rust
   pub fn complete_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError>;  // H3; PERCENT-COMPLETE and COMPLETED inserted after STATUS
-  pub fn reopen_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError>;    // H4
+  pub fn reopen_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError>;    // H4 as captured: STATUS:NEEDS-ACTION, COMPLETED removed, PERCENT-COMPLETE:0 (inserted after STATUS if absent). Also used for a repeat's history copy.
   /// Verified shape only: date-only DUE, RRULE = FREQ=MONTHLY|YEARLY with optional INTERVAL and nothing else.
   pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError>;
   /// Returns (advanced live resource, completed history copy).
@@ -325,7 +326,9 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
   - `next_due` adds `interval` months (monthly) or `12 × interval` months (yearly) with `NaiveDate::checked_add_months`. Any other shape → `Unsupported("repeat rule shape not verified: <rrule>")`. Callers have already excluded days 29–31 and Feb 29 through the gate (Task 9). A `next_due` whose day differs from the input day is a bug: return `Unsupported` rather than clamp.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `one_time_complete_and_reopen_match_2do`: Task 2 `one-time` 04→05 and 05→06, changed-line sets and values as in Task 5.
+  - `one_time_complete_and_reopen_match_2do`: A `0a04…` in `plan4-list1` 02→03 and 03→04, changed-line sets and values as in Task 5.
+  - `history_copy_reopen_matches_2do`: E's copy `7d0349b58c3545d2ba6c8d87bcc45e85.ics` 03→04.
+  - `monthly_copy_and_advance_matches_2do_plan4`: E `44123b09407c4ea1adae8f2ecdb64d49.ics` 02→03 with `copy_uid` `7d0349b58c3545d2ba6c8d87bcc45e85`, compared like the test below (live due `20270110`).
   - `monthly_copy_and_advance_matches_2do`: input `rule-months-day-1-28/01-create/5c07…ics`, `now` = 2026-11-01T12:16:50Z, `copy_uid` = `6f19ef6b404644a38451520da5804e9f`. The live result differs from the input only in `DTSTAMP`, `LAST-MODIFIED`, `DTSTART`, `DUE`, with the 02-complete values (`20261210`). The copy has the same property multiset (name, params, value) as `02-complete/6f19…ics`, except `COMPLETED` = `now` (2Do's own completion time is earlier than its sync stamp).
   - `yearly_copy_and_advance_matches_2do`: same for `rule-years` (due `20271115`).
   - `next_due_intervals`: monthly 2026-12-10 ×2 → 2027-02-10; yearly 2026-11-15 ×2 → 2028-11-15; `FREQ=MONTHLY;BYMONTHDAY=10` → `Unsupported`.
@@ -348,15 +351,15 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
   pub fn new_task(t: &NewTask, uid: &str, now: DateTime<Utc>) -> Result<Calendar, EditError>;
   pub fn file_name(uid: &str) -> String;                        // "<uid>.ics"
   ```
-  Layout follows H10's evidence resource, in its property order, with these differences:
+  Layout follows task A's 01-create resource (`plan4-list1/01-create/0a04…`), in its property order, with these differences:
   `PRODID:-//Twydo//tdo <crate version>//EN`; no `X-2DOAPP-SYNC-*` properties (their meaning is
   unknown); CRLF line endings. `DESCRIPTION` is written empty when `None` (as 2Do does).
-  Metadata is `default_task_meta(uid)`, plus `StartDate` when `start` is set. `DTSTART` mirrors
+  Metadata is `default_task_meta()` (`RUID` empty, as 2Do writes plain tasks), plus `StartDate` when `start` is set and `duetime` for a timed due (as in Task 5); no automatic VALARM. `DTSTART` mirrors
   `DUE`. `CREATED`, `DTSTAMP` and `LAST-MODIFIED` = `now`. Empty title → `EmptyTitle`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `new_uid_shape`: 32 chars, all `[0-9a-f]`, two calls differ.
-  - `new_task_matches_2do_layout`: `NewTask { summary: "Test one-time", due: Some(Date(2026-12-03)), .. }` gives the same property names in the same order as the one-time `01-create` evidence, minus `X-2DOAPP-SYNC-*`. Metadata decodes equal to `default_task_meta(uid)`.
+  - `new_task_matches_2do_layout`: `NewTask { summary: "A", due: Some(Date(2026-12-03)), .. }` gives the same property names in the same order as task A's 01-create resource, minus `X-2DOAPP-*SYNC*`/`X-2DOAPP-AUDIO-DURATION`; its metadata value equals A's.
   - `new_task_reads_back`: `tasks_from_calendar(parse(serialize(new_task(..))))` gives the summary, the due date, `start` from `StartDate`, `kind == Task`, and no warnings.
   - `new_task_empty_title_rejected`.
 - [ ] **Step 2:** Run `cargo test -p twydo-core --test edit_create`. Expected: FAIL.
@@ -489,8 +492,9 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
   ```
   `apply`: `gate::check` (today = `now` in the snapshot's tz). Under the exclusive lock, every
   target file must still equal `snap.source(path)`, else `Stale`. Build the writes: `Create` →
-  `<collection>/<new_uid>.ics`. `Move` → the same bytes and file name in the destination (H5),
-  then the source removed. `Delete` → the file removed. Complete recurring → copy first, then live.
+  `<collection>/<new_uid>.ics`. `Move` (H5 as captured) → a new resource `<to>/<new_uid>.ics`: the
+  source with `UID` = new uid, `touch`, and a non-empty JSON `RUID` set to the new uid; then the
+  source removed. History copies stay where they are. `Delete` → the file removed. Complete recurring → copy first, then live.
   Then run the journal protocol (Task 8). `undo` of an entry requires every file to equal that
   entry's `after` (else `Stale`). Undo of a recurring completion additionally requires edge case
   `reopen-undo-before-after-sync` to be `Pass` in `Verified` mode.
@@ -501,7 +505,7 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
   - `apply_refuses_when_file_changed_since_load`: modify the file after `load` → `Stale`, no journal entry, file unchanged.
   - `undo_restores_bytes_exactly` then `redo_last_reapplies`; `new_apply_clears_redo`.
   - `undo_refuses_after_external_change` → `Stale`.
-  - `move_keeps_file_name_and_bytes`; `delete_then_undo_restores_file`; `create_writes_new_uid_file`.
+  - `move_creates_new_uid_like_2do`: moving E (`plan4-list1/02-edit/44123…`) → one new file in the destination whose logical lines equal the source's except `UID`, `DTSTAMP`, `LAST-MODIFIED` and `RUID` (= the new uid); the source file is gone. `delete_then_undo_restores_file`; `create_writes_new_uid_file`; `undo_move_restores_source_and_removes_copy`.
   - `blocked_op_writes_nothing`: verified-mode embedded matrix → `WriteError::Blocked`, vdir and journal unchanged.
   - `stuck_journal_blocks_writes`: a Prepared conflicting entry → `open` reports it stuck, `apply` → `Stuck`; after `abandon`, `apply` works.
 - [ ] **Step 2:** Run `cargo test -p twydo-core --test store`. Expected: FAIL.
