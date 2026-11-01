@@ -30,6 +30,11 @@ enum Command {
         #[command(subcommand)]
         command: cli::op::OpCommand,
     },
+    /// Sync conflicts
+    Conflicts {
+        #[command(subcommand)]
+        command: cli::conflicts::ConflictsCommand,
+    },
     /// Report whether every active repeat rule class is verified
     Check {
         /// Compatibility matrix file
@@ -55,6 +60,9 @@ fn main() {
         }),
         Command::Op { matrix, command } => {
             std::process::exit(cli::op::run(cli.vdir.as_deref(), matrix.as_ref(), command))
+        }
+        Command::Conflicts { command } => {
+            std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
         }
         Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
         Command::Check { matrix, verbose } => {
