@@ -587,3 +587,77 @@ fn twydo_delete_of_held_item_is_not_lost() {
     assert!(p.synced(&edit));
     assert!(p.synced(&del));
 }
+
+/// `tdo sync` with extra args; returns (exit code, stdout, stderr).
+fn tdo_sync_args(p: &Pair, extra: &[&str]) -> (i32, String, String) {
+    let mut a = vec!["sync"];
+    a.extend_from_slice(extra);
+    let o = p.tdo(&a);
+    (
+        o.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&o.stdout).into_owned(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
+}
+
+fn coll_state(p: &Pair) -> String {
+    let o = p.tdo(&["status"]);
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+#[test]
+fn twydo_emptying_a_list_is_forced() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for u in ["u1", "u2", "u3"] {
+        p.op(&["delete", u]);
+    }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.contains("deleted list \"c1\""), "{out}");
+    for u in ["u1", "u2", "u3"] {
+        assert_eq!(p.read_server(u), None);
+    }
+    assert!(coll_state(&p).contains("c1: ok"), "{}", coll_state(&p));
+}
+
+#[test]
+fn remote_emptied_is_never_forced() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for u in ["u1", "u2", "u3"] {
+        fs::remove_file(p.server().join(COLL).join(format!("{u}.ics"))).unwrap();
+    }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        err.contains(
+            "list \"c1\" was emptied on the server; to apply that here run: tdo sync --force-delete \"c1\""
+        ),
+        "{err}"
+    );
+    assert!(p.read_vdir("u1").is_some());
+    assert!(coll_state(&p).contains("c1: emptied on the server"));
+    let (code, out, err) = tdo_sync_args(&p, &["--force-delete", "c1"]);
+    assert_eq!(code, 0, "{out}{err}");
+    for u in ["u1", "u2", "u3"] {
+        assert_eq!(p.read_vdir(u), None);
+    }
+}
+
+#[test]
+fn local_emptied_without_journal_is_not_forced() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for u in ["u1", "u2", "u3"] {
+        fs::remove_file(p.vdir().join(COLL).join(format!("{u}.ics"))).unwrap();
+    }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        err.contains("was emptied here; to apply that on the server run: tdo sync --force-delete"),
+        "{err}"
+    );
+    assert!(coll_state(&p).contains("c1: emptied here"));
+    assert_eq!(p.read_server("u1"), Some(task("u1", "one")));
+}

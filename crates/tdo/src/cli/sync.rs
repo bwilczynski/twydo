@@ -1,5 +1,6 @@
 //! `tdo sync`, `tdo status`, and starting a background sync.
 
+use std::collections::BTreeMap;
 use std::path::{Component, Path};
 use std::process::{Command, Stdio};
 
@@ -42,7 +43,8 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     if report.skipped.is_some() {
         return 0;
     }
-    let problems = problems(&report);
+    let names = list_names(&cfg, &report);
+    let problems = problems(&report, &names);
     for p in &problems {
         eprintln!("tdo: {p}");
     }
@@ -51,6 +53,9 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     }
     if problems.is_empty() {
         if !background {
+            for c in &report.forced {
+                println!("deleted list \"{}\" on both sides", name_of(&names, c));
+            }
             println!("synced");
         }
         0
@@ -64,8 +69,28 @@ fn error(e: &dyn std::fmt::Display) -> i32 {
     EXIT_ERROR
 }
 
+/// Display names of the lists a run reported on (best effort; empty when unreadable).
+fn list_names(cfg: &Config, r: &RunReport) -> BTreeMap<String, String> {
+    if r.collections.is_empty() && r.forced.is_empty() {
+        return BTreeMap::new();
+    }
+    load_vdir(cfg)
+        .map(|v| {
+            v.collections
+                .into_iter()
+                .filter_map(|c| c.display_name.map(|n| (c.id, n)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The list's display name when known, else its collection id.
+fn name_of<'a>(names: &'a BTreeMap<String, String>, coll: &'a str) -> &'a str {
+    names.get(coll).map_or(coll, String::as_str)
+}
+
 /// One line per thing the user should know about after a run.
-fn problems(r: &RunReport) -> Vec<String> {
+fn problems(r: &RunReport, names: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(t) = &r.transient {
         out.push(format!("sync failed: {t}"));
@@ -74,6 +99,17 @@ fn problems(r: &RunReport) -> Vec<String> {
         match state {
             CollState::Ok => {}
             CollState::Error { .. } if r.transient.is_some() => {}
+            CollState::EmptiedLocal | CollState::EmptiedRemote => {
+                let n = name_of(names, coll);
+                let (where_, to) = if *state == CollState::EmptiedLocal {
+                    ("here", "on the server")
+                } else {
+                    ("on the server", "here")
+                };
+                out.push(format!(
+                    "list \"{n}\" was emptied {where_}; to apply that {to} run: tdo sync --force-delete \"{n}\""
+                ));
+            }
             other => out.push(format!("list \"{coll}\": {}", describe(other))),
         }
     }
