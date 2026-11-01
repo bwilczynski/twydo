@@ -4,8 +4,9 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 **macOS**. Tasks are stored as standard iCalendar (`VTODO`) and synced through CalDAV, so the
 2Do iPhone app keeps working against the same data. Command: `tdo`.
 
-Status: **design spec written; workspace scaffolded, implementation in progress** (plans in
-`docs/superpowers/plans/`), starting with the phase-0 CalDAV compatibility gate.
+Status: **implementation in progress** (plans in `docs/superpowers/plans/`). Plan 1 built the
+phase-0 compatibility-gate kit and a read-only `tdo` (TUI, `export-json`, `check`); edits stay off
+until the phase-0 CalDAV compatibility gate passes.
 
 ## Start here
 
@@ -26,8 +27,12 @@ docs/
   superpowers/specs/   design spec (source of truth)
   design/              chosen UI layout
   reference/2do/       2Do reverse-engineering reference (01–07)
+  phase0/              phase-0 compatibility gate checklist
+  config.md            tdo configuration reference
 crates/
   twydo-core/          library: data model, storage, views
   tdo/                 binary: CLI and TUI
+compat/                phase-0 compatibility matrix
+contrib/               example vdirsyncer configuration
 tools/                 helper scripts
 ```

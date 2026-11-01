@@ -106,7 +106,9 @@ python3 tools/reconcile.py --tz America/New_York "$P0/inventory/inventory.2do.js
 - Use your real IANA zone in `--tz`. Add `--config ~/.config/twydo/config.toml` if list archive
   preferences are configured. Add `--show-titles` only for local reading, never into a committed file.
 - `tdo check` reports which active repeat-rule classes are verified in `compat/matrix.toml`. At this
-  point most are `unverified`, which is expected.
+  point most are `unverified`, which is expected. It also reports `blocked: <n>`, the open tasks
+  Twydo will not edit (for example recurrence overrides or an unsupported repeat rule), grouped by
+  reason; the gate does not pass while any open task is blocked.
 - Output: `$P0/reports/{export.json,check.txt,reconcile.txt}` (first gate report). Explain any
   special-list count differences instead of expecting each Dropbox list to become a collection.
 - Acceptance cases P1, P2 and L1 are checked from your private acceptance file, not from this repo.
@@ -213,6 +215,16 @@ move, delete` for its `case`; record the results in the `mac_to_iphone` / `iphon
     (**execute**). Edit the rule on the phone, sync, capture (**edit**). Repeat for each modifier row:
     `mod:from-completion`, `mod:count`, `mod:until`. `unrecognized` stays `unsupported`. Scenario id:
     `rule-<class>`.
+    - **Observe DTSTART on recurring tasks.** In each `rule-<class>` capture, check whether 2Do writes
+      `DTSTART` on a recurring task that has no start date set in 2Do, that is, as the series anchor
+      rather than as a start date. If it does, Twydo as built would read it as a start date and put
+      every recurring task in Today's In Progress group. Record what you see in the `notes` of the
+      matrix `[[rule]]` rows (and say so even when 2Do writes no `DTSTART`).
+    - `tdo check` classifies a weekly rule on all seven days (`FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU`)
+      as `weekdays-set`, while `tools/reconcile.py` canonicalises the same rule to `FREQ=DAILY` before
+      comparing it with the inventory. Reconcile therefore treats the two spellings as the same
+      rule, while `tdo check` puts them in different classes: a task written either way needs its
+      own class row (`weekdays-set` or `days`) verified.
 
 ### 6d. Other §6 fixture cases
 
