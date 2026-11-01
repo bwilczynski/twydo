@@ -161,7 +161,7 @@ fn vdirsyncer_config_is_passed_as_env() {
     write_script(
         Path::new(&fake),
         &format!(
-            "printf '%s|%s' \"$VDIRSYNCER_CONFIG\" \"$TWYDO_SYNC_HOOKLOG\" > '{}'",
+            "printf '%s|%s|%s' \"$VDIRSYNCER_CONFIG\" \"$TWYDO_SYNC_HOOKLOG\" \"$TWYDO_SYNC_VDIR\" > '{}'",
             out.display()
         ),
     );
@@ -171,7 +171,11 @@ fn vdirsyncer_config_is_passed_as_env() {
     let hook_log = fx.state().join("sync/hook.log");
     assert_eq!(
         got,
-        format!("/some/vdirsyncer/config|{}", hook_log.display())
+        format!(
+            "/some/vdirsyncer/config|{}|{}",
+            hook_log.display(),
+            fx.cfg.vdir.display()
+        )
     );
 }
 
@@ -906,6 +910,27 @@ fn stuck_entry_records_its_unapplied_writes_too() {
     assert_eq!(c.vdir_holds, Side::Remote);
     assert_eq!(c.local.as_deref(), Some(b1.as_str()));
     assert_eq!(c.remote.as_deref(), Some(b0.as_str()));
+}
+
+#[test]
+fn vdirsyncer_keeps_the_shared_lock_after_the_runner_lets_go() {
+    // The fake leaves a process behind with its stdin (as an orphaned vdirsyncer would be
+    // after a Ctrl-C killed tdo): it holds the shared vdir lock until it exits, so the
+    // reconciliation's exclusive lock, and any writer, waits for it.
+    let fx = Fx::new("");
+    let done = fx.path("done");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "exec 3<&0\n(sleep 1; touch '{}') <&3 >/dev/null 2>&1 &\nexit 0",
+            done.display()
+        ),
+    );
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_none(), "{r:?}");
+    assert!(done.exists(), "the run waited for what kept the lock");
+    let _excl = VdirLock::exclusive(&fx.state()).unwrap();
 }
 
 #[test]
