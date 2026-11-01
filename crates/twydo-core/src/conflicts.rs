@@ -1,0 +1,321 @@
+//! The conflict store: both versions of a conflicted task, kept outside the vdir.
+//!
+//! Layout under the per-vdir state directory `<state>`:
+//!
+//! ```text
+//! conflicts/.lock                          conflict store lock
+//! conflicts/<id>/conflict.json             pretty JSON record
+//! conflicts/<id>/local.ics, remote.ics     the two versions (a missing file = that side deleted it)
+//! ```
+//!
+//! The version files are written first and `conflict.json` last, so a record
+//! is visible to readers only once complete. Writers hold `conflicts/.lock`
+//! (the last lock in the project-wide order run lock, vdir lock, conflicts
+//! lock); readers take no lock and read only whole files written atomically.
+
+use std::fs::{self, File, OpenOptions};
+use std::io;
+use std::path::{Path, PathBuf};
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+use crate::store::fsio::{remove_durable, sync_dir, write_atomic};
+use crate::store::journal::new_op_id;
+
+const DIR: &str = "conflicts";
+const LOCK: &str = ".lock";
+const RECORD: &str = "conflict.json";
+const LOCAL: &str = "local.ics";
+const REMOTE: &str = "remote.ics";
+
+/// Which copy of a task.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Local,
+    Remote,
+}
+
+/// What kind of disagreement was recorded.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConflictKind {
+    BothChanged,
+    LocalDeleteRemoteEdit,
+    RemoteDeleteLocalEdit,
+    Journal,
+}
+
+/// Where a conflict is in its life.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ConflictState {
+    Open,
+    Chosen,
+    Resolved,
+    Superseded,
+}
+
+/// A conflict to record. `None` for a version means that side deleted the task.
+pub struct NewConflict {
+    pub uid: String,
+    pub collection: String,
+    /// Vdir-relative path.
+    pub path: String,
+    pub kind: ConflictKind,
+    /// True when vdirsyncer still keeps the two sides apart.
+    pub held: bool,
+    pub vdir_holds: Side,
+    pub local: Option<String>,
+    pub remote: Option<String>,
+}
+
+/// A recorded conflict. The versions are loaded by `get` and `list`, not stored in the JSON.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Conflict {
+    pub id: String,
+    pub uid: String,
+    pub collection: String,
+    pub path: String,
+    pub kind: ConflictKind,
+    pub held: bool,
+    pub vdir_holds: Side,
+    pub detected: DateTime<Utc>,
+    pub state: ConflictState,
+    pub choice: Option<Side>,
+    pub resolved: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub local: Option<String>,
+    #[serde(skip)]
+    pub remote: Option<String>,
+}
+
+impl Conflict {
+    fn unresolved(&self) -> bool {
+        matches!(self.state, ConflictState::Open | ConflictState::Chosen)
+    }
+}
+
+/// Exclusive advisory lock on `conflicts/.lock`, released on drop.
+struct StoreLock(File);
+
+impl Drop for StoreLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
+/// The conflicts of one vdir.
+#[derive(Debug, Clone)]
+pub struct ConflictStore {
+    dir: PathBuf,
+}
+
+fn invalid(msg: String) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, msg)
+}
+
+fn read_opt(path: &Path) -> io::Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+impl ConflictStore {
+    /// Opens the store under `state`, creating `conflicts/`.
+    pub fn open(state: &Path) -> io::Result<ConflictStore> {
+        let dir = state.join(DIR);
+        fs::create_dir_all(&dir)?;
+        Ok(ConflictStore { dir })
+    }
+
+    /// Opens the store if `conflicts/` exists; creates nothing.
+    pub fn existing(state: &Path) -> io::Result<Option<ConflictStore>> {
+        let dir = state.join(DIR);
+        Ok(dir.is_dir().then_some(ConflictStore { dir }))
+    }
+
+    fn lock(&self) -> io::Result<StoreLock> {
+        let f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.dir.join(LOCK))?;
+        f.lock()?;
+        Ok(StoreLock(f))
+    }
+
+    fn entry_dir(&self, id: &str) -> Option<PathBuf> {
+        let ok = !id.is_empty()
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+        ok.then(|| self.dir.join(id))
+    }
+
+    fn load(&self, id: &str) -> io::Result<Option<Conflict>> {
+        let Some(dir) = self.entry_dir(id) else {
+            return Ok(None);
+        };
+        let Some(text) = read_opt(&dir.join(RECORD))? else {
+            return Ok(None);
+        };
+        let mut c: Conflict = serde_json::from_str(&text).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("{}: {e}", dir.join(RECORD).display()),
+            )
+        })?;
+        c.local = read_opt(&dir.join(LOCAL))?;
+        c.remote = read_opt(&dir.join(REMOTE))?;
+        Ok(Some(c))
+    }
+
+    fn save_record(&self, c: &Conflict) -> io::Result<()> {
+        let dir = self.dir.join(&c.id);
+        let mut json = serde_json::to_string_pretty(c).map_err(io::Error::other)?;
+        json.push('\n');
+        write_atomic(&dir.join(RECORD), json.as_bytes())
+    }
+
+    /// Records a conflict. Returns an existing unresolved conflict for the same
+    /// path with the same kind and bytes; otherwise supersedes any other
+    /// unresolved conflict for that path and writes a new one.
+    pub fn record(&self, c: NewConflict, now: DateTime<Utc>) -> io::Result<Conflict> {
+        let _lock = self.lock()?;
+        let mut same_path = Vec::new();
+        for old in self.list()? {
+            if old.path == c.path && old.unresolved() {
+                if old.kind == c.kind && old.local == c.local && old.remote == c.remote {
+                    return Ok(old);
+                }
+                same_path.push(old);
+            }
+        }
+        for mut old in same_path {
+            old.state = ConflictState::Superseded;
+            old.resolved = Some(now);
+            self.save_record(&old)?;
+        }
+        let id = new_op_id(now);
+        let dir = self.dir.join(&id);
+        fs::create_dir(&dir)?;
+        sync_dir(&self.dir)?;
+        if let Some(l) = &c.local {
+            write_atomic(&dir.join(LOCAL), l.as_bytes())?;
+        }
+        if let Some(r) = &c.remote {
+            write_atomic(&dir.join(REMOTE), r.as_bytes())?;
+        }
+        let rec = Conflict {
+            id,
+            uid: c.uid,
+            collection: c.collection,
+            path: c.path,
+            kind: c.kind,
+            held: c.held,
+            vdir_holds: c.vdir_holds,
+            detected: now,
+            state: ConflictState::Open,
+            choice: None,
+            resolved: None,
+            local: c.local,
+            remote: c.remote,
+        };
+        self.save_record(&rec)?;
+        Ok(rec)
+    }
+
+    /// One conflict with its versions, or `None`.
+    pub fn get(&self, id: &str) -> io::Result<Option<Conflict>> {
+        self.load(id)
+    }
+
+    /// All conflicts in id order, versions loaded.
+    pub fn list(&self) -> io::Result<Vec<Conflict>> {
+        let mut ids = Vec::new();
+        for e in fs::read_dir(&self.dir)? {
+            let e = e?;
+            if e.file_type()?.is_dir()
+                && let Some(name) = e.file_name().to_str()
+            {
+                ids.push(name.to_owned());
+            }
+        }
+        ids.sort();
+        let mut out = Vec::new();
+        for id in ids {
+            if let Some(c) = self.load(&id)? {
+                out.push(c);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Conflicts that are Open or Chosen.
+    pub fn unresolved(&self) -> io::Result<Vec<Conflict>> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter(Conflict::unresolved)
+            .collect())
+    }
+
+    fn load_for_update(&self, id: &str) -> io::Result<Conflict> {
+        self.load(id)?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no conflict {id}")))
+    }
+
+    /// Records the user's choice: Open becomes Chosen.
+    pub fn choose(&self, id: &str, side: Side) -> io::Result<()> {
+        let _lock = self.lock()?;
+        let mut c = self.load_for_update(id)?;
+        if c.state != ConflictState::Open {
+            return Err(invalid(format!("conflict {id} is {:?}, not open", c.state)));
+        }
+        c.state = ConflictState::Chosen;
+        c.choice = Some(side);
+        self.save_record(&c)
+    }
+
+    /// Marks a conflict Resolved (idempotent). A Superseded one is an error.
+    pub fn mark_resolved(&self, id: &str, now: DateTime<Utc>) -> io::Result<()> {
+        let _lock = self.lock()?;
+        let mut c = self.load_for_update(id)?;
+        match c.state {
+            ConflictState::Resolved => return Ok(()),
+            ConflictState::Superseded => {
+                return Err(invalid(format!("conflict {id} was superseded")));
+            }
+            _ => {}
+        }
+        c.state = ConflictState::Resolved;
+        c.resolved = Some(now);
+        self.save_record(&c)
+    }
+
+    /// Deletes Resolved and Superseded conflicts resolved before `before`.
+    /// Returns the removed ids.
+    pub fn prune(&self, before: DateTime<Utc>) -> io::Result<Vec<String>> {
+        let _lock = self.lock()?;
+        let mut removed = Vec::new();
+        for c in self.list()? {
+            let done = matches!(c.state, ConflictState::Resolved | ConflictState::Superseded);
+            if done && c.resolved.is_some_and(|r| r < before) {
+                let dir = self.dir.join(&c.id);
+                // The record goes first, so a crash leaves no half-visible entry.
+                remove_durable(&dir.join(RECORD))?;
+                remove_durable(&dir.join(LOCAL))?;
+                remove_durable(&dir.join(REMOTE))?;
+                fs::remove_dir(&dir)?;
+                sync_dir(&self.dir)?;
+                removed.push(c.id);
+            }
+        }
+        Ok(removed)
+    }
+}
