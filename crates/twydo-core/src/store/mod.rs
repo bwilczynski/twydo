@@ -121,8 +121,8 @@ pub fn vdir_state_dir(state_dir: &Path, vdir: &Path) -> io::Result<PathBuf> {
 }
 
 /// For writers: [`vdir_state_dir`], created, with its identity file written if missing.
-/// Fails with `InvalidData` if the identity file names another vdir (a hash collision or a
-/// moved vdir): its journal must not be replayed into this one.
+/// Fails with `InvalidData` if the identity file names another vdir (a hash collision or
+/// manual tampering): its journal must not be replayed into this one.
 pub fn bind_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<PathBuf> {
     let canonical = canonical_vdir(vdir)?;
     let dir = state_dir_for(state_dir, &canonical);
@@ -133,10 +133,15 @@ pub fn bind_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<PathBuf> {
     Ok(dir)
 }
 
-/// For readers: [`vdir_state_dir`] if it exists, else `None`. Creates nothing. Fails with
-/// `InvalidData` if its identity file names another vdir.
+/// For readers: [`vdir_state_dir`] if it exists, else `None`. A vdir that does not exist has
+/// no state either (`None`), so the caller reports the unreadable vdir itself. Creates
+/// nothing. Fails with `InvalidData` if its identity file names another vdir.
 pub fn existing_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<Option<PathBuf>> {
-    let canonical = canonical_vdir(vdir)?;
+    let canonical = match canonical_vdir(vdir) {
+        Ok(c) => c,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
     let dir = state_dir_for(state_dir, &canonical);
     if !dir.is_dir() {
         return Ok(None);
