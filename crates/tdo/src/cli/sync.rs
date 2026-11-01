@@ -185,7 +185,7 @@ pub fn status(vdir: Option<&Path>) -> i32 {
     println!("pending: {}", s.pending);
     println!("conflicts: {}", s.conflicts.len());
     for c in &s.conflicts {
-        println!("  {}  {}  {:?}", c.id, c.path, c.kind);
+        println!("  {}  {}  {}", c.id, c.path, c.kind.words());
     }
     print!("failures: {}", st.failures);
     if st.failures > 0 {

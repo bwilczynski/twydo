@@ -665,3 +665,145 @@ fn local_emptied_without_journal_is_not_forced() {
     assert!(coll_state(&p).contains("c1: emptied here"));
     assert_eq!(p.read_server("u1"), Some(task("u1", "one")));
 }
+
+/// Local delete of `u2` against a remote edit; returns the open conflict id.
+fn local_delete_conflict(p: &Pair) -> String {
+    p.op(&["delete", "u2"]);
+    p.write_server("u2", &task("u2", "two-remote"));
+    assert_eq!(p.tdo_sync().0, 1);
+    p.conflicts().unresolved().unwrap()[0].id.clone()
+}
+
+/// Server delete of `u3` against a local edit; returns the open conflict id.
+fn remote_delete_conflict(p: &Pair) -> String {
+    p.op(&["edit", "u3", "--title", "three-local"]);
+    fs::remove_file(p.server().join(COLL).join("u3.ics")).unwrap();
+    assert_eq!(p.tdo_sync().0, 1);
+    p.conflicts().unresolved().unwrap()[0].id.clone()
+}
+
+fn stdout(o: &Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+#[test]
+fn keep_deletion_deletes_everywhere() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = local_delete_conflict(&p);
+    assert!(
+        p.read_vdir("u2").is_some(),
+        "the vdir holds the remote edit"
+    );
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(p.read_vdir("u2").is_none());
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Resolved
+    );
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.read_vdir("u2").is_none());
+    assert!(p.read_server("u2").is_none());
+}
+
+#[test]
+fn keep_edit_after_remote_delete_is_noop() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = remote_delete_conflict(&p);
+    let edit = p.read_vdir("u3").unwrap();
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(stdout(&o).contains("already in place"), "{}", stdout(&o));
+    assert_eq!(p.read_vdir("u3"), Some(edit.clone()));
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Resolved
+    );
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(p.read_vdir("u3"), Some(edit.clone()));
+    assert_eq!(p.read_server("u3"), Some(edit));
+}
+
+#[test]
+fn keep_remote_deletion_removes_local() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = remote_delete_conflict(&p);
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "remote"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(p.read_vdir("u3").is_none());
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.read_vdir("u3").is_none());
+    assert!(p.read_server("u3").is_none());
+}
+
+#[test]
+fn resolve_held_via_cli() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (op, id) = held_conflict(&p);
+    // Change of mind before the next sync: the later choice wins.
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(stdout(&o).contains("next sync"), "{}", stdout(&o));
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "remote"]);
+    assert!(o.status.success(), "{o:?}");
+    let c = p.conflicts().get(&id).unwrap().unwrap();
+    assert_eq!(
+        (c.state, c.choice),
+        (ConflictState::Chosen, Some(Side::Remote))
+    );
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.synced(&op));
+    let c = p.conflicts().get(&id).unwrap().unwrap();
+    assert_eq!(c.state, ConflictState::Resolved);
+    assert_eq!(
+        p.read_vdir("u1"),
+        Some(task("u1", "one-remote").replace("\r\n", "\n"))
+    );
+    // The server keeps its own (CRLF) bytes; the vdir copy came back with LF.
+    assert_eq!(p.read_server("u1"), Some(task("u1", "one-remote")));
+    // Resolved conflicts cannot be resolved again.
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
+    assert!(!o.status.success());
+}
+
+#[test]
+fn conflicts_lists_kind_in_words() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let o = p.tdo(&["conflicts"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(stdout(&o).contains("no conflicts"), "{}", stdout(&o));
+    let id = local_delete_conflict(&p);
+    let o = p.tdo(&["conflicts"]);
+    assert!(o.status.success(), "{o:?}");
+    let out = stdout(&o);
+    assert!(out.contains(&id), "{out}");
+    assert!(out.contains("two-remote"), "{out}");
+    assert!(
+        out.contains("deleted here, edited on another device"),
+        "{out}"
+    );
+    assert!(out.contains("open"), "{out}");
+    let o = p.tdo(&["conflicts", "show", &id]);
+    assert!(o.status.success(), "{o:?}");
+    let out = stdout(&o);
+    assert!(out.contains("SUMMARY"), "{out}");
+    assert!(out.contains("two-remote"), "{out}");
+    assert!(out.contains("deleted"), "{out}");
+    assert!(out.contains("remote.ics"), "{out}");
+    // `tdo status` words the kind too.
+    let o = p.tdo(&["status"]);
+    assert!(
+        stdout(&o).contains("deleted here, edited on another device"),
+        "{}",
+        stdout(&o)
+    );
+}

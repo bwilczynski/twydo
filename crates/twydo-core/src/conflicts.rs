@@ -47,6 +47,18 @@ pub enum ConflictKind {
     Journal,
 }
 
+impl ConflictKind {
+    /// The kind in words, for people.
+    pub fn words(self) -> &'static str {
+        match self {
+            ConflictKind::BothChanged => "changed here and on another device",
+            ConflictKind::LocalDeleteRemoteEdit => "deleted here, edited on another device",
+            ConflictKind::RemoteDeleteLocalEdit => "edited here, deleted on another device",
+            ConflictKind::Journal => "an interrupted change here meets another device's version",
+        }
+    }
+}
+
 /// Where a conflict is in its life.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -284,12 +296,16 @@ impl ConflictStore {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no conflict {id}")))
     }
 
-    /// Records the user's choice: Open becomes Chosen.
+    /// Records the user's choice: Open becomes Chosen, and a Chosen conflict takes the new
+    /// side (a change of mind before the next sync). Resolved and Superseded ones are errors.
     pub fn choose(&self, id: &str, side: Side) -> io::Result<()> {
         let _lock = self.lock()?;
         let mut c = self.load_for_update(id)?;
-        if c.state != ConflictState::Open {
-            return Err(invalid(format!("conflict {id} is {:?}, not open", c.state)));
+        if !c.unresolved() {
+            return Err(invalid(format!(
+                "conflict {id} is {:?}, not unresolved",
+                c.state
+            )));
         }
         c.state = ConflictState::Chosen;
         c.choice = Some(side);

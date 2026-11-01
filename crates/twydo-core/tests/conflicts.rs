@@ -117,7 +117,13 @@ fn choose_and_resolve_lifecycle() {
         (ConflictState::Chosen, Some(Side::Remote))
     );
     assert_eq!(s.unresolved().unwrap().len(), 1);
-    assert!(s.choose(&c.id, Side::Local).is_err());
+    // Chosen -> Chosen: the user may change their mind before the next sync.
+    s.choose(&c.id, Side::Local).unwrap();
+    let got = s.get(&c.id).unwrap().unwrap();
+    assert_eq!(
+        (got.state, got.choice),
+        (ConflictState::Chosen, Some(Side::Local))
+    );
     s.mark_resolved(&c.id, t(3)).unwrap();
     let got = s.get(&c.id).unwrap().unwrap();
     assert_eq!(
@@ -125,6 +131,7 @@ fn choose_and_resolve_lifecycle() {
         (ConflictState::Resolved, Some(t(3)))
     );
     assert!(s.unresolved().unwrap().is_empty());
+    assert!(s.choose(&c.id, Side::Remote).is_err());
     assert!(s.get("../x").unwrap().is_none());
 }
 

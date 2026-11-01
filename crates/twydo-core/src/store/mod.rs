@@ -286,6 +286,49 @@ impl Store {
         Ok(id)
     }
 
+    /// Writes one file through the journal (kind "resolve") without the gate: it restores a
+    /// version that 2Do or Twydo already wrote. `path` is vdir-relative (`<collection>/<file>`).
+    /// Refused with [`WriteError::Stale`] unless the file holds `expect` (`None`: must not
+    /// exist). `content` `None` deletes the file. Returns the journal entry id.
+    pub fn restore(
+        &mut self,
+        path: &str,
+        expect: Option<&str>,
+        content: Option<&str>,
+        uids: Vec<String>,
+        now: DateTime<Utc>,
+    ) -> Result<String, WriteError> {
+        let plain = Path::new(path).components().count() == 2
+            && Path::new(path)
+                .components()
+                .all(|c| matches!(c, Component::Normal(_)));
+        if !plain {
+            return Err(io_error(
+                io::ErrorKind::InvalidInput,
+                format!("{path} is not a <collection>/<file> path"),
+            ));
+        }
+        let entry = Entry {
+            format: FORMAT,
+            id: new_op_id(now),
+            created: now,
+            kind: "resolve".to_string(),
+            uids,
+            stage: Stage::Prepared,
+            inverse_of: None,
+            synced: None,
+            writes: vec![Write {
+                path: path.to_string(),
+                before: expect.map(str::to_string),
+                after: content.map(str::to_string),
+            }],
+        };
+        let _lock = VdirLock::exclusive(&self.state)?;
+        self.check_not_stuck()?;
+        self.check_holds(path, expect)?;
+        self.run(entry)
+    }
+
     /// Revert entry `id` with a new entry (writes swapped and reversed, `inverse_of` = `id`).
     /// Every file must still hold what `id` wrote. Returns the new entry id.
     pub fn undo(&mut self, id: &str, now: DateTime<Utc>) -> Result<String, WriteError> {

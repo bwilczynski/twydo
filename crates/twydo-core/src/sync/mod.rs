@@ -4,6 +4,7 @@
 pub mod hook;
 pub mod output;
 pub mod reconcile;
+pub mod resolve;
 pub mod run;
 pub mod status;
 

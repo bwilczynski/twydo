@@ -33,7 +33,7 @@ enum Command {
     /// Sync conflicts
     Conflicts {
         #[command(subcommand)]
-        command: cli::conflicts::ConflictsCommand,
+        command: Option<cli::conflicts::ConflictsCommand>,
     },
     /// Sync the vdir with vdirsyncer (`[sync]` in the config)
     Sync {

@@ -579,3 +579,53 @@ fn undo_works_on_synced_entry() {
     store.undo(&id, later()).unwrap();
     assert_eq!(env.files(), before);
 }
+
+#[test]
+fn restore_writes_through_journal_and_refuses_stale() {
+    // Verified mode and an all-unverified matrix: `restore` has no gate.
+    let env = Env::new(WriteMode::Verified);
+    let mut store = env.store(matrix("unverified", "unverified"));
+    let rel = format!("list1/{A}.ics");
+    let before = fs::read_to_string(env.file(A)).unwrap();
+    let id = store
+        .restore(
+            &rel,
+            Some(&before),
+            Some("restored\n"),
+            vec![A.into()],
+            now(),
+        )
+        .unwrap();
+    assert_eq!(fs::read_to_string(env.file(A)).unwrap(), "restored\n");
+    let e = env.journal().into_iter().find(|e| e.id == id).unwrap();
+    assert_eq!(e.kind, "resolve");
+    assert_eq!(e.stage, Stage::Applied);
+    assert_eq!(e.writes[0].before.as_deref(), Some(before.as_str()));
+    assert_eq!(e.writes[0].after.as_deref(), Some("restored\n"));
+    // The file no longer holds `before`: refused, nothing written or journaled.
+    let n = env.journal().len();
+    match store.restore(
+        &rel,
+        Some(&before),
+        Some("again\n"),
+        vec![A.into()],
+        later(),
+    ) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, env.file(A)),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(fs::read_to_string(env.file(A)).unwrap(), "restored\n");
+    assert_eq!(env.journal().len(), n);
+    // Deleting works, and creating requires the file to be absent.
+    store
+        .restore(&rel, Some("restored\n"), None, vec![A.into()], later())
+        .unwrap();
+    assert!(!env.file(A).exists());
+    store
+        .restore(&rel, None, Some("new\n"), vec![A.into()], later())
+        .unwrap();
+    assert!(matches!(
+        store.restore(&rel, None, Some("x\n"), vec![A.into()], later()),
+        Err(WriteError::Stale(_))
+    ));
+}
