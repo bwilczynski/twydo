@@ -78,6 +78,8 @@ impl Env {
         let mut cfg = Config::with_vdir(vdir.clone());
         cfg.timezone = Some("America/New_York".to_string());
         cfg.state_dir = Some(state.clone());
+        // The store keeps its journal in the vdir's own state dir.
+        let state = twydo_core::store::vdir_state_dir(&state, &vdir).unwrap();
         cfg.writes.mode = mode;
         Env {
             _tmp: tmp,

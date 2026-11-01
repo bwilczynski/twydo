@@ -56,6 +56,95 @@ fn io_error(kind: io::ErrorKind, msg: impl Into<String>) -> WriteError {
     WriteError::Io(io::Error::new(kind, msg.into()))
 }
 
+/// Name of the identity file in a per-vdir state directory: the canonical vdir path.
+pub const VDIR_ID_FILE: &str = "vdir";
+
+/// FNV-1a 64 of `bytes`.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+fn canonical_vdir(vdir: &Path) -> io::Result<PathBuf> {
+    fs::canonicalize(vdir).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("cannot resolve vdir {}: {e}", vdir.display()),
+        )
+    })
+}
+
+fn state_dir_for(state_dir: &Path, canonical: &Path) -> PathBuf {
+    let id = fnv1a64(canonical.as_os_str().as_encoded_bytes());
+    state_dir.join("vdirs").join(format!("{id:016x}"))
+}
+
+fn identity_bytes(canonical: &Path) -> Vec<u8> {
+    let mut b = canonical.as_os_str().as_encoded_bytes().to_vec();
+    b.push(b'\n');
+    b
+}
+
+/// Checks the identity file in `dir` names `canonical`. A missing file is accepted.
+/// Returns whether the file exists.
+fn check_identity(dir: &Path, canonical: &Path) -> io::Result<bool> {
+    let found = match fs::read(dir.join(VDIR_ID_FILE)) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if found == identity_bytes(canonical) {
+        return Ok(true);
+    }
+    let named = String::from_utf8_lossy(&found);
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "state dir {} belongs to vdir {}, not {}; refusing to use its journal",
+            dir.display(),
+            named.trim_end_matches('\n'),
+            canonical.display()
+        ),
+    ))
+}
+
+/// The state directory for `vdir` under `state_dir`: `<state_dir>/vdirs/<id>`, where `<id>`
+/// is the 16-hex-digit FNV-1a 64 hash of the canonical vdir path. The journal and the vdir
+/// lock live there, so each vdir has its own. Creates nothing; fails if `vdir` cannot be
+/// canonicalized.
+pub fn vdir_state_dir(state_dir: &Path, vdir: &Path) -> io::Result<PathBuf> {
+    Ok(state_dir_for(state_dir, &canonical_vdir(vdir)?))
+}
+
+/// For writers: [`vdir_state_dir`], created, with its identity file written if missing.
+/// Fails with `InvalidData` if the identity file names another vdir (a hash collision or a
+/// moved vdir): its journal must not be replayed into this one.
+pub fn bind_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<PathBuf> {
+    let canonical = canonical_vdir(vdir)?;
+    let dir = state_dir_for(state_dir, &canonical);
+    if !check_identity(&dir, &canonical)? {
+        fs::create_dir_all(&dir)?;
+        fsio::write_atomic(&dir.join(VDIR_ID_FILE), &identity_bytes(&canonical))?;
+    }
+    Ok(dir)
+}
+
+/// For readers: [`vdir_state_dir`] if it exists, else `None`. Creates nothing. Fails with
+/// `InvalidData` if its identity file names another vdir.
+pub fn existing_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<Option<PathBuf>> {
+    let canonical = canonical_vdir(vdir)?;
+    let dir = state_dir_for(state_dir, &canonical);
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    check_identity(&dir, &canonical)?;
+    Ok(Some(dir))
+}
+
 /// Writes operations to the vdir through the journal, with a session undo/redo stack.
 #[derive(Debug)]
 pub struct Store {
@@ -136,7 +225,7 @@ impl Store {
     /// [`WriteError::Stuck`] until it is [abandoned](Store::abandon).
     pub fn open_with(cfg: &Config, matrix: Matrix) -> Result<(Store, RecoveryReport), WriteError> {
         let vdir = cfg.vdir.clone();
-        let state = cfg.state_dir();
+        let state = bind_vdir_state(&cfg.state_dir(), &vdir)?;
         // Recovery takes the lock itself; the store holds none between operations (R2).
         let report = recover(&vdir, &state)?;
         let journal = Journal::open(&state)?;
@@ -150,6 +239,11 @@ impl Store {
             undone: Vec::new(),
         };
         Ok((store, report))
+    }
+
+    /// The per-vdir state directory holding this store's journal and lock.
+    pub fn state_dir(&self) -> &Path {
+        &self.state
     }
 
     /// Apply `op` to the tasks loaded in `snap`. Refused unless the gate allows it and every

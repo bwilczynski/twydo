@@ -8,12 +8,34 @@ This is the mechanism behind the spec's §6 Recovery contract.
 ## Directory layout
 
 ```
-<state>/                      e.g. $XDG_STATE_HOME/tdo/
-  vdir.lock                   advisory lock file (see "The lock")
-  journal/
-    20261101T120000Z-3fa9c2d1.json   one file per operation, named <id>.json
-    .20261101T120000Z-3fa9c2d1.json.tdo-tmp   transient, only during a write
+<state_dir>/                  e.g. $XDG_STATE_HOME/twydo/
+  vdirs/
+    <id>/                     one per vdir: <state> below
+      vdir                    identity file: the canonical vdir path and a newline
+      vdir.lock               advisory lock file (see "The lock")
+      journal/
+        20261101T120000Z-3fa9c2d1.json   one file per operation, named <id>.json
+        .20261101T120000Z-3fa9c2d1.json.tdo-tmp   transient, only during a write
 ```
+
+Journal write paths are relative to the vdir, so a journal belongs to exactly one
+vdir: replaying it into another one with the same collection names would write
+there. Each vdir therefore has its own state directory, `<state>` in the rest of
+this document. `<id>` is the FNV-1a 64 hash of the canonical vdir path (symlinks
+and `.` resolved) as 16 lowercase hex digits (`twydo_core::store::vdir_state_dir`).
+
+- Writers (`Store::open_with`, hence every `tdo op` command) use
+  `bind_vdir_state`: it creates `<state>` and writes the identity file if it is
+  missing.
+- Readers (startup recovery, the shared lock while loading, `tdo op journal`)
+  use `existing_vdir_state`: it creates nothing and returns nothing when
+  `<state>` does not exist, so a vdir nothing has written to has no state.
+- Both refuse (`InvalidData`, naming both paths) when the identity file names
+  another vdir — a hash collision, or a vdir that moved. Its journal is never
+  replayed; move the directory away to continue.
+
+Journals from before this layout, at `<state_dir>/journal/`, are ignored: they
+are not tied to a vdir, so they cannot be replayed safely.
 
 The operation id is `<YYYYMMDDTHHMMSSZ>-<8 hex>`: the UTC creation time and 8
 random hex digits (`new_op_id`). Ids sort chronologically, and recovery and
@@ -114,7 +136,8 @@ changes nothing.
 
 ## The lock
 
-`<state>/vdir.lock` is an advisory `flock`-style lock (`std::fs::File::lock`).
+`<state>/vdir.lock` is an advisory `flock`-style lock (`std::fs::File::lock`),
+one per vdir.
 Writers hold it exclusively for the whole protocol above; readers that must not
 see a half-applied operation — the notifier and the sync runner — hold it
 shared (`VdirLock::shared`). Taking either lock creates the state directory and

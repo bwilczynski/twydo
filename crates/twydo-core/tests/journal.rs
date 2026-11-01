@@ -6,6 +6,7 @@ use twydo_core::store::fsio::{VdirLock, remove_durable, write_atomic};
 use twydo_core::store::journal::{
     ApplyError, Entry, Journal, Stage, Write, apply_entry, new_op_id, recover, recover_locked,
 };
+use twydo_core::store::{bind_vdir_state, existing_vdir_state, vdir_state_dir};
 
 fn entry(id: &str, writes: Vec<Write>) -> Entry {
     Entry {
@@ -314,4 +315,89 @@ fn reader_lock_only_when_state_dir_exists() {
         g.try_lock(),
         Err(std::fs::TryLockError::WouldBlock)
     ));
+}
+
+#[test]
+fn prepared_entry_for_other_vdir_is_not_replayed() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    fs::create_dir_all(a.join("list1")).unwrap();
+    fs::create_dir_all(b.join("list1")).unwrap();
+    let state = root.path().join("state");
+
+    let sa = bind_vdir_state(&state, &a).unwrap();
+    let id = "20261101T120000Z-00000a0a";
+    let ja = Journal::open(&sa).unwrap();
+    ja.prepare(&entry(id, vec![w("list1/x.ics", None, Some("X"))]))
+        .unwrap();
+
+    // A reader of B finds no state of its own.
+    assert!(existing_vdir_state(&state, &b).unwrap().is_none());
+    // A writer of B gets its own state, and its recovery replays nothing of A's.
+    let sb = bind_vdir_state(&state, &b).unwrap();
+    assert_ne!(sa, sb);
+    let report = recover(&b, &sb).unwrap();
+    assert!(report.resumed.is_empty() && report.stuck.is_empty());
+    assert!(!b.join("list1/x.ics").exists());
+    assert_eq!(ja.get(id).unwrap().unwrap().stage, Stage::Prepared);
+
+    let found = existing_vdir_state(&state, &a).unwrap().unwrap();
+    assert_eq!(found, sa);
+    let report = recover(&a, &found).unwrap();
+    assert_eq!(report.resumed, vec![id.to_string()]);
+    assert_eq!(read(&a.join("list1/x.ics")).as_deref(), Some("X"));
+}
+
+#[test]
+fn identity_mismatch_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let vdir = root.path().join("vdir");
+    fs::create_dir_all(&vdir).unwrap();
+    let state = root.path().join("state");
+    let dir = bind_vdir_state(&state, &vdir).unwrap();
+    let canon = fs::canonicalize(&vdir).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.join("vdir")).unwrap(),
+        format!("{}\n", canon.display())
+    );
+    // Binding again is fine.
+    assert_eq!(bind_vdir_state(&state, &vdir).unwrap(), dir);
+
+    fs::write(dir.join("vdir"), "/somewhere/else\n").unwrap();
+    let e = bind_vdir_state(&state, &vdir).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+    assert!(e.to_string().contains("/somewhere/else"), "{e}");
+    assert!(e.to_string().contains(&canon.display().to_string()), "{e}");
+    let e = existing_vdir_state(&state, &vdir).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn vdir_state_dir_is_stable_and_distinct() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    fs::create_dir_all(&a).unwrap();
+    fs::create_dir_all(&b).unwrap();
+    let state = root.path().join("state");
+    let da = vdir_state_dir(&state, &a).unwrap();
+    assert_eq!(da, vdir_state_dir(&state, &a.join(".")).unwrap());
+    #[cfg(unix)]
+    {
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&a, &link).unwrap();
+        assert_eq!(da, vdir_state_dir(&state, &link).unwrap());
+    }
+    assert_ne!(da, vdir_state_dir(&state, &b).unwrap());
+    let id = da.file_name().unwrap().to_str().unwrap();
+    assert_eq!(da.parent().unwrap(), state.join("vdirs"));
+    assert_eq!(id.len(), 16);
+    assert!(
+        id.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    );
+    // Computing the dir creates nothing; a missing vdir is an error.
+    assert!(!state.exists());
+    assert!(vdir_state_dir(&state, &root.path().join("missing")).is_err());
 }
