@@ -153,6 +153,9 @@ dropped (and by the kernel if the process dies).
 
 ## Retention
 
-Applied entries are kept: they are the record undo/redo and conflict diagnosis
-work from. Pruning them once a sync has confirmed the server holds the result is
-Plan 3's job; until then the journal only grows.
+Applied entries are the record undo/redo and conflict diagnosis work from. An
+entry is pending until a sync confirms the server holds its result (the sync
+runner then sets the optional `synced` timestamp; `format` stays 1 because old
+entries without it read back as pending). A synced entry is pruned
+`retention_days` after confirmation; undo keeps working until then. Prepared and
+Abandoned entries are never pruned.

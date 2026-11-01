@@ -35,6 +35,9 @@ pub struct Entry {
     pub uids: Vec<String>,
     pub stage: Stage,
     pub inverse_of: Option<String>,
+    /// When a sync confirmed the server holds this entry's result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub synced: Option<DateTime<Utc>>,
     pub writes: Vec<Write>,
 }
 
@@ -120,6 +123,38 @@ impl Journal {
         })?;
         e.stage = s;
         self.store(&e)
+    }
+
+    /// Records that a sync confirmed the server holds entry `id`'s result;
+    /// `NotFound` if there is no such entry.
+    pub fn mark_synced(&self, id: &str, at: DateTime<Utc>) -> io::Result<()> {
+        let mut e = self.get(id)?.ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("no journal entry {id}"))
+        })?;
+        e.synced = Some(at);
+        self.store(&e)
+    }
+
+    /// Applied entries not yet confirmed by a sync, sorted by id.
+    pub fn pending(&self) -> io::Result<Vec<Entry>> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .filter(|e| e.stage == Stage::Applied && e.synced.is_none())
+            .collect())
+    }
+
+    /// Removes Applied entries confirmed before `before`; returns their ids.
+    /// Prepared and Abandoned entries are never pruned.
+    pub fn prune(&self, before: DateTime<Utc>) -> io::Result<Vec<String>> {
+        let mut gone = Vec::new();
+        for e in self.list()? {
+            if e.stage == Stage::Applied && e.synced.is_some_and(|t| t < before) {
+                remove_durable(&self.path(&e.id)?)?;
+                gone.push(e.id);
+            }
+        }
+        Ok(gone)
     }
 
     /// Reads entry `id`; `None` if absent, `InvalidData` if it does not parse.

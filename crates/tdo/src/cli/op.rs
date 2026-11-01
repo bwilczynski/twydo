@@ -333,7 +333,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             let journal = twydo_core::store::journal::Journal::open(&state)?;
             for e in journal.list()? {
                 println!(
-                    "{}  {}  {}  {}  {}",
+                    "{}  {}  {}  {}  {}  {}",
                     e.id,
                     e.created.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
                     e.kind,
@@ -341,7 +341,14 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
                         .ok()
                         .and_then(|v| v.as_str().map(str::to_string))
                         .unwrap_or_default(),
-                    e.uids.join(",")
+                    e.uids.join(","),
+                    match e.synced {
+                        Some(t) => format!(
+                            "synced {}",
+                            t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                        ),
+                        None => "pending".to_string(),
+                    }
                 );
             }
             return Ok(());

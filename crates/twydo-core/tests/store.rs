@@ -467,6 +467,7 @@ fn stuck_journal_blocks_writes() {
         uids: vec![A.into()],
         stage: Stage::Prepared,
         inverse_of: None,
+        synced: None,
         writes: vec![Write {
             path: format!("list1/{A}.ics"),
             before: Some("neither".into()),
@@ -564,4 +565,17 @@ fn created_timed_task_has_auto_alarm_and_completes() {
     let t = snap.tasks.iter().find(|t| t.uid == uid).unwrap();
     assert_eq!(t.alarms.len(), 1);
     store.apply(&snap, &complete(&uid), later()).unwrap();
+}
+
+#[test]
+fn undo_works_on_synced_entry() {
+    let (env, mut store) = test_env();
+    let before = env.files();
+    let id = store.apply(&env.snap(), &complete(E), now()).unwrap();
+    Journal::open(&env.state)
+        .unwrap()
+        .mark_synced(&id, later())
+        .unwrap();
+    store.undo(&id, later()).unwrap();
+    assert_eq!(env.files(), before);
 }
