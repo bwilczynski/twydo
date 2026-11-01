@@ -1,0 +1,4 @@
+Syncing twydo/Twydo test
+Syncing twydo/c1
+Doing conflict resolution for item u1...
+Copying (updating) item u1 to twydo_local/c1

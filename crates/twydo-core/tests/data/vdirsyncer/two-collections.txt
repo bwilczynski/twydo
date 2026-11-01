@@ -1,0 +1,4 @@
+Syncing twydo/Twydo test
+Copying (uploading) item t1 to twydo_local/Twydo test
+Syncing twydo/c1
+Copying (uploading) item u9 to twydo_local/c1

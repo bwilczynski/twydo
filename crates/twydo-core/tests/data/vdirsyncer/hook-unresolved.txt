@@ -1,0 +1,5 @@
+Syncing twydo/Twydo test
+Syncing twydo/c1
+Doing conflict resolution for item u1...
+critical: The two files are not completely equal.
+Copying (updating) item u2 to twydo_local/c1
