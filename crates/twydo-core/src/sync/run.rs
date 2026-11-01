@@ -62,6 +62,9 @@ pub struct RunReport {
     pub resolved: Vec<String>,
     /// Paths that changed in the vdir with no conflict to explain it (left pending).
     pub unexpected: Vec<String>,
+    /// Paths the server changed again after their edit synced, confirmed with the server's
+    /// version (see [`super::reconcile::Reconciled::superseded`]).
+    pub superseded: Vec<String>,
     /// Journal entries and conflicts pruned.
     pub pruned: usize,
     pub forced: Vec<String>,
@@ -248,6 +251,7 @@ fn one_pass(
         report.new_conflicts.extend(r.new_conflicts);
         report.resolved.extend(r.resolved);
         report.unexpected.extend(r.unexpected);
+        report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
     }
 
@@ -364,10 +368,11 @@ fn transient(
     }
 }
 
-/// Step 3: rolls Prepared entries forward. For a stuck entry, every write whose file holds
-/// neither its `before` nor its `after` becomes a `Journal` conflict (the vdir keeps the
-/// file as it is), and the entry is abandoned. Writes already applied stay. Entries that
-/// cannot be read or have an invalid path are left stuck. Returns the new conflict ids.
+/// Step 3: rolls Prepared entries forward. For a stuck entry, every write whose file does
+/// not hold its `after` (it holds the `before`, or a third version) becomes a `Journal`
+/// conflict (the vdir keeps the file as it is), and the entry is abandoned. Writes already
+/// applied stay. Entries that cannot be read or have an invalid path are left stuck. Returns
+/// the new conflict ids.
 fn recover_and_park(vdir: &Path, state: &Path, now: DateTime<Utc>) -> io::Result<Vec<String>> {
     let _lock = VdirLock::exclusive(state)?;
     let journal = Journal::open(state)?;
@@ -400,7 +405,9 @@ fn recover_and_park(vdir: &Path, state: &Path, now: DateTime<Utc>) -> io::Result
             };
             let holds =
                 |want: &Option<String>| current.as_deref() == want.as_ref().map(String::as_bytes);
-            if holds(&w.before) || holds(&w.after) {
+            // An applied write stays. One not applied (the file still holds `before`) is
+            // recorded too, so abandoning the entry drops none of its writes unseen.
+            if holds(&w.after) {
                 continue;
             }
             let current = current.map(|b| String::from_utf8_lossy(&b).into_owned());

@@ -51,6 +51,11 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     for path in &report.unexpected {
         eprintln!("tdo: warning: {path} changed before its edit synced; the edit stays pending");
     }
+    for path in &report.superseded {
+        eprintln!(
+            "tdo: warning: {path} was changed on the server after its edit synced; keeping the server's version"
+        );
+    }
     if problems.is_empty() {
         if !background {
             for c in &report.auto_forced {
