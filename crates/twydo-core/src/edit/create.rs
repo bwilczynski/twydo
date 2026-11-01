@@ -1,6 +1,7 @@
 //! Create a task in the layout the 2Do iPhone app writes for a plain task (fixture
 //! `plan4-list1/01-create`). The `X-2DOAPP-SYNC-*` / `AUDIO-DURATION` properties are left out
-//! (meaning unknown). Due, start and `duetime` go through the same setters as edits.
+//! (meaning unknown). Due, start, `duetime` and the automatic alert of a timed due go
+//! through the same setters as edits.
 
 use chrono::{DateTime, Utc};
 
@@ -53,6 +54,10 @@ pub fn new_task(t: &NewTask, uid: &str, now: DateTime<Utc>) -> Result<Calendar, 
     vtodo.insert_prop(prop("LAST-MODIFIED", &stamp), None);
     for p in todo.props {
         vtodo.insert_prop(p, None);
+    }
+    // 2Do's automatic alert of a timed due.
+    for c in todo.children {
+        vtodo.push_child(c);
     }
 
     let mut root = Component::new("VCALENDAR");

@@ -89,8 +89,8 @@ Session 2026-11-01, iPhone 2Do 3.91 against Synology Calendar, vdirsyncer 0.21.0
   of a moved repeating task stay behind and keep pointing (`RUID`) at the old UID.
 - **Timed due dates** carry `duetime` (HHMM integer, e.g. 1730) in `<2Do Meta>`, and the phone
   added an automatic at-due-time alert (`X-2DOAPP-ISAUTO:1`). That alert probably comes from a
-  2Do default-alert setting; Twydo does not create it (it notifies due tasks itself) but removes
-  it with the time, as 2Do does. A 00:00 due time is `duetime: 0` (consistent with 05).
+  2Do default-alert setting; Twydo writes it too when it sets a time (decision of 2026-11-01, see
+  "Automatic alert" below) and removes it with the time, as 2Do does. A 00:00 due time is `duetime: 0` (consistent with 05).
 - **Reopening a repeat's history copy** turns it into an ordinary open task (no `RRULE` comes
   back, `RUID` unchanged); the live task is not touched. Same field changes as a one-time reopen.
 - **New metadata keys are not appended blindly**: `StartDate` sits after
@@ -163,9 +163,12 @@ Edge case `reopen-undo-before-after-sync`: **pass** for Twydo's undo (rounds 05,
 - **Twydo-written resources are accepted by the iPhone.** When the phone edits one, it rewrites
   the whole file in 2Do's form (2Do `PRODID`, LF, `X-2DOAPP-SYNC-*`), with the same content.
 - **Automatic alert.** The phone adds its at-due-time VALARM (`X-2DOAPP-ISAUTO:1`) whenever a time
-  is set *on the phone*. Twydo-created or Twydo-retimed tasks have no alert on the iPhone until the
-  phone edits them. Decision needed: mirror 2Do and write that VALARM too (spec §2 anti-goal:
-  missing a reminder).
+  is set *on the phone*. Until that decision, Twydo-created or Twydo-retimed tasks had no alert on the
+  iPhone until the phone edited them. **Decision taken (mirror 2Do, 2026-11-01):** when Twydo sets
+  a timed due on a task with `<2Do Meta>` JSON and no auto VALARM, it appends 2Do's exact VALARM
+  (as captured for C in `01-create`); a later time change keeps the existing one, removing the time
+  removes it. Still to be checked on the iPhone. Ruling R14: a title edit does not update the auto
+  VALARM's `DESCRIPTION` (what 2Do does there is unverified).
 - **Edit-versus-edit conflict seen live (round 02).** An accidental toggle on the phone and a Twydo
   edit of the same task: vdirsyncer refused both sides, reported the item, and kept syncing the
   others (spec §5 default). Resolved by hand. Plan 3's conflict store must cover this.
