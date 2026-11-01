@@ -370,3 +370,86 @@ fn op_journal_shows_synced() {
         "{j}"
     );
 }
+
+/// Adds a `[sync]` table whose command is a fake script touching `marker`; returns the marker.
+fn with_fake_sync(env: &Env, after_edit: bool) -> PathBuf {
+    use std::io::Write;
+    use std::os::unix::fs::PermissionsExt;
+    let marker = env.dir.path().join("marker");
+    let fake = env.dir.path().join("fake.sh");
+    fs::write(
+        &fake,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\ntouch '{}'\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut cfg = fs::OpenOptions::new()
+        .append(true)
+        .open(env.dir.path().join("config/twydo/config.toml"))
+        .unwrap();
+    write!(
+        cfg,
+        "[sync]\ncommand = \"{}\"\nmetasync = false\nafter_edit = {after_edit}\n",
+        fake.display()
+    )
+    .unwrap();
+    marker
+}
+
+fn marker_appears(marker: &Path) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !marker.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    marker.exists()
+}
+
+/// True if `marker` stays absent for a grace period.
+fn marker_stays_absent(marker: &Path) -> bool {
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    !marker.exists()
+}
+
+#[test]
+fn op_triggers_background_sync() {
+    let env = Env::new("test");
+    let marker = with_fake_sync(&env, true);
+    let o = env.op(&["complete", TASK_E]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(marker_appears(&marker), "no background sync after op edit");
+}
+
+#[test]
+fn op_check_does_not_trigger_sync() {
+    let env = Env::new("test");
+    let marker = with_fake_sync(&env, true);
+    for args in [&["check", TASK_E][..], &["journal"], &["recover"]] {
+        let o = env.op(args);
+        assert!(o.status.success(), "{}", err(&o));
+    }
+    assert!(marker_stays_absent(&marker), "read-only op started a sync");
+}
+
+#[test]
+fn failed_op_does_not_trigger_sync() {
+    let env = Env::new("verified");
+    let marker = with_fake_sync(&env, true);
+    let o = env.op(&["complete", TASK_E]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(marker_stays_absent(&marker), "blocked op started a sync");
+}
+
+#[test]
+fn after_edit_false_does_not_trigger() {
+    let env = Env::new("test");
+    let marker = with_fake_sync(&env, false);
+    let o = env.op(&["complete", TASK_E]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(
+        marker_stays_absent(&marker),
+        "after_edit = false still synced"
+    );
+}

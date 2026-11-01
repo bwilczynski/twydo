@@ -15,6 +15,7 @@ use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::{Store, WriteError, existing_vdir_state};
 use twydo_core::views::Snapshot;
 
+use super::sync::spawn_background;
 use super::{CliError, EXIT_ERROR, resolve_config};
 
 /// Exit code for blocked, stale or stuck operations.
@@ -304,6 +305,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         OpCommand::Move { uid, to } => Op::Move { uid, to },
         OpCommand::Undo { op_id } => {
             println!("{}", store.undo(&op_id, now)?);
+            sync_after_write(&cfg, vdir);
             return Ok(());
         }
         OpCommand::Abandon { op_id } => {
@@ -363,5 +365,13 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     };
     let snap = snapshot(&cfg, store.state_dir())?;
     println!("{}", store.apply(&snap, &op, now)?);
+    sync_after_write(&cfg, vdir);
     Ok(())
+}
+
+/// Starts a background sync after a write that exited 0, when `[sync] after_edit` is on.
+fn sync_after_write(cfg: &Config, vdir: Option<&Path>) {
+    if cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
+        spawn_background(cfg, vdir);
+    }
 }
