@@ -258,7 +258,12 @@ fn set_date_prop(todo: &mut Component, name: &str, v: &IcalDateTime, after: &[&s
 /// `DUE`, plus its 2Do counterparts when the task has `<2Do Meta>` JSON: `DTSTART` mirrors
 /// `DUE` (H7) and `duetime` holds HHMM of a timed due (H8). A due without a time drops
 /// 2Do's automatic at-due-time alert (`X-2DOAPP-ISAUTO:1`); Twydo never adds one.
+/// A due time is written with whole minutes (seconds zeroed), as 2Do writes it.
 fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
+    let due = due.map(|d| match d {
+        Due::Time(t) => Due::Time(t.date().and_hms_opt(t.hour(), t.minute(), 0).unwrap_or(t)),
+        d => d,
+    });
     let json = match meta_of(todo) {
         Meta::Json(m) => Some(m),
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
@@ -306,6 +311,15 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
     Ok(())
 }
 
+/// A `DTSTART` that is not a copy of `DUE` (same parameters and value), or one without `DUE`.
+fn has_own_dtstart(todo: &Component) -> bool {
+    match (todo.prop("DTSTART"), todo.prop("DUE")) {
+        (Some(s), Some(d)) => s.params != d.params || s.value != d.value,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
 fn is_auto_alarm(c: &Component) -> bool {
     c.name == "VALARM"
         && c.prop("X-2DOAPP-ISAUTO")
@@ -313,10 +327,17 @@ fn is_auto_alarm(c: &Component) -> bool {
 }
 
 /// The start date lives only in `<2Do Meta>` `StartDate` (epoch seconds of UTC midnight, H9).
-/// A task without metadata gets 2Do's default metadata first.
+/// A task without metadata gets 2Do's default metadata first, unless it has its own
+/// `DTSTART` (one that does not mirror `DUE`): with JSON metadata `DTSTART` becomes a mirror,
+/// and how 2Do reads that combination is not captured, so it is refused.
 fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditError> {
     let orig = match meta_of(todo) {
         Meta::Json(m) => Some(m),
+        Meta::Absent if has_own_dtstart(todo) => {
+            return Err(unsupported(
+                "setting a start date on a task with its own DTSTART and no 2Do metadata is not supported",
+            ));
+        }
         Meta::Absent => None,
         Meta::Tokens | Meta::UnreadableJson => {
             return Err(unsupported("this task's 2Do metadata format is read-only"));
