@@ -119,11 +119,19 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
     let status_prop = c
         .prop("STATUS")
         .map(|p| p.value.trim().to_ascii_uppercase());
+    // An explicit STATUS wins; COMPLETED alone implies completion only when STATUS is absent.
+    let has_completed = c.prop("COMPLETED").is_some();
     let status = match status_prop.as_deref() {
         Some("CANCELLED") => Status::Cancelled,
         Some("COMPLETED") => Status::Completed,
-        _ if c.prop("COMPLETED").is_some() => Status::Completed,
-        _ => Status::Open,
+        Some(_) => {
+            if has_completed {
+                warnings.push("STATUS and COMPLETED disagree".to_string());
+            }
+            Status::Open
+        }
+        None if has_completed => Status::Completed,
+        None => Status::Open,
     };
 
     let parent = c
@@ -139,6 +147,7 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
         .map(|p| parse_metadata(&unescape_text(&p.value)))
         .unwrap_or_default();
 
+    // An unrecognised `@tasktype` reads as a plain task, as if the token were missing.
     let kind = match meta
         .value("tasktype")
         .map(str::to_ascii_lowercase)
@@ -146,10 +155,16 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
     {
         Some("project") => TaskKind::Project,
         Some("checklist") => TaskKind::Checklist,
-        _ => TaskKind::Task,
+        _ => {
+            if meta.has("tasktype") {
+                let raw = meta.value("tasktype").unwrap_or("");
+                warnings.push(format!("unrecognised @tasktype value: {raw}"));
+            }
+            TaskKind::Task
+        }
     };
 
-    let meta_start = meta_start(&meta);
+    let meta_start = meta_start(&meta, &mut warnings);
     let start = match (dtstart, meta_start) {
         (Some(d), Some(m)) => {
             if !start_agrees(&d, &m) {
@@ -187,12 +202,21 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
 }
 
 /// `@startdate:YYYY-MM-DD` plus optional `@starttime:HH:MM`, as a Date or Floating value.
-fn meta_start(meta: &Metadata) -> Option<IcalDateTime> {
-    let date = NaiveDate::parse_from_str(meta.value("startdate")?, "%Y-%m-%d").ok()?;
-    match meta
-        .value("starttime")
-        .and_then(|t| NaiveTime::parse_from_str(t, "%H:%M").ok())
-    {
+/// A value that does not parse is dropped with a warning (an invalid time keeps the date).
+fn meta_start(meta: &Metadata, warnings: &mut Vec<String>) -> Option<IcalDateTime> {
+    let raw = meta.value("startdate")?;
+    let Ok(date) = NaiveDate::parse_from_str(raw, "%Y-%m-%d") else {
+        warnings.push(format!("invalid @startdate: {raw}"));
+        return None;
+    };
+    let time = meta.value("starttime").and_then(|t| {
+        let parsed = NaiveTime::parse_from_str(t, "%H:%M").ok();
+        if parsed.is_none() {
+            warnings.push(format!("invalid @starttime: {t}"));
+        }
+        parsed
+    });
+    match time {
         Some(t) => Some(IcalDateTime::Floating(date.and_time(t))),
         None => Some(IcalDateTime::Date(date)),
     }

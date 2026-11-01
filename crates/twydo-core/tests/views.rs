@@ -788,6 +788,27 @@ fn untyped_parent_becomes_project() {
 }
 
 #[test]
+fn unrecognised_tasktype_parent_falls_back_to_project() {
+    let mut parent = TaskBuilder::new("p", "inbox").build();
+    parent
+        .meta
+        .tokens
+        .insert("tasktype".to_string(), Some("folder".to_string()));
+    let s = snapshot(
+        vec![parent, TaskBuilder::new("c", "inbox").parent("p").build()],
+        &[],
+    );
+    let p = idx(&s, "p");
+    assert_eq!(s.tasks[p].kind, TaskKind::Project);
+    assert!(
+        s.tasks[p]
+            .warnings
+            .iter()
+            .any(|w| w == "parent type not encoded; shown as project")
+    );
+}
+
+#[test]
 fn unsupported_repeat_rule_blocks_edits() {
     let mut pre = TaskBuilder::new("pre", "inbox")
         .rrule("FREQ=HOURLY")

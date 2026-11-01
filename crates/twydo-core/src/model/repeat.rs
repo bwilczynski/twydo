@@ -266,14 +266,20 @@ fn month_day(r: &RRule, anchor: Option<NaiveDate>) -> Option<u32> {
     }
 }
 
+/// 2Do's nth-weekday rule covers the 1st..5th and the last (-1) weekday of a month.
+fn is_2do_ordinal(n: i8) -> bool {
+    matches!(n, 1..=5 | -1)
+}
+
+/// A yearly rule repeats on its anchor's day; without an anchor the day is unknown.
 fn yearly_supported(r: &RRule, anchor: Option<NaiveDate>) -> bool {
+    let Some(a) = anchor else { return false };
     r.by_day.is_empty()
         && r.by_month_day.is_empty()
         && r.by_set_pos.is_empty()
-        && match (r.by_month.as_slice(), anchor) {
-            ([], _) => true,
-            ([m], None) => (1..=12).contains(m),
-            ([m], Some(a)) => u32::from(*m) == a.month(),
+        && match r.by_month.as_slice() {
+            [] => true,
+            [m] => u32::from(*m) == a.month(),
             _ => false,
         }
 }
@@ -308,12 +314,15 @@ fn base_class(r: &RRule, anchor: Option<NaiveDate>) -> &'static str {
         Freq::Monthly => match monthly_shape(r) {
             None => "unrecognized",
             Some(Monthly::LastDay) => "months-last-day",
-            Some(Monthly::NthWeekday(..)) => "months-nth-weekday",
+            Some(Monthly::NthWeekday(n, _)) if is_2do_ordinal(n) => "months-nth-weekday",
+            Some(Monthly::NthWeekday(..)) => "unrecognized",
             Some(Monthly::SetPos(_, true)) => "months-nth-workday",
             Some(Monthly::SetPos(_, false)) => "months-nth-weekend-day",
+            // Without BYMONTHDAY or an anchor the day of the month is unknown.
             Some(Monthly::Plain) => match month_day(r, anchor) {
+                None => "unrecognized",
                 Some(d) if d >= 29 => "months-day-29-31",
-                _ => "months-day-1-28",
+                Some(_) => "months-day-1-28",
             },
         },
         Freq::Yearly => {

@@ -129,6 +129,65 @@ fn describe_and_classify() {
             "years+until",
         ),
         (
+            "FREQ=MONTHLY;BYDAY=-1FR",
+            "-",
+            false,
+            "The last Fri of each month",
+            "monthly",
+            "months-nth-weekday",
+        ),
+        // 2Do encodes only the 1st..5th and the last weekday of a month.
+        (
+            "FREQ=MONTHLY;BYDAY=7MO",
+            "-",
+            false,
+            "The nth Mon of each month",
+            "monthly",
+            "unrecognized",
+        ),
+        (
+            "FREQ=MONTHLY;BYDAY=-3TU",
+            "-",
+            false,
+            "The nth Tue of each month",
+            "monthly",
+            "unrecognized",
+        ),
+        // Without BYMONTHDAY or an anchor the day of the month is unknown.
+        (
+            "FREQ=MONTHLY",
+            "-",
+            false,
+            "Monthly",
+            "monthly",
+            "unrecognized",
+        ),
+        (
+            "FREQ=MONTHLY;BYMONTHDAY=15",
+            "-",
+            false,
+            "Monthly on the 15th",
+            "monthly",
+            "months-day-1-28",
+        ),
+        // Without an anchor the day of the year is unknown.
+        (
+            "FREQ=YEARLY",
+            "-",
+            false,
+            "Yearly",
+            "yearly",
+            "unrecognized",
+        ),
+        (
+            "FREQ=YEARLY;BYMONTH=3",
+            "-",
+            false,
+            "Yearly",
+            "yearly",
+            "unrecognized",
+        ),
+        (
             "FREQ=MONTHLY;BYHOUR=9",
             "-",
             false,
@@ -185,9 +244,11 @@ fn parse_errors() {
 fn until_date_time_and_anchorless_defaults() {
     let r = parse_rrule("FREQ=YEARLY;UNTIL=20271231T235959Z").unwrap();
     assert!(matches!(r.end, End::Until(_)));
-    assert_eq!(rule_class(&r, None, false), "years+until");
+    assert_eq!(rule_class(&r, None, false), "unrecognized");
+    let anchor = NaiveDate::from_ymd_opt(2026, 11, 15);
+    assert_eq!(rule_class(&r, anchor, false), "years+until");
     assert_eq!(describe(&r, None, false), "Yearly, until 31 Dec 2027");
     let m = parse_rrule("FREQ=MONTHLY").unwrap();
-    assert_eq!(rule_class(&m, None, false), "months-day-1-28");
+    assert_eq!(rule_class(&m, None, false), "unrecognized");
     assert_eq!(describe(&m, None, false), "Monthly");
 }
