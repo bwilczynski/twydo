@@ -46,7 +46,10 @@ in [config.md](config.md) (`[sync]`).
      ```
 
      Adjust `ExecStart` to where `tdo` lives. For the test setup, uncomment the `Environment=`
-     line. A run that skips (backoff, or another runner busy) exits 0.
+     line. A run that skips (backoff, or another runner busy) exits 0. The unit sets
+     `SuccessExitStatus=1`: `tdo sync` exits 1 while a conflict or an emptied list waits for you,
+     or after a failure, and the unit would otherwise show failed every minute; check
+     `tdo status` instead. Exit 2 (configuration or IO error) still marks the unit failed.
 
    - macOS, launchd agent: copy `contrib/launchd/app.twydo.sync.plist` to
      `~/Library/LaunchAgents/`, replace `/usr/local/bin/tdo` and `/Users/USER` with real paths
@@ -70,24 +73,39 @@ One run, in order:
    exits; the running runner then does one more pass, at most twice.
 2. **Backoff.** A background run does nothing while the status says `next_attempt` is in the
    future.
-3. **Recovery.** Unfinished journal entries are rolled forward before vdirsyncer runs. For an entry
-   that cannot be finished, every write whose file holds neither its `before` nor its `after`
-   becomes a `journal` conflict and the entry is abandoned (see Known limits).
+3. **Recovery.** Under the exclusive vdir lock (taken on every run, so the run first waits for a
+   vdirsyncer left over from a killed run), unfinished journal entries are rolled forward before
+   vdirsyncer runs. For an entry that cannot be finished, every write whose file does not hold its
+   `after` (the file holds its `before`, or a third version) becomes a `journal` conflict and the
+   entry is abandoned (see Known limits).
 4. **vdirsyncer** `sync <pair>` runs under the shared vdir lock, so readers (the TUI, `tdo op`
-   reads) continue and writers wait. It is killed after `timeout_secs`. Then `vdirsyncer metasync
+   reads) continue and writers wait. vdirsyncer holds a shared lock of its own too (its stdin is
+   the lock file), which lasts until it exits even if `tdo` does not. The runner sets
+   `TWYDO_SYNC_VDIR` to the vdir, so the hook works on the same vdir as a
+   `tdo --vdir <dir> sync`. It is killed after `timeout_secs`. Then `vdirsyncer metasync
    <pair>` runs if `metasync` is on. A failed metasync is reported (`metasync failed: ...`) but is
    not a sync failure.
 5. **Reconcile**, under the exclusive vdir lock (never held while waiting on the network):
    - Journal entries whose result the server now holds are marked synced. An entry is kept until
      then.
    - vdirsyncer settles delete-versus-edit silently, in both directions. Twydo notices from the
-     journal and records it as a conflict (below), so a deletion is not lost without a trace.
+     journal and records it as a conflict (below), so a deletion is not lost without a trace. A
+     re-upload of Twydo's edit to a server that deleted the item is recorded even when the run
+     failed (the list errored, the run timed out, or printed errors of its own); the entry is
+     confirmed only by a run that counts. If the upload itself failed, the conflict is spurious:
+     keep the local version.
    - Held conflicts that you decided, or that both sides now agree on, are marked resolved.
    - Journal entries and conflicts older than `retention_days` (default 30) are pruned.
 6. **Status.** Each list is classified and `status.json` is written.
 7. **Rerun** if a request arrived meanwhile (at most twice).
 
-A path that changed in the vdir with no conflict to explain it stays pending, with
+A path whose vdir file differs from Twydo's edit after a clean sync of its list, with no
+conflict to explain it, means the server changed the item after the edit reached it in a run
+Twydo did not see (vdirsyncer by hand, or an edit made before sync was turned on). The entry is
+confirmed with the server's version and the run warns once:
+`tdo: warning: <path> was changed on the server after its edit synced; keeping the server's version`.
+If the file still holds what the edit replaced, an unresolved conflict exists for it, or its list
+did not sync cleanly, the entry stays pending instead, and every run warns
 `tdo: warning: <path> changed before its edit synced; the edit stays pending`.
 
 ## Conflicts
@@ -163,7 +181,7 @@ read; do not edit them while a sync runs.
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
-| `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` for vdirsyncer |
+| `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
 | `conflicts/<id>/local.ics`, `remote.ics` | the two versions as plain `.ics`; a missing file means that side deleted the task |
 | `conflicts/.lock` | the conflict store lock |
@@ -174,22 +192,33 @@ Lock order is always run lock, vdir lock, conflicts lock.
 ## Known limits
 
 - **A `journal` conflict leaves already-applied writes in place.** When recovery abandons an
-  entry, writes of that entry that were already applied to the vdir stay; only the writes that
-  collide with a newer version are parked as conflicts.
+  entry, writes of that entry that were already applied to the vdir stay. Every other write of it
+  becomes a `journal` conflict: one that collides with a newer version, and one that was never
+  applied (its remote side is then the unchanged file), so keeping local finishes it.
 - **Deletes without an etag.** vdirsyncer sends deletes to Synology without an etag
   (`Deleting an item with no etag`), and the iPhone may show a one-off "Remote server returned an
   invalid task reference during incremental sync" on its next refresh; a retry succeeds and the data
   is right (docs/phase0/plan4-baseline.md). Twydo cannot prevent this.
-- **vdirsyncer run by hand records but confirms nothing.** If you run `vdirsyncer sync` yourself,
-  the hook still records conflicts (it runs inside vdirsyncer), but nothing confirms journal
-  entries, detects delete-versus-edit, or closes conflicts until the next `tdo sync`. Pending
-  entries are kept until then, so nothing is lost.
+- **Do not run vdirsyncer by hand while Twydo has pending edits.** The hook still records
+  both-changed conflicts (it runs inside vdirsyncer), but nothing confirms journal entries or
+  closes conflicts until the next `tdo sync`, and a delete-versus-edit that vdirsyncer settles
+  silently in that run (it re-uploads Twydo's edit, or restores the other device's edit) leaves
+  no trace for Twydo: a deletion made on the phone can be undone without a conflict. `tdo status`
+  shows `pending: 0` when it is safe.
 - **Chosen versions are written back with LF line endings.** When the hook applies a choice,
   vdirsyncer reads the hook's temporary files in text mode and writes the chosen task back with LF
   instead of CRLF. Whether 2Do on the iPhone accepts this is to be verified on the iPhone.
-- **Ctrl-C does not stop vdirsyncer.** Pressing Ctrl-C during an interactive `tdo sync` does not
-  stop vdirsyncer: it runs in its own process group so that a timeout can kill it together with
-  its child processes, so it finishes on its own.
+- **Ctrl-C does not stop vdirsyncer.** Pressing Ctrl-C (or closing the terminal) during an
+  interactive `tdo sync` stops `tdo` but not vdirsyncer: it runs in its own process group so that
+  a timeout can kill it together with its child processes. It finishes on its own, still holding
+  its shared vdir lock, so writers (`tdo op`, the TUI) and the next `tdo sync` wait until it
+  exits. Its result is not reconciled by the killed run: the next `tdo sync` checks the journal
+  again, but a delete-versus-edit it settled leaves no trace (as for vdirsyncer run by hand), and
+  the `timeout_secs` limit no longer applies to it.
+- **A create edited before it was confirmed.** A task created in Twydo whose create reached the
+  server in a run that did not count (it failed or timed out), then edited in Twydo and deleted
+  on the phone before the next clean sync, is re-uploaded without a conflict: Twydo cannot tell
+  that upload from the create's first one.
 - **Phone behaviour is verified later.** What 2Do on the iPhone does with these flows is checked in
   a later session (docs/phase0/plan3-sync.md, not yet written).
 - **Repeating tasks completed on two devices.** If two devices complete the same repeating task
