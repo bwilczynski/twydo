@@ -65,6 +65,8 @@ pub struct RunReport {
     /// Journal entries and conflicts pruned.
     pub pruned: usize,
     pub forced: Vec<String>,
+    /// The part of `forced` that the runner chose itself (a list Twydo emptied).
+    pub auto_forced: Vec<String>,
     pub metasync_error: Option<String>,
 }
 
@@ -206,7 +208,8 @@ fn one_pass(
         let second = run_command(sync, &args, &hook_log)?;
         merge_forced(&mut out, parse(&sync.pair, &second.stderr), &auto);
         ran.outcome = second.outcome;
-        report.forced.extend(auto);
+        report.forced.extend(auto.iter().cloned());
+        report.auto_forced.extend(auto);
     }
     report.metasync_error = match ran.outcome {
         Outcome::Exited(_) if sync.metasync => metasync(sync, &hook_log)?,
