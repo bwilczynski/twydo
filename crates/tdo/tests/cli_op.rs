@@ -337,3 +337,14 @@ fn op_snapshot_waits_for_writer_lock() {
     let status = child.wait().unwrap();
     assert_eq!(status.code(), Some(0));
 }
+
+/// A missing vdir is reported as unreadable, not as a journal failure.
+#[test]
+fn missing_vdir_reports_only_read_error() {
+    let env = Env::new("verified");
+    let missing = env.dir.path().join("no-such-vdir");
+    let o = env.tdo(&["--vdir", missing.to_str().unwrap(), "check"]);
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(err(&o).contains("cannot read vdir"), "{}", err(&o));
+    assert!(!err(&o).contains("journal recovery failed"), "{}", err(&o));
+}

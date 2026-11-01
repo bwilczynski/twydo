@@ -30,9 +30,16 @@ and `.` resolved) as 16 lowercase hex digits (`twydo_core::store::vdir_state_dir
 - Readers (startup recovery, the shared lock while loading, `tdo op journal`)
   use `existing_vdir_state`: it creates nothing and returns nothing when
   `<state>` does not exist, so a vdir nothing has written to has no state.
-- Both refuse (`InvalidData`, naming both paths) when the identity file names
-  another vdir — a hash collision, or a vdir that moved. Its journal is never
-  replayed; move the directory away to continue.
+- Both refuse (`InvalidData`, naming both paths) when the identity file names a
+  different path than the vdir being opened — only a hash collision or manual
+  tampering does that. Its journal is never replayed; move that directory away
+  to continue.
+- A moved or renamed vdir hashes to a new `<id>`, so it starts with an empty
+  state directory. Its old journal, including any unfinished `prepared`
+  entries, is left behind under the old `<id>` and is not recovered. Before
+  moving a vdir, finish or abandon its unfinished operations (`tdo op journal`,
+  `tdo op abandon`); otherwise move the entries of the old `vdirs/<id>/journal/`
+  into the new one by hand.
 
 Journals from before this layout, at `<state_dir>/journal/`, are ignored: they
 are not tied to a vdir, so they cannot be replayed safely.
