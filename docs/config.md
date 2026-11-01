@@ -38,7 +38,8 @@ into `tdo` with the file at `<path>`. Never use it on real data.
 ## `[sync]`
 
 Optional. A missing `[sync]` table turns sync off; an empty `[sync]` table turns it on with the
-defaults below. Twydo runs the configured vdirsyncer command and has no network code of its own.
+defaults below. Twydo runs the configured vdirsyncer command and has no network code of its own. Setup, behaviour
+and conflict handling are in [sync.md](sync.md).
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -46,7 +47,7 @@ defaults below. Twydo runs the configured vdirsyncer command and has no network 
 | `local_storage` | string | `"twydo_local"` | Name of the pair's vdir-side storage in the vdirsyncer config. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
 | `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
-| `metasync` | bool | `true` | Run `vdirsyncer metasync` before syncing. |
+| `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `after_edit` | bool | `true` | Start a sync after a local edit. |
 | `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |

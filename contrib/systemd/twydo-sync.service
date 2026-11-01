@@ -1,0 +1,9 @@
+[Unit]
+Description=Twydo background sync (tdo sync --background)
+
+[Service]
+Type=oneshot
+# Adjust the path to where `tdo` is installed (this is the `cargo install` location).
+ExecStart=%h/.cargo/bin/tdo sync --background
+# Test setup only: point tdo at the phase-0 config (docs/sync.md).
+#Environment=XDG_CONFIG_HOME=%h/twydo-phase0/xdg
