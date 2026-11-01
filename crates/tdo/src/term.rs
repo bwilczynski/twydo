@@ -98,12 +98,17 @@ fn event_loop(
                         }
                         Outcome::Resolve { id, keep } => {
                             let cfg = &app.snapshot.config;
-                            app.message = Some(match resolve(cfg, &id, keep, Utc::now()) {
+                            let result = resolve(cfg, &id, keep, Utc::now());
+                            // Same rule as `tdo conflicts resolve`: sync after a resolve
+                            // that worked, when `[sync] after_edit` is on.
+                            if result.is_ok() && cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
+                                crate::cli::sync::spawn_background(cfg, Some(&cfg.vdir));
+                            }
+                            app.message = Some(match result {
                                 Ok(Resolution::Recorded) => "kept; applied on the next sync".into(),
                                 Ok(_) => "kept".into(),
                                 Err(e) => format!("resolve failed: {e}"),
                             });
-                            crate::cli::sync::spawn_background(cfg, Some(&cfg.vdir));
                             reload(app, root);
                             refresh_sync(app);
                         }
