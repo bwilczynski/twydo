@@ -14,8 +14,10 @@ use crate::model::meta_edit::{MetaJson, default_task_meta};
 use crate::model::repeat::parse_rrule;
 
 pub mod complete;
+pub mod create;
 
 pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
+pub use create::{file_name, new_task, new_uid};
 
 const META_PROP: &str = "X-2DOAPP-METADATA";
 const META_OPEN: &str = "<2Do Meta>";
