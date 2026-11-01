@@ -97,6 +97,41 @@ pub struct Writes {
     pub mode: WriteMode,
 }
 
+/// `[sync]` table. Absent means sync is off.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct SyncConfig {
+    /// vdirsyncer pair name.
+    pub pair: String,
+    /// vdirsyncer storage name of the vdir side of the pair.
+    pub local_storage: String,
+    /// vdirsyncer executable.
+    pub command: String,
+    /// Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.
+    pub vdirsyncer_config: Option<PathBuf>,
+    pub metasync: bool,
+    pub after_edit: bool,
+    pub timeout_secs: u64,
+    pub max_backoff_secs: u64,
+    pub retention_days: u32,
+}
+
+impl Default for SyncConfig {
+    fn default() -> Self {
+        SyncConfig {
+            pair: "twydo".into(),
+            local_storage: "twydo_local".into(),
+            command: "vdirsyncer".into(),
+            vdirsyncer_config: None,
+            metasync: true,
+            after_edit: true,
+            timeout_secs: 300,
+            max_backoff_secs: 1800,
+            retention_days: 30,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -117,6 +152,8 @@ pub struct Config {
     pub writes: Writes,
     #[serde(default)]
     pub state_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub sync: Option<SyncConfig>,
 }
 
 fn default_week_start() -> Weekday {
@@ -190,6 +227,7 @@ impl Config {
             groups: Vec::new(),
             writes: Writes::default(),
             state_dir: None,
+            sync: None,
         }
     }
 
@@ -205,6 +243,12 @@ impl Config {
         if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
             cfg.vdir = expand_tilde(&cfg.vdir, Path::new(&home));
             cfg.state_dir = cfg.state_dir.map(|d| expand_tilde(&d, Path::new(&home)));
+            if let Some(sync) = &mut cfg.sync {
+                sync.vdirsyncer_config = sync
+                    .vdirsyncer_config
+                    .take()
+                    .map(|p| expand_tilde(&p, Path::new(&home)));
+            }
         }
         Ok(cfg)
     }

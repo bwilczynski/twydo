@@ -35,6 +35,23 @@ their vdir, kept under `state_dir`.
 `tdo op --matrix <path>` is a hidden test-only hook: it replaces the compatibility matrix built
 into `tdo` with the file at `<path>`. Never use it on real data.
 
+## `[sync]`
+
+Optional. A missing `[sync]` table turns sync off; an empty `[sync]` table turns it on with the
+defaults below. Twydo runs the configured vdirsyncer command and has no network code of its own.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `pair` | string | `"twydo"` | vdirsyncer pair to sync. |
+| `local_storage` | string | `"twydo_local"` | Name of the pair's vdir-side storage in the vdirsyncer config. |
+| `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
+| `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
+| `metasync` | bool | `true` | Run `vdirsyncer metasync` before syncing. |
+| `after_edit` | bool | `true` | Start a sync after a local edit. |
+| `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
+| `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
+| `retention_days` | integer | `30` | How long resolved conflict versions are kept. |
+
 ## `[lists.<id>]`
 
 `<id>` is the collection directory name. A list without an entry gets the defaults below.

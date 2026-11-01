@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveTime, Weekday};
-use twydo_core::config::{Config, SortField, WriteMode, expand_tilde, state_dir_from};
+use twydo_core::config::{Config, SortField, SyncConfig, WriteMode, expand_tilde, state_dir_from};
 
 fn parse(s: &str) -> Result<Config, twydo_core::config::ConfigError> {
     let d = tempfile::tempdir().unwrap();
@@ -136,4 +136,56 @@ fn state_dir_from_xdg_and_home() {
     let mut c = Config::with_vdir("/v".into());
     c.state_dir = Some("/s".into());
     assert_eq!(c.state_dir(), PathBuf::from("/s"));
+}
+
+#[test]
+fn sync_absent_means_off() {
+    let c = parse("vdir = \"/x\"").unwrap();
+    assert_eq!(c.sync, None);
+}
+
+#[test]
+fn sync_defaults() {
+    let c = parse("vdir = \"/x\"\n[sync]\n").unwrap();
+    assert_eq!(
+        c.sync,
+        Some(SyncConfig {
+            pair: "twydo".into(),
+            local_storage: "twydo_local".into(),
+            command: "vdirsyncer".into(),
+            vdirsyncer_config: None,
+            metasync: true,
+            after_edit: true,
+            timeout_secs: 300,
+            max_backoff_secs: 1800,
+            retention_days: 30,
+        })
+    );
+}
+
+#[test]
+fn sync_vdirsyncer_config_expands_tilde() {
+    let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
+    let Some(home) = home else {
+        eprintln!("skipping: HOME not set");
+        return;
+    };
+    let c = parse("vdir = \"/x\"\n[sync]\nvdirsyncer_config = \"~/vs/config\"\n").unwrap();
+    assert_eq!(
+        c.sync.unwrap().vdirsyncer_config,
+        Some(Path::new(&home).join("vs/config"))
+    );
+    let c = parse("vdir = \"/x\"\n[sync]\nvdirsyncer_config = \"/abs/config\"\n").unwrap();
+    assert_eq!(
+        c.sync.unwrap().vdirsyncer_config,
+        Some(PathBuf::from("/abs/config"))
+    );
+}
+
+#[test]
+fn sync_unknown_key_is_error() {
+    let e = parse("vdir = \"/x\"\n[sync]\nbogus_key = 1\n")
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("bogus_key"), "{e}");
 }
