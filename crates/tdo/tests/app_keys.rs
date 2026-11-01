@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tdo::app::{App, Mode, Outcome};
+use tdo::app::{App, Mode, Outcome, Pane};
 use twydo_core::config::Config;
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Snapshot, View};
@@ -458,4 +458,32 @@ fn reload_keeps_sidebar_cursor() {
     a.reload(snapshot_of(report()));
     assert_eq!(a.sidebar_cursor, before);
     assert_eq!(a.focus, tdo::app::Pane::Sidebar);
+}
+
+#[test]
+fn narrow_navigation_skips_hidden_details_and_resize_restores_visible_focus() {
+    let mut a = app();
+    a.cursor = 1;
+    let selected = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
+    a.resize(109, 30);
+    a.handle_key(key('l'));
+    assert_eq!(a.focus, Pane::Tasks);
+    a.handle_key(code(KeyCode::Tab));
+    assert_eq!(a.focus, Pane::Sidebar);
+    a.handle_key(code(KeyCode::Tab));
+    assert_eq!(a.focus, Pane::Tasks);
+    a.resize(110, 30);
+    a.handle_key(key('l'));
+    assert_eq!(a.focus, Pane::Details);
+    a.resize(80, 20);
+    assert_eq!(a.focus, Pane::Tasks);
+    assert_eq!(a.page, 8);
+    assert_eq!(a.snapshot.tasks[a.selected().unwrap()].uid, selected);
+    a.resize(160, 30);
+    a.handle_key(code(KeyCode::Tab));
+    assert_eq!(a.focus, Pane::Details);
+    a.handle_key(key('h'));
+    assert_eq!(a.focus, Pane::Tasks);
+    a.handle_key(key('h'));
+    assert_eq!(a.focus, Pane::Sidebar);
 }

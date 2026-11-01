@@ -8,8 +8,9 @@ use chrono_tz::Tz;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::{Color, Modifier};
-use tdo::app::{App, Mode};
+use tdo::app::{App, Mode, Pane};
 use tdo::ui::draw;
 use twydo_core::config::{Config, ListPrefs, Sort, SortField};
 use twydo_core::views::{Snapshot, View, counts};
@@ -52,13 +53,19 @@ fn text(buf: &Buffer) -> String {
         .join("\n")
 }
 
-/// Position of the first cell of `needle` inside the task pane (columns 20..84 at width 120).
+/// Position of text inside the task pane, discovered from the rendered borders.
 fn find_in_tasks(buf: &Buffer, needle: &str) -> (u16, u16) {
+    let start = (1..buf.area.width)
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap();
+    let end = (start + 1..buf.area.width)
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap_or(buf.area.width);
     for y in 0..buf.area.height {
-        let l: Vec<&str> = (20..84).map(|x| buf[(x, y)].symbol()).collect();
+        let l: Vec<&str> = (start..end).map(|x| buf[(x, y)].symbol()).collect();
         let joined = l.concat();
         if let Some(b) = joined.find(needle) {
-            return (20 + joined[..b].chars().count() as u16, y);
+            return (start + joined[..b].chars().count() as u16, y);
         }
     }
     panic!("{needle:?} not in task pane:\n{}", text(buf));
@@ -173,7 +180,7 @@ fn glyphs_and_counts() {
 }
 
 #[test]
-fn selected_row_is_reversed() {
+fn selected_row_has_palette_background_without_reversing_colors() {
     let mut a = app();
     a.view = View::All;
     a.cursor = 1;
@@ -181,7 +188,8 @@ fn selected_row_is_reversed() {
     let rows = a.visible_rows();
     let sel = &a.snapshot.tasks[rows[1].task].summary;
     let (x, y) = find_in_tasks(&buf, sel);
-    assert!(buf[(x, y)].modifier.contains(Modifier::REVERSED));
+    assert!(!buf[(x, y)].modifier.contains(Modifier::REVERSED));
+    assert_eq!(buf[(x, y)].bg, Color::DarkGray);
     let other = &a.snapshot.tasks[rows[0].task].summary;
     let (x, y) = find_in_tasks(&buf, other);
     assert!(!buf[(x, y)].modifier.contains(Modifier::REVERSED));
@@ -603,4 +611,123 @@ fn conflicts_overlay_lists_kind_in_words() {
     assert!(t.contains("changed here and on another device"), "{t}");
     assert!(t.contains("deleted here, edited on another device"), "{t}");
     assert!(t.contains("waiting for sync"), "{t}");
+}
+
+#[test]
+fn sidebar_uses_wide_terminal_space_for_list_names() {
+    let mut a = app();
+    a.snapshot.collections[0].display_name = Some("家計と暮らしの計画".into());
+    let narrow = render(&a, 80, 30);
+    let wide = render(&a, 200, 30);
+    let sidebar_end = |buf: &Buffer| {
+        (1..buf.area.width)
+            .find(|&x| buf[(x, 0)].symbol() == "╭")
+            .unwrap()
+    };
+    assert!(sidebar_end(&wide) > sidebar_end(&narrow));
+    assert!(sidebar_end(&narrow) >= 24);
+    assert!(sidebar_end(&wide) <= 40);
+    assert!(text(&wide).replace(' ', "").contains("家計と暮らしの計画"));
+    // At wide sizes, the count still has room beside the full name.
+    let y = (0..wide.area.height)
+        .find(|&y| {
+            line(&wide, y)
+                .replace(' ', "")
+                .contains("家計と暮らしの計画")
+        })
+        .unwrap();
+    assert!(
+        line(&wide, y)
+            .chars()
+            .take(sidebar_end(&wide) as usize)
+            .any(|c| c.is_ascii_digit())
+    );
+}
+
+#[test]
+fn focus_keys_move_the_active_style_between_panes() {
+    let mut a = app();
+    // Issue #2: l puts focus in Details; the first h must visibly restore Tasks.
+    for (key, pane) in [
+        (KeyCode::Char('l'), Pane::Details),
+        (KeyCode::Char('h'), Pane::Tasks),
+        (KeyCode::Char('h'), Pane::Sidebar),
+        (KeyCode::Tab, Pane::Tasks),
+        (KeyCode::Tab, Pane::Details),
+    ] {
+        a.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+        assert_eq!(a.focus, pane);
+        let buf = render(&a, 160, 30);
+        let (x, y) = find_in_tasks(&buf, "Renew library books");
+        assert!(!buf[(x, y)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(
+            buf[(x, y)].bg,
+            if pane == Pane::Tasks {
+                Color::DarkGray
+            } else {
+                Color::Reset
+            }
+        );
+        assert_eq!(buf[(x, y)].fg, Color::Red);
+        let marker = (0..x)
+            .find(|&col| buf[(col, y)].symbol() == "›")
+            .expect("selected task marker");
+        assert_eq!(
+            buf[(marker, y)].modifier.contains(Modifier::DIM),
+            pane != Pane::Tasks
+        );
+        let bar = (marker + 1..x)
+            .find(|&col| buf[(col, y)].symbol() == "▌")
+            .unwrap();
+        assert!(matches!(buf[(bar, y)].fg, Color::Rgb(..)));
+        let starts: Vec<_> = (0..buf.area.width)
+            .filter(|&col| buf[(col, 0)].symbol() == "╭")
+            .collect();
+        let focused = match pane {
+            Pane::Sidebar => 0,
+            Pane::Tasks => 1,
+            Pane::Details => 2,
+        };
+        for (i, &col) in starts.iter().enumerate() {
+            assert_eq!(
+                buf[(col, 0)].fg,
+                if i == focused {
+                    Color::Blue
+                } else {
+                    Color::Reset
+                }
+            );
+        }
+        let focus_label = match pane {
+            Pane::Sidebar => "Sidebar",
+            Pane::Tasks => "Tasks",
+            Pane::Details => "Details",
+        };
+        assert!(line(&buf, 29).contains(focus_label));
+    }
+}
+
+#[test]
+fn sidebar_active_style_matches_tasks_and_disappears_on_leaving() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    let buf = render(&a, 160, 30);
+    assert_eq!(buf[(4, 1)].bg, Color::DarkGray);
+    assert!(!buf[(4, 1)].modifier.contains(Modifier::REVERSED));
+    a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let buf = render(&a, 160, 30);
+    assert_eq!(buf[(4, 1)].bg, Color::Reset);
+}
+
+#[test]
+fn focus_label_does_not_overwrite_search_or_commands() {
+    let mut a = app();
+    for mode in [Mode::Search, Mode::Command] {
+        a.mode = mode;
+        a.input = "a long synthetic prompt that must remain readable".into();
+        for width in [80, 120, 160] {
+            let buf = render(&a, width, 30);
+            assert!(line(&buf, 29).contains(&a.input));
+        }
+    }
 }

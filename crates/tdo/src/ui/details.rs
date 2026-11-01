@@ -2,13 +2,13 @@
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph, Wrap};
 use twydo_core::format::{describe_alarm, relative_date};
 use twydo_core::model::repeat::{describe, parse_rrule};
 
-use super::{dim, list_name, pane_block};
+use super::{dim, list_name, pane_block, theme};
 use crate::app::{App, Pane};
 
 fn field(label: &str, value: String) -> Line<'static> {
@@ -31,7 +31,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     };
     let t = &app.snapshot.tasks[idx];
     let tz = app.snapshot.tz();
-    let yellow = Style::new().fg(Color::Yellow);
+    let yellow = theme::warning();
 
     let mut lines = vec![
         Line::styled(t.summary.clone(), Style::new().add_modifier(Modifier::BOLD)),

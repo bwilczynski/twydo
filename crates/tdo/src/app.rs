@@ -81,7 +81,11 @@ pub struct App {
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
     pending: Option<char>,
+    details_visible: bool,
 }
+
+/// Terminal width at which the Details pane becomes visible.
+pub(crate) const DETAILS_MIN_TERMINAL: u16 = 110;
 
 const RELOAD_FAILED: &str = "reload failed: ";
 
@@ -110,6 +114,16 @@ impl App {
             now,
             page: 10,
             pending: None,
+            details_visible: true,
+        }
+    }
+
+    /// Keep keyboard focus on a visible pane and paging in step with terminal size.
+    pub fn resize(&mut self, width: u16, height: u16) {
+        self.details_visible = width >= DETAILS_MIN_TERMINAL;
+        self.page = (height.saturating_sub(3) / 2).max(1) as usize;
+        if !self.details_visible && self.focus == Pane::Details {
+            self.focus = Pane::Tasks;
         }
     }
 
@@ -381,7 +395,8 @@ impl App {
             (KeyCode::Tab, _) => {
                 self.focus = match self.focus {
                     Pane::Sidebar => Pane::Tasks,
-                    Pane::Tasks => Pane::Details,
+                    Pane::Tasks if self.details_visible => Pane::Details,
+                    Pane::Tasks => Pane::Sidebar,
                     Pane::Details => Pane::Sidebar,
                 }
             }
@@ -434,7 +449,8 @@ impl App {
             'l' => {
                 self.focus = match self.focus {
                     Pane::Sidebar => Pane::Tasks,
-                    _ => Pane::Details,
+                    _ if self.details_visible => Pane::Details,
+                    _ => Pane::Tasks,
                 }
             }
             '1'..='5' => self.open(NUMBERED_VIEWS[c as usize - '1' as usize].clone()),

@@ -78,7 +78,8 @@ fn event_loop(
     let mut last_tick = Instant::now();
     // When the last change signal arrived, if a reload is still due.
     let mut pending_since: Option<Instant> = None;
-    set_page(app, terminal.size()?.height);
+    let size = terminal.size()?;
+    app.resize(size.width, size.height);
     loop {
         terminal.draw(|f| ui::draw(f, app))?;
         let mut ticked = false;
@@ -115,8 +116,8 @@ fn event_loop(
                     }
                     ticked = true;
                 }
-                Event::Resize(_, h) => {
-                    set_page(app, h);
+                Event::Resize(w, h) => {
+                    app.resize(w, h);
                     ticked = true;
                 }
                 _ => {}
@@ -146,11 +147,6 @@ fn event_loop(
             last_tick = Instant::now();
         }
     }
-}
-
-/// Half the task pane height: the screen minus the status line and the pane's two borders.
-fn set_page(app: &mut App, height: u16) {
-    app.page = (height.saturating_sub(3) / 2).max(1) as usize;
 }
 
 /// Reload under the shared vdir lock (see [`crate::cli::load_vdir`]).

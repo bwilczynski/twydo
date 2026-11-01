@@ -3,7 +3,7 @@
 use chrono::NaiveDate;
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph};
 use twydo_core::format::relative_date;
@@ -12,7 +12,7 @@ use twydo_core::model::{Status, Task, TaskKind};
 use twydo_core::views::{DateGroup, Row, View, build_view, date_group};
 use unicode_width::UnicodeWidthStr;
 
-use super::{bar_color, dim, pad, pane_block, truncate, view_name};
+use super::{bar_color, dim, pad, pane_block, theme, truncate, view_name};
 use crate::app::{App, Pane};
 
 const MAX_HINT: usize = 12;
@@ -174,7 +174,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     } else {
         0
     };
-    let left_fixed = 1 + max_depth + glyph_w + 1 + mark_w;
+    let left_fixed = 2 + max_depth + glyph_w + 1 + mark_w;
     let right =
         |h: usize| (if h > 0 { h + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     if width < left_fixed + right(hint_w) + MIN_TITLE {
@@ -190,7 +190,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             Item::Header(title, overdue, n) => {
                 let count = n.to_string();
                 let style = if *overdue {
-                    Style::new().fg(Color::Red).add_modifier(Modifier::BOLD)
+                    theme::overdue().add_modifier(Modifier::BOLD)
                 } else {
                     Style::new().add_modifier(Modifier::BOLD)
                 };
@@ -239,7 +239,7 @@ fn row_line(
     let t = &app.snapshot.tasks[r.task];
     let overdue = is_overdue(app, r.task);
     let indent = r.depth as usize * 2;
-    let left = 1 + indent + glyph_w + 1 + mark_w;
+    let left = 2 + indent + glyph_w + 1 + mark_w;
     let right = (if hint_w > 0 { hint_w + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     let title_w = width.saturating_sub(left + right);
 
@@ -259,11 +259,19 @@ fn row_line(
     let filler = remaining.saturating_sub(suffix.width());
 
     let text = if overdue {
-        Style::new().fg(Color::Red)
+        theme::overdue()
     } else {
         Style::new()
     };
     let mut spans = vec![
+        Span::styled(
+            if selected { "›" } else { " " },
+            if app.focus == Pane::Tasks {
+                theme::accent()
+            } else {
+                dim()
+            },
+        ),
         Span::styled(
             "▌",
             Style::new().fg(bar_color(&app.snapshot, &t.collection)),
@@ -274,10 +282,7 @@ fn row_line(
     ];
     if mark_w > 0 {
         let mark = if flagged(app, t) { "!" } else { " " };
-        spans.push(Span::styled(
-            pad(mark, mark_w),
-            Style::new().fg(Color::Yellow).add_modifier(Modifier::DIM),
-        ));
+        spans.push(Span::styled(pad(mark, mark_w), theme::warning()));
     }
     spans.extend([
         Span::styled(title, text),
@@ -300,8 +305,8 @@ fn row_line(
         ));
     }
     let mut line = Line::from(spans);
-    if selected {
-        line = line.style(Style::new().add_modifier(Modifier::REVERSED));
+    if selected && app.focus == Pane::Tasks {
+        line = line.style(theme::selection());
     }
     line
 }
