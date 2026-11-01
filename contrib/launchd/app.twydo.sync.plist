@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>app.twydo.sync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Adjust the path to where `tdo` is installed. -->
+        <string>/usr/local/bin/tdo</string>
+        <string>sync</string>
+        <string>--background</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <!-- launchd does not expand `~`: write the full path. -->
+    <string>/Users/USER/Library/Logs/twydo-sync.log</string>
+</dict>
+</plist>

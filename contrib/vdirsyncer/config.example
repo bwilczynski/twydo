@@ -11,12 +11,13 @@ b = "twydo_local"
 collections = ["from a", "from b"]
 metadata = ["displayname", "color"]
 # `a` is the NAS (CalDAV), `b` the local vdir, so the first discover/sync pulls the NAS collections.
-# Deliberately NO conflict_resolution line.
-# Spec section 5 forbids `conflict_resolution = "a wins"` / "b wins": either silently discards
-# one side, possibly a completion, a recurrence advancement or a deletion. With no setting,
-# vdirsyncer reports the conflict as an error and leaves that item untouched while other items
-# keep syncing. Plan 3 adds a conflict store that preserves both versions. Until then, phase 0
-# only records this default behaviour (docs/phase0/README.md, step 6).
+# Conflicts go to Twydo's hook, which keeps BOTH versions outside the vdir and changes nothing
+# until you choose (`tdo conflicts resolve <id> --keep local|remote`; see docs/sync.md).
+# This is NOT `a wins` / `b wins`: spec section 5 forbids those, because either one silently
+# discards a side, possibly a completion, a recurrence advancement or a deletion.
+# `tdo` must be on the PATH of the process that runs vdirsyncer. When only `tdo` has a test
+# XDG_CONFIG_HOME, set `[sync] vdirsyncer_config` so Twydo passes this file as VDIRSYNCER_CONFIG.
+conflict_resolution = ["command", "tdo", "conflicts", "hook"]
 
 [storage twydo_local]
 type = "filesystem"
