@@ -1,0 +1,5 @@
+scenario = "plan4-list1"
+step = "06-delete"
+device = "iphone"
+action = "delete A2 and live E (list2), B and reopened E copy (list1); lists emptied, vdirsyncer needed --force-delete"
+captured_at = "2026-11-01T14:18:48Z"

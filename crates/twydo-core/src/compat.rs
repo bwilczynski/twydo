@@ -192,7 +192,7 @@ mod tests {
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
         assert_eq!(m.operation.len(), 66);
-        let e = m.operation("one-time", "create").unwrap();
+        let e = m.operation("checklist", "create").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Unverified);
         assert!(m.edge_case(&m.edge_case[0].id).is_some());
         assert!(m.operation("nope", "create").is_none());

@@ -1,0 +1,5 @@
+scenario = "plan4-list2"
+step = "03-complete"
+device = "iphone"
+action = "F delete in list2 (vdirsyncer needed --force-delete: list became empty)"
+captured_at = "2026-11-01T14:12:47Z"
