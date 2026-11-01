@@ -11,6 +11,7 @@ use notify::event::{EventKind, MetadataKind, ModifyKind};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use twydo_core::store::fsio::VdirLock;
 use twydo_core::views::Snapshot;
 
 use crate::app::{App, Outcome};
@@ -113,7 +114,13 @@ fn set_page(app: &mut App, height: u16) {
     app.page = (height.saturating_sub(3) / 2).max(1) as usize;
 }
 
+/// Reload under the shared vdir lock (see [`crate::cli::load_vdir`]).
 fn reload(app: &mut App, root: &Path) {
+    let state = app.snapshot.config.state_dir();
+    let _lock = match VdirLock::reader(&state) {
+        Ok(l) => l,
+        Err(e) => return app.reload_failed(format!("cannot lock {}: {e}", state.display())),
+    };
     match twydo_core::vdir::load(root) {
         Ok(report) => {
             let snapshot = Snapshot::new(report, app.snapshot.config.clone());

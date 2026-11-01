@@ -7,6 +7,7 @@ pub mod op;
 use std::path::Path;
 
 use twydo_core::config::{Config, ConfigError};
+use twydo_core::store::fsio::VdirLock;
 use twydo_core::views::Snapshot;
 pub use twydo_core::views::task_rule_class;
 
@@ -21,6 +22,11 @@ pub enum CliError {
     Config(#[from] ConfigError),
     #[error("cannot read vdir {}: {source}", path.display())]
     Vdir {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    #[error("cannot lock state dir {}: {source}", path.display())]
+    Lock {
         path: std::path::PathBuf,
         source: std::io::Error,
     },
@@ -58,11 +64,22 @@ pub fn recover_at_startup(config: &Config) {
 pub fn load_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
     let config = resolve_config(vdir)?;
     recover_at_startup(&config);
-    let report = twydo_core::vdir::load(&config.vdir).map_err(|source| CliError::Vdir {
-        path: config.vdir.clone(),
+    let report = load_vdir(&config)?;
+    Ok(Snapshot::new(report, config))
+}
+
+/// Read the vdir under the shared vdir lock (spec §6: readers never see a partly applied
+/// operation). The lock is taken only when the state dir exists; it is never created here.
+pub fn load_vdir(config: &Config) -> Result<twydo_core::vdir::LoadReport, CliError> {
+    let state = config.state_dir();
+    let _lock = VdirLock::reader(&state).map_err(|source| CliError::Lock {
+        path: state.clone(),
         source,
     })?;
-    Ok(Snapshot::new(report, config))
+    twydo_core::vdir::load(&config.vdir).map_err(|source| CliError::Vdir {
+        path: config.vdir.clone(),
+        source,
+    })
 }
 
 /// Print an error and exit with [`EXIT_ERROR`].

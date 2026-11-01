@@ -67,11 +67,13 @@ pub fn remove_durable(path: &Path) -> io::Result<()> {
 
 /// An advisory lock on `<state>/vdir.lock`, released on drop.
 ///
-/// Writers take it exclusively for a whole operation (prepare, apply, mark
-/// applied); readers such as the notifier and the sync runner take it shared,
-/// so they never observe a half-applied operation. Locks on two separate file
-/// descriptors block each other even inside one process: a caller that already
-/// holds the lock must not take it again (see `journal::recover_locked`).
+/// Writers (the store's apply, undo and redo, and journal recovery) take it
+/// exclusively for a whole operation (prepare, apply, mark applied). Readers
+/// that load the vdir (`tdo tui` and its reloads, `export-json`, `check`) take
+/// it shared with [`VdirLock::reader`] while they load, so they never observe a
+/// half-applied operation. Locks on two separate file descriptors block each
+/// other even inside one process: a caller that already holds the lock must not
+/// take it again (see `journal::recover_locked`).
 #[derive(Debug)]
 pub struct VdirLock(File);
 
@@ -93,11 +95,21 @@ impl VdirLock {
         Ok(VdirLock(f))
     }
 
-    /// Blocks until a shared lock is held.
+    /// Blocks until a shared lock is held. Creates the state directory.
     pub fn shared(state_dir: &Path) -> io::Result<VdirLock> {
         let f = Self::open(state_dir)?;
         f.lock_shared()?;
         Ok(VdirLock(f))
+    }
+
+    /// A reader's lock: [`VdirLock::shared`] when `state_dir` exists, else `None`
+    /// (nothing has ever written through Twydo there, so there is nothing to wait
+    /// for, and a read-only command must not create the directory).
+    pub fn reader(state_dir: &Path) -> io::Result<Option<VdirLock>> {
+        if !state_dir.is_dir() {
+            return Ok(None);
+        }
+        Self::shared(state_dir).map(Some)
     }
 }
 
