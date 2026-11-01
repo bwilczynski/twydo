@@ -206,6 +206,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1872,6 +1873,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "toml",
+ "uuid",
 ]
 
 [[package]]
