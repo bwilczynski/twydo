@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod export;
+pub mod op;
 
 use std::path::Path;
 
@@ -42,10 +43,21 @@ pub fn resolve_config(vdir: Option<&Path>) -> Result<Config, CliError> {
     }
 }
 
+/// Roll forward unfinished journal entries before reading. Problems are reported on stderr
+/// and reading continues, read-only as far as the journal is concerned.
+pub fn recover_at_startup(config: &Config) {
+    match twydo_core::store::journal::recover(&config.vdir, &config.state_dir()) {
+        Ok(report) if report.stuck.is_empty() => {}
+        Ok(_) => eprintln!("tdo: journal has unfinished operations; run 'tdo op journal'"),
+        Err(e) => eprintln!("tdo: journal recovery failed: {e}"),
+    }
+}
+
 /// Load the vdir named by the resolved configuration into a snapshot (its `errors` hold the
 /// files that failed to load).
 pub fn load_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
     let config = resolve_config(vdir)?;
+    recover_at_startup(&config);
     let report = twydo_core::vdir::load(&config.vdir).map_err(|source| CliError::Vdir {
         path: config.vdir.clone(),
         source,

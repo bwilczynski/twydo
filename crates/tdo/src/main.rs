@@ -22,6 +22,14 @@ enum Command {
     Tui,
     /// Export all tasks as JSON (schema v1)
     ExportJson,
+    /// Write operations on tasks (scriptable)
+    Op {
+        /// Compatibility matrix file (test hook)
+        #[arg(long, value_name = "PATH", hide = true)]
+        matrix: Option<PathBuf>,
+        #[command(subcommand)]
+        command: cli::op::OpCommand,
+    },
     /// Report whether every active repeat rule class is verified
     Check {
         /// Compatibility matrix file
@@ -45,6 +53,9 @@ fn main() {
                 std::process::exit(cli::EXIT_ERROR);
             }
         }),
+        Command::Op { matrix, command } => {
+            std::process::exit(cli::op::run(cli.vdir.as_deref(), matrix.as_ref(), command))
+        }
         Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
         Command::Check { matrix, verbose } => {
             cli::check::run(cli.vdir.as_deref(), &matrix, verbose)
