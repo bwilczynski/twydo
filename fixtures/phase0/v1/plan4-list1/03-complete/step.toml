@@ -1,0 +1,5 @@
+scenario = "plan4-list1"
+step = "03-complete"
+device = "iphone"
+action = "A2 complete; B clear notes; C remove time (date only); D remove start; E complete; F delete in list2"
+captured_at = "2026-11-01T14:12:26Z"
