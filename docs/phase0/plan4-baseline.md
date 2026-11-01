@@ -70,7 +70,7 @@ Any ❌ stops Plan 4 until the plan is amended for it.
 | H9 | Start edit changes only `StartDate` in `<2Do Meta>` (epoch seconds of UTC midnight of the start day); removing it deletes the key | ✅ (`StartDate` sits right after `RecurrenceEndRepetitionsOrig` in the key order) | `fixtures/phase0/v1/plan4-list1/01-create`, `02-edit`, `03-complete` (D) |
 | H10 | 2Do creates a plain task with the properties and metadata key order seen in `rule-*/01-create`, with `RecurrenceValue`/`RecurrenceType`/`RecurrenceFrom` = 0 and `RUID` = its own UID | ❌ partly: same layout and key order, recurrence fields 0, but a plain task has `RUID: ""`; only repeating tasks carry their own UID in `RUID` | `fixtures/phase0/v1/plan4-list1/01-create` (A, B vs E, F) |
 | H11 | Completing a monthly task again matches `rule-months-day-1-28/02-complete` (advance live, add copy) | ✅ | `fixtures/phase0/v1/plan4-list1/03-complete` (E: live `44123…`, copy `7d03…`) |
-| H12 | Moving or deleting a recurring task touches only its live resource, not its history copies | ✅ the history copy stays in the source list with `RUID` naming the old UID | `fixtures/phase0/v1/plan4-list1/05-move` (E) |
+| H12 | Moving or deleting a recurring task touches only its live resource, not its history copies | ✅ for move: the history copy stays in the source list with `RUID` naming the old UID. Delete not isolated: the live task and its copy were deleted in the same round, so whether deleting only the live task leaves the copy is not shown (Twydo deletes only the targeted resource) | `fixtures/phase0/v1/plan4-list1/05-move` (E) |
 
 ## Finish (🤖, then 👤)
 
