@@ -247,3 +247,58 @@ fn export_creates_no_state_dir() {
     assert!(o.status.success(), "{}", err(&o));
     assert!(!env.state().exists(), "export-json created the state dir");
 }
+
+/// A Prepared entry whose `before` no longer matches the disk is stuck: readers warn and
+/// still read, writes exit 1 until the entry is abandoned.
+#[test]
+fn stuck_entry_blocks_writes_until_abandoned() {
+    let env = Env::new("test");
+    let rel = format!("list1/{TASK_A}.ics");
+    let disk = fs::read_to_string(env.vdir().join(&rel)).unwrap();
+    let id = "20261101T120000Z-0badf00d";
+    let entry = serde_json::json!({
+        "format": 1,
+        "id": id,
+        "created": "2026-11-01T12:00:00Z",
+        "kind": "edit",
+        "uids": [TASK_A],
+        "stage": "prepared",
+        "inverse_of": null,
+        "writes": [{"path": rel, "before": "neither before", "after": "nor after"}],
+    });
+    let jdir = env.state().join("twydo/journal");
+    fs::create_dir_all(&jdir).unwrap();
+    fs::write(jdir.join(format!("{id}.json")), entry.to_string()).unwrap();
+
+    let o = env.tdo(&["export-json"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(
+        err(&o).contains("tdo: journal has unfinished operations; run 'tdo op journal'"),
+        "{}",
+        err(&o)
+    );
+    assert!(out(&o).contains(TASK_A), "export missing tasks");
+    assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
+
+    let e_file = env.vdir().join(format!("list1/{TASK_E}.ics"));
+    let e_before = fs::read(&e_file).unwrap();
+    let c = env.op(&["complete", TASK_E]);
+    assert_eq!(c.status.code(), Some(1), "{}", err(&c));
+    assert!(
+        err(&c).contains("journal has unfinished operations"),
+        "{}",
+        err(&c)
+    );
+    assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
+    assert_eq!(fs::read(&e_file).unwrap(), e_before);
+
+    let a = env.op(&["abandon", id]);
+    assert!(a.status.success(), "{}", err(&a));
+    assert_eq!(out(&a).trim(), format!("abandoned {id}"));
+    let c = env.op(&["complete", TASK_E]);
+    assert!(c.status.success(), "{}", err(&c));
+    assert!(op_id_ok(&out(&c)), "stdout was {:?}", out(&c));
+    assert_ne!(fs::read(&e_file).unwrap(), e_before);
+    // The abandoned entry's file is left as it was.
+    assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
+}
