@@ -50,6 +50,10 @@ impl MetaJson {
         self.obj.get(key).and_then(Value::as_i64)
     }
 
+    pub fn get_str(&self, key: &str) -> Option<&str> {
+        self.obj.get(key).and_then(Value::as_str)
+    }
+
     /// Replace in place. An absent `StartDate` goes right after `RecurrenceEndRepetitionsOrig`;
     /// any other absent key goes last (as 2Do orders them).
     pub fn set_i64(&mut self, key: &str, v: i64) {

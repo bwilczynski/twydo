@@ -1,0 +1,339 @@
+//! Completion and reopen, as the 2Do iPhone app writes them.
+//!
+//! - One-time complete (H3, `plan4-list1/03-complete` A): `STATUS:COMPLETED`,
+//!   `PERCENT-COMPLETE:100` and `COMPLETED:<UTC>` after `STATUS`.
+//! - Reopen (H4 as captured, `plan4-list1/04-reopen` A and E's history copy):
+//!   `STATUS:NEEDS-ACTION`, `COMPLETED` removed, `PERCENT-COMPLETE:0`.
+//! - Repeat complete (H11, `rule-months-day-1-28/02-complete`, `rule-years/02-complete`):
+//!   copy-and-advance. The live task's due date moves to the next occurrence, and a completed
+//!   history copy with a new UID records the occurrence that was done.
+//!
+//! Only the captured repeat shape is supported: a date-only `DUE`, `RRULE` `FREQ=MONTHLY` or
+//! `FREQ=YEARLY` with an optional `INTERVAL`, repeating from the due date. Anything else is
+//! refused rather than guessed, so a repeating obligation is never advanced wrongly.
+
+use chrono::{DateTime, Datelike, Months, NaiveDate, Utc};
+
+use super::{
+    EditError, Meta, has_own_dtstart, meta_of, set_date_prop, the_todo, touch, unsupported,
+    write_meta,
+};
+use crate::ical::value::{IcalDateTime, format_date_time, parse_date_time};
+use crate::ical::{Calendar, Component, Property};
+use crate::model::meta_edit::MetaJson;
+use crate::model::repeat::{End, Freq, RRule, parse_rrule};
+
+/// 2Do's `RecurrenceType` codes for the verified frequencies (reference 01 §6).
+const TYPE_MONTHLY: i64 = 0x102;
+const TYPE_YEARLY: i64 = 0x103;
+/// `RecurrenceFrom` of a task that repeats from its due date (the only value captured).
+const FROM_DUE: i64 = 1;
+
+#[derive(Debug, PartialEq, Eq)]
+enum State {
+    Open,
+    Completed,
+    Cancelled,
+}
+
+/// The task's state, read the way the model reads it: an explicit `STATUS` wins, and
+/// `COMPLETED` alone means completed only without `STATUS`.
+fn state(todo: &Component) -> State {
+    let status = todo
+        .prop("STATUS")
+        .map(|p| p.value.trim().to_ascii_uppercase());
+    match status.as_deref() {
+        Some("COMPLETED") => State::Completed,
+        Some("CANCELLED") => State::Cancelled,
+        Some(_) => State::Open,
+        None if todo.prop("COMPLETED").is_some() => State::Completed,
+        None => State::Open,
+    }
+}
+
+/// Set a plain-valued property, keeping its bytes when the value is already right. A missing
+/// one goes after the first existing property in `after`.
+fn set_plain(todo: &mut Component, name: &str, value: &str, after: &[&str]) {
+    match todo.prop_mut(name) {
+        Some(p) => {
+            if p.value != value {
+                p.set_value(value);
+            }
+        }
+        None => {
+            let after = after.iter().copied().find(|n| todo.prop(n).is_some());
+            todo.insert_prop(Property::new(name, Vec::new(), value), after);
+        }
+    }
+}
+
+fn set_status(todo: &mut Component, value: &str) {
+    set_plain(todo, "STATUS", value, &["DESCRIPTION", "SUMMARY", "UID"]);
+}
+
+/// `STATUS:COMPLETED`, `PERCENT-COMPLETE:100` and `COMPLETED:<now UTC>` after `STATUS`.
+fn mark_completed(todo: &mut Component, now: DateTime<Utc>) {
+    set_status(todo, "COMPLETED");
+    set_plain(todo, "PERCENT-COMPLETE", "100", &["STATUS"]);
+    let at = IcalDateTime::Utc(now);
+    let (_, stamp) = format_date_time(&at);
+    if let Some(p) = todo.prop_mut("COMPLETED")
+        && !p.params.is_empty()
+    {
+        p.set_params(Vec::new());
+    }
+    set_plain(todo, "COMPLETED", &stamp, &["PERCENT-COMPLETE", "STATUS"]);
+}
+
+/// `STATUS:NEEDS-ACTION`, `COMPLETED` removed, `PERCENT-COMPLETE:0` (after `STATUS` if absent).
+fn mark_open(todo: &mut Component) {
+    set_status(todo, "NEEDS-ACTION");
+    todo.remove_props("COMPLETED");
+    set_plain(todo, "PERCENT-COMPLETE", "0", &["STATUS"]);
+}
+
+/// Complete a task that does not repeat (H3). All or nothing.
+pub fn complete_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    if todo.prop("RRULE").is_some() {
+        return Err(unsupported("use complete_recurring for repeating tasks"));
+    }
+    match state(todo) {
+        State::Open => {}
+        State::Completed => return Err(unsupported("task is already completed")),
+        State::Cancelled => {
+            return Err(unsupported("completing a cancelled task is not supported"));
+        }
+    }
+    mark_completed(todo, now);
+    touch(todo, now);
+    *cal = work;
+    Ok(())
+}
+
+/// Reopen a completed task that does not repeat (H4 as captured). Also reopens a repeat's
+/// history copy, which has no `RRULE`. All or nothing.
+pub fn reopen_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    if todo.prop("RRULE").is_some() {
+        return Err(unsupported("reopening a repeating task is not supported"));
+    }
+    match state(todo) {
+        State::Completed => {}
+        State::Open => return Err(unsupported("task is not completed")),
+        State::Cancelled => return Err(unsupported("reopening a cancelled task is not supported")),
+    }
+    mark_open(todo);
+    touch(todo, now);
+    *cal = work;
+    Ok(())
+}
+
+/// The rule as RRULE text, for messages.
+fn rule_text(r: &RRule) -> String {
+    let join = |v: Vec<String>| v.join(",");
+    let mut parts = vec![format!(
+        "FREQ={}",
+        match r.freq {
+            Freq::Daily => "DAILY",
+            Freq::Weekly => "WEEKLY",
+            Freq::Monthly => "MONTHLY",
+            Freq::Yearly => "YEARLY",
+        }
+    )];
+    if r.interval != 1 {
+        parts.push(format!("INTERVAL={}", r.interval));
+    }
+    if !r.by_day.is_empty() {
+        let days = r.by_day.iter().map(|(n, w)| {
+            let code = w.to_string().to_ascii_uppercase();
+            format!(
+                "{}{}",
+                n.map(|n| n.to_string()).unwrap_or_default(),
+                &code[..2]
+            )
+        });
+        parts.push(format!("BYDAY={}", join(days.collect())));
+    }
+    let nums = |v: &[i8]| join(v.iter().map(|n| n.to_string()).collect());
+    if !r.by_month_day.is_empty() {
+        parts.push(format!("BYMONTHDAY={}", nums(&r.by_month_day)));
+    }
+    if !r.by_month.is_empty() {
+        let months = r.by_month.iter().map(|n| n.to_string()).collect();
+        parts.push(format!("BYMONTH={}", join(months)));
+    }
+    if !r.by_set_pos.is_empty() {
+        parts.push(format!("BYSETPOS={}", nums(&r.by_set_pos)));
+    }
+    match &r.end {
+        End::Never => {}
+        End::Count(n) => parts.push(format!("COUNT={n}")),
+        End::Until(u) => parts.push(format!("UNTIL={}", format_date_time(u).1)),
+    }
+    for (k, v) in &r.unknown {
+        parts.push(format!("{k}={v}"));
+    }
+    parts.join(";")
+}
+
+/// The next due date of a date-only repeat. Verified shape only: `FREQ=MONTHLY|YEARLY` with
+/// an optional `INTERVAL` and nothing else. A result on another day of the month (day 29–31
+/// or Feb 29, which the gate excludes) is refused rather than clamped.
+pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError> {
+    let plain = rule.by_day.is_empty()
+        && rule.by_month_day.is_empty()
+        && rule.by_month.is_empty()
+        && rule.by_set_pos.is_empty()
+        && rule.end == End::Never
+        && rule.unknown.is_empty();
+    let months = match rule.freq {
+        Freq::Monthly if plain => Some(rule.interval),
+        Freq::Yearly if plain => rule.interval.checked_mul(12),
+        _ => None,
+    };
+    let shape = || {
+        unsupported(format!(
+            "repeat rule shape not verified: {}",
+            rule_text(rule)
+        ))
+    };
+    let months = months.filter(|&m| m >= 1).ok_or_else(shape)?;
+    let next = due
+        .checked_add_months(Months::new(months))
+        .ok_or_else(|| unsupported("next due date is out of range"))?;
+    if next.day() != due.day() {
+        return Err(unsupported(format!(
+            "next due date after {due} would not fall on day {} of the month",
+            due.day()
+        )));
+    }
+    Ok(next)
+}
+
+/// The JSON repeat fields must describe the same verified rule as `RRULE`: repeat from the
+/// due date, matching type and interval, no end.
+fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<(), EditError> {
+    let want_type = match rule.freq {
+        Freq::Monthly => TYPE_MONTHLY,
+        Freq::Yearly => TYPE_YEARLY,
+        _ => return Err(unsupported("repeat rule shape not verified")),
+    };
+    let checks = [
+        ("RecurrenceFrom", Some(FROM_DUE)),
+        ("RecurrenceType", Some(want_type)),
+        ("RecurrenceValue", Some(i64::from(rule.interval))),
+    ];
+    for (key, want) in checks {
+        let got = m.get_i64(key);
+        if got != want {
+            return Err(unsupported(format!(
+                "2Do repeat metadata not verified for completion: {key} = {}",
+                got.map_or("missing".to_string(), |v| v.to_string())
+            )));
+        }
+    }
+    if let Some(t) = m.get_i64("RecurrenceEndType")
+        && t != 0
+    {
+        return Err(unsupported(format!(
+            "2Do repeat metadata not verified for completion: RecurrenceEndType = {t}"
+        )));
+    }
+    Ok(())
+}
+
+/// Complete a repeating task the way 2Do does. Returns (the advanced live resource, the
+/// completed history copy with UID `copy_uid`); `cal` is not changed.
+///
+/// - Live: `DUE` and its `DTSTART` mirror move to [`next_due`]; stamps touched.
+/// - Copy: cloned from `cal`; `UID` = `copy_uid`, stamps touched, completed (`STATUS`,
+///   `PERCENT-COMPLETE`, `COMPLETED`), `RRULE` removed, JSON `RecurrenceValue`,
+///   `RecurrenceType`, `RecurrenceFrom` = 0, `RUID` kept (set to the original UID if missing
+///   or empty).
+pub fn complete_recurring(
+    cal: &Calendar,
+    now: DateTime<Utc>,
+    copy_uid: &str,
+) -> Result<(Calendar, Calendar), EditError> {
+    let mut live = cal.clone();
+    let todo = the_todo(&mut live)?;
+    let uid = todo
+        .prop("UID")
+        .map(|p| p.value.clone())
+        .filter(|u| !u.is_empty())
+        .ok_or_else(|| unsupported("task has no UID"))?;
+    if copy_uid.is_empty() || copy_uid == uid {
+        return Err(unsupported("history copy needs a new UID"));
+    }
+    let raw = match todo.props_named("RRULE").collect::<Vec<_>>().as_slice() {
+        [] => return Err(unsupported("task does not repeat")),
+        [p] => p.value.clone(),
+        _ => return Err(unsupported("several RRULEs are not supported")),
+    };
+    if state(todo) != State::Open {
+        return Err(unsupported("only an open repeating task can be completed"));
+    }
+    let rule =
+        parse_rrule(&raw).map_err(|e| unsupported(format!("unreadable repeat rule: {e}")))?;
+    let due_prop = todo
+        .prop("DUE")
+        .ok_or_else(|| unsupported("completing a repeat without a due date is not verified"))?;
+    let due = match parse_date_time(due_prop) {
+        Ok(IcalDateTime::Date(d)) => d,
+        Ok(_) => {
+            return Err(unsupported(
+                "completing a repeat with a due time is not verified",
+            ));
+        }
+        Err(e) => return Err(unsupported(format!("unreadable due date: {e}"))),
+    };
+    let next = next_due(due, &rule).map_err(|e| match e {
+        EditError::Unsupported(m) if m.starts_with("repeat rule shape") => {
+            unsupported(format!("repeat rule shape not verified: {raw}"))
+        }
+        e => e,
+    })?;
+    let meta = match meta_of(todo) {
+        Meta::Json(m) => m,
+        _ => {
+            return Err(unsupported(
+                "completing a repeat without 2Do JSON metadata is not verified",
+            ));
+        }
+    };
+    check_repeat_meta(&meta, &rule)?;
+    let mirror = todo.prop("DTSTART").is_some();
+    if mirror && has_own_dtstart(todo) {
+        return Err(unsupported(
+            "completing a repeat with its own start (DTSTART) is not verified",
+        ));
+    }
+
+    let v = IcalDateTime::Date(next);
+    if mirror {
+        set_date_prop(todo, "DTSTART", &v, &[]);
+    }
+    set_date_prop(todo, "DUE", &v, &[]);
+    touch(todo, now);
+
+    let mut copy = cal.clone();
+    let t = the_todo(&mut copy)?;
+    if let Some(p) = t.prop_mut("UID") {
+        p.set_value(copy_uid);
+    }
+    touch(t, now);
+    mark_completed(t, now);
+    t.remove_props("RRULE");
+    let mut m = meta.clone();
+    for key in ["RecurrenceValue", "RecurrenceType", "RecurrenceFrom"] {
+        m.set_i64(key, 0);
+    }
+    if m.get_str("RUID").is_none_or(str::is_empty) {
+        m.set_str("RUID", &uid);
+    }
+    write_meta(t, Some(&meta), &m);
+    Ok((live, copy))
+}
