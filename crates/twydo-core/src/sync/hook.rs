@@ -27,6 +27,9 @@ use crate::vdir;
 
 /// Environment variable naming the hook log; the runner sets it for vdirsyncer.
 pub const HOOK_LOG_ENV: &str = "TWYDO_SYNC_HOOKLOG";
+/// Environment variable naming the vdir being synced; the runner sets it for vdirsyncer,
+/// so the hook works on the same vdir as a `tdo --vdir <dir> sync`.
+pub const VDIR_ENV: &str = "TWYDO_SYNC_VDIR";
 
 /// One hook call, as one JSON line of the hook log.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]

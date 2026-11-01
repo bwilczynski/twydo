@@ -102,6 +102,18 @@ impl VdirLock {
         Ok(VdirLock(f))
     }
 
+    /// A shared lock on an open file description of its own, for a child process to
+    /// inherit (as its stdin, say: the lock file is empty). It is never unlocked
+    /// explicitly, as a [`VdirLock`] is on drop: the lock lasts until every copy of the
+    /// descriptor is closed, so a child that outlives this process keeps writers waiting
+    /// until it exits. (A dup of a held [`VdirLock`]'s file would not do: its unlock on drop
+    /// releases the lock for every copy.)
+    pub fn shared_for_child(state_dir: &Path) -> io::Result<File> {
+        let f = Self::open(state_dir)?;
+        f.lock_shared()?;
+        Ok(f)
+    }
+
     /// A reader's lock: [`VdirLock::shared`] when `state_dir` exists, else `None`
     /// (nothing has ever written through Twydo there, so there is nothing to wait
     /// for, and a read-only command must not create the directory).

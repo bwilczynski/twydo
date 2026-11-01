@@ -807,3 +807,30 @@ fn conflicts_lists_kind_in_words() {
         stdout(&o)
     );
 }
+
+#[test]
+fn hook_uses_the_vdir_of_tdo_sync() {
+    // `tdo --vdir <dir> sync` against a config whose vdir is another directory: the hook,
+    // started by vdirsyncer without `--vdir`, must record the conflict for `<dir>`.
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let decoy = p.root().join("decoy");
+    fs::create_dir_all(decoy.join(COLL)).unwrap();
+    let cfg = p.root().join("config/twydo/config.toml");
+    let text = fs::read_to_string(&cfg).unwrap().replace(
+        &format!("vdir = \"{}\"", p.vdir().display()),
+        &format!("vdir = \"{}\"", decoy.display()),
+    );
+    fs::write(&cfg, text).unwrap();
+    let (local, remote) = make_conflict(&p);
+    let vdir = p.vdir();
+    let o = p.tdo(&["--vdir", vdir.to_str().unwrap(), "sync"]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(1), "{err}");
+    assert!(err.contains("\"c1\": conflict"), "{err}");
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert!(open[0].held);
+    assert_eq!(open[0].local.as_deref(), Some(local.as_str()));
+    assert_eq!(open[0].remote.as_deref(), Some(remote.as_str()));
+}

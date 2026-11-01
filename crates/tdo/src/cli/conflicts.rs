@@ -8,7 +8,7 @@ use twydo_core::config::Config;
 use twydo_core::conflicts::{Conflict, ConflictState, ConflictStore, Side};
 use twydo_core::ical;
 use twydo_core::store::existing_vdir_state;
-use twydo_core::sync::hook::conflict_hook;
+use twydo_core::sync::hook::{VDIR_ENV, conflict_hook};
 use twydo_core::sync::resolve::{Resolution, resolve};
 
 use super::sync::spawn_background;
@@ -189,9 +189,13 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
 }
 
 /// Exit 0 after recording or applying; 2 on any error, which makes vdirsyncer leave both
-/// sides untouched.
+/// sides untouched. Without `--vdir`, the vdir is the one the runner names in
+/// `TWYDO_SYNC_VDIR` (it may have been given its own `--vdir`), else the config's.
 fn hook(vdir: Option<&Path>, a: &Path, b: &Path) -> i32 {
-    let cfg = match resolve_config(vdir) {
+    let from_runner = std::env::var_os(VDIR_ENV)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from);
+    let cfg = match resolve_config(vdir.or(from_runner.as_deref())) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("tdo: conflict hook: {e}");

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 
 use super::SyncError;
-use super::hook::{HOOK_LOG_ENV, read_hook_log, uid_of};
+use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
 use super::status::{CollState, SyncStatus, backoff, coll_states};
@@ -200,7 +200,13 @@ fn one_pass(
         args.push("--force-delete".into());
         args.extend(force.iter().map(|c| format!("{}/{c}", sync.pair)));
     }
-    let mut ran = run_command(sync, &args, &hook_log)?;
+    let child_env = ChildEnv {
+        sync,
+        hook_log: &hook_log,
+        vdir: &cfg.vdir,
+        state,
+    };
+    let mut ran = run_command(&child_env, &args)?;
     let mut out = parse(&sync.pair, &ran.stderr);
     report.forced.extend(force.iter().cloned());
     // Local emptied by Twydo itself: rerun forced, once, still under the shared lock.
@@ -208,14 +214,14 @@ fn one_pass(
     if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
         let mut args = vec!["sync".to_string(), "--force-delete".to_string()];
         args.extend(auto.iter().map(|c| format!("{}/{c}", sync.pair)));
-        let second = run_command(sync, &args, &hook_log)?;
+        let second = run_command(&child_env, &args)?;
         merge_forced(&mut out, parse(&sync.pair, &second.stderr), &auto);
         ran.outcome = second.outcome;
         report.forced.extend(auto.iter().cloned());
         report.auto_forced.extend(auto);
     }
     report.metasync_error = match ran.outcome {
-        Outcome::Exited(_) if sync.metasync => metasync(sync, &hook_log)?,
+        Outcome::Exited(_) if sync.metasync => metasync(&child_env)?,
         _ => None,
     };
     let hook = read_hook_log(&hook_log)?;
@@ -452,9 +458,10 @@ fn safe_path(vdir: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 /// Runs `<command> metasync <pair>`; returns its failure, if any.
-fn metasync(sync: &SyncConfig, hook_log: &Path) -> Result<Option<String>, SyncError> {
+fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
+    let sync = env.sync;
     let args = ["metasync".to_string(), sync.pair.clone()];
-    let ran = run_command(sync, &args, hook_log)?;
+    let ran = run_command(env, &args)?;
     let first_line = || {
         ran.stderr
             .lines()
@@ -521,20 +528,35 @@ fn kill_tree(child: &mut std::process::Child) {
     let _ = child.kill();
 }
 
-/// Runs `<command> args…` with stdin null, `VDIRSYNCER_CONFIG` (when configured) and the
-/// hook log in the environment. stdout is drained and dropped; stderr is returned. The
-/// child is killed after `timeout_secs`.
-fn run_command(sync: &SyncConfig, args: &[String], hook_log: &Path) -> Result<Ran, SyncError> {
+/// What every vdirsyncer child of one pass gets.
+struct ChildEnv<'a> {
+    sync: &'a SyncConfig,
+    hook_log: &'a Path,
+    vdir: &'a Path,
+    state: &'a Path,
+}
+
+/// Runs `<command> args…` with `VDIRSYNCER_CONFIG` (when configured), the hook log and the
+/// vdir in the environment. Its stdin is a shared lock on the vdir of its own (the lock file
+/// is empty, so it reads EOF as from null): the kernel keeps that lock until the child and
+/// whatever inherited it exit, so a child orphaned by a killed runner (Ctrl-C) still keeps
+/// writers and the next run's recovery waiting. stdout is drained and dropped; stderr is
+/// returned. The child is killed after `timeout_secs`.
+fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
+    let sync = env.sync;
+    let lock = VdirLock::shared_for_child(env.state)?;
     let mut cmd = Command::new(&sync.command);
     cmd.args(args)
-        .env(HOOK_LOG_ENV, hook_log)
-        .stdin(Stdio::null())
+        .env(HOOK_LOG_ENV, env.hook_log)
+        .env(VDIR_ENV, env.vdir)
+        .stdin(Stdio::from(lock))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(vc) = &sync.vdirsyncer_config {
         cmd.env("VDIRSYNCER_CONFIG", vc);
     }
-    // Its own process group, so a timeout also kills what a wrapper script started.
+    // Its own process group, so a timeout also kills what a wrapper script started. A
+    // Ctrl-C at the terminal therefore reaches only tdo; the stdin lock covers that.
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     let mut child = match cmd.spawn() {
