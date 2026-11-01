@@ -77,7 +77,8 @@ impl Snapshot {
             if broken[i] {
                 t.warnings.push(BROKEN_PARENT.to_string());
             }
-            if t.kind == TaskKind::Task && !children[i].is_empty() && !t.meta.has("tasktype") {
+            // A Task kind here means no recognised `@tasktype` (an unrecognised value counts as missing).
+            if t.kind == TaskKind::Task && !children[i].is_empty() {
                 t.kind = TaskKind::Project;
                 t.warnings.push(UNTYPED_PARENT.to_string());
             }

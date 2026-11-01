@@ -178,3 +178,63 @@ fn missing_summary_and_non_todo_components() {
     let v = load(b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:e\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
     assert!(v.is_empty());
 }
+
+#[test]
+fn explicit_open_status_wins_over_leftover_completed() {
+    for status in ["NEEDS-ACTION", "IN-PROCESS"] {
+        let t = todo(&format!("STATUS:{status}\r\nCOMPLETED:20261103T120000Z"));
+        assert_eq!(t.status, Status::Open, "{status}");
+        assert!(t.completed.is_some());
+        assert!(
+            t.warnings
+                .contains(&"STATUS and COMPLETED disagree".to_string()),
+            "{status}: {:?}",
+            t.warnings
+        );
+    }
+    // Without STATUS, COMPLETED alone still means completed, without a warning.
+    let t = todo("COMPLETED:20261103T120000Z");
+    assert_eq!(t.status, Status::Completed);
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+    // Agreeing STATUS:COMPLETED with COMPLETED is not a conflict.
+    let t = todo("STATUS:COMPLETED\r\nCOMPLETED:20261103T120000Z");
+    assert_eq!(t.status, Status::Completed);
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+}
+
+#[test]
+fn unrecognised_tasktype_warns() {
+    let t = todo("X-2DOAPP-METADATA:@tasktype:folder");
+    assert_eq!(t.kind, TaskKind::Task);
+    assert!(
+        t.warnings
+            .contains(&"unrecognised @tasktype value: folder".to_string()),
+        "{:?}",
+        t.warnings
+    );
+    assert!(
+        todo("X-2DOAPP-METADATA:@tasktype:Project")
+            .warnings
+            .is_empty()
+    );
+}
+
+#[test]
+fn invalid_metadata_start_warns() {
+    let t = todo("X-2DOAPP-METADATA:@startdate:2026-13-40");
+    assert_eq!(t.start, None);
+    assert!(
+        t.warnings
+            .contains(&"invalid @startdate: 2026-13-40".to_string()),
+        "{:?}",
+        t.warnings
+    );
+    let t = todo("X-2DOAPP-METADATA:@startdate:2026-11-03 @starttime:25:99");
+    assert_eq!(t.start, Some(IcalDateTime::Date(d(2026, 11, 3))));
+    assert!(
+        t.warnings
+            .contains(&"invalid @starttime: 25:99".to_string()),
+        "{:?}",
+        t.warnings
+    );
+}
