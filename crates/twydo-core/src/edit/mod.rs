@@ -118,8 +118,9 @@ pub fn touch(todo: &mut Component, now: DateTime<Utc>) {
 }
 
 /// The resource a move writes to the destination list (H5 as captured): `cal` with
-/// `UID` = `new_uid`, stamps touched, and a non-empty JSON `RUID` set to `new_uid`. Every
-/// other line keeps its bytes; `cal` is not changed.
+/// `UID` = `new_uid`, stamps touched, and a JSON `RUID` that names the old UID (a live
+/// task's self-reference) set to `new_uid`. Any other `RUID` (a history copy's link to its
+/// series) is kept. Every other line keeps its bytes; `cal` is not changed.
 pub fn moved_copy(
     cal: &Calendar,
     new_uid: &str,
@@ -133,10 +134,11 @@ pub fn moved_copy(
     if new_uid.is_empty() || uid.value == new_uid {
         return Err(unsupported("a moved task needs a new UID"));
     }
+    let old_uid = uid.value.clone();
     uid.set_value(new_uid);
     match meta_of(todo) {
         Meta::Json(orig) => {
-            if orig.get_str("RUID").is_some_and(|r| !r.is_empty()) {
+            if orig.get_str("RUID") == Some(old_uid.as_str()) {
                 let mut m = orig.clone();
                 m.set_str("RUID", new_uid);
                 write_meta(todo, Some(&orig), &m);

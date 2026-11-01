@@ -497,3 +497,36 @@ fn stuck_journal_blocks_writes() {
         "COMPLETED"
     );
 }
+
+/// Moving a repeat's history copy keeps its `RUID` pointing at the series: only a live
+/// task's self-reference follows the new UID (H5).
+#[test]
+fn move_history_copy_keeps_series_ruid() {
+    const COPY: &str = "7d0349b58c3545d2ba6c8d87bcc45e85";
+    let (env, mut store) = test_env();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../fixtures/phase0/v1/plan4-list1/03-complete/{COPY}.ics"
+    ));
+    fs::copy(&src, env.file(COPY)).unwrap();
+    let op = Op::Move {
+        uid: COPY.into(),
+        to: "list2".into(),
+    };
+    store.apply(&env.snap(), &op, now()).unwrap();
+    assert!(!env.file(COPY).exists());
+    let moved: Vec<PathBuf> = fs::read_dir(env.vdir.join("list2"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(moved.len(), 1);
+    let dst = todo_of(&fs::read(&moved[0]).unwrap());
+    assert_ne!(value(&dst, "UID"), COPY);
+    let meta = MetaJson::parse(&value(&dst, "X-2DOAPP-METADATA")).unwrap();
+    assert_eq!(meta.get_str("RUID"), Some(E));
+    // The metadata blob keeps its bytes.
+    let orig = todo_of(&fs::read(&src).unwrap());
+    assert_eq!(
+        dst.prop("X-2DOAPP-METADATA").unwrap(),
+        orig.prop("X-2DOAPP-METADATA").unwrap()
+    );
+}
