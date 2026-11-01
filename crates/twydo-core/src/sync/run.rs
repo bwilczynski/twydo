@@ -17,14 +17,15 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 
 use super::SyncError;
-use super::hook::{HOOK_LOG_ENV, HookRecord, read_hook_log, uid_of};
+use super::hook::{HOOK_LOG_ENV, read_hook_log, uid_of};
 use super::output::{SyncOutput, parse};
+use super::reconcile::reconcile;
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use crate::config::{Config, SyncConfig};
-use crate::conflicts::{Conflict, ConflictKind, ConflictStore, NewConflict, Side};
+use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::store::bind_vdir_state;
 use crate::store::fsio::VdirLock;
-use crate::store::journal::{Entry, Journal, Stage, recover_locked};
+use crate::store::journal::{Journal, Stage, recover_locked};
 
 /// How `run` was asked to run.
 #[derive(Debug, Clone, Default)]
@@ -57,6 +58,11 @@ pub struct RunReport {
     pub transient: Option<String>,
     pub new_conflicts: Vec<String>,
     pub confirmed: Vec<String>,
+    /// Held conflicts closed by this run.
+    pub resolved: Vec<String>,
+    /// Paths that changed in the vdir with no conflict to explain it (left pending).
+    pub unexpected: Vec<String>,
+    /// Journal entries and conflicts pruned.
     pub pruned: usize,
     pub forced: Vec<String>,
     pub metasync_error: Option<String>,
@@ -118,7 +124,8 @@ fn skipped(s: Skip) -> RunReport {
 ///    and the entry is abandoned.
 /// 4. Under the shared vdir lock: runs `<command> sync <pair>` (or `--force-delete` for the
 ///    forced collections), killed after `timeout_secs`, then `metasync` when configured.
-/// 5. Under the exclusive vdir lock: reconciles the result with the journal.
+/// 5. Under the exclusive vdir lock: reconciles the result with the journal and the
+///    conflicts (see [`reconcile`]).
 /// 6. Classifies each collection and saves `status.json`. A run whose command could not
 ///    run, timed out, exited non-zero without explanation, printed unattributed errors, or
 ///    left a collection in `Error`, is a transient failure and backs off.
@@ -180,7 +187,6 @@ fn one_pass(
     let shared = VdirLock::shared(state)?;
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
-    let unresolved = ConflictStore::open(state)?.unresolved()?;
     fs::write(&hook_log, b"")?;
     let mut args = vec!["sync".to_string()];
     if force.is_empty() {
@@ -212,14 +218,25 @@ fn one_pass(
         }
     }
 
-    // Step 5: reconcile under the exclusive lock.
+    // Step 5: reconcile under the exclusive lock (the conflicts lock nests inside it).
     {
         let _excl = VdirLock::exclusive(state)?;
-        // Task 7 plugs in here: `reconcile(&cfg.vdir, &journal, &conflicts, sync, &pending,
-        // &out, &hook, now)` fills `confirmed`, `new_conflicts` and `pruned`. Until then
-        // nothing is confirmed.
-        let confirmed = reconcile_stub(&pending, &unresolved, &out, &hook);
-        report.confirmed.extend(confirmed);
+        let r = reconcile(
+            &cfg.vdir,
+            &journal,
+            &ConflictStore::open(state)?,
+            sync,
+            &collections,
+            &pending,
+            &out,
+            &hook,
+            now,
+        )?;
+        report.confirmed.extend(r.confirmed);
+        report.new_conflicts.extend(r.new_conflicts);
+        report.resolved.extend(r.resolved);
+        report.unexpected.extend(r.unexpected);
+        report.pruned += r.pruned;
     }
 
     // Step 6: status.
@@ -246,16 +263,6 @@ fn one_pass(
     report.collections = collections;
     report.transient = transient;
     Ok(())
-}
-
-/// Placeholder for Task 7's `reconcile`: confirms nothing.
-fn reconcile_stub(
-    _pending: &[Entry],
-    _unresolved: &[Conflict],
-    _out: &SyncOutput,
-    _hook: &[HookRecord],
-) -> Vec<String> {
-    Vec::new()
 }
 
 /// The transient failure of a run, if any (see [`run`], step 6).

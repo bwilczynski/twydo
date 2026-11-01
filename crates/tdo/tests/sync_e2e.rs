@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use twydo_core::conflicts::{ConflictState, ConflictStore, Side};
+use twydo_core::conflicts::{ConflictKind, ConflictState, ConflictStore, Side};
 use twydo_core::sync::hook::{HOOK_LOG_ENV, read_hook_log};
 
 /// Collection used by [`Pair`].
@@ -40,8 +40,8 @@ macro_rules! require_vdirsyncer {
 
 /// A vdirsyncer pair `twydo` between `server/` (storage `twydo_remote`, side a) and `vdir/`
 /// (storage `twydo_local`, side b), both holding collection `c1`, with `tdo conflicts hook`
-/// as the conflict command, and a tdo config whose `[sync]` points at that vdirsyncer config.
-/// `new` syncs three tasks `u1`..`u3` once.
+/// as the conflict command, and a tdo config (test write mode) whose `[sync]` points at that
+/// vdirsyncer config. `new` syncs three tasks `u1`..`u3` once.
 struct Pair {
     dir: tempfile::TempDir,
 }
@@ -49,6 +49,11 @@ struct Pair {
 #[allow(dead_code)]
 impl Pair {
     fn new() -> Pair {
+        Pair::with_sync("")
+    }
+
+    /// Like [`Pair::new`], with `extra` lines appended to the `[sync]` table.
+    fn with_sync(extra: &str) -> Pair {
         let dir = tempfile::tempdir().unwrap();
         let p = Pair { dir };
         fs::create_dir_all(p.server().join(COLL)).unwrap();
@@ -74,12 +79,22 @@ impl Pair {
         fs::write(
             p.root().join("config/twydo/config.toml"),
             format!(
-                "vdir = \"{}\"\ntimezone = \"UTC\"\n[sync]\nvdirsyncer_config = \"{}\"\n",
+                "vdir = \"{}\"\ntimezone = \"UTC\"\n[writes]\nmode = \"test\"\n\
+                 [sync]\nvdirsyncer_config = \"{}\"\nafter_edit = false\n{extra}",
                 p.vdir().display(),
                 p.vdirsyncer_config().display()
             ),
         )
         .unwrap();
+        let mut matrix = String::from("matrix_version = 1\n");
+        for op in ["create", "edit", "delete"] {
+            matrix.push_str(&format!(
+                "[[operation]]\ncase = \"one-time\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
+                 mac_to_iphone = \"pass\"\niphone_to_mac = \"pass\"\n\
+                 twydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"
+            ));
+        }
+        fs::write(p.root().join("matrix.toml"), matrix).unwrap();
         for (uid, s) in [("u1", "one"), ("u2", "two"), ("u3", "three")] {
             p.write_vdir(uid, &task(uid, s));
         }
@@ -173,6 +188,48 @@ impl Pair {
         cmd.args(args);
         self.env(&mut cmd);
         cmd.output().expect("run tdo")
+    }
+
+    /// `tdo op --matrix <test matrix> args…`; asserts success and returns the op id.
+    fn op(&self, args: &[&str]) -> String {
+        let m = self.root().join("matrix.toml");
+        let mut a = vec!["op", "--matrix", m.to_str().unwrap()];
+        a.extend_from_slice(args);
+        let o = self.tdo(&a);
+        assert!(o.status.success(), "tdo {a:?}: {o:?}");
+        String::from_utf8_lossy(&o.stdout).trim().to_string()
+    }
+
+    /// `tdo sync`; returns (exit code, stderr).
+    fn tdo_sync(&self) -> (i32, String) {
+        let o = self.tdo(&["sync"]);
+        (
+            o.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&o.stderr).into_owned(),
+        )
+    }
+
+    /// The `tdo op journal` line of entry `id`, if any.
+    fn journal_line(&self, id: &str) -> Option<String> {
+        let o = self.tdo(&["op", "journal"]);
+        assert!(o.status.success(), "{o:?}");
+        String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .find(|l| l.starts_with(id))
+            .map(str::to_string)
+    }
+
+    fn synced(&self, id: &str) -> bool {
+        let line = self.journal_line(id).expect("journal entry");
+        assert!(
+            line.ends_with("pending") || line.contains("  synced "),
+            "{line}"
+        );
+        line.contains("  synced ")
+    }
+
+    fn conflict_dir(&self, id: &str) -> PathBuf {
+        self.vdir_state().join("conflicts").join(id)
     }
 }
 
@@ -333,4 +390,155 @@ fn unknown_side_exits_2_and_changes_nothing() {
     assert_eq!(fs::read_to_string(&x).unwrap(), task("u1", "x"));
     assert_eq!(fs::read_to_string(&y).unwrap(), task("u1", "y"));
     assert!(p.conflicts().list().unwrap().is_empty());
+}
+
+#[test]
+fn edit_is_confirmed_after_sync() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = p.op(&["edit", "u1", "--title", "one-edited"]);
+    assert!(!p.synced(&id));
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.synced(&id));
+    let edited = p.read_vdir("u1").unwrap();
+    assert!(edited.contains("SUMMARY:one-edited"), "{edited}");
+    assert_eq!(p.read_server("u1"), Some(edited));
+    assert!(p.conflicts().list().unwrap().is_empty());
+}
+
+#[test]
+fn local_delete_vs_remote_edit_becomes_conflict() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = p.op(&["delete", "u2"]);
+    let edit = task("u2", "two-remote");
+    p.write_server("u2", &edit);
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    let c = &open[0];
+    assert_eq!(c.kind, ConflictKind::LocalDeleteRemoteEdit);
+    assert!(!c.held);
+    assert_eq!(c.vdir_holds, Side::Remote);
+    assert_eq!((c.uid.as_str(), c.path.as_str()), ("u2", "c1/u2.ics"));
+    let dir = p.conflict_dir(&c.id);
+    assert_eq!(fs::read_to_string(dir.join("remote.ics")).unwrap(), edit);
+    assert!(!dir.join("local.ics").exists());
+    assert!(p.synced(&id));
+}
+
+#[test]
+fn remote_delete_vs_local_edit_becomes_conflict() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = p.op(&["edit", "u3", "--title", "three-local"]);
+    let edit = p.read_vdir("u3").unwrap();
+    fs::remove_file(p.server().join(COLL).join("u3.ics")).unwrap();
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    let c = &open[0];
+    assert_eq!(c.kind, ConflictKind::RemoteDeleteLocalEdit);
+    assert!(!c.held);
+    assert_eq!(c.vdir_holds, Side::Local);
+    assert_eq!((c.uid.as_str(), c.path.as_str()), ("u3", "c1/u3.ics"));
+    let dir = p.conflict_dir(&c.id);
+    assert_eq!(fs::read_to_string(dir.join("local.ics")).unwrap(), edit);
+    assert!(!dir.join("remote.ics").exists());
+    assert!(p.synced(&id));
+}
+
+#[test]
+fn created_task_upload_is_not_a_conflict() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = p.op(&["add", "--list", COLL, "--title", "four"]);
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.conflicts().list().unwrap().is_empty());
+    assert!(p.synced(&id));
+}
+
+/// Twydo edits `u1` and the server edits it too; `tdo sync` holds the conflict.
+fn held_conflict(p: &Pair) -> (String, String) {
+    let op = p.op(&["edit", "u1", "--title", "one-local"]);
+    p.write_server("u1", &task("u1", "one-remote"));
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert!(open[0].held);
+    assert!(!p.synced(&op), "a held conflict keeps the entry pending");
+    (op, open[0].id.clone())
+}
+
+#[test]
+fn held_conflict_keeps_entry_pending_until_resolved() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (op, id) = held_conflict(&p);
+    // Still held on a rerun.
+    assert_eq!(p.tdo_sync().0, 1);
+    assert!(!p.synced(&op));
+    p.conflicts().choose(&id, Side::Remote).unwrap();
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(p.synced(&op));
+    let c = p.conflicts().get(&id).unwrap().unwrap();
+    assert_eq!(c.state, ConflictState::Resolved);
+    assert_eq!(
+        p.read_vdir("u1"),
+        Some(task("u1", "one-remote").replace("\r\n", "\n"))
+    );
+}
+
+#[test]
+fn choice_applied_by_manual_vdirsyncer_resolves() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (op, id) = held_conflict(&p);
+    p.conflicts().choose(&id, Side::Remote).unwrap();
+    // vdirsyncer by hand: the hook applies the choice but writes no hook log.
+    let (code, err) = p.sync();
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Chosen
+    );
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Resolved
+    );
+    assert!(p.synced(&op));
+}
+
+#[test]
+fn agreeing_sides_resolve_open_conflict() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (op, id) = held_conflict(&p);
+    p.write_server("u1", &p.read_vdir("u1").unwrap());
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    let c = p.conflicts().get(&id).unwrap().unwrap();
+    assert_eq!(c.state, ConflictState::Resolved);
+    assert_eq!(c.choice, None);
+    assert!(p.synced(&op));
+}
+
+#[test]
+fn prune_after_retention() {
+    require_vdirsyncer!();
+    let p = Pair::with_sync("retention_days = 0\n");
+    let id = p.op(&["edit", "u1", "--title", "one-edited"]);
+    assert_eq!(p.tdo_sync().0, 0);
+    assert!(p.synced(&id));
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    assert_eq!(p.tdo_sync().0, 0);
+    assert_eq!(p.journal_line(&id), None);
 }
