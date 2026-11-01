@@ -1,0 +1,5 @@
+scenario = "twydo-list1"
+step = "10-create-yuv"
+device = "iphone"
+action = "phone: create Y (monthly 2026-12-10), U (monthly 2026-12-10 09:00), V (monthly 2026-12-10, start 2026-12-08)"
+captured_at = "2026-11-01T16:19:18Z"

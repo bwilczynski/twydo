@@ -1,0 +1,5 @@
+scenario = "twydo-list2"
+step = "11-edit-y"
+device = "twydo"
+action = "tdo: Y notes y"
+captured_at = "2026-11-01T16:19:22Z"

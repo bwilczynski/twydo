@@ -1,0 +1,5 @@
+scenario = "twydo-list1"
+step = "02-edit"
+device = "twydo"
+action = "tdo op edit P title P2 notes 'x, y'; Q due 18:45; R start 2026-12-02; S notes n; T every 2"
+captured_at = "2026-11-01T15:32:03Z"

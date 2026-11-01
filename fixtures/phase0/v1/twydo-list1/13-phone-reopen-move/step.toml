@@ -1,0 +1,5 @@
+scenario = "twydo-list1"
+step = "13-phone-reopen-move"
+device = "iphone"
+action = "phone: reopen X; move X and live Y to list2"
+captured_at = "2026-11-01T16:22:19Z"
