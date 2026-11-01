@@ -562,7 +562,9 @@ fn line_ending_only_difference_is_confirmed() {
 }
 
 #[test]
-fn unexpected_difference_stays_pending() {
+fn server_change_seen_late_is_confirmed_with_a_warning() {
+    // The edit reached the server in a run Twydo did not see and the server changed it
+    // since, downloaded in that run too: nothing will ever confirm it, so confirm it now.
     let fx = Fx::new("exit 0");
     let (b, a) = (task("u1", "before"), task("u1", "after"));
     let e = applied(
@@ -572,9 +574,84 @@ fn unexpected_difference_stays_pending() {
     apply(&fx, &e);
     fs::write(fx.cfg.vdir.join("c1/u1.ics"), task("u1", "other")).unwrap();
     let r = reconcile_with(&fx, std::slice::from_ref(&e), "Syncing twydo/c1\n");
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(r.new_conflicts.is_empty());
+    assert!(r.unexpected.is_empty(), "{:?}", r.unexpected);
+    assert_eq!(r.superseded, vec!["c1/u1.ics".to_string()]);
+    assert!(synced(&fx, &e.id));
+    // Synced now, so the next run says nothing.
+    let r = reconcile_with(&fx, &[], "Syncing twydo/c1\n");
+    assert!(r.superseded.is_empty() && r.unexpected.is_empty(), "{r:?}");
+}
+
+#[test]
+fn file_still_holding_before_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), &b).unwrap();
+    let r = reconcile_with(&fx, std::slice::from_ref(&e), "Syncing twydo/c1\n");
     assert!(r.confirmed.is_empty());
     assert!(r.new_conflicts.is_empty());
+    assert!(r.superseded.is_empty());
     assert_eq!(r.unexpected, vec!["c1/u1.ics".to_string()]);
+    assert!(!synced(&fx, &e.id));
+}
+
+#[test]
+fn unexpected_difference_with_open_conflict_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    let other = task("u1", "other");
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), &other).unwrap();
+    ConflictStore::open(&fx.state())
+        .unwrap()
+        .record(
+            twydo_core::conflicts::NewConflict {
+                uid: "u1".into(),
+                collection: "c1".into(),
+                path: "c1/u1.ics".into(),
+                kind: ConflictKind::Journal,
+                held: false,
+                vdir_holds: Side::Remote,
+                local: Some(a.clone()),
+                remote: Some(other),
+            },
+            now(),
+        )
+        .unwrap();
+    let r = reconcile_with(&fx, std::slice::from_ref(&e), "Syncing twydo/c1\n");
+    assert!(r.confirmed.is_empty(), "{r:?}");
+    assert!(r.superseded.is_empty());
+    assert_eq!(r.unexpected, vec!["c1/u1.ics".to_string()]);
+}
+
+#[test]
+fn unexpected_difference_in_errored_collection_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), task("u1", "other")).unwrap();
+    let r = reconcile_with(
+        &fx,
+        std::slice::from_ref(&e),
+        "Syncing twydo/c1\nerror: twydo/c1: Connection reset\n",
+    );
+    assert!(r.confirmed.is_empty(), "{r:?}");
+    assert!(r.superseded.is_empty());
     assert!(!synced(&fx, &e.id));
 }
 
@@ -665,4 +742,196 @@ fn delete_conflict_of_pending_entry_is_recorded_once() {
     let all = store.list().unwrap();
     assert_eq!(all.len(), 1, "{all:?}");
     assert!(all[0].resolved.is_some());
+}
+
+/// Runs a pending edit of `c1/u1.ics` through a run whose fake prints `first` (vdirsyncer
+/// re-uploading the edit to a server that deleted it, in a run that does not count), then
+/// through a clean run.
+fn remote_delete_in_uncounted_run(first: &str, timeout: Option<u64>) {
+    let mut fx = Fx::new(first);
+    if let Some(t) = timeout {
+        fx.sync_mut().timeout_secs = t;
+    }
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some(), "{r:?}");
+    assert_eq!(r.new_conflicts.len(), 1, "{r:?}");
+    assert!(!synced(&fx, &e.id), "an uncounted run confirms nothing");
+    let store = ConflictStore::open(&fx.state()).unwrap();
+    let open = store.unresolved().unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].kind, ConflictKind::RemoteDeleteLocalEdit);
+    assert_eq!(open[0].local.as_deref(), Some(a.as_str()));
+    assert_eq!(open[0].remote, None);
+
+    let fake = fx.sync_mut().command.clone();
+    write_script(Path::new(&fake), "printf 'Syncing twydo/c1\\n' >&2\nexit 0");
+    let later = now() + chrono::Duration::seconds(60);
+    let r = run(&fx.cfg, &manual(), later).unwrap();
+    assert!(r.transient.is_none(), "{r:?}");
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(r.new_conflicts.is_empty(), "{r:?}");
+    assert_eq!(store.unresolved().unwrap().len(), 1, "the conflict stays");
+}
+
+#[test]
+fn remote_delete_in_errored_collection_is_recorded() {
+    remote_delete_in_uncounted_run(
+        "printf 'Syncing twydo/c1\\nCopying (uploading) item u1 to twydo_remote/c1\\n\
+         error: twydo/c1: Connection reset\\n' >&2\nexit 1",
+        None,
+    );
+}
+
+#[test]
+fn remote_delete_in_timed_out_run_is_recorded() {
+    remote_delete_in_uncounted_run(
+        "printf 'Syncing twydo/c1\\nCopying (uploading) item u1 to twydo_remote/c1\\n' >&2\n\
+         sleep 30",
+        Some(1),
+    );
+}
+
+#[test]
+fn remote_delete_with_unattributed_error_is_recorded() {
+    remote_delete_in_uncounted_run(
+        "printf 'Syncing twydo/c1\\nCopying (uploading) item u1 to twydo_remote/c1\\n\
+         error: Connection refused\\n' >&2\nexit 1",
+        None,
+    );
+}
+
+/// Records a held both-changed conflict for `c1/u1.ics`.
+fn held_conflict(fx: &Fx) -> String {
+    ConflictStore::open(&fx.state())
+        .unwrap()
+        .record(
+            twydo_core::conflicts::NewConflict {
+                uid: "u1".into(),
+                collection: "c1".into(),
+                path: "c1/u1.ics".into(),
+                kind: ConflictKind::BothChanged,
+                held: true,
+                vdir_holds: Side::Local,
+                local: Some(task("u1", "here")),
+                remote: Some(task("u1", "there")),
+            },
+            now(),
+        )
+        .unwrap()
+        .id
+}
+
+#[test]
+fn held_conflict_closes_when_both_sides_deleted() {
+    let fx = Fx::new("exit 0");
+    let id = held_conflict(&fx);
+    let r = reconcile_with(&fx, &[], "Syncing twydo/c1\n");
+    assert_eq!(r.resolved, vec![id]);
+    assert!(
+        ConflictStore::open(&fx.state())
+            .unwrap()
+            .unresolved()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn held_conflict_stays_when_its_task_moved_to_another_file() {
+    let fx = Fx::new("exit 0");
+    held_conflict(&fx);
+    fs::write(fx.cfg.vdir.join("c1/other.ics"), task("u1", "third")).unwrap();
+    let r = reconcile_with(&fx, &[], "Syncing twydo/c1\n");
+    assert!(r.resolved.is_empty(), "{r:?}");
+}
+
+#[test]
+fn stuck_entry_records_its_unapplied_writes_too() {
+    let fx = Fx::new("exit 0");
+    let (a_file, b_file) = (fx.cfg.vdir.join("c1/a.ics"), fx.cfg.vdir.join("c1/b.ics"));
+    let third = task("u1", "third");
+    fs::write(&a_file, &third).unwrap();
+    // The second write was never applied: its file still holds `before`.
+    let b0 = task("u2", "before");
+    fs::write(&b_file, &b0).unwrap();
+    let (a0, a1, b1) = (
+        task("u1", "before"),
+        task("u1", "after"),
+        task("u2", "after"),
+    );
+    let state = fx.state();
+    let journal = Journal::open(&state).unwrap();
+    journal
+        .prepare(&Entry {
+            format: 1,
+            id: "20261101T090000Z-0000abcd".into(),
+            created: now(),
+            kind: "edit".into(),
+            uids: vec!["u1".into(), "u2".into()],
+            stage: Stage::Prepared,
+            inverse_of: None,
+            synced: None,
+            writes: vec![
+                Write {
+                    path: "c1/a.ics".into(),
+                    before: Some(a0),
+                    after: Some(a1),
+                },
+                Write {
+                    path: "c1/b.ics".into(),
+                    before: Some(b0.clone()),
+                    after: Some(b1.clone()),
+                },
+            ],
+        })
+        .unwrap();
+
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+
+    assert_eq!(fs::read_to_string(&b_file).unwrap(), b0, "vdir untouched");
+    assert_eq!(r.new_conflicts.len(), 2, "{r:?}");
+    let open = ConflictStore::open(&state).unwrap().unresolved().unwrap();
+    let c = open
+        .iter()
+        .find(|c| c.path == "c1/b.ics")
+        .expect("b.ics recorded");
+    assert_eq!(c.kind, ConflictKind::Journal);
+    assert_eq!(c.uid, "u2");
+    assert_eq!(c.vdir_holds, Side::Remote);
+    assert_eq!(c.local.as_deref(), Some(b1.as_str()));
+    assert_eq!(c.remote.as_deref(), Some(b0.as_str()));
+}
+
+#[test]
+fn upload_of_created_then_edited_task_is_not_a_conflict() {
+    // Pins a documented limit (docs/sync.md, "A create edited before it was confirmed"): a
+    // pending create makes every upload of the path look like the create's own, even when
+    // the create reached the server in an earlier run that did not count and the phone has
+    // deleted it since.
+    let fx = Fx::new("exit 0");
+    let (v1, v2) = (task("u1", "new"), task("u1", "edited"));
+    let create = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", None, Some(&v1))],
+    );
+    let mut edit = applied(
+        "20261101T090001Z-00000002",
+        &[("c1/u1.ics", Some(&v1), Some(&v2))],
+    );
+    edit.created = now() + chrono::Duration::seconds(1);
+    apply(&fx, &create);
+    apply(&fx, &edit);
+    let r = reconcile_with(
+        &fx,
+        &[create.clone(), edit.clone()],
+        "Syncing twydo/c1\nCopying (uploading) item u1 to twydo_remote/c1\n",
+    );
+    assert!(r.new_conflicts.is_empty(), "{r:?}");
+    assert_eq!(r.confirmed, vec![create.id.clone(), edit.id.clone()]);
 }

@@ -28,9 +28,13 @@ pub struct Reconciled {
     pub new_conflicts: Vec<String>,
     /// Held conflicts marked resolved.
     pub resolved: Vec<String>,
-    /// Paths whose vdir file differs from what Twydo wrote with no conflict to explain it;
-    /// their entries stay pending.
+    /// Paths whose vdir file differs from what Twydo wrote while it may not hold the
+    /// server's version yet (it still holds what Twydo replaced, or a conflict is open for
+    /// it); their entries stay pending.
     pub unexpected: Vec<String>,
+    /// Paths the server changed again after Twydo's edit reached it, seen too late to tell
+    /// for sure: confirmed with the server's version, reported once.
+    pub superseded: Vec<String>,
     /// Journal entries and conflicts pruned.
     pub pruned: usize,
 }
@@ -45,9 +49,11 @@ enum Outcome {
 
 /// Reconciles the journal with one vdirsyncer run (see the module docs).
 ///
-/// Only collections that are `Ok` or `Conflict` in `states` count, and nothing counts when
-/// `out.unattributed` is non-empty. For each path written by `pending` in a counted
-/// collection, in write order:
+/// Step 4 below runs first for every path written by `pending`, whatever the state of its
+/// collection and even when `out.unattributed` is non-empty, so a re-upload in a failed run
+/// still records its conflict. Otherwise only collections that are `Ok` or `Conflict` in
+/// `states` count, and nothing counts when `out.unattributed` is non-empty. For each path
+/// written by `pending` in a counted collection, in write order:
 ///
 /// 1. skip it when a journal entry not in `pending` touches it (a write that slipped in
 ///    between the two locks; it is checked next run);
@@ -59,8 +65,11 @@ enum Outcome {
 /// 4. an upload of the uid to the remote side, for a path not created here, is a remote
 ///    delete versus a local edit (F6);
 /// 5. a file that differs from the expected content is a local delete versus a remote edit
-///    when the expected content is a deletion; otherwise it stays pending (see
-///    [`Reconciled::unexpected`]);
+///    when the expected content is a deletion; it is confirmed when it differs only in line
+///    endings or vdirsyncer brought it down this run; it stays pending when it still holds a
+///    pending write's `before` or an unresolved conflict exists for the path (see
+///    [`Reconciled::unexpected`]); otherwise it is confirmed with a warning (see
+///    [`Reconciled::superseded`]);
 /// 6. otherwise the path is confirmed.
 ///
 /// An entry is marked synced when every path it writes is done. Held conflicts with a
@@ -80,6 +89,9 @@ pub fn reconcile(
     now: DateTime<Utc>,
 ) -> io::Result<Reconciled> {
     let mut rec = Reconciled::default();
+    // Step 4 counts whatever the collection's state: the upload line is the only trace of
+    // the phone's deletion, and the next clean run would confirm the entry without it.
+    remote_deletes(vdir, conflicts, sync, pending, out, now, &mut rec)?;
     if out.unattributed.is_empty() {
         settle(
             vdir, journal, conflicts, sync, states, pending, out, hook, now, &mut rec,
@@ -147,9 +159,7 @@ fn settle(
     }
     let decided: BTreeSet<&str> = closing.iter().map(|c| c.path.as_str()).collect();
 
-    // Write order: by creation time, then id (ids within one second are random).
-    let mut order: Vec<&Entry> = pending.iter().collect();
-    order.sort_by(|a, b| (a.created, &a.id).cmp(&(b.created, &b.id)));
+    let order = write_order(pending);
     let ours: HashSet<&str> = pending.iter().map(|e| e.id.as_str()).collect();
     // Entries written since `pending` was read (step 1).
     let others: Vec<Entry> = journal
@@ -159,14 +169,7 @@ fn settle(
         .filter(|e| e.synced.is_none() && e.stage != Stage::Abandoned)
         .collect();
 
-    let mut paths: Vec<&str> = Vec::new();
-    for e in &order {
-        for w in &e.writes {
-            if !paths.contains(&w.path.as_str()) {
-                paths.push(&w.path);
-            }
-        }
-    }
+    let paths = written_paths(&order);
 
     let mut done: BTreeSet<&str> = BTreeSet::new();
     for path in paths {
@@ -244,68 +247,23 @@ fn check_path(
     rec: &mut Reconciled,
 ) -> io::Result<Outcome> {
     // Step 2.
-    let writes: Vec<(&Entry, &crate::store::journal::Write)> = order
-        .iter()
-        .flat_map(|e| e.writes.iter().map(move |w| (*e, w)))
-        .filter(|(_, w)| w.path == path)
-        .collect();
-    let Some(&(last_entry, last)) = writes.last() else {
+    let Some(f) = facts(vdir, order, path) else {
         return Ok(Outcome::Pending);
     };
-    let expected = last.after.as_deref();
-    let created_here = writes.iter().any(|(_, w)| w.before.is_none());
-    let file = vdir.join(path);
-    let uid = expected
-        .or(last.before.as_deref())
-        .and_then(|t| uid_of(t, &file).ok())
-        .or_else(|| match last_entry.uids.as_slice() {
-            [one] => Some(one.clone()),
-            _ => None,
-        });
+    let (last_entry, expected, uid, file) =
+        (f.last_entry, f.expected, f.uid.clone(), f.file.clone());
     let transferred = |action: Action, to_local: bool| {
-        uid.as_deref().is_some_and(|uid| {
-            out.transfers.iter().any(|t| {
-                t.action == action
-                    && t.uid == uid
-                    && t.collection == coll
-                    && (t.storage == sync.local_storage) == to_local
-            })
-        })
+        uid.as_deref()
+            .is_some_and(|uid| transferred(out, sync, coll, uid, action, to_local))
     };
-
-    // A conflict is recorded once per pending write: one already recorded for it (resolved
-    // or not) settles the path, so a later run that re-checks it (the entry still pending
-    // for another path) neither reports nor re-creates it.
     let mut record = |c: NewConflict| -> io::Result<Outcome> {
-        let seen = known.iter().any(|k| {
-            k.path == c.path
-                && k.kind == c.kind
-                && k.local == c.local
-                && k.remote == c.remote
-                && k.detected >= last_entry.created
-        });
-        if !seen {
-            rec.new_conflicts.push(conflicts.record(c, now)?.id);
-        }
+        record_once(conflicts, known, last_entry, c, now, rec)?;
         Ok(Outcome::Done)
     };
 
-    // Step 4: remote delete versus local edit. vdirsyncer re-uploaded Twydo's edit to a
-    // server that had deleted the item.
-    if let Some(local) = expected
-        && !created_here
-        && transferred(Action::Upload, false)
-    {
-        return record(NewConflict {
-            uid: uid.clone().unwrap_or_default(),
-            collection: coll.to_string(),
-            path: path.to_string(),
-            kind: ConflictKind::RemoteDeleteLocalEdit,
-            held: false,
-            vdir_holds: Side::Local,
-            local: Some(local.to_string()),
-            remote: None,
-        });
+    // Step 4.
+    if let Some(c) = remote_delete(&f, out, sync, coll, path) {
+        return record(c);
     }
 
     // Step 5.
@@ -356,15 +314,197 @@ fn check_path(
             return Ok(Outcome::Done);
         }
     }
+    // The server changed the item after Twydo's edit reached it, in a run this one did not
+    // see (vdirsyncer by hand, or an entry written before sync was enabled): the file holds
+    // neither Twydo's result nor what it replaced, and no conflict explains it. Nothing
+    // later can confirm it, so confirm it now, with a warning.
+    let unchanged = current
+        .as_deref()
+        .is_some_and(|cur| f.befores.iter().any(|b| same_text(cur, b)));
+    let explained = known
+        .iter()
+        .any(|k| k.path == path && matches!(k.state, ConflictState::Open | ConflictState::Chosen));
+    if !unchanged && !explained {
+        rec.superseded.push(path.to_string());
+        return Ok(Outcome::Done);
+    }
     rec.unexpected.push(path.to_string());
     Ok(Outcome::Pending)
+}
+
+/// Pending entries in write order: by creation time, then id (ids within one second are
+/// random).
+fn write_order(pending: &[Entry]) -> Vec<&Entry> {
+    let mut order: Vec<&Entry> = pending.iter().collect();
+    order.sort_by(|a, b| (a.created, &a.id).cmp(&(b.created, &b.id)));
+    order
+}
+
+/// Every path `order` writes, first write first.
+fn written_paths<'a>(order: &[&'a Entry]) -> Vec<&'a str> {
+    let mut paths: Vec<&str> = Vec::new();
+    for e in order {
+        for w in &e.writes {
+            if !paths.contains(&w.path.as_str()) {
+                paths.push(&w.path);
+            }
+        }
+    }
+    paths
+}
+
+/// Step 2 for one path: what the pending writes to it say.
+struct Facts<'a> {
+    /// The entry of the last pending write to the path.
+    last_entry: &'a Entry,
+    /// The last write's `after`: what the server should now hold.
+    expected: Option<&'a str>,
+    /// The `before` of every pending write to the path.
+    befores: Vec<&'a str>,
+    created_here: bool,
+    uid: Option<String>,
+    file: std::path::PathBuf,
+}
+
+fn facts<'a>(vdir: &Path, order: &[&'a Entry], path: &str) -> Option<Facts<'a>> {
+    let writes: Vec<(&Entry, &crate::store::journal::Write)> = order
+        .iter()
+        .flat_map(|e| e.writes.iter().map(move |w| (*e, w)))
+        .filter(|(_, w)| w.path == path)
+        .collect();
+    let &(last_entry, last) = writes.last()?;
+    let expected = last.after.as_deref();
+    let file = vdir.join(path);
+    let uid = expected
+        .or(last.before.as_deref())
+        .and_then(|t| uid_of(t, &file).ok())
+        .or_else(|| match last_entry.uids.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        });
+    Some(Facts {
+        last_entry,
+        expected,
+        befores: writes
+            .iter()
+            .filter_map(|(_, w)| w.before.as_deref())
+            .collect(),
+        created_here: writes.iter().any(|(_, w)| w.before.is_none()),
+        uid,
+        file,
+    })
+}
+
+/// Whether `out` has an `action` of `uid` in `coll`, to the local storage or not.
+fn transferred(
+    out: &SyncOutput,
+    sync: &SyncConfig,
+    coll: &str,
+    uid: &str,
+    action: Action,
+    to_local: bool,
+) -> bool {
+    out.transfers.iter().any(|t| {
+        t.action == action
+            && t.uid == uid
+            && t.collection == coll
+            && (t.storage == sync.local_storage) == to_local
+    })
+}
+
+/// Step 4: remote delete versus local edit. vdirsyncer re-uploaded Twydo's edit to a
+/// server that had deleted the item (F6). A path created here is skipped: its upload is the
+/// create itself. That also skips a create uploaded in an earlier run that did not count,
+/// edited since and deleted on the other device (a documented limit, docs/sync.md).
+fn remote_delete(
+    f: &Facts,
+    out: &SyncOutput,
+    sync: &SyncConfig,
+    coll: &str,
+    path: &str,
+) -> Option<NewConflict> {
+    let local = f.expected?;
+    let uid = f.uid.as_deref()?;
+    if f.created_here || !transferred(out, sync, coll, uid, Action::Upload, false) {
+        return None;
+    }
+    Some(NewConflict {
+        uid: uid.to_string(),
+        collection: coll.to_string(),
+        path: path.to_string(),
+        kind: ConflictKind::RemoteDeleteLocalEdit,
+        held: false,
+        vdir_holds: Side::Local,
+        local: Some(local.to_string()),
+        remote: None,
+    })
+}
+
+/// Records `c` unless one like it was recorded for the pending write already (resolved or
+/// not): a later run that re-checks the path (the entry still pending for another path, or
+/// the first record made in a run that did not count) neither reports nor re-creates it.
+fn record_once(
+    conflicts: &ConflictStore,
+    known: &[Conflict],
+    last_entry: &Entry,
+    c: NewConflict,
+    now: DateTime<Utc>,
+    rec: &mut Reconciled,
+) -> io::Result<()> {
+    let seen = known.iter().any(|k| {
+        k.path == c.path
+            && k.kind == c.kind
+            && k.local == c.local
+            && k.remote == c.remote
+            && k.detected >= last_entry.created
+    });
+    if !seen {
+        rec.new_conflicts.push(conflicts.record(c, now)?.id);
+    }
+    Ok(())
+}
+
+/// Step 4 for every path `pending` writes, whatever the state of its collection. Marks
+/// nothing synced: [`settle`] does that, for counted collections only, and finds the
+/// conflict recorded here already.
+fn remote_deletes(
+    vdir: &Path,
+    conflicts: &ConflictStore,
+    sync: &SyncConfig,
+    pending: &[Entry],
+    out: &SyncOutput,
+    now: DateTime<Utc>,
+    rec: &mut Reconciled,
+) -> io::Result<()> {
+    if !out
+        .transfers
+        .iter()
+        .any(|t| t.action == Action::Upload && t.storage != sync.local_storage)
+    {
+        return Ok(());
+    }
+    let known = conflicts.list()?;
+    let order = write_order(pending);
+    for path in written_paths(&order) {
+        let Some(coll) = collection_of(path) else {
+            continue;
+        };
+        let Some(f) = facts(vdir, &order, path) else {
+            continue;
+        };
+        if let Some(c) = remote_delete(&f, out, sync, coll, path) {
+            record_once(conflicts, &known, f.last_entry, c, now, rec)?;
+        }
+    }
+    Ok(())
 }
 
 /// Whether held conflict `c`, with no hook call this run, is settled because both sides
 /// now agree. Needs positive evidence, because a delete versus an edit is settled silently
 /// too (F6): no transfer of the item this run, and either vdirsyncer reported the same
 /// content on both sides (F5) or the vdir file holds one of the two versions (ignoring line
-/// endings: a choice applied by a vdirsyncer run without a hook log comes back with LF).
+/// endings: a choice applied by a vdirsyncer run without a hook log comes back with LF), or
+/// the file is gone and no file of the collection holds the uid (both sides deleted it).
 fn agreed(vdir: &Path, c: &Conflict, out: &SyncOutput) -> bool {
     let moved = out
         .transfers
@@ -376,8 +516,14 @@ fn agreed(vdir: &Path, c: &Conflict, out: &SyncOutput) -> bool {
     if out.conflict_items.contains(&c.uid) {
         return true;
     }
-    let Ok(Some(current)) = read_opt(&vdir.join(&c.path)) else {
-        return false;
+    let current = match read_opt(&vdir.join(&c.path)) {
+        Ok(Some(current)) => current,
+        // Gone here, not restored, and no other file holds it: both sides deleted it.
+        Ok(None) => {
+            return !c.uid.is_empty()
+                && uid_files(vdir, &c.collection, &c.uid).is_ok_and(|n| n.is_empty());
+        }
+        Err(_) => return false,
     };
     [&c.local, &c.remote]
         .into_iter()
@@ -411,11 +557,23 @@ fn read_opt(path: &Path) -> io::Result<Option<String>> {
 
 /// The single `.ics` file of `coll` holding `uid`, as (vdir-relative path, content).
 fn find_uid(vdir: &Path, coll: &str, uid: &str) -> io::Result<Option<(String, String)>> {
-    if uid.is_empty() {
-        return Ok(None);
-    }
+    let mut found = uid_files(vdir, coll, uid)?;
+    Ok(if found.len() == 1 { found.pop() } else { None })
+}
+
+/// Every `.ics` file of `coll` holding `uid`, as (vdir-relative path, content). A missing
+/// collection directory holds none.
+fn uid_files(vdir: &Path, coll: &str, uid: &str) -> io::Result<Vec<(String, String)>> {
     let mut found = Vec::new();
-    for d in fs::read_dir(vdir.join(coll))? {
+    if uid.is_empty() {
+        return Ok(found);
+    }
+    let dir = match fs::read_dir(vdir.join(coll)) {
+        Ok(d) => d,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(found),
+        Err(e) => return Err(e),
+    };
+    for d in dir {
         let p = d?.path();
         if p.extension().is_none_or(|x| x != "ics") {
             continue;
@@ -428,7 +586,7 @@ fn find_uid(vdir: &Path, coll: &str, uid: &str) -> io::Result<Option<(String, St
             found.push((format!("{coll}/{name}"), text));
         }
     }
-    Ok(if found.len() == 1 { found.pop() } else { None })
+    Ok(found)
 }
 
 #[cfg(test)]
