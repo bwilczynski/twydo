@@ -142,7 +142,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "one-time"
@@ -153,7 +153,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "one-time"
@@ -164,7 +164,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/12-phone-complete"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "one-time"
@@ -175,7 +175,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "one-time"
@@ -186,7 +186,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/plan4-list2/05-move", "fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list2/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move", "fixtures/phase0/v1/twydo-list2/13-phone-reopen-move"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "one-time"
@@ -197,7 +197,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/08-delete", "fixtures/phase0/v1/twydo-list2/14-phone-delete"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -208,7 +208,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/rule-months-day-1-28/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -219,7 +219,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/rule-months-day-1-28/03-edit", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/07-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -230,7 +230,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/rule-months-day-1-28/02-complete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/12-phone-complete"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -241,7 +241,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen"]
-notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "monthly"
@@ -252,7 +252,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/plan4-list2/05-move", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move", "fixtures/phase0/v1/twydo-list2/13-phone-reopen-move"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -263,7 +263,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/twydo-list1/08-delete", "fixtures/phase0/v1/twydo-list2/14-phone-delete"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -274,7 +274,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/rule-years/01-create", "fixtures/phase0/v1/twydo-list1/00-setup"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -285,7 +285,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/rule-years/03-edit", "fixtures/phase0/v1/twydo-list1/02-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -296,7 +296,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/rule-years/02-complete"]
-notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "yearly"
@@ -307,7 +307,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "yearly"
@@ -318,7 +318,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list2/02-edit"]
-notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "yearly"
@@ -329,7 +329,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan4-list2/03-complete", "fixtures/phase0/v1/twydo-list1/08-delete"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "from-completion"
@@ -340,7 +340,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "from-completion"
@@ -351,7 +351,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "from-completion"
@@ -362,7 +362,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "from-completion"
@@ -373,7 +373,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "from-completion"
@@ -384,7 +384,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "from-completion"
@@ -395,7 +395,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -406,7 +406,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -417,7 +417,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -428,7 +428,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -439,7 +439,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -450,7 +450,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "recurring-project"
@@ -461,7 +461,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -472,7 +472,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -483,7 +483,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -494,7 +494,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -505,7 +505,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -516,7 +516,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "checklist"
@@ -527,7 +527,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -538,7 +538,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -549,7 +549,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -560,7 +560,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -571,7 +571,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -582,7 +582,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "project-recurring-child"
@@ -593,7 +593,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "date-only"
@@ -604,7 +604,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "date-only"
@@ -615,7 +615,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "date-only"
@@ -626,7 +626,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "date-only"
@@ -637,7 +637,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "date-only"
@@ -648,7 +648,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "date-only"
@@ -659,7 +659,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "timed"
@@ -670,7 +670,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -681,7 +681,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -692,7 +692,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "timed"
@@ -703,7 +703,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "timed"
@@ -714,7 +714,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "timed"
@@ -725,7 +725,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "start-date"
@@ -736,7 +736,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -747,7 +747,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
-notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -758,7 +758,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "start-date"
@@ -769,7 +769,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "start-date"
@@ -780,7 +780,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "start-date"
@@ -791,7 +791,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -802,7 +802,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -813,7 +813,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -824,7 +824,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -835,7 +835,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -846,7 +846,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
@@ -857,7 +857,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: Plan 1 has no Twydo writes."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[edge_case]]
 id = "monthly-15th-three-months-late"
