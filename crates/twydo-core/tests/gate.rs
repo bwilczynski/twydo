@@ -458,6 +458,48 @@ fn history_copy_reopen_blocked() {
     }
 }
 
+/// Rule 6 uses the mode-aware row check: verified mode needs the monthly or yearly reopen
+/// row's twydo columns too; test mode needs only the baseline.
+#[test]
+fn history_copy_reopen_mode_aware() {
+    let s = snap();
+    let mut s_toml = String::from("matrix_version = 1\n");
+    for (case, twydo) in [
+        ("one-time", "pass"),
+        ("monthly", "unverified"),
+        ("yearly", "unverified"),
+    ] {
+        s_toml.push_str(&format!(
+            "[[operation]]\ncase = \"{case}\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
+             mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+             twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
+        ));
+    }
+    let m = Matrix::from_toml_str(&s_toml).unwrap();
+    let op = reopen("gate-history");
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &op, today()),
+        blocked("reopening a repeat's history copy is not verified yet")
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+    // One twydo column alone is not enough.
+    let half = s_toml.replacen(
+        "case = \"monthly\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
+         mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+         twydo_to_iphone = \"unverified\"",
+        "case = \"monthly\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
+         mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+         twydo_to_iphone = \"pass\"",
+        1,
+    );
+    assert_ne!(half, s_toml);
+    let m = Matrix::from_toml_str(&half).unwrap();
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &op, today()),
+        blocked("reopening a repeat's history copy is not verified yet")
+    );
+}
+
 /// Ruling R3: only a row that stays unverified (projects) is asserted on the real matrix.
 #[test]
 fn embedded_matrix_blocks_projects() {
