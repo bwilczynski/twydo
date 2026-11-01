@@ -32,6 +32,9 @@ operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, con
 `tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries in
 `state_dir`.
 
+`tdo op --matrix <path>` is a hidden test-only hook: it replaces the compatibility matrix built
+into `tdo` with the file at `<path>`. Never use it on real data.
+
 ## `[lists.<id>]`
 
 `<id>` is the collection directory name. A list without an entry gets the defaults below.
