@@ -247,3 +247,193 @@ mod gate {
         assert!(out.contains("        Synthetic override\n"), "{out}");
     }
 }
+
+#[cfg(unix)]
+mod sync {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::process::{Command, Output};
+    use std::time::{Duration, Instant};
+
+    use twydo_core::config::Config;
+
+    /// A temp dir holding `xdg/twydo/config.toml`, `vdir/c1/` and `state/`.
+    struct Fx {
+        dir: tempfile::TempDir,
+    }
+
+    impl Fx {
+        /// `sync` is the `[sync]` table body, or `None` for no `[sync]`.
+        fn new(sync: Option<&str>) -> Fx {
+            let fx = Fx {
+                dir: tempfile::tempdir().unwrap(),
+            };
+            fs::create_dir_all(fx.path("vdir/c1")).unwrap();
+            fs::create_dir_all(fx.path("xdg/twydo")).unwrap();
+            fx.configure(sync);
+            fx
+        }
+
+        /// `[sync]` whose command is a fake `sh` script (`metasync` off); `body` gets the
+        /// fixture so the script can name files in it.
+        fn with_fake(body: impl FnOnce(&Fx) -> String) -> Fx {
+            let fx = Fx::new(None);
+            let fake = fx.path("fake.sh");
+            write_script(&fake, &body(&fx));
+            fx.configure(Some(&format!(
+                "command = \"{}\"\nmetasync = false",
+                fake.display()
+            )));
+            fx
+        }
+
+        fn configure(&self, sync: Option<&str>) {
+            let mut text = format!(
+                "vdir = \"{}\"\nstate_dir = \"{}\"\n",
+                self.path("vdir").display(),
+                self.path("state").display()
+            );
+            if let Some(body) = sync {
+                text.push_str(&format!("\n[sync]\n{body}\n"));
+            }
+            fs::write(self.config_path(), text).unwrap();
+        }
+
+        fn path(&self, rel: &str) -> PathBuf {
+            self.dir.path().join(rel)
+        }
+
+        fn config_path(&self) -> PathBuf {
+            self.path("xdg/twydo/config.toml")
+        }
+
+        fn tdo(&self, args: &[&str]) -> Output {
+            Command::new(env!("CARGO_BIN_EXE_tdo"))
+                .args(args)
+                .env("XDG_CONFIG_HOME", self.path("xdg"))
+                .output()
+                .expect("run tdo")
+        }
+    }
+
+    fn stderr(o: &Output) -> String {
+        String::from_utf8_lossy(&o.stderr).into_owned()
+    }
+
+    fn stdout(o: &Output) -> String {
+        String::from_utf8_lossy(&o.stdout).into_owned()
+    }
+
+    /// Writes an executable `sh` script and waits until it can be executed (a script
+    /// written while another test thread forks can briefly fail with ETXTBSY). Every
+    /// script answers `__probe` by exiting at once.
+    fn write_script(path: &Path, body: &str) {
+        fs::write(
+            path,
+            format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n{body}\n"),
+        )
+        .unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match Command::new(path).arg("__probe").status() {
+                Ok(st) => {
+                    assert!(st.success(), "probe of {} failed", path.display());
+                    return;
+                }
+                Err(e) if e.raw_os_error() == Some(26) && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("cannot run {}: {e}", path.display()),
+            }
+        }
+    }
+
+    #[test]
+    fn sync_without_config_exits_2() {
+        let fx = Fx::new(None);
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(2));
+        assert!(
+            stderr(&o).contains("sync is not configured: add a [sync] table (docs/sync.md)"),
+            "{}",
+            stderr(&o)
+        );
+        assert!(!fx.path("state").exists());
+    }
+
+    #[test]
+    fn status_prints_never_synced() {
+        let fx = Fx::new(Some("command = \"/nonexistent/vdirsyncer\""));
+        let o = fx.tdo(&["status"]);
+        assert!(o.status.success(), "{}", stderr(&o));
+        let out = stdout(&o);
+        assert!(out.contains("last sync: never"), "{out}");
+        assert!(out.contains("pending: 0"), "{out}");
+        assert!(out.contains("conflicts: 0"), "{out}");
+        assert!(!fx.path("state").exists(), "status creates nothing");
+    }
+
+    #[test]
+    fn clean_sync_exits_0_and_status_shows_it() {
+        let fx = Fx::with_fake(|_| "echo 'Syncing twydo/c1' >&2".into());
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let o = fx.tdo(&["sync", "--background"]);
+        assert_eq!(o.status.code(), Some(0));
+        assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{o:?}");
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(!out.contains("last sync: never"), "{out}");
+        assert!(out.contains("c1: ok"), "{out}");
+    }
+
+    #[test]
+    fn failed_sync_exits_1() {
+        let fx = Fx::with_fake(|_| "echo 'error: Connection refused' >&2\nexit 1".into());
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(1));
+        assert!(stderr(&o).contains("Connection refused"), "{}", stderr(&o));
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(out.contains("failures: 1"), "{out}");
+    }
+
+    #[test]
+    fn force_delete_resolves_display_name() {
+        let fx = Fx::with_fake(|fx| format!("echo \"$@\" >> '{}'", fx.path("args.txt").display()));
+        fs::write(fx.path("vdir/c1/displayname"), "Errands\n").unwrap();
+        let o = fx.tdo(&["sync", "--force-delete", "Errands"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert_eq!(
+            fs::read_to_string(fx.path("args.txt")).unwrap(),
+            "sync --force-delete twydo/c1\n"
+        );
+        let o = fx.tdo(&["sync", "--force-delete", "nope"]);
+        assert_eq!(o.status.code(), Some(2));
+        assert!(stderr(&o).contains("nope"), "{}", stderr(&o));
+    }
+
+    #[test]
+    fn spawn_background_starts_runner() {
+        let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
+        let marker = fx.path("marker");
+        let cfg = Config::load(&fx.config_path()).unwrap();
+        let mut cmd =
+            tdo::cli::sync::background_command(Path::new(env!("CARGO_BIN_EXE_tdo")), &cfg, None)
+                .expect("sync is configured");
+        cmd.env("XDG_CONFIG_HOME", fx.path("xdg"));
+        tdo::cli::sync::detach(cmd);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !marker.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            marker.exists(),
+            "the background runner never ran the command"
+        );
+
+        let mut no_sync = cfg.clone();
+        no_sync.sync = None;
+        assert!(tdo::cli::sync::background_command(Path::new("tdo"), &no_sync, None).is_none());
+    }
+}

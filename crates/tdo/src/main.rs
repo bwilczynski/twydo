@@ -35,6 +35,17 @@ enum Command {
         #[command(subcommand)]
         command: cli::conflicts::ConflictsCommand,
     },
+    /// Sync the vdir with vdirsyncer (`[sync]` in the config)
+    Sync {
+        /// For the timer: no waiting for a running sync, honour backoff, quiet on success
+        #[arg(long)]
+        background: bool,
+        /// Apply an emptied list to both sides (collection id or display name)
+        #[arg(long, value_name = "LIST")]
+        force_delete: Vec<String>,
+    },
+    /// Show sync status: last success, pending changes, conflicts, failures
+    Status,
     /// Report whether every active repeat rule class is verified
     Check {
         /// Compatibility matrix file
@@ -64,6 +75,15 @@ fn main() {
         Command::Conflicts { command } => {
             std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
         }
+        Command::Sync {
+            background,
+            force_delete,
+        } => std::process::exit(cli::sync::sync(
+            cli.vdir.as_deref(),
+            background,
+            &force_delete,
+        )),
+        Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),
         Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
         Command::Check { matrix, verbose } => {
             cli::check::run(cli.vdir.as_deref(), &matrix, verbose)
