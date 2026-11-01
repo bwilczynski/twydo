@@ -150,3 +150,31 @@ fn prune_keeps_unresolved() {
     assert!(s.get(&open.id).unwrap().is_some());
     assert!(s.get(&fresh.id).unwrap().is_some());
 }
+
+#[test]
+fn record_recovers_from_crash_between_write_and_supersede() {
+    let d = tempfile::tempdir().unwrap();
+    let s = ConflictStore::open(d.path()).unwrap();
+    let a = s
+        .record(new("inbox/a.ics", Some("L"), Some("R")), t(0))
+        .unwrap();
+    // Seed a second unresolved conflict for the path, as a crash after the new
+    // conflict was written but before the older was superseded would leave.
+    let dup = "20260101T000000Z-aaaaaaaa";
+    let root = d.path().join("conflicts");
+    std::fs::create_dir(root.join(dup)).unwrap();
+    for f in ["local.ics", "remote.ics"] {
+        std::fs::copy(root.join(&a.id).join(f), root.join(dup).join(f)).unwrap();
+    }
+    let json = std::fs::read_to_string(root.join(&a.id).join("conflict.json"))
+        .unwrap()
+        .replace(&a.id, dup);
+    std::fs::write(root.join(dup).join("conflict.json"), json).unwrap();
+    assert_eq!(s.unresolved().unwrap().len(), 2);
+    let c = s
+        .record(new("inbox/a.ics", Some("L2"), Some("R")), t(5))
+        .unwrap();
+    let un = s.unresolved().unwrap();
+    assert_eq!(un.len(), 1);
+    assert_eq!(un[0].id, c.id);
+}
