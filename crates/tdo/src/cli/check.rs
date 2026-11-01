@@ -10,7 +10,8 @@ use twydo_core::model::Status;
 use super::{CliError, load_snapshot, task_rule_class};
 
 pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(), CliError> {
-    let (snap, errors) = load_snapshot(vdir)?;
+    let snap = load_snapshot(vdir)?;
+    let errors = &snap.errors;
 
     let matrix = if matrix_path.exists() {
         Some(Matrix::load(matrix_path)?)
@@ -49,7 +50,7 @@ pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(),
 
     println!("parse errors: {}", errors.len());
     if verbose {
-        for (path, msg) in &errors {
+        for (path, msg) in errors {
             println!("    {}: {msg}", path.display());
         }
     }

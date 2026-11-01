@@ -99,6 +99,6 @@ fn reload(app: &mut App, root: &Path) {
             let snapshot = Snapshot::new(report, app.snapshot.config.clone());
             app.reload(snapshot);
         }
-        Err(e) => app.message = Some(format!("reload failed: {e}")),
+        Err(e) => app.reload_failed(e),
     }
 }

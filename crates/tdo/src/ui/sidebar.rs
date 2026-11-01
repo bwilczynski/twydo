@@ -1,4 +1,4 @@
-//! Left pane: views with `due│total` counts, then list groups and lists.
+//! Left pane: views with `due│total` counts, list groups and lists, then smart lists.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -9,7 +9,7 @@ use twydo_core::views::{View, counts};
 use unicode_width::UnicodeWidthStr;
 
 use super::{bar_color, dim, pad, pane_block, truncate, view_name};
-use crate::app::{App, Pane};
+use crate::app::{App, Pane, SidebarEntry};
 
 /// One sidebar line, with the index into `App::sidebar_items` when it is selectable.
 type Entry = (Line<'static>, Option<usize>);
@@ -55,47 +55,21 @@ fn item_line(app: &App, i: usize, view: &View, width: usize) -> Line<'static> {
     Line::from(spans).style(style)
 }
 
+/// The lines of [`App::sidebar_entries`], in its order: headings become dividers and each
+/// view carries its index into `App::sidebar_items`.
 fn entries(app: &App, width: usize) -> Vec<Entry> {
-    let items = app.sidebar_items();
-    let mut out: Vec<Entry> = Vec::new();
-    let add = |out: &mut Vec<Entry>, i: usize| {
-        out.push((item_line(app, i, &items[i], width), Some(i)));
-    };
-    for i in 0..4.min(items.len()) {
-        add(&mut out, i);
-    }
-
-    // Lists: each configured group in order, then everything else under "Lists".
-    let list_index = |id: &str| items.iter().position(|v| *v == View::List(id.to_string()));
-    let mut placed: Vec<usize> = Vec::new();
-    for g in &app.snapshot.config.groups {
-        let idx: Vec<usize> = g
-            .lists
-            .iter()
-            .filter_map(|id| list_index(id))
-            .filter(|i| !placed.contains(i))
-            .collect();
-        if idx.is_empty() {
-            continue;
-        }
-        out.push((divider(&g.name, width), None));
-        for i in idx {
-            placed.push(i);
-            add(&mut out, i);
-        }
-    }
-    let rest: Vec<usize> = (5..items.len()).filter(|i| !placed.contains(i)).collect();
-    if !rest.is_empty() {
-        out.push((divider("Lists", width), None));
-        for i in rest {
-            add(&mut out, i);
-        }
-    }
-    if items.len() > 4 {
-        out.push((divider("Smart lists", width), None));
-        add(&mut out, 4);
-    }
-    out
+    let mut i = 0;
+    app.sidebar_entries()
+        .into_iter()
+        .map(|e| match e {
+            SidebarEntry::Heading(label) => (divider(&label, width), None),
+            SidebarEntry::Item(view) => {
+                let line = item_line(app, i, &view, width);
+                i += 1;
+                (line, Some(i - 1))
+            }
+        })
+        .collect()
 }
 
 pub fn render(f: &mut Frame, area: Rect, app: &App) {

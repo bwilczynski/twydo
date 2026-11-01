@@ -265,10 +265,10 @@ fn sidebar_navigation_opens_views() {
             View::All,
             View::Scheduled,
             View::Done,
-            View::Next3Days,
             View::List("bills".into()),
             View::List("inbox".into()),
             View::List("personal".into()),
+            View::Next3Days,
         ]
     );
     a.handle_key(key('h'));
@@ -297,4 +297,81 @@ fn reload_keeps_selection_by_uid() {
     a.reload(snapshot_of(r));
     assert_eq!(a.cursor, 0);
     assert_eq!(a.snapshot.tasks[a.selected().unwrap()].uid, uid);
+}
+
+#[test]
+fn sidebar_j_from_done_lands_on_first_list() {
+    let mut a = app();
+    a.handle_key(key('h'));
+    for _ in 0..3 {
+        a.handle_key(key('j'));
+    }
+    assert_eq!(a.sidebar_items()[a.sidebar_cursor], View::Done);
+    a.handle_key(key('j'));
+    a.handle_key(code(KeyCode::Enter));
+    assert_eq!(a.view, View::List("bills".into()));
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn sidebar_focus_gg_G_and_page_keys_move_the_sidebar() {
+    let mut a = app();
+    a.handle_key(key('2'));
+    a.cursor = 1;
+    a.handle_key(key('h'));
+    let last = a.sidebar_items().len() - 1;
+    a.handle_key(key('G'));
+    assert_eq!(a.sidebar_cursor, last);
+    assert_eq!(a.cursor, 1, "task cursor untouched");
+    type_str(&mut a, "gg");
+    assert_eq!(a.sidebar_cursor, 0);
+    a.page = 3;
+    a.handle_key(ctrl('d'));
+    assert_eq!(a.sidebar_cursor, 3);
+    a.handle_key(ctrl('d'));
+    assert_eq!(a.sidebar_cursor, 6);
+    a.handle_key(ctrl('d'));
+    assert_eq!(a.sidebar_cursor, last);
+    a.handle_key(ctrl('u'));
+    assert_eq!(a.sidebar_cursor, last - 3);
+    assert_eq!(a.cursor, 1, "task cursor untouched");
+    assert_eq!(a.view, View::All);
+}
+
+#[test]
+fn snapshot_keeps_load_errors_and_errors_command_toggles_overlay() {
+    let mut r = report();
+    r.errors.push((
+        PathBuf::from("bills/broken.ics"),
+        "synthetic parse error".into(),
+    ));
+    let mut a = App::new(snapshot_of(r), now());
+    assert_eq!(a.snapshot.errors.len(), 1);
+    assert!(!a.show_errors);
+    type_str(&mut a, ":errors");
+    a.handle_key(code(KeyCode::Enter));
+    assert!(a.show_errors);
+    type_str(&mut a, ":errors");
+    a.handle_key(code(KeyCode::Enter));
+    assert!(!a.show_errors);
+    type_str(&mut a, ":errors");
+    a.handle_key(code(KeyCode::Enter));
+    a.handle_key(code(KeyCode::Esc));
+    assert!(!a.show_errors, "Esc closes the overlay");
+}
+
+#[test]
+fn successful_reload_clears_reload_failed_message() {
+    let mut a = app();
+    a.reload_failed("synthetic io error");
+    assert_eq!(
+        a.message.as_deref(),
+        Some("reload failed: synthetic io error")
+    );
+    a.reload(snapshot_of(report()));
+    assert_eq!(a.message, None);
+    // Other messages survive a reload.
+    a.handle_key(key('x'));
+    a.reload(snapshot_of(report()));
+    assert!(a.message.as_deref().unwrap().starts_with("toggle done:"));
 }

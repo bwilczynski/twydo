@@ -36,7 +36,7 @@ enum Command {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command.unwrap_or(Command::Tui) {
-        Command::Tui => cli::load_snapshot(cli.vdir.as_deref()).map(|(snapshot, _errors)| {
+        Command::Tui => cli::load_snapshot(cli.vdir.as_deref()).map(|snapshot| {
             let tz = snapshot.tz();
             let root = snapshot.config.vdir.clone();
             let app = App::new(snapshot, Utc::now().with_timezone(&tz));
