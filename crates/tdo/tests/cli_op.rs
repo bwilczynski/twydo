@@ -348,3 +348,25 @@ fn missing_vdir_reports_only_read_error() {
     assert!(err(&o).contains("cannot read vdir"), "{}", err(&o));
     assert!(!err(&o).contains("journal recovery failed"), "{}", err(&o));
 }
+
+#[test]
+fn op_journal_shows_synced() {
+    let env = Env::new("test");
+    let id = out(&env.op(&["complete", TASK_E])).trim().to_string();
+    let j = out(&env.op(&["journal"]));
+    assert!(j.lines().next().unwrap().ends_with("pending"), "{j}");
+
+    let journal = twydo_core::store::journal::Journal::open(&env.vdir_state()).unwrap();
+    let at = chrono::DateTime::parse_from_rfc3339("2026-11-02T08:30:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    journal.mark_synced(&id, at).unwrap();
+    let j = out(&env.op(&["journal"]));
+    assert!(
+        j.lines()
+            .next()
+            .unwrap()
+            .ends_with("synced 2026-11-02T08:30:00Z"),
+        "{j}"
+    );
+}

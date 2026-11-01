@@ -271,6 +271,7 @@ impl Store {
             uids: plan.uids,
             stage: Stage::Prepared,
             inverse_of: None,
+            synced: None,
             writes: plan.writes,
         };
 
@@ -373,6 +374,7 @@ impl Store {
             uids: e.uids,
             stage: Stage::Prepared,
             inverse_of: Some(id.to_string()),
+            synced: None,
             writes,
         })
     }

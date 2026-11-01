@@ -17,6 +17,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         uids: vec!["uid-a".to_string()],
         stage: Stage::Prepared,
         inverse_of: None,
+        synced: None,
         writes,
     }
 }
@@ -400,4 +401,71 @@ fn vdir_state_dir_is_stable_and_distinct() {
     // Computing the dir creates nothing; a missing vdir is an error.
     assert!(!state.exists());
     assert!(vdir_state_dir(&state, &root.path().join("missing")).is_err());
+}
+
+fn applied(id: &str) -> Entry {
+    let mut e = entry(id, vec![]);
+    e.stage = Stage::Applied;
+    e
+}
+
+fn at(h: u32) -> chrono::DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 11, 2, h, 0, 0).unwrap()
+}
+
+#[test]
+fn old_entry_without_synced_parses() {
+    let dir = tempfile::tempdir().unwrap();
+    let j = Journal::open(dir.path()).unwrap();
+    j.prepare(&applied("a-1")).unwrap();
+    let p = dir.path().join("journal/a-1.json");
+    let text = fs::read_to_string(&p).unwrap();
+    assert!(!text.contains("synced"), "{text}");
+    assert_eq!(j.get("a-1").unwrap().unwrap().synced, None);
+    j.mark_synced("a-1", at(1)).unwrap();
+    assert!(fs::read_to_string(&p).unwrap().contains("synced"));
+    assert_eq!(j.get("a-1").unwrap().unwrap().synced, Some(at(1)));
+}
+
+#[test]
+fn pending_excludes_synced_prepared_and_abandoned() {
+    let dir = tempfile::tempdir().unwrap();
+    let j = Journal::open(dir.path()).unwrap();
+    j.prepare(&applied("a-1")).unwrap();
+    j.prepare(&applied("a-2")).unwrap();
+    j.prepare(&applied("a-3")).unwrap();
+    let mut p = applied("a-4");
+    p.stage = Stage::Prepared;
+    j.prepare(&p).unwrap();
+    let mut ab = applied("a-5");
+    ab.stage = Stage::Abandoned;
+    j.prepare(&ab).unwrap();
+    j.mark_synced("a-2", at(1)).unwrap();
+    let ids: Vec<_> = j.pending().unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(ids, vec!["a-1", "a-3"]);
+}
+
+#[test]
+fn prune_removes_only_synced_before_cutoff() {
+    let dir = tempfile::tempdir().unwrap();
+    let j = Journal::open(dir.path()).unwrap();
+    for id in ["a-1", "a-2", "a-3", "a-4"] {
+        j.prepare(&applied(id)).unwrap();
+    }
+    let mut p = applied("a-5");
+    p.stage = Stage::Prepared;
+    p.synced = Some(at(1));
+    j.prepare(&p).unwrap();
+    let mut ab = applied("a-6");
+    ab.stage = Stage::Abandoned;
+    ab.synced = Some(at(1));
+    j.prepare(&ab).unwrap();
+    j.mark_synced("a-1", at(1)).unwrap();
+    j.mark_synced("a-2", at(5)).unwrap();
+    j.mark_synced("a-3", at(9)).unwrap();
+    let gone = j.prune(at(5)).unwrap();
+    assert_eq!(gone, vec!["a-1"]);
+    let ids: Vec<_> = j.list().unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(ids, vec!["a-2", "a-3", "a-4", "a-5", "a-6"]);
+    assert!(!dir.path().join("journal/a-1.json").exists());
 }
