@@ -13,7 +13,7 @@ use chrono_tz::Tz;
 
 use crate::config::{Config, ListPrefs, Sort, SortField};
 use crate::ical::value::{IcalDateTime, Resolved};
-use crate::model::repeat::parse_rrule;
+use crate::model::repeat::{parse_rrule, rule_class};
 use crate::model::{Status, Task, TaskKind};
 use crate::vdir::{Collection, LoadReport};
 
@@ -126,6 +126,22 @@ impl Snapshot {
         self.parent(idx)
             .is_some_and(|p| self.tasks[p].kind == TaskKind::Checklist)
     }
+}
+
+/// The matrix class of a task's repeat rule; `None` without an RRULE. A rule that does not
+/// parse is `unrecognized`. The anchor is the due date in the snapshot's timezone.
+pub fn task_rule_class(t: &Task, snap: &Snapshot) -> Option<String> {
+    let raw = t.rrule.as_deref()?;
+    Some(match parse_rrule(raw) {
+        Ok(r) => {
+            let anchor = t
+                .due
+                .as_ref()
+                .map(|d: &IcalDateTime| d.local_date(snap.tz()));
+            rule_class(&r, anchor, t.from_completion)
+        }
+        Err(_) => "unrecognized".to_string(),
+    })
 }
 
 /// Cut the parent link of every task that lies on a cycle, marking it broken.
