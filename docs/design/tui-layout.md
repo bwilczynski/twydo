@@ -24,7 +24,7 @@ list names are placeholders, not the user's real tasks. Behaviour and keys are d
 ├ Smart lists ─────┤│ ▌↺ Send invoice                 monthly   Thu        │
 │ ▌ Next 3 Days    ││ ▌↺ Phone bill                   monthly   Sat        │
 ╰──────────────────╯╰──────────────────────────────────────────────────────╯
- NORMAL  j/k move x done t today ] +1d o new / search : cmd  Today·3/7
+ NORMAL Tasks · j/k move x done t today ] +1d o new / search : cmd  Today·3/7
 ```
 
 On wide terminals a **details pane** sits to the right of the task list (collapsible on narrow ones):
@@ -69,3 +69,16 @@ On wide terminals a **details pane** sits to the right of the task list (collaps
 All UI chrome uses the terminal's ANSI palette, so Omarchy theme switches re-colour the app with
 no code. On macOS it follows whatever theme the terminal (e.g. Ghostty) uses.
 2Do's own colours, for reference only: `docs/reference/2do/03-look-and-feel.md` §7.
+
+## Responsive sizing and focus (2026-11-01)
+
+From 60 terminal columns, the sidebar uses 20% of the available width, clamped to
+24–40 columns. Below that it uses one third. Details uses 36 columns and appears
+at 110 columns; h/l and Tab skip it when hidden. Shrinking the terminal while
+Details has focus returns focus to Tasks without changing the selected task.
+
+The active pane has a bold blue ANSI border and title. Active rows use the
+terminal's bright-black palette entry as their background, preserving overdue red
+and calendar-color bars. A muted `›` marks the selected task when another pane has
+focus, without a row background. The status line names the focused pane when room
+permits. Mode badges, sidebar section headings, and help keys share the blue accent.

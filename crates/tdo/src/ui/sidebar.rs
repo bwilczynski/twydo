@@ -8,7 +8,7 @@ use ratatui::widgets::Paragraph;
 use twydo_core::views::{View, counts};
 use unicode_width::UnicodeWidthStr;
 
-use super::{bar_color, dim, pad, pane_block, truncate, view_name};
+use super::{bar_color, pad, pane_block, theme, truncate, view_name};
 use crate::app::{App, Pane, SidebarEntry};
 
 /// One sidebar line, with the index into `App::sidebar_items` when it is selectable.
@@ -17,7 +17,7 @@ type Entry = (Line<'static>, Option<usize>);
 fn divider(label: &str, width: usize) -> Line<'static> {
     let head = format!("─ {label} ");
     let fill = "─".repeat(width.saturating_sub(head.width()));
-    Line::styled(format!("{head}{fill}"), dim())
+    Line::styled(format!("{head}{fill}"), theme::accent())
 }
 
 fn item_line(app: &App, i: usize, view: &View, width: usize) -> Line<'static> {
@@ -50,7 +50,7 @@ fn item_line(app: &App, i: usize, view: &View, width: usize) -> Line<'static> {
         style = style.add_modifier(Modifier::BOLD);
     }
     if app.focus == Pane::Sidebar && i == app.sidebar_cursor {
-        style = style.add_modifier(Modifier::REVERSED);
+        style = style.patch(theme::selection());
     }
     Line::from(spans).style(style)
 }

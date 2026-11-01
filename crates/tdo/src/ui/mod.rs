@@ -6,6 +6,9 @@ mod details;
 mod sidebar;
 mod status;
 mod tasks;
+mod theme;
+
+use theme::muted as dim;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout, Rect};
@@ -15,12 +18,9 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use twydo_core::views::{Snapshot, View};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, Pane};
+use crate::app::{App, DETAILS_MIN_TERMINAL, Pane};
 
-const SIDEBAR_WIDTH: u16 = 20;
 const DETAILS_WIDTH: u16 = 36;
-/// The details pane appears from this terminal width.
-const DETAILS_MIN_TERMINAL: u16 = 110;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -29,7 +29,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     let [main, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
     let sidebar_w = if area.width >= 60 {
-        SIDEBAR_WIDTH
+        (area.width / 5).clamp(24, 40)
     } else {
         area.width / 3
     };
@@ -90,10 +90,7 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
                 let msg = format!(": {msg}");
                 let path = truncate(&path, text_w);
                 let msg = truncate(&msg, text_w.saturating_sub(path.width()));
-                Line::from(vec![
-                    Span::styled(path, Style::new().fg(Color::Yellow)),
-                    Span::raw(msg),
-                ])
+                Line::from(vec![Span::styled(path, theme::warning()), Span::raw(msg)])
             })
             .collect()
     };
@@ -108,10 +105,10 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-/// A rounded, titled pane border; the focused pane is bold cyan.
+/// A rounded, titled pane border; the focused pane uses the terminal accent.
 pub(crate) fn pane_block(title: String, app: &App, pane: Pane) -> Block<'static> {
     let border = if app.focus == pane {
-        Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+        theme::accent()
     } else {
         Style::new()
     };
@@ -120,12 +117,8 @@ pub(crate) fn pane_block(title: String, app: &App, pane: Pane) -> Block<'static>
         .border_style(border)
         .title(Span::styled(
             format!(" {title} "),
-            Style::new().add_modifier(Modifier::BOLD),
+            border.add_modifier(Modifier::BOLD),
         ))
-}
-
-pub(crate) fn dim() -> Style {
-    Style::new().add_modifier(Modifier::DIM)
 }
 
 /// The sidebar / status name of a view.
@@ -231,10 +224,7 @@ fn render_help(f: &mut Frame, area: Rect) {
         .iter()
         .map(|(keys, what, gated)| {
             let mut spans = vec![
-                Span::styled(
-                    pad(keys, 21),
-                    Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(pad(keys, 21), theme::accent()),
                 Span::raw(*what),
             ];
             if *gated {

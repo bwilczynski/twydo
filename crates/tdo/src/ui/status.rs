@@ -3,15 +3,15 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 use twydo_core::sync::status::CollState;
 
-use super::{dim, list_name, view_name};
-use crate::app::{App, Mode};
+use super::{dim, list_name, theme, view_name};
+use crate::app::{App, Mode, Pane};
 
 const HINTS: &str = "j/k move  x done  t today  ] +1d  o new  / search  : cmd  ? help";
 
@@ -29,45 +29,47 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         rows
     );
 
-    let mut spans = vec![
-        Span::styled(
-            format!(" {label} "),
-            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-        ),
+    let badge = vec![
+        Span::styled(format!(" {label} "), theme::badge()),
         Span::raw(" "),
     ];
+    let mut rest = Vec::new();
     // Persistent while any file fails to load; `:errors` lists them.
-    let unreadable = unreadable(app);
-    if let Some(u) = &unreadable {
-        spans.push(Span::styled(
-            u.clone(),
-            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+    if let Some(u) = unreadable(app) {
+        rest.push(Span::styled(
+            u,
+            theme::warning().add_modifier(Modifier::BOLD),
         ));
-        spans.push(Span::raw("  "));
+        rest.push(Span::raw("  "));
     }
     let sync = sync_segment(app);
-    let sync_w: usize = sync.iter().map(|(t, _)| t.width()).sum();
     if !sync.is_empty() {
-        spans.extend(sync.into_iter().map(|(t, s)| Span::styled(t, s)));
-        spans.push(Span::raw("  "));
+        rest.extend(sync.into_iter().map(|(t, s)| Span::styled(t, s)));
+        rest.push(Span::raw("  "));
     }
-    match (&prompt, &app.message) {
-        (Some(p), _) => spans.push(Span::raw(p.clone())),
-        (None, Some(m)) => spans.push(Span::styled(m.clone(), Style::new().fg(Color::Yellow))),
-        (None, None) => spans.push(Span::styled(HINTS, dim())),
+    rest.push(match (prompt, &app.message) {
+        (Some(p), _) => Span::raw(p),
+        (None, Some(m)) => Span::styled(m.clone(), theme::warning()),
+        (None, None) => Span::styled(HINTS, dim()),
+    });
+    // The focus label is optional: it only goes in when everything else still fits.
+    let width = |spans: &[Span]| spans.iter().map(|s| s.content.width()).sum::<usize>();
+    let focus = match app.focus {
+        Pane::Sidebar => "Sidebar",
+        Pane::Tasks => "Tasks",
+        Pane::Details => "Details",
+    };
+    let focus = Span::styled(format!("{focus} · "), theme::accent());
+    let mut spans = badge;
+    if width(&spans) + focus.content.width() + width(&rest) <= area.width as usize {
+        spans.push(focus);
     }
+    spans.extend(rest);
+    let left_used = width(&spans);
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 
     // The position goes on top at the right edge when there is room for it.
     let w = pos.width() as u16;
-    let left_used: usize = 10
-        + unreadable.as_ref().map_or(0, |u| u.width() + 2)
-        + if sync_w > 0 { sync_w + 2 } else { 0 }
-        + match (&prompt, &app.message) {
-            (Some(p), _) => p.width(),
-            (None, Some(m)) => m.width(),
-            (None, None) => HINTS.width(),
-        };
     if area.width > w && left_used + (w as usize) < area.width as usize {
         let r = Rect::new(area.x + area.width - w, area.y, w, area.height.min(1));
         f.render_widget(Paragraph::new(pos).alignment(Alignment::Right), r);
@@ -98,7 +100,7 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
     let Some(s) = &app.sync else {
         return Vec::new();
     };
-    let yellow = Style::new().fg(Color::Yellow);
+    let yellow = theme::warning();
     let mut out = Vec::new();
     if let Some(err) = &s.status.last_error {
         let retry = s.status.next_attempt.map(|t| {
@@ -109,7 +111,7 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
         });
         out.push((
             format!("sync failed: {err}{}", retry.unwrap_or_default()),
-            Style::new().fg(Color::Red),
+            theme::overdue(),
         ));
     } else {
         out.push((
