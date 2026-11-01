@@ -142,6 +142,40 @@ unpushed local edits.
 - Servers 2Do knows by name: iCloud (app-specific password), Fastmail, fruux (`dav.fruux.com`),
   generic CalDAV.
 
+### Static reader/writer findings (2026-11-01)
+
+**[obs: REA + Ghidra, macOS 2026.4.6 arm64 DAVKit]** The recovered methods are
+`CalDAVKitTask::parseAsVTODO` (`0x409e4`) and
+`convertToVTODOUsingExistingCalendarData:usingProductID:` (`0x3e1bc`). These are
+static code paths, not observations of a running app. Binary identities and coverage limits
+are recorded in [07 §7](07-reverse-engineering-notes.md#7-caldav-static-review-2026-11-01).
+
+- **Completion import:** the reader first derives `isCompleted` from `STATUS`, then reads
+  `COMPLETED`. If the latter parses to a non-null date, it forces `isCompleted = true`.
+  Thus `STATUS:NEEDS-ACTION` plus a valid `COMPLETED` timestamp is completed at this layer.
+  A present but unparseable `COMPLETED` value does not itself force completion.
+- **Completion export:** the writer sets `STATUS` from `isCompleted`, sets
+  `PERCENT-COMPLETE` to 100 for completed tasks, and resets an existing value of 100 to 0
+  for open tasks. It writes or removes `COMPLETED` according to the task's completed date.
+  This is serialization logic; it does not establish how recurrence completion creates history.
+- **Dates:** the normal writer branch constructs `DTSTART` and `DUE` from the same due-date/time
+  components. An `omitEqualTaskStartDate` flag bypasses normal `DTSTART` creation.
+  **[?]** The caller policy for that flag was not recovered. The iPhone phase-0 observation in
+  §2.6 remains valid for those captures; it should not be generalized to every macOS export.
+- **Recurrence:** the writer builds `RRULE` through libical from frequency, count/until,
+  interval and BY* strings. The reader parses `RRULE` and can mark additional recurrence
+  constraints. This does not establish support for executing every parsed rule class.
+- **Preservation:** the writer can parse existing calendar data before updating properties;
+  it updates `DTSTAMP` and `LAST-MODIFIED`. This is not proof of byte-for-byte preservation.
+
+**Twydo comparison at review time:** `model/task.rs::read_todo` and
+`edit/complete.rs::state` give an explicit `STATUS` precedence over `COMPLETED`, unlike
+the DAVKit reader above. Without `STATUS`, they also use property presence rather than a
+successfully parsed completion date. This is a known interpretation discrepancy, not a
+compatibility pass. No implementation change or matrix verdict change was made in this review.
+Metadata precedence, recurring copy-and-advance and provider conflict policy remain unresolved
+by this static review; existing fixture evidence retains its own scope.
+
 ---
 
 # Part 2 — Two-way sync from the Linux port

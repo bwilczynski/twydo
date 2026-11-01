@@ -102,6 +102,54 @@ Deliberately not investigated further.
 - Second socket-path candidate (`…/mcp/…`) base directory.
 - Helper ↔ app XPC protocol.
 
+## 7. CalDAV static review (2026-11-01)
+
+REA 6.8.0 + Ghidra 12.1.4, installed macOS 2Do 2026.4.6, thinned arm64 binaries.
+No application execution, production account access, NAS access or iPhone access was performed.
+Addresses below belong to the named framework slice, not the main executable.
+
+| Binary | ARM64 SHA-256 | Analysis result |
+|---|---|---|
+| `MacOS/2Do` | `f6b949f3ed69bb668fb372c3eca2aacdfaf61532e6122ae38b6549fcae6c59fa` | Default analysis completed; CalDAV procedure search identifies imports from TodoDAOFramework. |
+| `TodoDAOFramework` | `4ddb12773ee02fd8acbd2d7644009ff376274670af12a49e0b6d34ef85cbc725` | Whole-program analysis timed out after 1,500,000 ms; native dispatch metadata inspected separately. |
+| `DAVKit` | `c4e520ab8c6fd9b9d333ba5ed9951e02f5285dfd1014bc1bedda808bd0eee492` | Default analysis completed; reader and writer function dossiers recovered. |
+
+Recovered entry points **[obs]**:
+
+| Binary | Method | Address | Evidence |
+|---|---|---|---|
+| DAVKit | `CalDAVKitTask::convertToVTODOUsingExistingCalendarData:usingProductID:` | `0x3e1bc` | Decompiled body and assembly; completion/date/recurrence serialization. |
+| DAVKit | `CalDAVKitTask::parseAsVTODO` | `0x409e4` | Decompiled body and assembly; completion precedence, recurrence and alarm parsing. |
+| TodoDAOFramework | `TodoTask::setMetaFromString:isForCalDAV:withConnection:` | `0xeee818` | Native Objective-C dispatch metadata only; body not recovered. |
+| TodoDAOFramework | `TodoTask::setMetaFromDictionary:isForCalDAV:withConnection:` | `0xef15e0` | Native Objective-C dispatch metadata only; body not recovered. |
+
+See [06 §1.7](06-sync.md#static-readerwriter-findings-2026-11-01) for findings and the
+completion-precedence discrepancy with Twydo. Method names alone do not establish metadata
+semantics. JSON metadata precedence, recurring copy-and-advance and provider conflict policy
+were not confirmed by this session.
+
+**Analysis limits:** TodoDAOFramework produced unsupported Objective-C type-encoding errors,
+invalid flow targets and decompiler address-space errors before reaching its startup deadline.
+No out-of-memory condition was confirmed. Its incomplete whole-program analysis supplies no
+behavioral equivalence claim. Native metadata inspection also reports partial decoding, so it
+is not an exhaustive class or method inventory.
+
+**Local evidence exports** (temporary artifacts, not committed; may disappear):
+`/tmp/twydo-2do-main-rea.json`, `/tmp/twydo-dao-evidence.json`,
+`/tmp/twydo-davkit-evidence.json`, `/tmp/twydo-davkit-rea.json`, and extracted pseudocode
+`/tmp/twydo-davkit-0x3e1bc.c`, `/tmp/twydo-davkit-0x409e4.c`.
+DAVKit reader dossier: `ev_bd9a15cb498a0de32ec733b9fa476d0e1729a1a806cbb60b49607f1536eeb01e`;
+writer dossier: `ev_763ca1b3d686ddebecb70214ebf1589f964792ac56187e56ad5e3960ff91b84d`.
+These are static observations, not original source or runtime traces.
+
+**Timeout reproduction:** there are two independent deadlines. The MCP client initially
+timed out after 300 seconds; Codex's REA registration was changed to
+`tool_timeout_sec = 1800` and reloaded. REA's separate Ghidra startup default was 330,000 ms;
+`update_analysis_settings` with `ghidra.startup_timeout_ms = 1500000` allowed the main
+executable to finish, but TodoDAOFramework still timed out. Runtime settings apply to the
+next startup and do not survive an REA restart. Increasing only the client timeout does
+not increase the provider startup allowance.
+
 ## Reproduce
 
 ```sh
