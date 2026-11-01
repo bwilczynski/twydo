@@ -110,15 +110,16 @@ right. Same test account, same two lists, single-letter titles.
 A separate config folder keeps `test` write mode away from any default config:
 
 ```sh
-export XDG_CONFIG_HOME=~/twydo-phase0/xdg
-mkdir -p $XDG_CONFIG_HOME/twydo
-cat > $XDG_CONFIG_HOME/twydo/config.toml <<'TOML'
+mkdir -p ~/twydo-phase0/xdg/twydo
+cat > ~/twydo-phase0/xdg/twydo/config.toml <<'TOML'
 vdir = "~/twydo-phase0/vdir"
 state_dir = "~/twydo-phase0/state"
 [writes]
 mode = "test"
 TOML
-cargo build -q -p tdo && alias tdo=$PWD/target/debug/tdo
+cargo build -q -p tdo
+# Point only tdo at that config (exporting XDG_CONFIG_HOME would hide vdirsyncer's config):
+tdo() { XDG_CONFIG_HOME=~/twydo-phase0/xdg "$PWD/target/debug/tdo" "$@"; }
 ```
 
 After each round: 🤖 `vdirsyncer sync twydo`, capture both lists with `--device twydo` (Twydo
@@ -138,7 +139,45 @@ rounds) or `--device iphone` (phone rounds) into scenarios `twydo-list1` / `twyd
 | 06-undo-after-sync | 🤖 | `tdo op undo` the S completion from round 04; `tdo op undo` the Q move from round 05 | 👤 S back to 2026-12-10 with no stray completed copy; Q back in `Twydo test` |
 | 07-phone-edit | 👤 | S → notes `m`; Q → title `Q2` | 🤖 `export-json` shows both |
 | 08-delete | 🤖 | delete P3, Q2, S, T | 👤 both lists empty (vdirsyncer may need `--force-delete` per list) |
+| 09–14 | 🤖/👤 | X by Twydo; Y, U, V by the phone; Twydo edits Y; the phone completes, reopens, moves and deletes them | 🤖 `export-json` after each |
 
 ## Results
 
-(Filled in after the session: per case/op, `twydo_to_iphone` / `iphone_to_twydo` and evidence.)
+Session 2026-11-01. Fixtures in `fixtures/phase0/v1/twydo-list1/` and `twydo-list2/` (round
+numbers as above, plus rounds 09–14 below). Matrix `twydo_to_iphone` / `iphone_to_twydo` set from
+these. After the planned rounds, rounds 09–14 covered the iPhone acting on Twydo-written tasks:
+Twydo created `X` and edited the phone-created monthly `Y`; the phone then completed X and Y (12),
+reopened X and moved X and Y to list 2 (13), and deleted everything (14).
+
+| Case | Both directions pass (usable in `verified` mode) | Still unverified |
+|---|---|---|
+| one-time | create, edit, complete, reopen, move, delete | — |
+| date-only, timed, start-date | create, edit | (other ops follow the task case) |
+| monthly | edit, complete, delete | move (Twydo side), reopen; create is not offered by Twydo |
+| yearly | — | Twydo side done for edit and delete; iPhone side only create |
+
+Edge case `reopen-undo-before-after-sync`: **pass** for Twydo's undo (rounds 05, 06).
+
+### Findings
+
+- **Twydo-written resources are accepted by the iPhone.** When the phone edits one, it rewrites
+  the whole file in 2Do's form (2Do `PRODID`, LF, `X-2DOAPP-SYNC-*`), with the same content.
+- **Automatic alert.** The phone adds its at-due-time VALARM (`X-2DOAPP-ISAUTO:1`) whenever a time
+  is set *on the phone*. Twydo-created or Twydo-retimed tasks have no alert on the iPhone until the
+  phone edits them. Decision needed: mirror 2Do and write that VALARM too (spec §2 anti-goal:
+  missing a reminder).
+- **Edit-versus-edit conflict seen live (round 02).** An accidental toggle on the phone and a Twydo
+  edit of the same task: vdirsyncer refused both sides, reported the item, and kept syncing the
+  others (spec §5 default). Resolved by hand. Plan 3's conflict store must cover this.
+- **vdirsyncer + Synology deletes go out without an etag** (`Deleting an item with no etag`) for
+  every item. On the first refresh after some of these syncs (rounds 04, 06) the iPhone showed
+  "Remote server returned an invalid task reference during incremental sync"; the retry
+  succeeded and the data was right. Open issue for Plan 3.
+- **"Completely emptied" stop:** vdirsyncer refuses to sync a collection that became empty on
+  either side (remote delete of the last task, or a Twydo move/undo emptying a local list) until
+  `--force-delete`. Plan 3's runner must handle it.
+- **2Do's incremental sync can lag** one refresh behind (round 05).
+- **Blocked shapes, iPhone evidence for later (round 12):** completing a *timed* monthly task
+  advances the floating due time (09:00 kept) and the history copy keeps the auto alert;
+  completing a monthly task *with a start date* moves `StartDate` by the same interval (Dec 8 →
+  Jan 8). Not implemented; evidence for a follow-up that would unblock those tasks.

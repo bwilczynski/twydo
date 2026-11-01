@@ -1,0 +1,5 @@
+scenario = "twydo-list2"
+step = "01-create"
+device = "twydo"
+action = "tdo op add P (due 2026-12-03), Q (due 2026-12-03T17:30), R (start 2026-12-01 due 2026-12-03)"
+captured_at = "2026-11-01T15:29:55Z"
