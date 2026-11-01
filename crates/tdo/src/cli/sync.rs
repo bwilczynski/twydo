@@ -46,6 +46,9 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     for p in &problems {
         eprintln!("tdo: {p}");
     }
+    for path in &report.unexpected {
+        eprintln!("tdo: warning: {path} changed before its edit synced; the edit stays pending");
+    }
     if problems.is_empty() {
         if !background {
             println!("synced");

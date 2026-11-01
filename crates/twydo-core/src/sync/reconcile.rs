@@ -1,0 +1,395 @@
+//! Reconciliation after a vdirsyncer run: confirm journal entries whose result the server
+//! now holds, turn silently settled delete-versus-edit cases (F6) into conflicts, close held
+//! conflicts the user decided (or that both sides now agree on), and prune old records.
+//!
+//! Runs under the exclusive vdir lock, which the caller holds. It takes the conflicts lock
+//! (inside [`ConflictStore`]) after it, never the other way round.
+
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs;
+use std::io;
+use std::path::Path;
+
+use chrono::{DateTime, Utc};
+
+use super::hook::{HookRecord, uid_of};
+use super::output::{Action, SyncOutput};
+use super::status::CollState;
+use crate::config::SyncConfig;
+use crate::conflicts::{Conflict, ConflictKind, ConflictStore, NewConflict, Side};
+use crate::store::journal::{Entry, Journal, Stage};
+
+/// What [`reconcile`] did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Reconciled {
+    /// Journal entries marked synced.
+    pub confirmed: Vec<String>,
+    /// Delete-versus-edit conflicts recorded.
+    pub new_conflicts: Vec<String>,
+    /// Held conflicts marked resolved.
+    pub resolved: Vec<String>,
+    /// Paths whose vdir file differs from what Twydo wrote with no conflict to explain it;
+    /// their entries stay pending.
+    pub unexpected: Vec<String>,
+    /// Journal entries and conflicts pruned.
+    pub pruned: usize,
+}
+
+/// How one path came out.
+enum Outcome {
+    /// Not decided this run; its entries stay pending.
+    Pending,
+    /// The server holds Twydo's result, or a conflict now carries it, or the user decided.
+    Done,
+}
+
+/// Reconciles the journal with one vdirsyncer run (see the module docs).
+///
+/// Only collections that are `Ok` or `Conflict` in `states` count, and nothing counts when
+/// `out.unattributed` is non-empty. For each path written by `pending` in a counted
+/// collection, in write order:
+///
+/// 1. skip it when a journal entry not in `pending` touches it (a write that slipped in
+///    between the two locks; it is checked next run);
+/// 2. the expected content is the last pending write's `after`; the path was created here
+///    when a pending write has `before: None`; the uid comes from the expected content, or
+///    from the last `before` for a deletion;
+/// 3. an unresolved held conflict for the path whose collection is still `Conflict` keeps it
+///    pending;
+/// 4. an upload of the uid to the remote side, for a path not created here, is a remote
+///    delete versus a local edit (F6);
+/// 5. a file that differs from the expected content is a local delete versus a remote edit
+///    when the expected content is a deletion; otherwise it stays pending (see
+///    [`Reconciled::unexpected`]);
+/// 6. otherwise the path is confirmed.
+///
+/// An entry is marked synced when every path it writes is done. Held conflicts with a
+/// `resolved` hook record, or with no hook record while their collection is `Ok` (both
+/// sides agree, F5), are resolved, and their path counts as done. Finally journal entries
+/// and conflicts older than `retention_days` are pruned.
+#[allow(clippy::too_many_arguments)]
+pub fn reconcile(
+    vdir: &Path,
+    journal: &Journal,
+    conflicts: &ConflictStore,
+    sync: &SyncConfig,
+    states: &BTreeMap<String, CollState>,
+    pending: &[Entry],
+    out: &SyncOutput,
+    hook: &[HookRecord],
+    now: DateTime<Utc>,
+) -> io::Result<Reconciled> {
+    let mut rec = Reconciled::default();
+    if out.unattributed.is_empty() {
+        settle(
+            vdir, journal, conflicts, sync, states, pending, out, hook, now, &mut rec,
+        )?;
+    }
+    // A retention too long to subtract keeps everything.
+    if let Some(before) =
+        now.checked_sub_signed(chrono::Duration::days(i64::from(sync.retention_days)))
+    {
+        rec.pruned = journal.prune(before)?.len() + conflicts.prune(before)?.len();
+    }
+    Ok(rec)
+}
+
+/// Everything but pruning; only called when the run's output is fully attributed.
+#[allow(clippy::too_many_arguments)]
+fn settle(
+    vdir: &Path,
+    journal: &Journal,
+    conflicts: &ConflictStore,
+    sync: &SyncConfig,
+    states: &BTreeMap<String, CollState>,
+    pending: &[Entry],
+    out: &SyncOutput,
+    hook: &[HookRecord],
+    now: DateTime<Utc>,
+    rec: &mut Reconciled,
+) -> io::Result<()> {
+    let state_of = |coll: &str| states.get(coll);
+    let counted = |coll: &str| matches!(state_of(coll), Some(CollState::Ok | CollState::Conflict));
+
+    // Held conflicts the user decided, or that both sides now agree on. Their paths are
+    // done: whatever the vdir holds now is the user's decision.
+    let held: Vec<Conflict> = conflicts
+        .unresolved()?
+        .into_iter()
+        .filter(|c| c.held)
+        .collect();
+    let mut closing: Vec<&Conflict> = Vec::new();
+    for c in &held {
+        let records: Vec<&HookRecord> = hook
+            .iter()
+            .filter(|r| r.conflict == c.id || (r.uid == c.uid && r.collection == c.collection))
+            .collect();
+        let applied = records.iter().any(|r| r.conflict == c.id && r.resolved);
+        // With no hook call for the item while its collection synced cleanly, vdirsyncer saw
+        // both sides equal (F5), so the conflict is settled, however that happened (including
+        // a choice applied by a vdirsyncer run without a hook log).
+        let agreed = records.is_empty() && state_of(&c.collection) == Some(&CollState::Ok);
+        if counted(&c.collection) && (applied || agreed) {
+            closing.push(c);
+        }
+    }
+    let decided: BTreeSet<&str> = closing.iter().map(|c| c.path.as_str()).collect();
+    let still_held: BTreeSet<&str> = held
+        .iter()
+        .filter(|c| state_of(&c.collection) == Some(&CollState::Conflict))
+        .filter(|c| !decided.contains(c.path.as_str()))
+        .map(|c| c.path.as_str())
+        .collect();
+
+    // Write order: by creation time, then id (ids within one second are random).
+    let mut order: Vec<&Entry> = pending.iter().collect();
+    order.sort_by(|a, b| (a.created, &a.id).cmp(&(b.created, &b.id)));
+    let ours: HashSet<&str> = pending.iter().map(|e| e.id.as_str()).collect();
+    // Entries written since `pending` was read (step 1).
+    let others: Vec<Entry> = journal
+        .list()?
+        .into_iter()
+        .filter(|e| !ours.contains(e.id.as_str()))
+        .filter(|e| e.synced.is_none() && e.stage != Stage::Abandoned)
+        .collect();
+
+    let mut paths: Vec<&str> = Vec::new();
+    for e in &order {
+        for w in &e.writes {
+            if !paths.contains(&w.path.as_str()) {
+                paths.push(&w.path);
+            }
+        }
+    }
+
+    let mut done: BTreeSet<&str> = BTreeSet::new();
+    for path in paths {
+        let Some(coll) = collection_of(path) else {
+            continue;
+        };
+        if !counted(coll) {
+            continue;
+        }
+        // Step 1.
+        if others
+            .iter()
+            .any(|e| e.writes.iter().any(|w| w.path == path))
+        {
+            continue;
+        }
+        if decided.contains(path) {
+            done.insert(path);
+            continue;
+        }
+        // Step 3.
+        if still_held.contains(path) {
+            continue;
+        }
+        let outcome = check_path(vdir, conflicts, sync, out, &order, path, coll, now, rec)?;
+        if let Outcome::Done = outcome {
+            done.insert(path);
+        }
+    }
+
+    // Journal first, then conflicts: a crash in between leaves an open conflict, which the
+    // next run closes again, rather than an entry nothing can confirm any more.
+    for e in &order {
+        if !e.writes.iter().all(|w| done.contains(w.path.as_str())) {
+            continue;
+        }
+        // Only an Applied entry not yet confirmed (`mark_synced` does not check).
+        match journal.get(&e.id)? {
+            Some(cur) if cur.stage == Stage::Applied && cur.synced.is_none() => {}
+            _ => continue,
+        }
+        journal.mark_synced(&e.id, now)?;
+        rec.confirmed.push(e.id.clone());
+    }
+    for c in closing {
+        conflicts.mark_resolved(&c.id, now)?;
+        rec.resolved.push(c.id.clone());
+    }
+    Ok(())
+}
+
+/// Steps 2 and 4 to 6 for one path.
+#[allow(clippy::too_many_arguments)]
+fn check_path(
+    vdir: &Path,
+    conflicts: &ConflictStore,
+    sync: &SyncConfig,
+    out: &SyncOutput,
+    order: &[&Entry],
+    path: &str,
+    coll: &str,
+    now: DateTime<Utc>,
+    rec: &mut Reconciled,
+) -> io::Result<Outcome> {
+    // Step 2.
+    let writes: Vec<(&Entry, &crate::store::journal::Write)> = order
+        .iter()
+        .flat_map(|e| e.writes.iter().map(move |w| (*e, w)))
+        .filter(|(_, w)| w.path == path)
+        .collect();
+    let Some(&(last_entry, last)) = writes.last() else {
+        return Ok(Outcome::Pending);
+    };
+    let expected = last.after.as_deref();
+    let created_here = writes.iter().any(|(_, w)| w.before.is_none());
+    let file = vdir.join(path);
+    let uid = expected
+        .or(last.before.as_deref())
+        .and_then(|t| uid_of(t, &file).ok())
+        .or_else(|| match last_entry.uids.as_slice() {
+            [one] => Some(one.clone()),
+            _ => None,
+        });
+    let transferred = |action: Action, to_local: bool| {
+        uid.as_deref().is_some_and(|uid| {
+            out.transfers.iter().any(|t| {
+                t.action == action
+                    && t.uid == uid
+                    && t.collection == coll
+                    && (t.storage == sync.local_storage) == to_local
+            })
+        })
+    };
+
+    // Step 4: remote delete versus local edit. vdirsyncer re-uploaded Twydo's edit to a
+    // server that had deleted the item.
+    if let Some(local) = expected
+        && !created_here
+        && transferred(Action::Upload, false)
+    {
+        let c = conflicts.record(
+            NewConflict {
+                uid: uid.clone().unwrap_or_default(),
+                collection: coll.to_string(),
+                path: path.to_string(),
+                kind: ConflictKind::RemoteDeleteLocalEdit,
+                held: false,
+                vdir_holds: Side::Local,
+                local: Some(local.to_string()),
+                remote: None,
+            },
+            now,
+        )?;
+        rec.new_conflicts.push(c.id);
+        return Ok(Outcome::Done);
+    }
+
+    // Step 5.
+    let mut current = read_opt(&file)?;
+    let mut at = path.to_string();
+    if expected.is_none() && current.is_none() && transferred(Action::Upload, true) {
+        // vdirsyncer restored the remote edit under a file name of its own.
+        if let Some((p, text)) = find_uid(vdir, coll, uid.as_deref().unwrap_or_default())? {
+            at = p;
+            current = Some(text);
+        }
+    }
+    if current.as_deref() == expected {
+        // Step 6.
+        return Ok(Outcome::Done);
+    }
+    let Some(expected) = expected else {
+        // Local delete versus remote edit: vdirsyncer restored the remote edit (F6).
+        let c = conflicts.record(
+            NewConflict {
+                uid: uid.unwrap_or_default(),
+                collection: coll.to_string(),
+                path: at,
+                kind: ConflictKind::LocalDeleteRemoteEdit,
+                held: false,
+                vdir_holds: Side::Remote,
+                local: None,
+                remote: current,
+            },
+            now,
+        )?;
+        rec.new_conflicts.push(c.id);
+        return Ok(Outcome::Done);
+    };
+    if let Some(cur) = &current {
+        // vdirsyncer may rewrite an item with LF line endings (it reads items in text
+        // mode), so a file that differs only in line endings holds Twydo's result: the
+        // server has it. Confirmed.
+        if same_text(cur, expected) {
+            return Ok(Outcome::Done);
+        }
+        // vdirsyncer overwrote the local file without a conflict, which it only does when
+        // the local side was unchanged since its last sync: Twydo's edit reached the server
+        // in an earlier run (e.g. vdirsyncer run by hand) and the server changed it since.
+        if transferred(Action::Update, true) || transferred(Action::Upload, true) {
+            return Ok(Outcome::Done);
+        }
+    }
+    rec.unexpected.push(path.to_string());
+    Ok(Outcome::Pending)
+}
+
+/// The collection of a vdir-relative path: its first component, when the path is
+/// `<collection>/<file>`.
+fn collection_of(path: &str) -> Option<&str> {
+    match path.split_once('/') {
+        Some((coll, file)) if !coll.is_empty() && !file.is_empty() && !file.contains('/') => {
+            Some(coll)
+        }
+        _ => None,
+    }
+}
+
+/// Equal up to CRLF versus LF line endings.
+pub(crate) fn same_text(a: &str, b: &str) -> bool {
+    a == b || a.replace("\r\n", "\n") == b.replace("\r\n", "\n")
+}
+
+fn read_opt(path: &Path) -> io::Result<Option<String>> {
+    match fs::read(path) {
+        Ok(b) => Ok(Some(String::from_utf8_lossy(&b).into_owned())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The single `.ics` file of `coll` holding `uid`, as (vdir-relative path, content).
+fn find_uid(vdir: &Path, coll: &str, uid: &str) -> io::Result<Option<(String, String)>> {
+    if uid.is_empty() {
+        return Ok(None);
+    }
+    let mut found = Vec::new();
+    for d in fs::read_dir(vdir.join(coll))? {
+        let p = d?.path();
+        if p.extension().is_none_or(|x| x != "ics") {
+            continue;
+        }
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some(text) = read_opt(&p)? else { continue };
+        if uid_of(&text, &p).is_ok_and(|u| u == uid) {
+            found.push((format!("{coll}/{name}"), text));
+        }
+    }
+    Ok(if found.len() == 1 { found.pop() } else { None })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_of_paths() {
+        assert_eq!(collection_of("c1/a.ics"), Some("c1"));
+        assert_eq!(collection_of("a.ics"), None);
+        assert_eq!(collection_of("c1/x/a.ics"), None);
+        assert_eq!(collection_of("/a.ics"), None);
+    }
+
+    #[test]
+    fn same_text_ignores_line_endings_only() {
+        assert!(same_text("a\r\nb\r\n", "a\nb\n"));
+        assert!(same_text("a\nb\n", "a\nb\n"));
+        assert!(!same_text("a\r\nb\r\n", "a\nc\n"));
+    }
+}

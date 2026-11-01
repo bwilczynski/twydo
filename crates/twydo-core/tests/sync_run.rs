@@ -12,8 +12,10 @@ use twydo_core::conflicts::{ConflictKind, ConflictStore, Side};
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
+use twydo_core::sync::output::parse;
+use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
-use twydo_core::sync::status::{CollState, SyncStatus, backoff};
+use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 1, 10, 0, 0).unwrap()
@@ -367,4 +369,233 @@ fn writers_wait_for_sync() {
     assert!(done.exists(), "a writer waits until vdirsyncer is done");
     drop(excl);
     t.join().unwrap();
+}
+
+/// An Applied journal entry with `writes` as (path, before, after).
+fn applied(id: &str, writes: &[(&str, Option<&str>, Option<&str>)]) -> Entry {
+    Entry {
+        format: 1,
+        id: id.into(),
+        created: now(),
+        kind: "edit".into(),
+        uids: vec!["u1".into()],
+        stage: Stage::Applied,
+        inverse_of: None,
+        synced: None,
+        writes: writes
+            .iter()
+            .map(|(p, b, a)| Write {
+                path: (*p).into(),
+                before: b.map(str::to_string),
+                after: a.map(str::to_string),
+            })
+            .collect(),
+    }
+}
+
+/// Writes `entry` to the journal and its `after` contents to the vdir.
+fn apply(fx: &Fx, entry: &Entry) {
+    Journal::open(&fx.state()).unwrap().prepare(entry).unwrap();
+    for w in &entry.writes {
+        let f = fx.cfg.vdir.join(&w.path);
+        match &w.after {
+            Some(a) => fs::write(&f, a).unwrap(),
+            None => {
+                let _ = fs::remove_file(&f);
+            }
+        }
+    }
+}
+
+fn synced(fx: &Fx, id: &str) -> bool {
+    let e = Journal::open(&fx.state())
+        .unwrap()
+        .get(id)
+        .unwrap()
+        .unwrap();
+    e.synced.is_some()
+}
+
+fn cat_fixture(name: &str) -> String {
+    format!("cat '{}' >&2", fixture(name).display())
+}
+
+#[test]
+fn clean_run_confirms_edit() {
+    let fx = Fx::new(&format!("{}\nexit 0", cat_fixture("clean.txt")));
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(synced(&fx, &e.id));
+}
+
+#[test]
+fn unattributed_error_confirms_nothing() {
+    let fx = Fx::new(&format!(
+        "{}\necho 'error: Connection refused' >&2\nexit 1",
+        cat_fixture("clean.txt")
+    ));
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some());
+    assert!(r.confirmed.is_empty(), "{r:?}");
+    assert!(!synced(&fx, &e.id));
+}
+
+#[test]
+fn errored_collection_stays_pending_then_confirms() {
+    let mut fx =
+        Fx::new("printf 'Syncing twydo/c1\\nerror: twydo/c1: Connection reset\\n' >&2\nexit 1");
+    // A repeating completion: a new history copy and the advanced live task.
+    let (live0, live1) = (task("u1", "due 1"), task("u1", "due 2"));
+    let copy = task("u1-h", "done 1");
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[
+            ("c1/u1-h.ics", None, Some(&copy)),
+            ("c1/u1.ics", Some(&live0), Some(&live1)),
+        ],
+    );
+    apply(&fx, &e);
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(matches!(
+        r.collections.get("c1"),
+        Some(CollState::Error { .. })
+    ));
+    assert!(r.confirmed.is_empty(), "{r:?}");
+    assert!(!synced(&fx, &e.id));
+
+    let fake = fx.sync_mut().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("{}\nexit 0", cat_fixture("clean.txt")),
+    );
+    let later = now() + chrono::Duration::seconds(60);
+    let r = run(&fx.cfg, &manual(), later).unwrap();
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(synced(&fx, &e.id));
+    let mut files: Vec<String> = fs::read_dir(fx.cfg.vdir.join("c1"))
+        .unwrap()
+        .map(|d| d.unwrap().file_name().into_string().unwrap())
+        .collect();
+    files.sort();
+    assert_eq!(files, ["u1-h.ics", "u1.ics"], "no second history copy");
+    assert!(
+        ConflictStore::open(&fx.state())
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// Calls `reconcile` directly as `run` would, with vdirsyncer's stderr `stderr`.
+fn reconcile_with(
+    fx: &Fx,
+    pending: &[Entry],
+    stderr: &str,
+) -> twydo_core::sync::reconcile::Reconciled {
+    let state = fx.state();
+    let sync = fx.cfg.sync.as_ref().unwrap();
+    let out = parse(&sync.pair, stderr);
+    let states = coll_states(&out, &[], &sync.local_storage);
+    let _lock = VdirLock::exclusive(&state).unwrap();
+    reconcile(
+        &fx.cfg.vdir,
+        &Journal::open(&state).unwrap(),
+        &ConflictStore::open(&state).unwrap(),
+        sync,
+        &states,
+        pending,
+        &out,
+        &[],
+        now(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn write_between_locks_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let (v0, v1, v2) = (task("u1", "0"), task("u1", "1"), task("u1", "2"));
+    let first = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&v0), Some(&v1))],
+    );
+    apply(&fx, &first);
+    // vdirsyncer ran on `v1`; then a writer slipped in before the exclusive lock.
+    let newer = applied(
+        "20261101T090001Z-00000002",
+        &[("c1/u1.ics", Some(&v1), Some(&v2))],
+    );
+    apply(&fx, &newer);
+    let r = reconcile_with(&fx, std::slice::from_ref(&first), "Syncing twydo/c1\n");
+    assert!(r.confirmed.is_empty(), "{:?}", r.confirmed);
+    assert!(r.new_conflicts.is_empty());
+    assert!(!synced(&fx, &first.id));
+    assert!(!synced(&fx, &newer.id));
+}
+
+#[test]
+fn line_ending_only_difference_is_confirmed() {
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), a.replace("\r\n", "\n")).unwrap();
+    let r = reconcile_with(&fx, std::slice::from_ref(&e), "Syncing twydo/c1\n");
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(r.new_conflicts.is_empty());
+}
+
+#[test]
+fn unexpected_difference_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), task("u1", "other")).unwrap();
+    let r = reconcile_with(&fx, std::slice::from_ref(&e), "Syncing twydo/c1\n");
+    assert!(r.confirmed.is_empty());
+    assert!(r.new_conflicts.is_empty());
+    assert_eq!(r.unexpected, vec!["c1/u1.ics".to_string()]);
+    assert!(!synced(&fx, &e.id));
+}
+
+#[test]
+fn remote_update_after_earlier_upload_confirms() {
+    // The edit reached the server in a run Twydo did not see (vdirsyncer by hand); the
+    // server changed it since, and this run brought the newer version down without a
+    // conflict.
+    let fx = Fx::new("exit 0");
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), task("u1", "server")).unwrap();
+    let r = reconcile_with(
+        &fx,
+        std::slice::from_ref(&e),
+        "Syncing twydo/c1\nCopying (updating) item u1 to twydo_local/c1\n",
+    );
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(r.new_conflicts.is_empty());
 }
