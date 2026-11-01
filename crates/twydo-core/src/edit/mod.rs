@@ -13,6 +13,10 @@ use crate::ical::{Calendar, Component, Param, Property};
 use crate::model::meta_edit::{MetaJson, default_task_meta};
 use crate::model::repeat::parse_rrule;
 
+pub mod complete;
+
+pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
+
 const META_PROP: &str = "X-2DOAPP-METADATA";
 const META_OPEN: &str = "<2Do Meta>";
 
