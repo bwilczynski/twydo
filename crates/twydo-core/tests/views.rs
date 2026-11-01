@@ -126,6 +126,7 @@ fn config(lists: &[(&str, ListPrefs)]) -> Config {
         groups: vec![],
         writes: Default::default(),
         state_dir: None,
+        sync: None,
     }
 }
 
