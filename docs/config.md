@@ -13,7 +13,7 @@ names the key. Twydo only reads this file.
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. |
 | `morning_time` | `"HH:MM"` | `"09:00"` | Time used for date-only tasks that need one (e.g. reminders). |
 | `default_list` | list id | none | List new tasks go to. |
-| `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state. A leading `~` expands to `$HOME`. |
+| `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see `docs/journal.md`). A leading `~` expands to `$HOME`. |
 
 ## `[writes]`
 
@@ -29,8 +29,8 @@ stderr.
 `tdo op` (add, edit, complete, reopen, delete, move, undo, check, journal, recover, abandon) is
 the scriptable write interface. It prints the operation id and exits 0; exit 1 means the
 operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, config or IO error.
-`tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries in
-`state_dir`.
+`tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries of
+their vdir, kept under `state_dir`.
 
 `tdo op --matrix <path>` is a hidden test-only hook: it replaces the compatibility matrix built
 into `tdo` with the file at `<path>`. Never use it on real data.

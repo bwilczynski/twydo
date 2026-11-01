@@ -53,6 +53,11 @@ impl Env {
         self.dir.path().join("state")
     }
 
+    /// The per-vdir state dir `tdo` uses for this env's vdir (journal and lock).
+    fn vdir_state(&self) -> PathBuf {
+        twydo_core::store::vdir_state_dir(&self.state().join("twydo"), &self.vdir()).unwrap()
+    }
+
     fn tdo(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_tdo"))
             .args(args)
@@ -192,7 +197,7 @@ fn recover_runs_before_export() {
         "inverse_of": null,
         "writes": [{"path": rel, "before": before, "after": after}],
     });
-    let jdir = env.state().join("twydo/journal");
+    let jdir = env.vdir_state().join("journal");
     fs::create_dir_all(&jdir).unwrap();
     fs::write(jdir.join(format!("{id}.json")), entry.to_string()).unwrap();
 
@@ -208,7 +213,7 @@ fn recover_runs_before_export() {
 fn export_waits_for_writer_lock() {
     use std::time::{Duration, Instant};
     let env = Env::new("verified");
-    let sdir = env.state().join("twydo");
+    let sdir = env.vdir_state();
     fs::create_dir_all(&sdir).unwrap();
     let lock = fs::OpenOptions::new()
         .read(true)
@@ -266,7 +271,7 @@ fn stuck_entry_blocks_writes_until_abandoned() {
         "inverse_of": null,
         "writes": [{"path": rel, "before": "neither before", "after": "nor after"}],
     });
-    let jdir = env.state().join("twydo/journal");
+    let jdir = env.vdir_state().join("journal");
     fs::create_dir_all(&jdir).unwrap();
     fs::write(jdir.join(format!("{id}.json")), entry.to_string()).unwrap();
 

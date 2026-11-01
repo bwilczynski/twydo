@@ -11,7 +11,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::gate;
-use twydo_core::store::{Store, WriteError};
+use twydo_core::store::{Store, WriteError, existing_vdir_state};
 use twydo_core::views::Snapshot;
 
 use super::{CliError, EXIT_ERROR, resolve_config};
@@ -259,7 +259,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     }
     let now = Utc::now();
     let (mut store, report) = Store::open_with(&cfg, matrix.clone())?;
-    let journal_dir = cfg.state_dir().join("journal");
+    let journal_dir = store.state_dir().join("journal");
     for (id, reason) in &report.stuck {
         if reason.starts_with("unreadable journal entry") {
             eprintln!(
@@ -317,7 +317,10 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             {
                 return usage("journal has unreadable entries");
             }
-            let journal = twydo_core::store::journal::Journal::open(&cfg.state_dir())?;
+            let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+                return Ok(());
+            };
+            let journal = twydo_core::store::journal::Journal::open(&state)?;
             for e in journal.list()? {
                 println!(
                     "{}  {}  {}  {}  {}",
