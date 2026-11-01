@@ -614,7 +614,10 @@ fn twydo_emptying_a_list_is_forced() {
     }
     let (code, out, err) = tdo_sync_args(&p, &[]);
     assert_eq!(code, 0, "{out}{err}");
-    assert!(out.contains("deleted list \"c1\""), "{out}");
+    assert!(
+        out.contains("applied the emptied list \"c1\" on the server"),
+        "{out}"
+    );
     for u in ["u1", "u2", "u3"] {
         assert_eq!(p.read_server(u), None);
     }
@@ -643,6 +646,7 @@ fn remote_emptied_is_never_forced() {
     for u in ["u1", "u2", "u3"] {
         assert_eq!(p.read_vdir(u), None);
     }
+    assert!(!out.contains("applied the emptied list"), "{out}");
 }
 
 #[test]

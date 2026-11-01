@@ -53,8 +53,11 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     }
     if problems.is_empty() {
         if !background {
-            for c in &report.forced {
-                println!("deleted list \"{}\" on both sides", name_of(&names, c));
+            for c in &report.auto_forced {
+                println!(
+                    "applied the emptied list \"{}\" on the server",
+                    name_of(&names, c)
+                );
             }
             println!("synced");
         }
@@ -71,7 +74,7 @@ fn error(e: &dyn std::fmt::Display) -> i32 {
 
 /// Display names of the lists a run reported on (best effort; empty when unreadable).
 fn list_names(cfg: &Config, r: &RunReport) -> BTreeMap<String, String> {
-    if r.collections.is_empty() && r.forced.is_empty() {
+    if r.collections.is_empty() && r.auto_forced.is_empty() {
         return BTreeMap::new();
     }
     load_vdir(cfg)
