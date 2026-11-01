@@ -19,7 +19,7 @@ feature screenshots) and checked against one user's Dropbox sync data. The app w
 | [03-look-and-feel.md](03-look-and-feel.md) | Layout, row anatomy, editor, pickers, **exact colour palette** (light/dark), typography, icons | TUI styling |
 | [04-keyboard-shortcuts.md](04-keyboard-shortcuts.md) | 2Do's full keymap from the main menu | keymap design |
 | [05-migrating-your-data.md](05-migrating-your-data.md) | The Dropbox sync format fully decoded (file format, every field) | migration inventory, fixtures |
-| [06-sync.md](06-sync.md) | How 2Do syncs (change tracking, conflicts), **CalDAV mapping and `X-2DOAPP-*` / `@key:value` metadata** (§1.7, §2.6), Dropbox protocol details | CalDAV interop |
+| [06-sync.md](06-sync.md) | How 2Do syncs (change tracking, conflicts), **CalDAV mapping and `X-2DOAPP-*` / `<2Do Meta>` JSON and `@key:value` metadata** (§1.7, §2.6), Dropbox protocol details | CalDAV interop |
 | [07-reverse-engineering-notes.md](07-reverse-engineering-notes.md) | Low-level notes: architecture, IPC, automation socket | background only |
 | [`tools/decode_2do_dropbox.py`](../../../tools/decode_2do_dropbox.py) | Read/write 2Do Dropbox sync files (`archive()` writer verified round-trip) | migration inventory |
 

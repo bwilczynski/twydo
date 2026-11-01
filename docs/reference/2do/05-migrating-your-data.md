@@ -46,7 +46,7 @@ are stored twice: `due = "2000-01-01"` (floating date) and `duedateabs` = that d
 | `tasktype` | **0 task, 1 checklist, 2 project** [obs, code + data] | 0, 2 |
 | `due` | due date `YYYY-MM-DD`, empty = none | |
 | `duedateabs` | due date as epoch (noon UTC) | |
-| `duetime` | **HHMM integer** (`930` = 9:30); `999999` or `-1` = no time. Per the code `0` is an explicit 00:00, but legacy records can have `0` on tasks that look time-less, so treat `0` as "no time" when importing old data [obs code / inf data] | 0, 999999 |
+| `duetime` | **HHMM integer** (`930` = 9:30); `999999` or `-1` = no time; `0` = 00:00 (midnight). 2Do itself treats `0` as a time: on a CalDAV upload it writes those tasks as `DUE:<date>T000000`, and `999999` ones as `DUE;VALUE=DATE` [obs code / obs data: phase-0 upload] | 0, 999999 |
 | `startdatetime` | start date/time, epoch; key absent = no start | |
 | `iscomp` | completed | 0/1 |
 | `compdate` / `compdatetime` | completion, human string / epoch | |

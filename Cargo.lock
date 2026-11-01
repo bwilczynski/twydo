@@ -1868,6 +1868,7 @@ dependencies = [
  "chrono-tz",
  "iana-time-zone",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "toml",

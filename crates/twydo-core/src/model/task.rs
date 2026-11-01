@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
 
-use super::meta::{Metadata, parse_metadata};
+use super::meta::{MetaFormat, Metadata, parse_metadata};
 use crate::ical::value::{IcalDateTime, parse_date_time, parse_duration, unescape_text};
 use crate::ical::{Calendar, Component};
 
@@ -146,6 +146,9 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
         .prop(METADATA_PROP)
         .map(|p| parse_metadata(&unescape_text(&p.value)))
         .unwrap_or_default();
+    if meta.unreadable {
+        warnings.push("unreadable 2Do metadata".to_string());
+    }
 
     // An unrecognised `@tasktype` reads as a plain task, as if the token were missing.
     let kind = match meta
@@ -165,15 +168,22 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
     };
 
     let meta_start = meta_start(&meta, &mut warnings);
-    let start = match (dtstart, meta_start) {
-        (Some(d), Some(m)) => {
-            if !start_agrees(&d, &m) {
-                warnings.push("start date: DTSTART and 2Do metadata disagree".to_string());
+    // 2Do's CalDAV upload fills DTSTART with a copy of the due date (or drops it), and keeps
+    // the real start only in its JSON metadata. When that JSON is present it decides alone.
+    let json_meta = meta.format == MetaFormat::Json && !meta.unreadable;
+    let start = if json_meta {
+        meta_start
+    } else {
+        match (dtstart, meta_start) {
+            (Some(d), Some(m)) => {
+                if !start_agrees(&d, &m) {
+                    warnings.push("start date: DTSTART and 2Do metadata disagree".to_string());
+                }
+                Some(d)
             }
-            Some(d)
+            (Some(d), None) => Some(d),
+            (None, m) => m,
         }
-        (Some(d), None) => Some(d),
-        (None, m) => m,
     };
 
     let alarms = read_alarms(c, &mut warnings);

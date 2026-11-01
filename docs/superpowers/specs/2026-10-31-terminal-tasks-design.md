@@ -169,7 +169,7 @@ Expected mapping (from `docs/reference/2do/06-sync.md` §1.7, §2.6; to be confi
 | Repeat | `RRULE` (mapping table in 01 §6), plus 2Do's `@repeatfromcompletion` metadata flag |
 | Parent / items | items carry `RELATED-TO` = parent `UID`; parent type from 2Do metadata `@tasktype:checklist` or `project` |
 | Alert | `VALARM` with `TRIGGER`; verify due/start-relative and absolute forms, including tasks without a due date |
-| 2Do extras | `X-2DOAPP-*` and possible `@key:value` metadata (06 §2.6); exact CalDAV encoding and authority remain to be verified |
+| 2Do extras | `X-2DOAPP-*`; over CalDAV the metadata is `<2Do Meta>` URL-encoded JSON, and its `StartDate` (not `DTSTART`, a copy of `DUE`) is the start date (06 §2.6, verified in phase 0) |
 
 **Preservation and editing:** unknown properties, parameters, and components remain intact.
 Unchanged resources are not rewritten, including modification timestamps. A known field edit
