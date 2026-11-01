@@ -1,0 +1,5 @@
+scenario = "rule-months-day-1-28"
+step = "01-create"
+device = "iphone"
+action = "create monthly task due 2026-11-10, date only, repeat monthly"
+captured_at = "2026-11-01T12:15:56Z"

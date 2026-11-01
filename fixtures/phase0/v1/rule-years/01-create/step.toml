@@ -1,0 +1,5 @@
+scenario = "rule-years"
+step = "01-create"
+device = "iphone"
+action = "create yearly task due 2026-11-15, date only, repeat yearly"
+captured_at = "2026-11-01T12:21:00Z"
