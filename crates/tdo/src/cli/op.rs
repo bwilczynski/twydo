@@ -11,6 +11,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::gate;
+use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::{Store, WriteError, existing_vdir_state};
 use twydo_core::views::Snapshot;
 
@@ -168,12 +169,21 @@ fn edit_changes(a: &EditArgs) -> Result<Vec<Change>, Failure> {
     Ok(changes)
 }
 
-fn snapshot(cfg: &Config) -> Result<Snapshot, Failure> {
+/// Load the vdir under the shared lock of `state` (the store's per-vdir state dir), so the
+/// gate and `op check` never see a partly applied operation. The lock is released before
+/// this returns: the store takes the exclusive lock on its own descriptor, and two flocks in
+/// one process block each other (R2).
+fn snapshot(cfg: &Config, state: &Path) -> Result<Snapshot, Failure> {
+    let lock = VdirLock::reader(state).map_err(|source| CliError::Lock {
+        path: state.to_path_buf(),
+        source,
+    })?;
     let report = twydo_core::vdir::load(&cfg.vdir).map_err(|source| CliError::Vdir {
         path: cfg.vdir.clone(),
         source,
-    })?;
-    Ok(Snapshot::new(report, cfg.clone()))
+    });
+    drop(lock);
+    Ok(Snapshot::new(report?, cfg.clone()))
 }
 
 const CHECK_KINDS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
@@ -337,14 +347,14 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             return Ok(());
         }
         OpCommand::Check { uid } => {
-            let snap = snapshot(&cfg)?;
+            let snap = snapshot(&cfg, store.state_dir())?;
             for line in check_lines(&snap, &matrix, cfg.writes.mode, &uid, now)? {
                 println!("{line}");
             }
             return Ok(());
         }
     };
-    let snap = snapshot(&cfg)?;
+    let snap = snapshot(&cfg, store.state_dir())?;
     println!("{}", store.apply(&snap, &op, now)?);
     Ok(())
 }

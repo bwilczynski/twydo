@@ -307,3 +307,33 @@ fn stuck_entry_blocks_writes_until_abandoned() {
     // The abandoned entry's file is left as it was.
     assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
 }
+
+/// `tdo op` loads its snapshot under the shared vdir lock: `op check` waits while a writer
+/// holds the exclusive lock, so it never judges a partly applied operation.
+#[test]
+fn op_snapshot_waits_for_writer_lock() {
+    use std::time::{Duration, Instant};
+    use twydo_core::store::fsio::VdirLock;
+    let env = Env::new("verified");
+    let lock = VdirLock::exclusive(&env.vdir_state()).unwrap();
+    let m = env.dir.path().join("matrix.toml");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
+        .args(["op", "--matrix", m.to_str().unwrap(), "check", TASK_E])
+        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
+        .env("XDG_STATE_HOME", env.state())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(300) {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "op check finished while the exclusive lock was held"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    drop(lock);
+    let status = child.wait().unwrap();
+    assert_eq!(status.code(), Some(0));
+}
