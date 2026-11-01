@@ -94,10 +94,12 @@ mod gate {
         ]);
         assert_eq!(o.status.code(), Some(0));
         let out = stdout(&o);
+        // Verdicts come from the live compat/matrix.toml, so check the row's shape, not its values.
         assert!(
-            out.contains(
-                "months-day-1-28  1 tasks  preserve=unverified execute=unverified edit=unverified"
-            ),
+            out.lines()
+                .any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=")
+                    && l.contains(" execute=")
+                    && l.contains(" edit=")),
             "{out}"
         );
         assert!(out.contains("parse errors: 0"), "{out}");

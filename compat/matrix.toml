@@ -38,11 +38,11 @@ notes = ""
 
 [[rule]]
 class = "months-day-1-28"
-preserve = "unverified"
-execute = "unverified"
-edit = "unverified"
-evidence = []
-notes = ""
+preserve = "pass"
+execute = "pass"
+edit = "pass"
+evidence = ["fixtures/phase0/v1/rule-months-day-1-28/01-create", "fixtures/phase0/v1/rule-months-day-1-28/02-complete", "fixtures/phase0/v1/rule-months-day-1-28/03-edit"]
+notes = "RRULE:FREQ=MONTHLY with no BYMONTHDAY (day from DUE); edit to every 2 months gives INTERVAL=2 and RecurrenceValue 2. Verified on iPhone 2Do only (no second 2Do device). 2Do writes DTSTART as a copy of DUE on recurring tasks too; Twydo reads the start from <2Do Meta> StartDate, so DTSTART is not treated as a start date. Completing advances the same UID by one interval and adds a new completed copy (new UID, no RRULE, RUID = original)."
 
 [[rule]]
 class = "months-day-29-31"
@@ -86,11 +86,11 @@ notes = ""
 
 [[rule]]
 class = "years"
-preserve = "unverified"
-execute = "unverified"
-edit = "unverified"
-evidence = []
-notes = ""
+preserve = "pass"
+execute = "pass"
+edit = "pass"
+evidence = ["fixtures/phase0/v1/rule-years/01-create", "fixtures/phase0/v1/rule-years/02-complete", "fixtures/phase0/v1/rule-years/03-edit"]
+notes = "RRULE:FREQ=YEARLY; edit to every 2 years gives INTERVAL=2 and RecurrenceValue 2. Verified on iPhone 2Do only (no second 2Do device). 2Do writes DTSTART as a copy of DUE on recurring tasks too; Twydo reads the start from <2Do Meta> StartDate, so DTSTART is not treated as a start date. Completing advances the same UID by one interval and adds a new completed copy (new UID, no RRULE, RUID = original)."
 
 [[rule]]
 class = "years-feb-29"

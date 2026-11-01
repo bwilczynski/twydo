@@ -114,28 +114,21 @@ mod tests {
 
     #[test]
     fn matrix_template_loads() {
+        // The real matrix is filled in during phase 0, so only its shape is fixed here.
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/matrix.toml");
         let m = Matrix::load(&p).unwrap();
         assert_eq!(m.matrix_version, 1);
-        for c in RULE_CLASSES {
+        for c in
+            RULE_CLASSES
+                .iter()
+                .copied()
+                .chain(["mod:from-completion", "mod:count", "mod:until"])
+        {
             let r = m.rule(c).unwrap_or_else(|| panic!("missing {c}"));
-            let want = if *c == "unrecognized" {
-                Verdict::Unsupported
-            } else {
-                Verdict::Unverified
-            };
-            assert_eq!((r.preserve, r.execute, r.edit), (want, want, want));
-        }
-        for c in ["mod:from-completion", "mod:count", "mod:until"] {
-            let r = m.rule(c).unwrap_or_else(|| panic!("missing {c}"));
-            assert_eq!(
-                (r.preserve, r.execute, r.edit),
-                (
-                    Verdict::Unverified,
-                    Verdict::Unverified,
-                    Verdict::Unverified
-                )
-            );
+            if c == "unrecognized" {
+                let u = Verdict::Unsupported;
+                assert_eq!((r.preserve, r.execute, r.edit), (u, u, u));
+            }
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
         assert_eq!(m.operation.len(), 66);
