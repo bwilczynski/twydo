@@ -65,6 +65,12 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if let Some(b) = &t.blocked {
         lines.push(Line::styled(format!("! {b}"), yellow));
     }
+    if let Some(c) = app.conflict_for(&t.uid) {
+        lines.push(Line::styled(
+            format!("! conflict: {} — :conflicts", c.kind.words()),
+            yellow,
+        ));
+    }
     if let Some(notes) = t.description.as_deref().filter(|n| !n.trim().is_empty()) {
         lines.push(Line::raw(""));
         lines.push(Line::styled("── Notes ──", dim()));

@@ -5,6 +5,7 @@ use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tdo::app::{App, Mode, Outcome};
 use twydo_core::config::Config;
+use twydo_core::conflicts::Side;
 use twydo_core::views::{Snapshot, View};
 
 const NY: Tz = chrono_tz::America::New_York;
@@ -162,16 +163,92 @@ fn write_keys_are_blocked_with_reason() {
     assert_eq!(format!("{:?}", a.snapshot.tasks), before);
 }
 
+fn conflict(id: &str, uid: &str) -> twydo_core::conflicts::Conflict {
+    use twydo_core::conflicts::*;
+    Conflict {
+        id: id.into(),
+        uid: uid.into(),
+        collection: "c".into(),
+        path: "c/x.ics".into(),
+        kind: ConflictKind::BothChanged,
+        held: true,
+        vdir_holds: Side::Local,
+        detected: chrono::Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap(),
+        state: ConflictState::Open,
+        choice: None,
+        resolved: None,
+        local: None,
+        remote: None,
+    }
+}
+
+fn with_conflicts(a: &mut App, cs: Vec<twydo_core::conflicts::Conflict>) {
+    a.set_sync(Some(twydo_core::sync::SyncSummary {
+        status: Default::default(),
+        pending: 0,
+        conflicts: cs,
+    }));
+}
+
+fn run_cmd(a: &mut App, s: &str) -> Outcome {
+    type_str(a, s);
+    a.handle_key(code(KeyCode::Enter))
+}
+
 #[test]
-fn blocked_commands() {
+fn sync_command_returns_sync_outcome() {
     let mut a = app();
-    type_str(&mut a, ":sync");
-    a.handle_key(code(KeyCode::Enter));
-    assert_eq!(a.message.as_deref(), Some("sync: not available yet"));
+    assert_eq!(
+        run_cmd(&mut a, ":sync"),
+        Outcome::Sync { force_delete: None }
+    );
     assert_eq!(a.mode, Mode::Normal);
-    type_str(&mut a, ":conflicts");
-    a.handle_key(code(KeyCode::Enter));
-    assert_eq!(a.message.as_deref(), Some("conflicts: not available yet"));
+}
+
+#[test]
+fn sync_bang_passes_list() {
+    let mut a = app();
+    assert_eq!(
+        run_cmd(&mut a, ":sync! Groceries"),
+        Outcome::Sync {
+            force_delete: Some("Groceries".into())
+        }
+    );
+    assert_eq!(run_cmd(&mut a, ":sync!"), Outcome::Continue);
+}
+
+#[test]
+fn conflicts_overlay_keys_return_resolve() {
+    let mut a = app();
+    with_conflicts(&mut a, vec![conflict("a", "u1"), conflict("b", "u2")]);
+    run_cmd(&mut a, ":conflicts");
+    assert!(a.show_conflicts);
+    a.handle_key(key('j'));
+    assert_eq!(a.conflict_cursor, 1);
+    assert_eq!(
+        a.handle_key(key('l')),
+        Outcome::Resolve {
+            id: "b".into(),
+            keep: Side::Local
+        }
+    );
+    a.handle_key(key('k'));
+    assert_eq!(
+        a.handle_key(key('r')),
+        Outcome::Resolve {
+            id: "a".into(),
+            keep: Side::Remote
+        }
+    );
+}
+
+#[test]
+fn esc_closes_conflicts() {
+    let mut a = app();
+    run_cmd(&mut a, ":conflicts");
+    assert!(a.show_conflicts);
+    a.handle_key(code(KeyCode::Esc));
+    assert!(!a.show_conflicts);
 }
 
 #[test]

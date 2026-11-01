@@ -1,6 +1,7 @@
 //! Rendering: three panes plus a status line, drawn from [`App`] state. Chrome uses only the
 //! 16 ANSI colours; true colour appears solely on the `▌` list bars.
 
+mod conflicts;
 mod details;
 mod sidebar;
 mod status;
@@ -55,6 +56,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if app.show_errors {
         render_errors(f, area, app);
+    }
+    if app.show_conflicts {
+        conflicts::render(f, area, app);
     }
 }
 
@@ -208,7 +212,16 @@ const HELP: &[(&str, &str, bool)] = &[
     ("1-5", "Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),
     (":errors", "list unreadable files", false),
-    (":sync  :conflicts", "sync / conflicts", true),
+    (
+        ":sync  :sync! <list>",
+        "sync / apply an emptied list",
+        false,
+    ),
+    (
+        ":conflicts",
+        "resolve sync conflicts (l local, r remote)",
+        false,
+    ),
     ("?  Esc", "toggle help / clear", false),
 ];
 

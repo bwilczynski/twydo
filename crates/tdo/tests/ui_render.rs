@@ -438,3 +438,169 @@ fn overdue_red_is_decided_per_row() {
     let (x, y) = find_in_tasks(&buf, "Buy stamps");
     assert_ne!(buf[(x, y)].fg, Color::Red);
 }
+
+fn summary(
+    status: twydo_core::sync::status::SyncStatus,
+    pending: usize,
+    conflicts: Vec<twydo_core::conflicts::Conflict>,
+) -> twydo_core::sync::SyncSummary {
+    twydo_core::sync::SyncSummary {
+        status,
+        pending,
+        conflicts,
+    }
+}
+
+fn conflict_on(uid: &str) -> twydo_core::conflicts::Conflict {
+    use twydo_core::conflicts::*;
+    Conflict {
+        id: "c1".into(),
+        uid: uid.into(),
+        collection: "x".into(),
+        path: "x/y.ics".into(),
+        kind: ConflictKind::BothChanged,
+        held: true,
+        vdir_holds: Side::Local,
+        detected: chrono::Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap(),
+        state: ConflictState::Open,
+        choice: None,
+        resolved: None,
+        local: None,
+        remote: None,
+    }
+}
+
+fn utc(h: u32, m: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::Utc.with_ymd_and_hms(2026, 11, 4, h, m, 0).unwrap()
+}
+
+fn status_line(buf: &Buffer) -> String {
+    line(buf, buf.area.height - 1)
+}
+
+#[test]
+fn status_shows_synced_ago_pending_and_conflicts() {
+    let mut a = app();
+    // now() is 10:00 New York = 15:00 UTC.
+    let st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(14, 57)),
+        ..Default::default()
+    };
+    a.set_sync(Some(summary(st, 2, vec![conflict_on("nope")])));
+    let buf = render(&a, 140, 20);
+    let l = status_line(&buf);
+    assert!(l.contains("synced 3m ago · 2 pending · 1 conflict"), "{l}");
+    let x = l.find("1 conflict").unwrap();
+    let x = l[..x].chars().count() as u16;
+    assert_eq!(buf[(x, buf.area.height - 1)].fg, Color::Yellow);
+
+    a.set_sync(Some(summary(Default::default(), 0, vec![])));
+    assert!(status_line(&render(&a, 140, 20)).contains("not synced yet"));
+    let st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(15, 0)),
+        ..Default::default()
+    };
+    a.set_sync(Some(summary(st, 0, vec![])));
+    assert!(status_line(&render(&a, 140, 20)).contains("just now"));
+}
+
+#[test]
+fn status_shows_emptied_list() {
+    use twydo_core::sync::status::CollState;
+    let mut a = app();
+    let mut st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(14, 0)),
+        ..Default::default()
+    };
+    st.collections
+        .insert("groceries".into(), CollState::EmptiedRemote);
+    a.set_sync(Some(summary(st, 0, vec![])));
+    let l = status_line(&render(&a, 140, 20));
+    assert!(
+        l.contains("\"groceries\" emptied on server (:sync! groceries)"),
+        "{l}"
+    );
+}
+
+#[test]
+fn status_shows_failure_with_retry_time() {
+    let mut a = app();
+    let st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(14, 0)),
+        failures: 1,
+        last_error: Some("timed out".into()),
+        next_attempt: Some(utc(15, 30)),
+        ..Default::default()
+    };
+    a.set_sync(Some(summary(st, 0, vec![])));
+    let buf = render(&a, 140, 20);
+    let l = status_line(&buf);
+    assert!(l.contains("sync failed: timed out; retry 10:30"), "{l}");
+    let x = l.find("sync failed").unwrap();
+    assert_eq!(
+        buf[(l[..x].chars().count() as u16, buf.area.height - 1)].fg,
+        Color::Red
+    );
+}
+
+fn select(a: &mut App, title: &str) -> String {
+    a.view = View::All;
+    let rows = a.visible_rows();
+    a.cursor = rows
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].summary == title)
+        .unwrap();
+    a.snapshot.tasks[a.selected().unwrap()].uid.clone()
+}
+
+#[test]
+fn conflicted_row_has_marker() {
+    let mut a = app();
+    let uid = select(&mut a, "Pay water bill");
+    a.set_sync(Some(summary(
+        Default::default(),
+        0,
+        vec![conflict_on(&uid)],
+    )));
+    let buf = render(&a, 80, 20);
+    let l = (0..buf.area.height)
+        .map(|y| line(&buf, y))
+        .find(|l| l.contains("Pay water bill"))
+        .unwrap();
+    assert!(l.contains("! Pay water bill"), "{l}");
+}
+
+#[test]
+fn details_show_conflict_line() {
+    let mut a = app();
+    let uid = select(&mut a, "Pay water bill");
+    a.set_sync(Some(summary(
+        Default::default(),
+        0,
+        vec![conflict_on(&uid)],
+    )));
+    let t = text(&render(&a, 120, 30));
+    assert!(t.contains("! conflict: changed here"), "{t}");
+    assert!(t.contains(":conflicts"), "{t}");
+}
+
+#[test]
+fn conflicts_overlay_lists_kind_in_words() {
+    let mut a = app();
+    let uid = select(&mut a, "Pay water bill");
+    let mut c2 = conflict_on("other");
+    c2.id = "c2".into();
+    c2.state = twydo_core::conflicts::ConflictState::Chosen;
+    c2.kind = twydo_core::conflicts::ConflictKind::LocalDeleteRemoteEdit;
+    a.set_sync(Some(summary(
+        Default::default(),
+        0,
+        vec![conflict_on(&uid), c2],
+    )));
+    a.show_conflicts = true;
+    let t = text(&render(&a, 120, 30));
+    assert!(t.contains("Pay water bill"), "{t}");
+    assert!(t.contains("changed here and on another device"), "{t}");
+    assert!(t.contains("deleted here, edited on another device"), "{t}");
+    assert!(t.contains("waiting for sync"), "{t}");
+}

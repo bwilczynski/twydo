@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use chrono::DateTime;
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use twydo_core::conflicts::{Conflict, Side};
+use twydo_core::sync::SyncSummary;
 use twydo_core::views::{Row, Snapshot, View, build_view};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,10 +40,19 @@ const NUMBERED_VIEWS: [View; 5] = [
     View::Next3Days,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Continue,
     Quit,
+    /// Run `tdo sync`, with `--force-delete <list>` when given.
+    Sync {
+        force_delete: Option<String>,
+    },
+    /// Keep one version of conflict `id`.
+    Resolve {
+        id: String,
+        keep: Side,
+    },
 }
 
 pub struct App {
@@ -60,6 +71,11 @@ pub struct App {
     pub show_help: bool,
     /// The `:errors` overlay listing unreadable files.
     pub show_errors: bool,
+    /// Sync state for the status line and conflict markers; `None` without `[sync]`.
+    pub sync: Option<SyncSummary>,
+    /// The `:conflicts` overlay.
+    pub show_conflicts: bool,
+    pub conflict_cursor: usize,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
@@ -87,6 +103,9 @@ impl App {
             message: None,
             show_help: false,
             show_errors: false,
+            sync: None,
+            show_conflicts: false,
+            conflict_cursor: 0,
             now,
             page: 10,
             pending: None,
@@ -238,6 +257,50 @@ impl App {
         self.message = Some(format!("{RELOAD_FAILED}{e}"));
     }
 
+    /// Store a freshly read sync summary and keep the overlay cursor in range.
+    pub fn set_sync(&mut self, s: Option<SyncSummary>) {
+        self.sync = s;
+        let n = self.conflicts().len();
+        self.conflict_cursor = self.conflict_cursor.min(n.saturating_sub(1));
+    }
+
+    /// A background sync ended: show its first stderr line, or `sync done`.
+    pub fn sync_finished(&mut self, message: String) {
+        self.message = Some(message);
+    }
+
+    /// The unresolved conflicts, as of the last summary.
+    pub fn conflicts(&self) -> &[Conflict] {
+        self.sync.as_ref().map_or(&[], |s| &s.conflicts)
+    }
+
+    /// The unresolved conflict on the task `uid`, if any.
+    pub fn conflict_for(&self, uid: &str) -> Option<&Conflict> {
+        self.conflicts().iter().find(|c| c.uid == uid)
+    }
+
+    fn overlay_key(&mut self, k: KeyEvent) -> Option<Outcome> {
+        let n = self.conflicts().len();
+        match k.code {
+            KeyCode::Esc => self.show_conflicts = false,
+            KeyCode::Char('j') => {
+                self.conflict_cursor = (self.conflict_cursor + 1).min(n.saturating_sub(1))
+            }
+            KeyCode::Char('k') => self.conflict_cursor = self.conflict_cursor.saturating_sub(1),
+            KeyCode::Char(c @ ('l' | 'r')) => {
+                let keep = if c == 'l' { Side::Local } else { Side::Remote };
+                if let Some(c) = self.conflicts().get(self.conflict_cursor) {
+                    return Some(Outcome::Resolve {
+                        id: c.id.clone(),
+                        keep,
+                    });
+                }
+            }
+            _ => return None,
+        }
+        Some(Outcome::Continue)
+    }
+
     fn sync_sidebar(&mut self) {
         let items = self.sidebar_items();
         self.sidebar_cursor = items
@@ -289,6 +352,12 @@ impl App {
     fn normal_key(&mut self, k: KeyEvent) -> Outcome {
         let pending = self.pending.take();
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if self.show_conflicts
+            && !ctrl
+            && let Some(o) = self.overlay_key(k)
+        {
+            return o;
+        }
         let half = self.page.max(1) as isize;
         match (k.code, ctrl) {
             (KeyCode::Char('c'), true) => return Outcome::Quit,
@@ -300,6 +369,7 @@ impl App {
                 self.message = None;
                 self.show_help = false;
                 self.show_errors = false;
+                self.show_conflicts = false;
                 self.search = None;
                 self.cursor = self.cursor.min(self.visible_rows().len().saturating_sub(1));
             }
@@ -459,8 +529,16 @@ impl App {
         match cmd {
             "" => {}
             "q" | "quit" => return Outcome::Quit,
-            "sync" => self.block("sync"),
-            "conflicts" => self.block("conflicts"),
+            "sync" | "sync!" => {
+                if cmd == "sync!" && arg.is_empty() {
+                    self.message = Some("usage: :sync! <list>".into());
+                } else {
+                    self.message = Some("syncing…".into());
+                    let force_delete = (cmd == "sync!").then(|| arg.to_string());
+                    return Outcome::Sync { force_delete };
+                }
+            }
+            "conflicts" => self.show_conflicts = !self.show_conflicts,
             "errors" => self.show_errors = !self.show_errors,
             "list" => {
                 let want = arg.to_lowercase();
