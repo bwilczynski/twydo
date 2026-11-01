@@ -187,20 +187,34 @@ impl ConflictStore {
     /// unresolved conflict for that path and writes a new one.
     pub fn record(&self, c: NewConflict, now: DateTime<Utc>) -> io::Result<Conflict> {
         let _lock = self.lock()?;
-        let mut same_path = Vec::new();
-        for old in self.list()? {
-            if old.path == c.path && old.unresolved() {
-                if old.kind == c.kind && old.local == c.local && old.remote == c.remote {
-                    return Ok(old);
-                }
-                same_path.push(old);
+        let older: Vec<Conflict> = self
+            .list()?
+            .into_iter()
+            .filter(|o| o.path == c.path && o.unresolved())
+            .collect();
+        let keep = older
+            .iter()
+            .rev()
+            .find(|o| o.kind == c.kind && o.local == c.local && o.remote == c.remote)
+            .map(|o| o.id.clone());
+        // The new conflict is durable before any older one is superseded, so a
+        // crash never loses a conflict (it can leave two unresolved ones; the
+        // next `record` supersedes the older).
+        let rec = match keep {
+            Some(id) => older.iter().find(|o| o.id == id).cloned().expect("kept"),
+            None => self.write_new(c, now)?,
+        };
+        for mut old in older {
+            if old.id != rec.id {
+                old.state = ConflictState::Superseded;
+                old.resolved = Some(now);
+                self.save_record(&old)?;
             }
         }
-        for mut old in same_path {
-            old.state = ConflictState::Superseded;
-            old.resolved = Some(now);
-            self.save_record(&old)?;
-        }
+        Ok(rec)
+    }
+
+    fn write_new(&self, c: NewConflict, now: DateTime<Utc>) -> io::Result<Conflict> {
         let id = new_op_id(now);
         let dir = self.dir.join(&id);
         fs::create_dir(&dir)?;
