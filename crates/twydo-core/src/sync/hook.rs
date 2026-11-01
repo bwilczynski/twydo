@@ -73,7 +73,7 @@ fn read_text(path: &Path) -> io::Result<String> {
     String::from_utf8(bytes).map_err(|_| invalid_data(format!("{}: not UTF-8", path.display())))
 }
 
-fn uid_of(text: &str, path: &Path) -> io::Result<String> {
+pub(crate) fn uid_of(text: &str, path: &Path) -> io::Result<String> {
     let cal = ical::parse(text.as_bytes())
         .map_err(|e| invalid_data(format!("{}: {e}", path.display())))?;
     tasks_from_calendar(&cal, "", path)
