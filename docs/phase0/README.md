@@ -304,3 +304,21 @@ conflict store.
 3. 🤖 Re-run `cargo run -q -p tdo -- check --matrix compat/matrix.toml --vdir "$P0/vdir"` to confirm the
    matrix parses and see which of your active rule classes are now verified.
 4. 👤 Review the matrix and the conflict notes. Approve before Plan 4 starts.
+
+## Result (2026-11-01): gate passed, matrix approved
+
+- `tdo check` reports **GATE: PASSED** on the phase-0 data: the rule classes in use
+  (`months-day-1-28`, `years`) pass preserve, execute and edit, with 0 parse errors and 0 blocked
+  tasks. `tools/reconcile.py` matches the source except for deliberate edits.
+- Run with **one 2Do device** (iPhone; the Mac app now needs a subscription) against Synology Calendar.
+  So the `mac_to_iphone` / `iphone_to_mac` operation rows, the edge cases (6b) and the conflict
+  scenarios (6e) did not run. They stay `unverified` with the reason in the matrix. Rule classes the
+  data does not use were not tested either. Verify a row before Twydo relies on it.
+- Findings that changed the code or docs:
+  - 2Do writes `X-2DOAPP-METADATA` over CalDAV as `<2Do Meta>` URL-encoded JSON. Its `StartDate`
+    is the start date; `DTSTART` is a copy of `DUE` (06 §2.6).
+  - `.tod` `duetime` 0 is 00:00, not "no time" (05).
+  - A repeating task with a start date but no due date is uploaded without `RRULE`.
+- Known TUI issues from the visual check: #2 (focus to the sidebar sometimes takes two presses),
+  #3 (project details do not list the project's tasks).
+- The user reviewed and approved the matrix on 2026-11-01. Plan 4 may start.

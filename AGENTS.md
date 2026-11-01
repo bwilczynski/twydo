@@ -21,11 +21,11 @@ app replacing 2Do for one user, plan by plan.
 1. Read the current plan under `docs/superpowers/plans/` and continue from its first unfinished task.
    Write the next plan (if you use the superpowers workflow: `superpowers:writing-plans`) only when
    the current one is done.
-2. **Phase 0 is a gate that needs the user.** Setting up CalDAV on their Synology NAS, switching 2Do on
-   a test setup, and capturing iPhone behaviour are human actions, listed as user steps in
-   [`docs/phase0/README.md`](docs/phase0/README.md). The tooling (fixture capture, compatibility
-   matrix, reconciliation script, `tdo check`) exists; don't start writable core work until the
-   gate's outputs exist (spec §6, §10).
+2. **Phase 0 gate: passed and approved (2026-11-01).** See the Result section of
+   [`docs/phase0/README.md`](docs/phase0/README.md). Only one 2Do device was available, so many matrix
+   rows are still `unverified` with a reason in `compat/matrix.toml`. Before writable work depends on
+   one of them (cross-device operations, edge cases, conflicts, unused rule classes), verify it with
+   the user's help first (spec §6, §10).
 3. Ask the user before any action that touches their production 2Do data, NAS or iPhone.
 
 ## Ground rules

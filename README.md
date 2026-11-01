@@ -5,8 +5,9 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 2Do iPhone app keeps working against the same data. Command: `tdo`.
 
 Status: **implementation in progress** (plans in `docs/superpowers/plans/`). Plan 1 built the
-phase-0 compatibility-gate kit and a read-only `tdo` (TUI, `export-json`, `check`); edits stay off
-until the phase-0 CalDAV compatibility gate passes.
+phase-0 compatibility-gate kit and a read-only `tdo` (TUI, `export-json`, `check`); the phase-0 CalDAV
+compatibility gate has passed (see [`docs/phase0/README.md`](docs/phase0/README.md)), so writable work
+can start.
 
 ## Start here
 
