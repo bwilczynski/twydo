@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::Deserialize;
 
@@ -45,6 +46,7 @@ pub struct RuleEntry {
 pub struct OperationEntry {
     pub case: String,
     pub op: String,
+    pub iphone_baseline: Verdict,
     pub mac_to_iphone: Verdict,
     pub iphone_to_mac: Verdict,
     pub twydo_to_iphone: Verdict,
@@ -66,7 +68,7 @@ pub struct EdgeCase {
     pub evidence: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Matrix {
     pub matrix_version: u32,
@@ -105,6 +107,57 @@ impl Matrix {
     pub fn rule(&self, class: &str) -> Option<&RuleEntry> {
         self.rule.iter().find(|r| r.class == class)
     }
+
+    /// The matrix compiled into the binary (`compat/matrix.toml`), parsed once.
+    pub fn embedded() -> &'static Matrix {
+        static EMBEDDED: OnceLock<Matrix> = OnceLock::new();
+        EMBEDDED.get_or_init(|| {
+            toml::from_str(include_str!("../../../compat/matrix.toml"))
+                .expect("embedded compat/matrix.toml must parse")
+        })
+    }
+
+    pub fn operation(&self, case: &str, op: &str) -> Option<&OperationEntry> {
+        self.operation.iter().find(|o| o.case == case && o.op == op)
+    }
+
+    pub fn edge_case(&self, id: &str) -> Option<&EdgeCase> {
+        self.edge_case.iter().find(|e| e.id == id)
+    }
+}
+
+fn severity(v: Verdict) -> u8 {
+    match v {
+        Verdict::Pass => 0,
+        Verdict::Unverified => 1,
+        Verdict::Unsupported => 2,
+        Verdict::Fail => 3,
+    }
+}
+
+fn worst(a: Verdict, b: Verdict) -> Verdict {
+    if severity(b) > severity(a) { b } else { a }
+}
+
+/// Worst (preserve, execute, edit) verdicts over the class's base row and one `mod:<name>` row
+/// per `+modifier`. A missing row counts as unverified.
+pub fn combined_verdicts(m: &Matrix, class: &str) -> (Verdict, Verdict, Verdict) {
+    let mut parts = class.split('+');
+    let base = parts.next().unwrap_or(class);
+    let keys = std::iter::once(base.to_string()).chain(parts.map(|x| format!("mod:{x}")));
+    let mut out = (Verdict::Pass, Verdict::Pass, Verdict::Pass);
+    for key in keys {
+        let (p, x, e) = m.rule(&key).map_or(
+            (
+                Verdict::Unverified,
+                Verdict::Unverified,
+                Verdict::Unverified,
+            ),
+            |r| (r.preserve, r.execute, r.edit),
+        );
+        out = (worst(out.0, p), worst(out.1, x), worst(out.2, e));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -133,6 +186,27 @@ mod tests {
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
         assert_eq!(m.operation.len(), 66);
         assert_eq!(m.edge_case.len(), 11);
+    }
+
+    #[test]
+    fn embedded_matrix_has_baseline_column() {
+        let m = Matrix::embedded();
+        assert_eq!(m.operation.len(), 66);
+        let e = m.operation("one-time", "create").unwrap();
+        assert_eq!(e.iphone_baseline, Verdict::Unverified);
+        assert!(m.edge_case(&m.edge_case[0].id).is_some());
+        assert!(m.operation("nope", "create").is_none());
+    }
+
+    #[test]
+    fn combined_verdicts_takes_worst_over_modifiers() {
+        let m = Matrix::embedded();
+        let p = Verdict::Pass;
+        assert_eq!(combined_verdicts(m, "months-day-1-28"), (p, p, p));
+        assert_eq!(
+            combined_verdicts(m, "months-day-1-28+count").1,
+            Verdict::Unverified
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveTime, Weekday};
-use twydo_core::config::{Config, SortField, expand_tilde};
+use twydo_core::config::{Config, SortField, WriteMode, expand_tilde, state_dir_from};
 
 fn parse(s: &str) -> Result<Config, twydo_core::config::ConfigError> {
     let d = tempfile::tempdir().unwrap();
@@ -102,4 +102,38 @@ fn config_expands_tilde() {
         expand_tilde(Path::new("~bob/x"), home),
         PathBuf::from("~bob/x")
     );
+}
+
+#[test]
+fn writes_mode_defaults_to_verified() {
+    let c = parse("vdir = \"/x\"").unwrap();
+    assert_eq!(c.writes.mode, WriteMode::Verified);
+    assert_eq!(c.state_dir, None);
+}
+
+#[test]
+fn writes_mode_test_parses() {
+    let c = parse("vdir = \"/x\"\n[writes]\nmode = \"test\"").unwrap();
+    assert_eq!(c.writes.mode, WriteMode::Test);
+}
+
+#[test]
+fn writes_mode_rejects_unknown() {
+    assert!(parse("vdir = \"/x\"\n[writes]\nmode = \"yolo\"").is_err());
+    assert!(parse("vdir = \"/x\"\n[writes]\nbogus = 1").is_err());
+}
+
+#[test]
+fn state_dir_from_xdg_and_home() {
+    let h = Path::new("/h");
+    assert_eq!(
+        state_dir_from(Some(Path::new("/x")), h),
+        PathBuf::from("/x/twydo")
+    );
+    let d = PathBuf::from("/h/.local/state/twydo");
+    assert_eq!(state_dir_from(None, h), d);
+    assert_eq!(state_dir_from(Some(Path::new("")), h), d);
+    let mut c = Config::with_vdir("/v".into());
+    c.state_dir = Some("/s".into());
+    assert_eq!(c.state_dir(), PathBuf::from("/s"));
 }

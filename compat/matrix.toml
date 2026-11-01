@@ -1,5 +1,6 @@
 # Compatibility matrix template (phase-0 gate). Fill in verdicts from real device runs.
 # Verdicts: unverified | pass | fail | unsupported.  See docs/superpowers/specs (section 6).
+# [[operation]] iphone_baseline: the iPhone's own resource changes for this case/op are captured and understood, so Twydo knows what to write.
 # mod:* rows verify repeat modifiers; a class with a modifier passes only if its base row and every modifier row pass.
 matrix_version = 1
 
@@ -135,6 +136,7 @@ notes = "Not tested in phase 0: class not used by the current data, and only one
 [[operation]]
 case = "one-time"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -145,6 +147,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "one-time"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -155,6 +158,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "one-time"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -165,6 +169,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "one-time"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -175,6 +180,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "one-time"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -185,6 +191,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "one-time"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -195,6 +202,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -205,6 +213,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -215,6 +224,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -225,6 +235,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -235,6 +246,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -245,6 +257,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "monthly"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -255,6 +268,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -265,6 +279,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -275,6 +290,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -285,6 +301,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -295,6 +312,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -305,6 +323,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "yearly"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -315,6 +334,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -325,6 +345,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -335,6 +356,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -345,6 +367,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -355,6 +378,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -365,6 +389,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -375,6 +400,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -385,6 +411,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -395,6 +422,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -405,6 +433,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -415,6 +444,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -425,6 +455,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "recurring-project"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -435,6 +466,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -445,6 +477,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -455,6 +488,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -465,6 +499,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -475,6 +510,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -485,6 +521,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "checklist"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -495,6 +532,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -505,6 +543,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -515,6 +554,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -525,6 +565,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -535,6 +576,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -545,6 +587,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "project-recurring-child"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -555,6 +598,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -565,6 +609,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -575,6 +620,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -585,6 +631,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -595,6 +642,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -605,6 +653,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "date-only"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -615,6 +664,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -625,6 +675,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -635,6 +686,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -645,6 +697,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -655,6 +708,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -665,6 +719,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "timed"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -675,6 +730,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -685,6 +741,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -695,6 +752,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -705,6 +763,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -715,6 +774,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -725,6 +785,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "start-date"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -735,6 +796,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "create"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -745,6 +807,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "edit"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -755,6 +818,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "complete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -765,6 +829,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "reopen"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -775,6 +840,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "move"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
@@ -785,6 +851,7 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "delete"
+iphone_baseline = "unverified"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
