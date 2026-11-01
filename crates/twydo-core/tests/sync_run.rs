@@ -218,7 +218,14 @@ fn backoff_caps_at_max() {
 
 #[test]
 fn hung_command_is_killed_after_timeout() {
-    let mut fx = Fx::new("sleep 30");
+    // A wrapper that does not `exec`: the hung grandchild must die with it.
+    let mut fx = Fx::new("");
+    let pidfile = fx.path("grandchild.pid");
+    let fake = fx.sync_mut().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("sleep 30 &\necho $! > '{}'\nwait", pidfile.display()),
+    );
     fx.sync_mut().timeout_secs = 1;
     let start = Instant::now();
     let r = run(&fx.cfg, &manual(), now()).unwrap();
@@ -230,6 +237,22 @@ fn hung_command_is_killed_after_timeout() {
     assert!(r.transient.is_some());
     assert_eq!(SyncStatus::load(&fx.state()).unwrap().failures, 1);
     let _lock = VdirLock::exclusive(&fx.state()).unwrap();
+    let pid = fs::read_to_string(&pidfile).unwrap();
+    let pid = pid.trim();
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", pid])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    // Killed at once; allow a moment for init to reap the orphan.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while alive() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!alive(), "grandchild {pid} survived the timeout");
 }
 
 #[test]

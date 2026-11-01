@@ -420,6 +420,30 @@ fn reader<R: Read + Send + 'static>(mut r: R) -> Result<mpsc::Receiver<String>, 
     Ok(rx)
 }
 
+/// Kills `child` and, on Unix, its whole process group (it leads one: see
+/// [`run_command`]), so a wrapper's vdirsyncer cannot keep writing the vdir after the
+/// runner gives up its shared lock. No libc here: the group goes through `kill(1)`; the
+/// direct kill is the fallback.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        let group = format!("-{}", child.id());
+        for kill in ["/bin/kill", "kill"] {
+            let done = Command::new(kill)
+                .args(["-KILL", "--", &group])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
+            if done {
+                break;
+            }
+        }
+    }
+    let _ = child.kill();
+}
+
 /// Runs `<command> args…` with stdin null, `VDIRSYNCER_CONFIG` (when configured) and the
 /// hook log in the environment. stdout is drained and dropped; stderr is returned. The
 /// child is killed after `timeout_secs`.
@@ -433,6 +457,9 @@ fn run_command(sync: &SyncConfig, args: &[String], hook_log: &Path) -> Result<Ra
     if let Some(vc) = &sync.vdirsyncer_config {
         cmd.env("VDIRSYNCER_CONFIG", vc);
     }
+    // Its own process group, so a timeout also kills what a wrapper script started.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -449,7 +476,7 @@ fn run_command(sync: &SyncConfig, args: &[String], hook_log: &Path) -> Result<Ra
     let (out_rx, err_rx) = match readers {
         (Ok(o), Ok(e)) => (o, e),
         (Err(err), _) | (_, Err(err)) => {
-            let _ = child.kill();
+            kill_tree(&mut child);
             let _ = child.wait();
             return Err(err);
         }
@@ -463,7 +490,7 @@ fn run_command(sync: &SyncConfig, args: &[String], hook_log: &Path) -> Result<Ra
             break Outcome::Exited(st);
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
+            kill_tree(&mut child);
             child.wait()?;
             break Outcome::TimedOut;
         }
