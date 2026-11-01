@@ -211,6 +211,7 @@ impl App {
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
     pub fn reload(&mut self, s: Snapshot) {
         let uid = self.selected_uid();
+        let side = self.sidebar_items().get(self.sidebar_cursor).cloned();
         self.snapshot = s;
         if self
             .message
@@ -224,7 +225,11 @@ impl App {
         {
             self.view = View::Today;
         }
-        self.sync_sidebar();
+        // Keep the sidebar cursor on the same entry; fall back to the open view if it is gone.
+        match side.and_then(|v| self.sidebar_items().iter().position(|x| *x == v)) {
+            Some(p) => self.sidebar_cursor = p,
+            None => self.sync_sidebar(),
+        }
         self.restore(uid);
     }
 

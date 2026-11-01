@@ -375,3 +375,16 @@ fn successful_reload_clears_reload_failed_message() {
     a.reload(snapshot_of(report()));
     assert!(a.message.as_deref().unwrap().starts_with("toggle done:"));
 }
+
+#[test]
+fn reload_keeps_sidebar_cursor() {
+    let mut a = app();
+    a.handle_key(key('h'));
+    a.handle_key(key('j'));
+    a.handle_key(key('j'));
+    let before = a.sidebar_cursor;
+    assert_eq!(a.sidebar_items()[before], View::Scheduled);
+    a.reload(snapshot_of(report()));
+    assert_eq!(a.sidebar_cursor, before);
+    assert_eq!(a.focus, tdo::app::Pane::Sidebar);
+}
