@@ -11,6 +11,7 @@ use notify::event::{EventKind, MetadataKind, ModifyKind};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use twydo_core::sync::resolve::{Resolution, resolve};
 use twydo_core::views::Snapshot;
 
 use crate::app::{App, Outcome};
@@ -68,6 +69,11 @@ fn event_loop(
             None
         }
     };
+    let (sync_tx, sync_rx) = mpsc::channel::<String>();
+    let mut syncing = false;
+    // One background sync at start, then the first summary.
+    crate::cli::sync::spawn_background(&app.snapshot.config, Some(&app.snapshot.config.vdir));
+    refresh_sync(app);
     let now = || Utc::now().with_timezone(&tz);
     let mut last_tick = Instant::now();
     // When the last change signal arrived, if a reload is still due.
@@ -79,8 +85,28 @@ fn event_loop(
         if event::poll(POLL)? {
             match event::read()? {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
-                    if app.handle_key(k) == Outcome::Quit {
-                        return Ok(());
+                    match app.handle_key(k) {
+                        Outcome::Quit => return Ok(()),
+                        Outcome::Continue => {}
+                        Outcome::Sync { force_delete } => {
+                            if syncing {
+                                app.message = Some("sync already running".into());
+                            } else {
+                                syncing = true;
+                                start_sync(&app.snapshot.config.vdir, force_delete, &sync_tx);
+                            }
+                        }
+                        Outcome::Resolve { id, keep } => {
+                            let cfg = &app.snapshot.config;
+                            app.message = Some(match resolve(cfg, &id, keep, Utc::now()) {
+                                Ok(Resolution::Recorded) => "kept; applied on the next sync".into(),
+                                Ok(_) => "kept".into(),
+                                Err(e) => format!("resolve failed: {e}"),
+                            });
+                            crate::cli::sync::spawn_background(cfg, Some(&cfg.vdir));
+                            reload(app, root);
+                            refresh_sync(app);
+                        }
                     }
                     ticked = true;
                 }
@@ -91,6 +117,11 @@ fn event_loop(
                 _ => {}
             }
         }
+        for message in sync_rx.try_iter() {
+            syncing = false;
+            app.sync_finished(message);
+            refresh_sync(app);
+        }
         if let Some((_, rx)) = &watcher
             && rx.try_iter().count() > 0
         {
@@ -100,9 +131,13 @@ fn event_loop(
         if pending_since.is_some_and(|t| t.elapsed() >= DEBOUNCE) {
             pending_since = None;
             reload(app, root);
+            refresh_sync(app);
         }
         if ticked || last_tick.elapsed() >= TICK_EVERY {
             app.tick(now());
+            if last_tick.elapsed() >= TICK_EVERY {
+                refresh_sync(app);
+            }
             last_tick = Instant::now();
         }
     }
@@ -126,4 +161,42 @@ fn reload(app: &mut App, root: &Path) {
         }
         Err(e) => app.reload_failed(e),
     }
+}
+
+/// Re-read the sync summary; on a read error keep what is shown.
+fn refresh_sync(app: &mut App) {
+    if let Ok(s) = twydo_core::sync::summary(&app.snapshot.config) {
+        app.set_sync(s);
+    }
+}
+
+/// Run `tdo sync` as a child on a thread. The loop gets the first stderr line (or `sync done`)
+/// through `tx`, so the UI never blocks.
+fn start_sync(vdir: &Path, force_delete: Option<String>, tx: &mpsc::Sender<String>) {
+    let vdir = vdir.to_path_buf();
+    let tx = tx.clone();
+    std::thread::spawn(move || {
+        let message = run_sync_child(&vdir, force_delete.as_deref())
+            .unwrap_or_else(|e| format!("sync failed to start: {e}"));
+        let _ = tx.send(message);
+    });
+}
+
+fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String> {
+    let mut cmd = std::process::Command::new(std::env::current_exe()?);
+    cmd.arg("--vdir").arg(vdir).arg("sync");
+    if let Some(list) = force_delete {
+        cmd.arg("--force-delete").arg(list);
+    }
+    let out = cmd
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    Ok(stderr
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map_or_else(|| "sync done".to_string(), str::to_string))
 }

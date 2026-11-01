@@ -90,9 +90,9 @@ fn is_overdue(app: &App, idx: usize) -> bool {
         && date_group(&app.snapshot, idx, app.now, false) == DateGroup::Overdue
 }
 
-/// A task carrying load warnings or a reason edits stay off: marked `!` before the title.
-fn flagged(t: &Task) -> bool {
-    !t.warnings.is_empty() || t.blocked.is_some()
+/// A task carrying load warnings, a reason edits stay off, or an unresolved conflict: marked `!` before the title.
+fn flagged(app: &App, t: &Task) -> bool {
+    !t.warnings.is_empty() || t.blocked.is_some() || app.conflict_for(&t.uid).is_some()
 }
 
 enum Item {
@@ -168,7 +168,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         .unwrap_or(0);
     let mark_w = if task_rows
         .iter()
-        .any(|r| flagged(&app.snapshot.tasks[r.task]))
+        .any(|r| flagged(app, &app.snapshot.tasks[r.task]))
     {
         2
     } else {
@@ -273,7 +273,7 @@ fn row_line(
         Span::raw(" "),
     ];
     if mark_w > 0 {
-        let mark = if flagged(t) { "!" } else { " " };
+        let mark = if flagged(app, t) { "!" } else { " " };
         spans.push(Span::styled(
             pad(mark, mark_w),
             Style::new().fg(Color::Yellow).add_modifier(Modifier::DIM),
