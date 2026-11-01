@@ -4,13 +4,13 @@
 matrix_version = 1
 
 [environment]
-mac_2do = ""
-iphone_2do = ""
-ios = ""
-macos = ""
-server = ""
-server_version = ""
-vdirsyncer = ""
+mac_2do = "unavailable (subscription required)"
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+macos = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
 
 [[rule]]
 class = "days"
