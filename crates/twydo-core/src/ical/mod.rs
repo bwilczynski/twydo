@@ -18,7 +18,7 @@ pub struct Calendar {
     trailer: Vec<u8>,
 }
 
-/// `serialize` writes the original raw bytes of every line (edits arrive in Plan 4).
+/// `serialize` writes the original raw bytes of every unedited line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
     /// Uppercased component name.
@@ -39,7 +39,7 @@ enum Slot {
     Blank(Vec<u8>),
 }
 
-/// `serialize` writes the original raw bytes of the line (edits arrive in Plan 4).
+/// `serialize` writes the original raw bytes until the property is edited.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Property {
     /// Uppercased property name.
@@ -47,7 +47,8 @@ pub struct Property {
     pub params: Vec<Param>,
     /// Unfolded, UTF-8 decoded value, exactly as written (no TEXT unescaping).
     pub value: String,
-    raw: Vec<u8>,
+    /// Original bytes (folds and terminator included); `None` = edited, re-emit on write.
+    raw: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,17 +91,17 @@ impl Component {
             .filter(move |c| c.name.eq_ignore_ascii_case(name))
     }
 
-    fn write_to(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.raw_begin);
+    fn write_to(&self, out: &mut Vec<u8>, eol: &str) {
+        emit_marker(out, &self.raw_begin, "BEGIN", &self.name, eol);
         let (mut p, mut c) = (0, 0);
         for slot in &self.layout {
             match slot {
                 Slot::Prop if p < self.props.len() => {
-                    out.extend_from_slice(&self.props[p].raw);
+                    self.props[p].write_to(out, eol);
                     p += 1;
                 }
                 Slot::Child if c < self.children.len() => {
-                    self.children[c].write_to(out);
+                    self.children[c].write_to(out, eol);
                     c += 1;
                 }
                 Slot::Blank(raw) => out.extend_from_slice(raw),
@@ -108,16 +109,180 @@ impl Component {
             }
         }
         for prop in &self.props[p..] {
-            out.extend_from_slice(&prop.raw);
+            prop.write_to(out, eol);
         }
         for child in &self.children[c..] {
-            child.write_to(out);
+            child.write_to(out, eol);
         }
-        out.extend_from_slice(&self.raw_end);
+        emit_marker(out, &self.raw_end, "END", &self.name, eol);
+    }
+
+    /// A new, empty component. Its BEGIN/END lines are generated with the file's line ending.
+    pub fn new(name: &str) -> Component {
+        Component {
+            name: name.to_ascii_uppercase(),
+            props: Vec::new(),
+            children: Vec::new(),
+            raw_begin: Vec::new(),
+            raw_end: Vec::new(),
+            layout: Vec::new(),
+        }
+    }
+
+    /// Append a child component after everything already in this component.
+    pub fn push_child(&mut self, c: Component) {
+        self.layout.push(Slot::Child);
+        self.children.push(c);
+    }
+
+    pub fn prop_mut(&mut self, name: &str) -> Option<&mut Property> {
+        self.props
+            .iter_mut()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+    }
+
+    pub fn children_named_mut<'a>(
+        &'a mut self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a mut Component> {
+        self.children
+            .iter_mut()
+            .filter(move |c| c.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Replace the first property of the same name in place, else insert a new one.
+    pub fn set_prop(&mut self, p: Property) {
+        match self
+            .props
+            .iter_mut()
+            .find(|q| q.name.eq_ignore_ascii_case(&p.name))
+        {
+            Some(existing) => *existing = p,
+            None => self.insert_prop(p, None),
+        }
+    }
+
+    /// Insert after the first property named `after`; otherwise (or if `after` is `None`)
+    /// after the last property, before child components. All other lines keep their place.
+    pub fn insert_prop(&mut self, p: Property, after: Option<&str>) {
+        let after_idx = after.and_then(|n| {
+            self.props
+                .iter()
+                .position(|q| q.name.eq_ignore_ascii_case(n))
+        });
+        let after_idx = after_idx.or_else(|| self.props.len().checked_sub(1));
+        let slot_pos = match after_idx {
+            Some(i) => {
+                let pos = self
+                    .layout
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| matches!(s, Slot::Prop))
+                    .nth(i)
+                    .map(|(k, _)| k + 1);
+                pos.unwrap_or(self.layout.len())
+            }
+            None => self
+                .layout
+                .iter()
+                .position(|s| matches!(s, Slot::Child))
+                .unwrap_or(self.layout.len()),
+        };
+        let prop_pos = after_idx.map_or(0, |i| i + 1);
+        self.layout.insert(slot_pos, Slot::Prop);
+        self.props.insert(prop_pos, p);
+    }
+
+    /// Remove every property of that name (and its layout slot); returns how many.
+    pub fn remove_props(&mut self, name: &str) -> usize {
+        let gone: Vec<bool> = self
+            .props
+            .iter()
+            .map(|q| q.name.eq_ignore_ascii_case(name))
+            .collect();
+        let n = gone.iter().filter(|&&g| g).count();
+        if n == 0 {
+            return 0;
+        }
+        let mut i = 0;
+        self.layout.retain(|s| {
+            if matches!(s, Slot::Prop) {
+                i += 1;
+                !gone.get(i - 1).copied().unwrap_or(false)
+            } else {
+                true
+            }
+        });
+        let mut k = 0;
+        self.props.retain(|_| {
+            k += 1;
+            !gone[k - 1]
+        });
+        n
+    }
+}
+
+/// Original BEGIN/END bytes, or a generated line when the component is new.
+fn emit_marker(out: &mut Vec<u8>, raw: &[u8], kw: &str, name: &str, eol: &str) {
+    if raw.is_empty() {
+        out.extend_from_slice(format!("{kw}:{name}{eol}").as_bytes());
+    } else {
+        out.extend_from_slice(raw);
     }
 }
 
 impl Property {
+    /// A new property with no original bytes: it is emitted fresh when written.
+    pub fn new(name: &str, params: Vec<Param>, value: &str) -> Property {
+        Property {
+            name: name.to_ascii_uppercase(),
+            params,
+            value: value.to_string(),
+            raw: None,
+        }
+    }
+
+    /// Change the value, keep the parameters; the line is re-emitted on write.
+    pub fn set_value(&mut self, value: &str) {
+        self.value = value.to_string();
+        self.raw = None;
+    }
+
+    pub fn set_params(&mut self, params: Vec<Param>) {
+        self.params = params;
+        self.raw = None;
+    }
+
+    fn write_to(&self, out: &mut Vec<u8>, eol: &str) {
+        match &self.raw {
+            Some(raw) => out.extend_from_slice(raw),
+            None => fold_into(out, &self.render(), eol),
+        }
+    }
+
+    fn render(&self) -> String {
+        let mut line = self.name.clone();
+        for p in &self.params {
+            line.push(';');
+            line.push_str(&p.name);
+            line.push('=');
+            let vals: Vec<String> = p
+                .values
+                .iter()
+                .map(|v| {
+                    if v.contains([':', ';', ',']) {
+                        format!("\"{v}\"")
+                    } else {
+                        v.clone()
+                    }
+                })
+                .collect();
+            line.push_str(&vals.join(","));
+        }
+        line.push(':');
+        line.push_str(&self.value);
+        line
+    }
     /// First value of the named parameter (case-insensitive name).
     pub fn param(&self, name: &str) -> Option<&str> {
         self.params
@@ -226,7 +391,7 @@ fn parse_property(l: &Logical) -> Result<Property, ParseError> {
         name,
         params,
         value: s[i + 1..].to_string(),
-        raw: l.raw.clone(),
+        raw: Some(l.raw.clone()),
     })
 }
 
@@ -323,9 +488,50 @@ pub fn parse(bytes: &[u8]) -> Result<Calendar, ParseError> {
     }
 }
 
+/// Fold to physical lines of at most 75 octets (continuations: one space + up to 74),
+/// never splitting a UTF-8 sequence.
+fn fold_into(out: &mut Vec<u8>, line: &str, eol: &str) {
+    let mut limit = 75;
+    let mut used = 0;
+    for ch in line.chars() {
+        let n = ch.len_utf8();
+        if used + n > limit {
+            out.extend_from_slice(eol.as_bytes());
+            out.push(b' ');
+            limit = 75;
+            used = 1;
+        }
+        let mut buf = [0u8; 4];
+        out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+        used += n;
+    }
+    out.extend_from_slice(eol.as_bytes());
+}
+
+impl Calendar {
+    /// `"\r\n"` or `"\n"`, taken from the BEGIN:VCALENDAR line (CRLF for a new calendar).
+    pub fn line_ending(&self) -> &'static str {
+        let b = &self.root.raw_begin;
+        if b.is_empty() || b.ends_with(b"\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        }
+    }
+}
+
+/// A calendar for a newly created resource (CRLF line endings).
+pub fn new_calendar(root: Component) -> Calendar {
+    Calendar {
+        root,
+        prefix: Vec::new(),
+        trailer: Vec::new(),
+    }
+}
+
 pub fn serialize(cal: &Calendar) -> Vec<u8> {
     let mut out = cal.prefix.clone();
-    cal.root.write_to(&mut out);
+    cal.root.write_to(&mut out, cal.line_ending());
     out.extend_from_slice(&cal.trailer);
     out
 }
