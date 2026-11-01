@@ -6,6 +6,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use chrono::{DateTime, NaiveDate};
 use chrono_tz::Tz;
@@ -26,6 +27,8 @@ pub struct Snapshot {
     pub tasks: Vec<Task>,
     pub collections: Vec<Collection>,
     pub config: Config,
+    /// Files the load could not read or parse, with the reason.
+    pub errors: Vec<(PathBuf, String)>,
     parents: Vec<Option<usize>>,
     children: Vec<Vec<usize>>,
 }
@@ -94,6 +97,7 @@ impl Snapshot {
             tasks,
             collections: report.collections,
             config,
+            errors: report.errors,
             parents,
             children,
         }

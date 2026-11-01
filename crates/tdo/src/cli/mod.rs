@@ -44,18 +44,15 @@ pub fn resolve_config(vdir: Option<&Path>) -> Result<Config, CliError> {
     }
 }
 
-/// Load the vdir named by the resolved configuration into a snapshot, with the load's
-/// parse errors alongside.
-pub fn load_snapshot(
-    vdir: Option<&Path>,
-) -> Result<(Snapshot, Vec<(std::path::PathBuf, String)>), CliError> {
+/// Load the vdir named by the resolved configuration into a snapshot (its `errors` hold the
+/// files that failed to load).
+pub fn load_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
     let config = resolve_config(vdir)?;
     let report = twydo_core::vdir::load(&config.vdir).map_err(|source| CliError::Vdir {
         path: config.vdir.clone(),
         source,
     })?;
-    let errors = report.errors.clone();
-    Ok((Snapshot::new(report, config), errors))
+    Ok(Snapshot::new(report, config))
 }
 
 /// The matrix class of a task's repeat rule; `None` without an RRULE. A rule that does not

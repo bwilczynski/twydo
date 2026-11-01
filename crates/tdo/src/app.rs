@@ -22,6 +22,22 @@ pub enum Mode {
     Command,
 }
 
+/// One sidebar line: a group heading, or a selectable view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SidebarEntry {
+    Heading(String),
+    Item(View),
+}
+
+/// The views behind the number keys 1-5.
+const NUMBERED_VIEWS: [View; 5] = [
+    View::Today,
+    View::All,
+    View::Scheduled,
+    View::Done,
+    View::Next3Days,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Continue,
@@ -42,11 +58,15 @@ pub struct App {
     pub search: Option<String>,
     pub message: Option<String>,
     pub show_help: bool,
+    /// The `:errors` overlay listing unreadable files.
+    pub show_errors: bool,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
     pending: Option<char>,
 }
+
+const RELOAD_FAILED: &str = "reload failed: ";
 
 fn blocked(action: &str) -> String {
     format!("{action}: not enabled until the phase-0 compatibility gate passes")
@@ -66,49 +86,75 @@ impl App {
             search: None,
             message: None,
             show_help: false,
+            show_errors: false,
             now,
             page: 10,
             pending: None,
         }
     }
 
-    /// The sidebar entries: the five built-in views, then visible lists (configured groups
-    /// first, in order; the rest by display name).
-    pub fn sidebar_items(&self) -> Vec<View> {
+    /// The sidebar in display order: the four main views, then visible lists (each configured
+    /// group under its heading, in order; the rest by display name under "Lists"), then the
+    /// smart lists. The renderer draws exactly this, so navigation follows what is shown.
+    pub fn sidebar_entries(&self) -> Vec<SidebarEntry> {
         let s = &self.snapshot;
         let shown = |id: &str| {
             let p = s.config.list_prefs(id);
-            !p.archived && !p.hidden
+            !p.archived && !p.hidden && s.collections.iter().any(|c| c.id == id)
         };
         let name = |c: &twydo_core::vdir::Collection| {
             c.display_name.clone().unwrap_or_else(|| c.id.clone())
         };
-        let mut ids: Vec<&str> = Vec::new();
+        let mut out: Vec<SidebarEntry> = [View::Today, View::All, View::Scheduled, View::Done]
+            .into_iter()
+            .map(SidebarEntry::Item)
+            .collect();
+
+        let mut placed: Vec<&str> = Vec::new();
         for g in &s.config.groups {
+            let mut lists: Vec<&str> = Vec::new();
             for l in &g.lists {
-                let exists = s.collections.iter().any(|c| &c.id == l);
-                if exists && shown(l) && !ids.contains(&l.as_str()) {
-                    ids.push(l);
+                if shown(l) && !placed.contains(&l.as_str()) && !lists.contains(&l.as_str()) {
+                    lists.push(l);
                 }
+            }
+            if lists.is_empty() {
+                continue;
+            }
+            out.push(SidebarEntry::Heading(g.name.clone()));
+            for l in lists {
+                placed.push(l);
+                out.push(SidebarEntry::Item(View::List(l.to_string())));
             }
         }
         let mut rest: Vec<_> = s
             .collections
             .iter()
-            .filter(|c| shown(&c.id) && !ids.contains(&c.id.as_str()))
+            .filter(|c| shown(&c.id) && !placed.contains(&c.id.as_str()))
             .collect();
         rest.sort_by_key(|c| (name(c).to_lowercase(), c.id.clone()));
-        ids.extend(rest.iter().map(|c| c.id.as_str()));
+        if !rest.is_empty() {
+            out.push(SidebarEntry::Heading("Lists".into()));
+            out.extend(
+                rest.iter()
+                    .map(|c| SidebarEntry::Item(View::List(c.id.clone()))),
+            );
+        }
 
-        let mut out = vec![
-            View::Today,
-            View::All,
-            View::Scheduled,
-            View::Done,
-            View::Next3Days,
-        ];
-        out.extend(ids.into_iter().map(|id| View::List(id.to_string())));
+        out.push(SidebarEntry::Heading("Smart lists".into()));
+        out.push(SidebarEntry::Item(View::Next3Days));
         out
+    }
+
+    /// The selectable sidebar entries, in display order; `sidebar_cursor` indexes this.
+    pub fn sidebar_items(&self) -> Vec<View> {
+        self.sidebar_entries()
+            .into_iter()
+            .filter_map(|e| match e {
+                SidebarEntry::Item(v) => Some(v),
+                SidebarEntry::Heading(_) => None,
+            })
+            .collect()
     }
 
     /// The current view's rows in group order, search filter applied. Headers are not rows.
@@ -166,6 +212,13 @@ impl App {
     pub fn reload(&mut self, s: Snapshot) {
         let uid = self.selected_uid();
         self.snapshot = s;
+        if self
+            .message
+            .as_deref()
+            .is_some_and(|m| m.starts_with(RELOAD_FAILED))
+        {
+            self.message = None;
+        }
         if let View::List(id) = &self.view
             && !self.snapshot.collections.iter().any(|c| &c.id == id)
         {
@@ -173,6 +226,11 @@ impl App {
         }
         self.sync_sidebar();
         self.restore(uid);
+    }
+
+    /// Report a failed reload; the message stays until a reload succeeds or Esc.
+    pub fn reload_failed(&mut self, e: impl std::fmt::Display) {
+        self.message = Some(format!("{RELOAD_FAILED}{e}"));
     }
 
     fn sync_sidebar(&mut self) {
@@ -191,10 +249,21 @@ impl App {
         self.sync_sidebar();
     }
 
+    /// Move the cursor of the focused list: the sidebar's, or the task rows'.
     fn move_cursor(&mut self, delta: isize) {
-        let len = self.visible_rows().len();
+        let sidebar = self.focus == Pane::Sidebar;
+        let len = if sidebar {
+            self.sidebar_items().len()
+        } else {
+            self.visible_rows().len()
+        };
+        let cursor = if sidebar {
+            &mut self.sidebar_cursor
+        } else {
+            &mut self.cursor
+        };
         let max = len.saturating_sub(1) as isize;
-        self.cursor = (self.cursor as isize + delta).clamp(0, max) as usize;
+        *cursor = (*cursor as isize).saturating_add(delta).clamp(0, max) as usize;
     }
 
     pub fn handle_key(&mut self, k: KeyEvent) -> Outcome {
@@ -225,6 +294,7 @@ impl App {
             (KeyCode::Esc, _) => {
                 self.message = None;
                 self.show_help = false;
+                self.show_errors = false;
                 self.search = None;
                 self.cursor = self.cursor.min(self.visible_rows().len().saturating_sub(1));
             }
@@ -265,21 +335,16 @@ impl App {
     }
 
     fn normal_char(&mut self, c: char, pending: Option<char>) {
-        if self.focus == Pane::Sidebar && matches!(c, 'j' | 'k' | 'l') {
-            let last = self.sidebar_items().len().saturating_sub(1);
-            match c {
-                'j' => self.sidebar_cursor = (self.sidebar_cursor + 1).min(last),
-                'k' => self.sidebar_cursor = self.sidebar_cursor.saturating_sub(1),
-                _ => self.open_sidebar(),
-            }
+        if self.focus == Pane::Sidebar && c == 'l' {
+            self.open_sidebar();
             return;
         }
         match c {
             'j' => self.move_cursor(1),
             'k' => self.move_cursor(-1),
-            'g' if pending == Some('g') => self.cursor = 0,
+            'g' if pending == Some('g') => self.move_cursor(isize::MIN),
             'g' => self.pending = Some('g'),
-            'G' => self.cursor = self.visible_rows().len().saturating_sub(1),
+            'G' => self.move_cursor(isize::MAX),
             'h' => {
                 self.focus = match self.focus {
                     Pane::Details => Pane::Tasks,
@@ -292,10 +357,7 @@ impl App {
                     _ => Pane::Details,
                 }
             }
-            '1'..='5' => {
-                let v = self.sidebar_items()[c as usize - '1' as usize].clone();
-                self.open(v);
-            }
+            '1'..='5' => self.open(NUMBERED_VIEWS[c as usize - '1' as usize].clone()),
             '/' => {
                 self.mode = Mode::Search;
                 self.input.clear();
@@ -394,6 +456,7 @@ impl App {
             "q" | "quit" => return Outcome::Quit,
             "sync" => self.block("sync"),
             "conflicts" => self.block("conflicts"),
+            "errors" => self.show_errors = !self.show_errors,
             "list" => {
                 let want = arg.to_lowercase();
                 let found = self.snapshot.collections.iter().find(|c| {

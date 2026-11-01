@@ -11,9 +11,9 @@ use twydo_core::views::Snapshot;
 use super::{CliError, load_snapshot, task_rule_class};
 
 pub fn run(vdir: Option<&Path>) -> Result<(), CliError> {
-    let (snap, errors) = load_snapshot(vdir)?;
-    if !errors.is_empty() {
-        eprintln!("skipped {} unparseable resources", errors.len());
+    let snap = load_snapshot(vdir)?;
+    if !snap.errors.is_empty() {
+        eprintln!("skipped {} unparseable resources", snap.errors.len());
     }
     let out = export(&snap);
     println!("{}", serde_json::to_string_pretty(&out).expect("json"));

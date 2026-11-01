@@ -9,7 +9,7 @@ use ratatui::widgets::{Padding, Paragraph};
 use twydo_core::format::relative_date;
 use twydo_core::model::repeat::{parse_rrule, short_hint};
 use twydo_core::model::{Status, Task, TaskKind};
-use twydo_core::views::{DateGroup, Row, View, build_view};
+use twydo_core::views::{DateGroup, Row, View, build_view, date_group};
 use unicode_width::UnicodeWidthStr;
 
 use super::{bar_color, dim, pad, pane_block, truncate, view_name};
@@ -84,10 +84,21 @@ fn date_text(app: &App, t: &Task) -> String {
         .unwrap_or_default()
 }
 
+/// Overdue by the task's own dates, wherever its row sits (nested, ungrouped).
+fn is_overdue(app: &App, idx: usize) -> bool {
+    app.snapshot.tasks[idx].status == Status::Open
+        && date_group(&app.snapshot, idx, app.now, false) == DateGroup::Overdue
+}
+
+/// A task carrying load warnings or a reason edits stay off: marked `!` before the title.
+fn flagged(t: &Task) -> bool {
+    !t.warnings.is_empty() || t.blocked.is_some()
+}
+
 enum Item {
     Header(String, bool, usize),
     Blank,
-    Row(Row, bool),
+    Row(Row),
 }
 
 /// Group headers and rows in display order, restricted to the rows `App::visible_rows` keeps.
@@ -115,10 +126,7 @@ fn items(app: &App) -> Vec<Item> {
             }
             out.push(Item::Header(title, g == DateGroup::Overdue, kept.len()));
         }
-        out.extend(
-            kept.into_iter()
-                .map(|r| Item::Row(r, g == DateGroup::Overdue)),
-        );
+        out.extend(kept.into_iter().map(Item::Row));
     }
     out
 }
@@ -140,13 +148,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     // Column widths are shared by every row so dates line up.
     let task_rows: Vec<&Row> = items
         .iter()
-        .filter_map(|i| {
-            if let Item::Row(r, _) = i {
-                Some(r)
-            } else {
-                None
-            }
-        })
+        .filter_map(|i| if let Item::Row(r) = i { Some(r) } else { None })
         .collect();
     let col = |f: &dyn Fn(&Row) -> String, cap: usize| {
         task_rows
@@ -164,7 +166,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         .map(|r| r.depth as usize * 2)
         .max()
         .unwrap_or(0);
-    let left_fixed = 1 + max_depth + glyph_w + 1;
+    let mark_w = if task_rows
+        .iter()
+        .any(|r| flagged(&app.snapshot.tasks[r.task]))
+    {
+        2
+    } else {
+        0
+    };
+    let left_fixed = 1 + max_depth + glyph_w + 1 + mark_w;
     let right =
         |h: usize| (if h > 0 { h + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     if width < left_fixed + right(hint_w) + MIN_TITLE {
@@ -192,7 +202,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
                     Span::styled(count, dim()),
                 ]));
             }
-            Item::Row(r, overdue) => {
+            Item::Row(r) => {
                 if row_no == app.cursor {
                     selected_line = lines.len();
                 }
@@ -201,10 +211,9 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
                 lines.push(row_line(
                     app,
                     r,
-                    *overdue,
                     selected,
                     width,
-                    (glyph_w, hint_w, date_w, max_depth),
+                    (glyph_w, mark_w, hint_w, date_w),
                 ));
             }
         }
@@ -223,14 +232,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
 fn row_line(
     app: &App,
     r: &Row,
-    overdue: bool,
     selected: bool,
     width: usize,
-    (glyph_w, hint_w, date_w, _): (usize, usize, usize, usize),
+    (glyph_w, mark_w, hint_w, date_w): (usize, usize, usize, usize),
 ) -> Line<'static> {
     let t = &app.snapshot.tasks[r.task];
+    let overdue = is_overdue(app, r.task);
     let indent = r.depth as usize * 2;
-    let left = 1 + indent + glyph_w + 1;
+    let left = 1 + indent + glyph_w + 1 + mark_w;
     let right = (if hint_w > 0 { hint_w + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     let title_w = width.saturating_sub(left + right);
 
@@ -262,10 +271,19 @@ fn row_line(
         Span::raw(" ".repeat(indent)),
         Span::styled(pad(&glyph(app, r.task), glyph_w), text),
         Span::raw(" "),
+    ];
+    if mark_w > 0 {
+        let mark = if flagged(t) { "!" } else { " " };
+        spans.push(Span::styled(
+            pad(mark, mark_w),
+            Style::new().fg(Color::Yellow).add_modifier(Modifier::DIM),
+        ));
+    }
+    spans.extend([
         Span::styled(title, text),
         Span::styled(suffix, dim()),
         Span::raw(" ".repeat(filler)),
-    ];
+    ]);
     if hint_w > 0 {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(

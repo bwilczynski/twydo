@@ -1,4 +1,5 @@
-//! Bottom line: mode, key hints (or the message), and the position in the view.
+//! Bottom line: mode, the unreadable-files indicator, key hints (or the message), and the
+//! position in the view.
 
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Rect};
@@ -33,6 +34,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         ),
         Span::raw(" "),
     ];
+    // Persistent while any file fails to load; `:errors` lists them.
+    let unreadable = unreadable(app);
+    if let Some(u) = &unreadable {
+        spans.push(Span::styled(
+            u.clone(),
+            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw("  "));
+    }
     match (&prompt, &app.message) {
         (Some(p), _) => spans.push(Span::raw(p.clone())),
         (None, Some(m)) => spans.push(Span::styled(m.clone(), Style::new().fg(Color::Yellow))),
@@ -43,6 +53,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     // The position goes on top at the right edge when there is room for it.
     let w = pos.width() as u16;
     let left_used: usize = 10
+        + unreadable.as_ref().map_or(0, |u| u.width() + 2)
         + match (&prompt, &app.message) {
             (Some(p), _) => p.width(),
             (None, Some(m)) => m.width(),
@@ -51,5 +62,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if area.width > w && left_used + (w as usize) < area.width as usize {
         let r = Rect::new(area.x + area.width - w, area.y, w, area.height.min(1));
         f.render_widget(Paragraph::new(pos).alignment(Alignment::Right), r);
+    }
+}
+
+/// `! N file(s) unreadable`, or nothing when every file loaded.
+fn unreadable(app: &App) -> Option<String> {
+    match app.snapshot.errors.len() {
+        0 => None,
+        1 => Some("! 1 file unreadable".into()),
+        n => Some(format!("! {n} files unreadable")),
     }
 }
