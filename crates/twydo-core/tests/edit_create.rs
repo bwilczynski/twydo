@@ -10,11 +10,16 @@ use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::model::{TaskKind, tasks_from_calendar};
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
+const C: &str = "3b93fba16ec74e24b2da63a73c29ca8c";
 
 fn reference() -> Calendar {
+    capture(A)
+}
+
+fn capture(uid: &str) -> Calendar {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/phase0/v1/plan4-list1/01-create")
-        .join(format!("{A}.ics"));
+        .join(format!("{uid}.ics"));
     parse(&std::fs::read(&p).unwrap()).unwrap()
 }
 
@@ -103,4 +108,52 @@ fn new_task_empty_title_rejected() {
         new_task(&nt("  "), A, now()),
         Err(EditError::EmptyTitle)
     ));
+}
+
+/// Every line of the VTODO and its children as (path, name, params, value), without
+/// `skip`ped names; the metadata decoded.
+fn vtodo_lines(cal: &Calendar, skip: &[&str]) -> Vec<String> {
+    fn walk(c: &twydo_core::ical::Component, path: &str, skip: &[&str], out: &mut Vec<String>) {
+        let path = format!("{path}/{}", c.name);
+        for p in &c.props {
+            if skip.contains(&p.name.as_str())
+                || p.name.contains("SYNC")
+                || p.name == "X-2DOAPP-AUDIO-DURATION"
+            {
+                continue;
+            }
+            let v = match MetaJson::parse(&p.value) {
+                Some(m) if p.name == "X-2DOAPP-METADATA" => format!("{m:?}"),
+                _ => p.value.clone(),
+            };
+            out.push(format!("{path} {} {:?} {v}", p.name, p.params));
+        }
+        for ch in &c.children {
+            walk(ch, &path, skip, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(
+        cal.root.children_named("VTODO").next().unwrap(),
+        "",
+        skip,
+        &mut out,
+    );
+    out
+}
+
+/// A timed new task equals 2Do's timed capture C (`01-create`) minus the SYNC /
+/// AUDIO-DURATION properties, including 2Do's automatic alert (user decision 2026-11-01).
+#[test]
+fn new_timed_task_matches_2do_with_auto_alarm() {
+    let r = capture(C);
+    let t = NewTask {
+        due: Some(Due::Time(d(2026, 12, 3).and_hms_opt(17, 30, 0).unwrap())),
+        ..nt("C")
+    };
+    let cal = new_task(&t, C, now()).unwrap();
+    let skip = ["DTSTAMP", "LAST-MODIFIED", "CREATED"];
+    assert_eq!(vtodo_lines(&cal, &skip), vtodo_lines(&r, &skip));
+    let text = String::from_utf8(serialize(&cal)).unwrap();
+    assert_eq!(text.matches("BEGIN:VALARM").count(), 1);
 }

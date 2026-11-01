@@ -530,3 +530,36 @@ fn move_history_copy_keeps_series_ruid() {
         orig.prop("X-2DOAPP-METADATA").unwrap()
     );
 }
+
+/// A Twydo-created timed task carries 2Do's auto alert, and the gate still lets a one-time
+/// timed task be completed (alarms only block repeating completions).
+#[test]
+fn created_timed_task_has_auto_alarm_and_completes() {
+    let (env, mut store) = test_env();
+    let before = env.files();
+    let due = chrono::NaiveDate::from_ymd_opt(2026, 12, 3)
+        .unwrap()
+        .and_hms_opt(17, 30, 0)
+        .unwrap();
+    let op = Op::Create(NewTask {
+        collection: "list2".into(),
+        summary: "Synthetic".into(),
+        description: None,
+        due: Some(twydo_core::edit::Due::Time(due)),
+        start: None,
+    });
+    store.apply(&env.snap(), &op, now()).unwrap();
+    let after = env.files();
+    let (_, bytes) = after
+        .iter()
+        .find(|(k, _)| !before.contains_key(*k))
+        .unwrap();
+    let todo = todo_of(bytes);
+    let uid = value(&todo, "UID");
+    let alarm = todo.children_named("VALARM").next().unwrap();
+    assert_eq!(value(alarm, "X-2DOAPP-ISAUTO"), "1");
+    let snap = env.snap();
+    let t = snap.tasks.iter().find(|t| t.uid == uid).unwrap();
+    assert_eq!(t.alarms.len(), 1);
+    store.apply(&snap, &complete(&uid), later()).unwrap();
+}

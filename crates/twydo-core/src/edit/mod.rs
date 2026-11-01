@@ -296,9 +296,11 @@ fn set_date_prop(todo: &mut Component, name: &str, v: &IcalDateTime, after: &[&s
 }
 
 /// `DUE`, plus its 2Do counterparts when the task has `<2Do Meta>` JSON: `DTSTART` mirrors
-/// `DUE` (H7) and `duetime` holds HHMM of a timed due (H8). A due without a time drops
-/// 2Do's automatic at-due-time alert (`X-2DOAPP-ISAUTO:1`); Twydo never adds one.
-/// A due time is written with whole minutes (seconds zeroed), as 2Do writes it.
+/// `DUE` (H7), `duetime` holds HHMM of a timed due (H8), and a timed due gets 2Do's
+/// automatic at-due-time alert ([`auto_alarm`]) unless it already has one, which then stays
+/// as is (user decision 2026-11-01, mirroring 2Do). A due without a time drops that alert
+/// (`X-2DOAPP-ISAUTO:1`). A due time is written with whole minutes (seconds zeroed), as 2Do
+/// writes it.
 fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
     let due = due.map(|d| match d {
         Due::Time(t) => Due::Time(t.date().and_hms_opt(t.hour(), t.minute(), 0).unwrap_or(t)),
@@ -337,6 +339,7 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
             }
         }
     }
+    let timed = matches!(due, Some(Due::Time(_)));
     if let Some(orig) = json {
         let mut m = orig.clone();
         match due {
@@ -344,11 +347,40 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
             _ => m.remove("duetime"),
         }
         write_meta(todo, Some(&orig), &m);
+        if timed && !todo.children.iter().any(is_auto_alarm) {
+            let summary = todo.prop("SUMMARY").map_or("", |p| p.value.as_str());
+            let alarm = auto_alarm(summary);
+            todo.push_child(alarm);
+        }
     }
-    if !matches!(due, Some(Due::Time(_))) {
+    if !timed {
         todo.remove_children(is_auto_alarm);
     }
     Ok(())
+}
+
+/// 2Do's automatic at-due-time alert, exactly as 2Do writes it (H8, `plan4-list1/01-create`
+/// task C). `summary` is the raw (escaped) `SUMMARY` value. A later title edit leaves its
+/// `DESCRIPTION` unchanged (Ruling R14; how 2Do treats that is unverified).
+fn auto_alarm(summary: &str) -> Component {
+    let global = || {
+        vec![Param {
+            name: "SHARE-SCOPE".into(),
+            values: vec!["GLOBAL".into()],
+        }]
+    };
+    let mut a = Component::new("VALARM");
+    for (name, params, value) in [
+        ("TRIGGER", Vec::new(), "PT0S"),
+        ("ACTION", Vec::new(), "AUDIO"),
+        ("DESCRIPTION", Vec::new(), summary),
+        ("X-2DOAPP-SOUND", global(), "Basso"),
+        ("X-2DOAPP-ISAUTO", global(), "1"),
+        ("X-2DOAPP-RELDUETIME", global(), "1"),
+    ] {
+        a.insert_prop(Property::new(name, params, value), None);
+    }
+    a
 }
 
 /// A `DTSTART` that is not a copy of `DUE` (same parameters and value), or one without `DUE`.

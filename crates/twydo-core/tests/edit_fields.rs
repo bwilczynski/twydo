@@ -296,10 +296,8 @@ fn midnight_due_time_writes_duetime_0() {
     }
     let meta = MetaJson::parse(&todo.prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(meta.get_i64("duetime"), Some(0));
-    assert!(
-        todo.children_named("VALARM").next().is_none(),
-        "no auto alarm added"
-    );
+    // A timed due gets 2Do's automatic alert (user decision, 2026-11-01).
+    assert_eq!(auto_alarms(todo), vec![auto_alarm("A")]);
     assert_eq!(todo.prop("DTSTAMP").unwrap().value, "20261101T150000Z");
     assert_eq!(
         todo.prop("LAST-MODIFIED").unwrap().value,
@@ -439,4 +437,91 @@ fn due_time_seconds_are_zeroed() {
     let todo = todo(&cal);
     assert_eq!(todo.prop("DUE").unwrap().value, "20261203T184500");
     assert_eq!(todo.prop("DTSTART").unwrap().value, "20261203T184500");
+}
+
+/// 2Do's automatic at-due-time alert for a task titled `summary` (H8, `01-create` C).
+fn auto_alarm(summary: &str) -> Vec<(String, Vec<Param>, String)> {
+    let g = || {
+        vec![Param {
+            name: "SHARE-SCOPE".into(),
+            values: vec!["GLOBAL".into()],
+        }]
+    };
+    vec![
+        ("TRIGGER".into(), vec![], "PT0S".into()),
+        ("ACTION".into(), vec![], "AUDIO".into()),
+        ("DESCRIPTION".into(), vec![], summary.into()),
+        ("X-2DOAPP-SOUND".into(), g(), "Basso".into()),
+        ("X-2DOAPP-ISAUTO".into(), g(), "1".into()),
+        ("X-2DOAPP-RELDUETIME".into(), g(), "1".into()),
+    ]
+}
+
+/// Every VALARM child as (name, params, value) lines.
+fn auto_alarms(todo: &Component) -> Vec<Vec<(String, Vec<Param>, String)>> {
+    todo.children_named("VALARM")
+        .map(|a| {
+            a.props
+                .iter()
+                .map(|p| (p.name.clone(), p.params.clone(), p.value.clone()))
+                .collect()
+        })
+        .collect()
+}
+
+/// Date-only -> timed adds exactly 2Do's automatic alert: C `03-complete` (date-only) back
+/// to its `02-edit` state (timed 18:45, with the alarm 2Do added).
+#[test]
+fn date_only_to_timed_adds_auto_alarm_like_2do() {
+    let t = date(2026, 12, 3).and_hms_opt(18, 45, 0).unwrap();
+    check(
+        L1,
+        "03-complete",
+        "02-edit",
+        C,
+        &[Change::Due(Some(Due::Time(t)))],
+        &[
+            "DUE",
+            "DTSTART",
+            "X-2DOAPP-METADATA",
+            "BEGIN:VALARM",
+            "END:VALARM",
+            "TRIGGER",
+            "ACTION",
+            "DESCRIPTION",
+            "X-2DOAPP-SOUND",
+            "X-2DOAPP-ISAUTO",
+            "X-2DOAPP-RELDUETIME",
+        ],
+    );
+}
+
+/// Timed -> timed keeps the one existing auto alarm as is (2Do did, `01-create` -> `02-edit`).
+#[test]
+fn timed_to_timed_keeps_one_auto_alarm() {
+    let input = fixture(L1, "01-create", C);
+    let mut cal = parse(&input).unwrap();
+    let t = date(2026, 12, 4).and_hms_opt(9, 15, 0).unwrap();
+    apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
+    let orig = parse(&input).unwrap();
+    assert_eq!(auto_alarms(todo(&cal)), auto_alarms(todo(&orig)));
+    assert_eq!(auto_alarms(todo(&cal)), vec![auto_alarm("C")]);
+}
+
+/// Ruling R14: a title edit leaves an existing auto alarm's DESCRIPTION unchanged.
+#[test]
+fn retitle_keeps_auto_alarm_description() {
+    let mut cal = parse(&fixture(L1, "01-create", C)).unwrap();
+    apply_changes(&mut cal, &[Change::Summary("C2".into())], now()).unwrap();
+    assert_eq!(todo(&cal).prop("SUMMARY").unwrap().value, "C2");
+    assert_eq!(auto_alarms(todo(&cal)), vec![auto_alarm("C")]);
+}
+
+/// A task without `<2Do Meta>` JSON gets no auto alarm.
+#[test]
+fn timed_due_without_json_meta_adds_no_alarm() {
+    let mut cal = parse(SYNTHETIC.as_bytes()).unwrap();
+    let t = date(2026, 11, 28).and_hms_opt(10, 0, 0).unwrap();
+    apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
+    assert!(todo(&cal).children_named("VALARM").next().is_none());
 }
