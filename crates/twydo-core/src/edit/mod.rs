@@ -117,6 +117,38 @@ pub fn touch(todo: &mut Component, now: DateTime<Utc>) {
     }
 }
 
+/// The resource a move writes to the destination list (H5 as captured): `cal` with
+/// `UID` = `new_uid`, stamps touched, and a non-empty JSON `RUID` set to `new_uid`. Every
+/// other line keeps its bytes; `cal` is not changed.
+pub fn moved_copy(
+    cal: &Calendar,
+    new_uid: &str,
+    now: DateTime<Utc>,
+) -> Result<Calendar, EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    let uid = todo
+        .prop_mut("UID")
+        .ok_or_else(|| unsupported("task has no UID"))?;
+    if new_uid.is_empty() || uid.value == new_uid {
+        return Err(unsupported("a moved task needs a new UID"));
+    }
+    uid.set_value(new_uid);
+    match meta_of(todo) {
+        Meta::Json(orig) => {
+            if orig.get_str("RUID").is_some_and(|r| !r.is_empty()) {
+                let mut m = orig.clone();
+                m.set_str("RUID", new_uid);
+                write_meta(todo, Some(&orig), &m);
+            }
+        }
+        Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
+        Meta::Absent | Meta::Tokens => {}
+    }
+    touch(todo, now);
+    Ok(work)
+}
+
 /// The resource's single VTODO. Recurrence overrides (several VTODOs or a
 /// `RECURRENCE-ID`) are not supported.
 fn the_todo(cal: &mut Calendar) -> Result<&mut Component, EditError> {

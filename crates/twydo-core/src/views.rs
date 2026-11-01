@@ -6,7 +6,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate};
 use chrono_tz::Tz;
@@ -31,6 +31,7 @@ pub struct Snapshot {
     pub errors: Vec<(PathBuf, String)>,
     parents: Vec<Option<usize>>,
     children: Vec<Vec<usize>>,
+    sources: HashMap<PathBuf, Vec<u8>>,
 }
 
 impl Snapshot {
@@ -100,6 +101,7 @@ impl Snapshot {
             errors: report.errors,
             parents,
             children,
+            sources: report.sources,
         }
     }
 
@@ -110,6 +112,16 @@ impl Snapshot {
 
     pub fn parent(&self, idx: usize) -> Option<usize> {
         self.parents[idx]
+    }
+
+    /// The bytes of the file at `path` as loaded (a task's `path`).
+    pub fn source(&self, path: &Path) -> Option<&[u8]> {
+        self.sources.get(path).map(Vec::as_slice)
+    }
+
+    /// Index of the first task with `uid`.
+    pub fn find(&self, uid: &str) -> Option<usize> {
+        self.tasks.iter().position(|t| t.uid == uid)
     }
 
     /// The configured timezone (see [`Config::tz`]).

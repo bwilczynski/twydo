@@ -154,6 +154,7 @@ fn snapshot(tasks: Vec<Task>, lists: &[(&str, ListPrefs)]) -> Snapshot {
             collections,
             tasks,
             errors: vec![],
+            ..Default::default()
         },
         config(lists),
     )

@@ -23,6 +23,9 @@ pub struct LoadReport {
     pub tasks: Vec<Task>,
     /// Files that could not be read or parsed, with the reason.
     pub errors: Vec<(PathBuf, String)>,
+    /// The bytes of every `.ics` file that was read, keyed by its path, so a writer can
+    /// check that a file has not changed since it was loaded.
+    pub sources: HashMap<PathBuf, Vec<u8>>,
 }
 
 /// Parse `#RRGGBB` or `#RRGGBBAA` (alpha ignored).
@@ -103,10 +106,13 @@ pub fn load(root: &Path) -> io::Result<LoadReport> {
             }
             match fs::read(&path) {
                 Err(e) => report.errors.push((path, e.to_string())),
-                Ok(bytes) => match ical::parse(&bytes) {
-                    Err(e) => report.errors.push((path, e.to_string())),
-                    Ok(cal) => report.tasks.extend(tasks_from_calendar(&cal, &id, &path)),
-                },
+                Ok(bytes) => {
+                    match ical::parse(&bytes) {
+                        Err(e) => report.errors.push((path.clone(), e.to_string())),
+                        Ok(cal) => report.tasks.extend(tasks_from_calendar(&cal, &id, &path)),
+                    }
+                    report.sources.insert(path, bytes);
+                }
             }
         }
     }
