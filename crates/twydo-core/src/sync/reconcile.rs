@@ -16,7 +16,7 @@ use super::hook::{HookRecord, uid_of};
 use super::output::{Action, SyncOutput};
 use super::status::CollState;
 use crate::config::SyncConfig;
-use crate::conflicts::{Conflict, ConflictKind, ConflictStore, NewConflict, Side};
+use crate::conflicts::{Conflict, ConflictKind, ConflictState, ConflictStore, NewConflict, Side};
 use crate::store::journal::{Entry, Journal, Stage};
 
 /// What [`reconcile`] did.
@@ -111,35 +111,41 @@ fn settle(
     let state_of = |coll: &str| states.get(coll);
     let counted = |coll: &str| matches!(state_of(coll), Some(CollState::Ok | CollState::Conflict));
 
+    let all_conflicts = conflicts.list()?;
     // Held conflicts the user decided, or that both sides now agree on. Their paths are
     // done: whatever the vdir holds now is the user's decision.
-    let held: Vec<Conflict> = conflicts
-        .unresolved()?
-        .into_iter()
-        .filter(|c| c.held)
+    let held: Vec<&Conflict> = all_conflicts
+        .iter()
+        .filter(|c| c.held && matches!(c.state, ConflictState::Open | ConflictState::Chosen))
         .collect();
     let mut closing: Vec<&Conflict> = Vec::new();
+    let mut still_held: BTreeSet<&str> = BTreeSet::new();
     for c in &held {
+        if !counted(&c.collection) {
+            continue;
+        }
         let records: Vec<&HookRecord> = hook
             .iter()
             .filter(|r| r.conflict == c.id || (r.uid == c.uid && r.collection == c.collection))
             .collect();
-        let applied = records.iter().any(|r| r.conflict == c.id && r.resolved);
-        // With no hook call for the item while its collection synced cleanly, vdirsyncer saw
-        // both sides equal (F5), so the conflict is settled, however that happened (including
-        // a choice applied by a vdirsyncer run without a hook log).
-        let agreed = records.is_empty() && state_of(&c.collection) == Some(&CollState::Ok);
-        if counted(&c.collection) && (applied || agreed) {
+        let unhooked = out
+            .unhooked
+            .get(&c.collection)
+            .is_some_and(|uids| uids.contains(&c.uid));
+        if records.iter().any(|r| r.conflict == c.id && r.resolved) {
+            // The hook applied the user's choice.
+            closing.push(c);
+        } else if !records.is_empty() || unhooked {
+            // vdirsyncer still sees the item changed on both sides (step 3).
+            still_held.insert(&c.path);
+        } else if agreed(vdir, c, out) {
             closing.push(c);
         }
+        // Otherwise vdirsyncer settled the item some other way (e.g. a delete versus an
+        // edit, F6): the path goes through the normal checks, which supersede the conflict
+        // if they record a new one.
     }
     let decided: BTreeSet<&str> = closing.iter().map(|c| c.path.as_str()).collect();
-    let still_held: BTreeSet<&str> = held
-        .iter()
-        .filter(|c| state_of(&c.collection) == Some(&CollState::Conflict))
-        .filter(|c| !decided.contains(c.path.as_str()))
-        .map(|c| c.path.as_str())
-        .collect();
 
     // Write order: by creation time, then id (ids within one second are random).
     let mut order: Vec<&Entry> = pending.iter().collect();
@@ -185,7 +191,18 @@ fn settle(
         if still_held.contains(path) {
             continue;
         }
-        let outcome = check_path(vdir, conflicts, sync, out, &order, path, coll, now, rec)?;
+        let outcome = check_path(
+            vdir,
+            conflicts,
+            &all_conflicts,
+            sync,
+            out,
+            &order,
+            path,
+            coll,
+            now,
+            rec,
+        )?;
         if let Outcome::Done = outcome {
             done.insert(path);
         }
@@ -217,6 +234,7 @@ fn settle(
 fn check_path(
     vdir: &Path,
     conflicts: &ConflictStore,
+    known: &[Conflict],
     sync: &SyncConfig,
     out: &SyncOutput,
     order: &[&Entry],
@@ -255,37 +273,56 @@ fn check_path(
         })
     };
 
+    // A conflict is recorded once per pending write: one already recorded for it (resolved
+    // or not) settles the path, so a later run that re-checks it (the entry still pending
+    // for another path) neither reports nor re-creates it.
+    let mut record = |c: NewConflict| -> io::Result<Outcome> {
+        let seen = known.iter().any(|k| {
+            k.path == c.path
+                && k.kind == c.kind
+                && k.local == c.local
+                && k.remote == c.remote
+                && k.detected >= last_entry.created
+        });
+        if !seen {
+            rec.new_conflicts.push(conflicts.record(c, now)?.id);
+        }
+        Ok(Outcome::Done)
+    };
+
     // Step 4: remote delete versus local edit. vdirsyncer re-uploaded Twydo's edit to a
     // server that had deleted the item.
     if let Some(local) = expected
         && !created_here
         && transferred(Action::Upload, false)
     {
-        let c = conflicts.record(
-            NewConflict {
-                uid: uid.clone().unwrap_or_default(),
-                collection: coll.to_string(),
-                path: path.to_string(),
-                kind: ConflictKind::RemoteDeleteLocalEdit,
-                held: false,
-                vdir_holds: Side::Local,
-                local: Some(local.to_string()),
-                remote: None,
-            },
-            now,
-        )?;
-        rec.new_conflicts.push(c.id);
-        return Ok(Outcome::Done);
+        return record(NewConflict {
+            uid: uid.clone().unwrap_or_default(),
+            collection: coll.to_string(),
+            path: path.to_string(),
+            kind: ConflictKind::RemoteDeleteLocalEdit,
+            held: false,
+            vdir_holds: Side::Local,
+            local: Some(local.to_string()),
+            remote: None,
+        });
     }
 
     // Step 5.
     let mut current = read_opt(&file)?;
     let mut at = path.to_string();
     if expected.is_none() && current.is_none() && transferred(Action::Upload, true) {
-        // vdirsyncer restored the remote edit under a file name of its own.
-        if let Some((p, text)) = find_uid(vdir, coll, uid.as_deref().unwrap_or_default())? {
-            at = p;
-            current = Some(text);
+        // vdirsyncer restored the remote edit under a file name of its own. If no single
+        // file holds it, the deletion must not pass as confirmed.
+        match find_uid(vdir, coll, uid.as_deref().unwrap_or_default())? {
+            Some((p, text)) => {
+                at = p;
+                current = Some(text);
+            }
+            None => {
+                rec.unexpected.push(path.to_string());
+                return Ok(Outcome::Pending);
+            }
         }
     }
     if current.as_deref() == expected {
@@ -294,21 +331,16 @@ fn check_path(
     }
     let Some(expected) = expected else {
         // Local delete versus remote edit: vdirsyncer restored the remote edit (F6).
-        let c = conflicts.record(
-            NewConflict {
-                uid: uid.unwrap_or_default(),
-                collection: coll.to_string(),
-                path: at,
-                kind: ConflictKind::LocalDeleteRemoteEdit,
-                held: false,
-                vdir_holds: Side::Remote,
-                local: None,
-                remote: current,
-            },
-            now,
-        )?;
-        rec.new_conflicts.push(c.id);
-        return Ok(Outcome::Done);
+        return record(NewConflict {
+            uid: uid.unwrap_or_default(),
+            collection: coll.to_string(),
+            path: at,
+            kind: ConflictKind::LocalDeleteRemoteEdit,
+            held: false,
+            vdir_holds: Side::Remote,
+            local: None,
+            remote: current,
+        });
     };
     if let Some(cur) = &current {
         // vdirsyncer may rewrite an item with LF line endings (it reads items in text
@@ -326,6 +358,31 @@ fn check_path(
     }
     rec.unexpected.push(path.to_string());
     Ok(Outcome::Pending)
+}
+
+/// Whether held conflict `c`, with no hook call this run, is settled because both sides
+/// now agree. Needs positive evidence, because a delete versus an edit is settled silently
+/// too (F6): no transfer of the item this run, and either vdirsyncer reported the same
+/// content on both sides (F5) or the vdir file holds one of the two versions (ignoring line
+/// endings: a choice applied by a vdirsyncer run without a hook log comes back with LF).
+fn agreed(vdir: &Path, c: &Conflict, out: &SyncOutput) -> bool {
+    let moved = out
+        .transfers
+        .iter()
+        .any(|t| t.uid == c.uid && t.collection == c.collection);
+    if moved {
+        return false;
+    }
+    if out.conflict_items.contains(&c.uid) {
+        return true;
+    }
+    let Ok(Some(current)) = read_opt(&vdir.join(&c.path)) else {
+        return false;
+    };
+    [&c.local, &c.remote]
+        .into_iter()
+        .flatten()
+        .any(|v| same_text(&current, v))
 }
 
 /// The collection of a vdir-relative path: its first component, when the path is

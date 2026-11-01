@@ -599,3 +599,70 @@ fn remote_update_after_earlier_upload_confirms() {
     assert_eq!(r.confirmed, vec![e.id.clone()]);
     assert!(r.new_conflicts.is_empty());
 }
+
+#[test]
+fn deletion_with_unfound_restore_stays_pending() {
+    let fx = Fx::new("exit 0");
+    let b = task("u1", "before");
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), None)],
+    );
+    apply(&fx, &e);
+    // vdirsyncer says it restored u1 locally, but no single file holds it.
+    fs::write(fx.cfg.vdir.join("c1/x.ics"), task("u1", "server")).unwrap();
+    fs::write(fx.cfg.vdir.join("c1/y.ics"), task("u1", "server")).unwrap();
+    let r = reconcile_with(
+        &fx,
+        std::slice::from_ref(&e),
+        "Syncing twydo/c1\nCopying (uploading) item u1 to twydo_local/c1\n",
+    );
+    assert!(r.confirmed.is_empty(), "{:?}", r.confirmed);
+    assert!(r.new_conflicts.is_empty());
+    assert_eq!(r.unexpected, vec!["c1/u1.ics".to_string()]);
+    assert!(!synced(&fx, &e.id));
+}
+
+#[test]
+fn delete_conflict_of_pending_entry_is_recorded_once() {
+    let fx = Fx::new("exit 0");
+    fs::create_dir_all(fx.cfg.vdir.join("c2")).unwrap();
+    let (b, x0, x1) = (task("u1", "before"), task("u2", "0"), task("u2", "1"));
+    // One path deleted in c1 (the server edited it), one edit in c2, which keeps failing.
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[
+            ("c1/u1.ics", Some(&b), None),
+            ("c2/u2.ics", Some(&x0), Some(&x1)),
+        ],
+    );
+    apply(&fx, &e);
+    let remote = task("u1", "server");
+    fs::write(fx.cfg.vdir.join("c1/u1.ics"), &remote).unwrap();
+    let stderr = "Syncing twydo/c1\nCopying (uploading) item u1 to twydo_local/c1\n\
+                  Syncing twydo/c2\nerror: twydo/c2: Connection reset\n";
+    let r = reconcile_with(&fx, std::slice::from_ref(&e), stderr);
+    assert_eq!(r.new_conflicts.len(), 1);
+    assert!(!synced(&fx, &e.id), "c2 is not confirmed");
+    let store = ConflictStore::open(&fx.state()).unwrap();
+
+    let r = reconcile_with(
+        &fx,
+        std::slice::from_ref(&e),
+        "Syncing twydo/c1\nSyncing twydo/c2\nerror: twydo/c2: Connection reset\n",
+    );
+    assert!(r.new_conflicts.is_empty(), "{:?}", r.new_conflicts);
+    assert_eq!(store.list().unwrap().len(), 1);
+
+    let id = store.list().unwrap()[0].id.clone();
+    store.mark_resolved(&id, now()).unwrap();
+    let r = reconcile_with(
+        &fx,
+        std::slice::from_ref(&e),
+        "Syncing twydo/c1\nSyncing twydo/c2\nerror: twydo/c2: Connection reset\n",
+    );
+    assert!(r.new_conflicts.is_empty(), "{:?}", r.new_conflicts);
+    let all = store.list().unwrap();
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert!(all[0].resolved.is_some());
+}

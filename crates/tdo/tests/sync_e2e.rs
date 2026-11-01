@@ -542,3 +542,48 @@ fn prune_after_retention() {
     assert_eq!(p.tdo_sync().0, 0);
     assert_eq!(p.journal_line(&id), None);
 }
+
+#[test]
+fn server_delete_of_held_item_is_not_lost() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (op, id) = held_conflict(&p);
+    let local = p.read_vdir("u1").unwrap();
+    // The phone deletes the conflicted task; vdirsyncer re-uploads the local edit (F6).
+    fs::remove_file(p.server().join(COLL).join("u1.ics")).unwrap();
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Superseded
+    );
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].kind, ConflictKind::RemoteDeleteLocalEdit);
+    assert_eq!(open[0].local.as_deref(), Some(local.as_str()));
+    assert!(p.synced(&op));
+}
+
+#[test]
+fn twydo_delete_of_held_item_is_not_lost() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (edit, id) = held_conflict(&p);
+    let del = p.op(&["delete", "u1"]);
+    // vdirsyncer restores the server's edit locally (F6).
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Superseded
+    );
+    let open = p.conflicts().unresolved().unwrap();
+    assert_eq!(open.len(), 1, "{open:?}");
+    assert_eq!(open[0].kind, ConflictKind::LocalDeleteRemoteEdit);
+    assert_eq!(
+        open[0].remote.as_deref(),
+        Some(task("u1", "one-remote").as_str())
+    );
+    assert!(p.synced(&edit));
+    assert!(p.synced(&del));
+}
