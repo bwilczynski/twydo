@@ -99,9 +99,12 @@ fn transfer(line: &str) -> Option<Transfer> {
     } else {
         (Action::Delete, line.strip_prefix("Deleting item ")?)
     };
-    let (uid, target) = rest
-        .split_once(" to ")
-        .or_else(|| rest.split_once(" from "))?;
+    let sep = if action == Action::Delete {
+        " from "
+    } else {
+        " to "
+    };
+    let (uid, target) = rest.split_once(sep)?;
     let (storage, collection) = target.split_once('/')?;
     Some(Transfer {
         action,

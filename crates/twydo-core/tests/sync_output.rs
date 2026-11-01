@@ -163,3 +163,19 @@ fn error_after_non_error_line_is_unattributed() {
     assert_eq!(o.errors["c1"], vec!["x"]);
     assert_eq!(o.unattributed, vec!["y"]);
 }
+
+#[test]
+fn collection_name_containing_to_and_from() {
+    let o = parse(
+        "twydo",
+        "Deleting item u1 from twydo_remote/Things to do\nCopying (uploading) item u2 to twydo_local/Things to do\nCopying (updating) item u3 to twydo_local/Mail from Bob\n",
+    );
+    assert_eq!(
+        o.transfers,
+        vec![
+            t(Action::Delete, "u1", "twydo_remote", "Things to do"),
+            t(Action::Upload, "u2", "twydo_local", "Things to do"),
+            t(Action::Update, "u3", "twydo_local", "Mail from Bob"),
+        ]
+    );
+}
