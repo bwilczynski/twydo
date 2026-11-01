@@ -373,7 +373,8 @@ fn start_with_token_metadata_is_unsupported() {
 
 #[test]
 fn start_without_metadata_inserts_default_meta() {
-    let mut cal = parse(SYNTHETIC.as_bytes()).unwrap();
+    let no_start = SYNTHETIC.replace("DTSTART;VALUE=DATE:20261120\r\n", "");
+    let mut cal = parse(no_start.as_bytes()).unwrap();
     apply_changes(&mut cal, &[Change::Start(Some(date(2026, 12, 2)))], now()).unwrap();
     let cal = parse(&serialize(&cal)).unwrap();
     let meta = MetaJson::parse(&todo(&cal).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
@@ -401,4 +402,41 @@ fn repeat_interval_one_removes_interval() {
     let before = cal.clone();
     assert!(apply_changes(&mut cal, &[Change::RepeatInterval(0)], now()).is_err());
     assert_eq!(cal, before);
+}
+
+#[test]
+fn start_on_task_with_own_dtstart_and_no_meta_is_unsupported() {
+    let msg =
+        "setting a start date on a task with its own DTSTART and no 2Do metadata is not supported";
+    let no_due = SYNTHETIC.replace("DUE;VALUE=DATE:20261125\r\n", "");
+    let start = Change::Start(Some(date(2026, 11, 21)));
+    let due = Change::Due(Some(Due::Date(date(2026, 11, 28))));
+    for (src, changes) in [
+        (SYNTHETIC.to_string(), vec![start.clone()]),
+        (SYNTHETIC.to_string(), vec![due.clone(), start.clone()]),
+        (no_due, vec![start.clone()]),
+    ] {
+        let mut cal = parse(src.as_bytes()).unwrap();
+        let before = cal.clone();
+        let err = apply_changes(&mut cal, &changes, now()).unwrap_err();
+        assert!(
+            matches!(&err, EditError::Unsupported(m) if m == msg),
+            "{changes:?}: {err:?}"
+        );
+        assert_eq!(cal, before, "{changes:?}");
+    }
+    // A DTSTART that mirrors DUE is not a real start: allowed.
+    let mirror = SYNTHETIC.replace("DTSTART;VALUE=DATE:20261120", "DTSTART;VALUE=DATE:20261125");
+    let mut cal = parse(mirror.as_bytes()).unwrap();
+    apply_changes(&mut cal, &[start], now()).unwrap();
+}
+
+#[test]
+fn due_time_seconds_are_zeroed() {
+    let mut cal = parse(&fixture(L1, "01-create", C)).unwrap();
+    let t = date(2026, 12, 3).and_hms_opt(18, 45, 30).unwrap();
+    apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
+    let todo = todo(&cal);
+    assert_eq!(todo.prop("DUE").unwrap().value, "20261203T184500");
+    assert_eq!(todo.prop("DTSTART").unwrap().value, "20261203T184500");
 }
