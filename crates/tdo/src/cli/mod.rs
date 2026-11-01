@@ -6,10 +6,8 @@ pub mod export;
 use std::path::Path;
 
 use twydo_core::config::{Config, ConfigError};
-use twydo_core::ical::value::IcalDateTime;
-use twydo_core::model::Task;
-use twydo_core::model::repeat::{parse_rrule, rule_class};
 use twydo_core::views::Snapshot;
+pub use twydo_core::views::task_rule_class;
 
 /// Exit code for usage, configuration and read errors.
 pub const EXIT_ERROR: i32 = 2;
@@ -53,22 +51,6 @@ pub fn load_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
         source,
     })?;
     Ok(Snapshot::new(report, config))
-}
-
-/// The matrix class of a task's repeat rule; `None` without an RRULE. A rule that does not
-/// parse is `unrecognized`.
-pub fn task_rule_class(t: &Task, snap: &Snapshot) -> Option<String> {
-    let raw = t.rrule.as_deref()?;
-    Some(match parse_rrule(raw) {
-        Ok(r) => {
-            let anchor = t
-                .due
-                .as_ref()
-                .map(|d: &IcalDateTime| d.local_date(snap.tz()));
-            rule_class(&r, anchor, t.from_completion)
-        }
-        Err(_) => "unrecognized".to_string(),
-    })
 }
 
 /// Print an error and exit with [`EXIT_ERROR`].

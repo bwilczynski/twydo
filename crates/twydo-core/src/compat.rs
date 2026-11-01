@@ -68,6 +68,15 @@ pub struct EdgeCase {
     pub evidence: Vec<String>,
 }
 
+/// Why matrix text was rejected.
+#[derive(Debug, thiserror::Error)]
+pub enum MatrixError {
+    #[error(transparent)]
+    Parse(toml::de::Error),
+    #[error("{0}")]
+    Invalid(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Matrix {
@@ -88,17 +97,28 @@ impl Matrix {
             path: p.to_path_buf(),
             source,
         })?;
-        let m: Matrix = toml::from_str(&text).map_err(|source| ConfigError::Parse {
-            path: p.to_path_buf(),
-            source,
-        })?;
+        Matrix::from_toml_str(&text).map_err(|e| match e {
+            MatrixError::Parse(source) => ConfigError::Parse {
+                path: p.to_path_buf(),
+                source,
+            },
+            MatrixError::Invalid(message) => ConfigError::Invalid {
+                path: p.to_path_buf(),
+                message,
+            },
+        })
+    }
+
+    /// Parse a matrix from TOML text, rejecting duplicate `[[rule]]` classes.
+    pub fn from_toml_str(text: &str) -> Result<Matrix, MatrixError> {
+        let m: Matrix = toml::from_str(text).map_err(MatrixError::Parse)?;
         let mut seen = std::collections::BTreeSet::new();
         for r in &m.rule {
             if !seen.insert(r.class.as_str()) {
-                return Err(ConfigError::Invalid {
-                    path: p.to_path_buf(),
-                    message: format!("duplicate [[rule]] class {:?}", r.class),
-                });
+                return Err(MatrixError::Invalid(format!(
+                    "duplicate [[rule]] class {:?}",
+                    r.class
+                )));
             }
         }
         Ok(m)

@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-project-child
+SUMMARY:Synthetic project child
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-project
+END:VTODO
+END:VCALENDAR

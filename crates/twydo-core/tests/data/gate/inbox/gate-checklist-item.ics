@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-checklist-item
+SUMMARY:Synthetic checklist item
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-checklist
+END:VTODO
+END:VCALENDAR
