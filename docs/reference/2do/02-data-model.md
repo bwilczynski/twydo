@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   toodledo_uid VARCHAR(255),
   outlook_uid VARCHAR(255),
   startdate DOUBLE DEFAULT 0,                -- ★ 0 = none
-  duetime DOUBLE DEFAULT 999999,             -- ★ HHMM integer (930 = 9:30, 1430 = 14:30, 0–2359); 999999 or -1 = no time [obs]
+  duetime DOUBLE DEFAULT 999999,             -- ★ HHMM integer (930 = 9:30, 1430 = 14:30, 0–2359, 0 = 00:00); 999999 or -1 = no time [obs]
   archived INTEGER DEFAULT 0,
   isbirthday INTEGER DEFAULT 0,
   lastuid VARCHAR(255),                      -- previous occurrence of a repeating task [inf]

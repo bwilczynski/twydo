@@ -201,7 +201,7 @@ tools/capture_fixture.py, tools/reconcile.py, tools/tests/
   - `parent` = `RELATED-TO` with no `RELTYPE` or `RELTYPE=PARENT`; other reltypes are ignored.
   - `kind` comes from `@tasktype:` (`project`/`checklist`), otherwise `Task`. 2Do's encoding is **[?]**: if metadata is absent but the task has children, `views` treats it as a project for display only and adds the warning `"parent type not encoded; shown as project"`.
   - `from_completion` = the `@repeatfromcompletion` token is present.
-  - `start` = `DTSTART` when present. Otherwise use metadata `@startdate`/`@starttime`. When both are present and disagree, add the warning `"start date: DTSTART and 2Do metadata disagree"` and use `DTSTART`.
+  - `start` = `DTSTART` when present. Otherwise use metadata `@startdate`/`@starttime`. When both are present and disagree, add the warning `"start date: DTSTART and 2Do metadata disagree"` and use `DTSTART`. (Phase 0 found that 2Do's CalDAV metadata is `<2Do Meta>` JSON whose `StartDate` alone decides the start, since 2Do's `DTSTART` copies `DUE`; see 06 §2.6.)
   - `Completed` if `STATUS:COMPLETED` or a `COMPLETED` property is present; `Cancelled` if `STATUS:CANCELLED`.
   - A `RECURRENCE-ID`, or more than one VTODO per resource: take the VTODO without `RECURRENCE-ID` as the master and set `blocked = "recurrence overrides are not supported"`.
   - VEVENT/VJOURNAL components are ignored.
@@ -421,7 +421,7 @@ tools/capture_fixture.py, tools/reconcile.py, tools/tests/
 - Produces CLI: `reconcile.py <inventory.2do.json> <export.json> [--show-titles]`. Prints a summary and mismatches to stdout only and writes no files. Exit 0 when there are no mismatches, 1 otherwise.
   - Skip `deleted == "1"`. Classify source tasks: live, completed history (`iscomp == "1"`, with `ruid` when it was a repeat occurrence), children.
   - Match by UID first (whether 2Do keeps its uid as the CalDAV UID is **[?]**; report how many matched by UID). Fall back to (list title ↔ `display_name`, normalised title, due).
-  - Compare: completed state; due date; due time (`duetime` HHMM, where `999999`/`-1` means none, and `0` counts as none on legacy records as 05 says); start date/time; repeat (`repeattype`/`repeatval` → expected RRULE via the 01 §6 mapping, compared after canonicalising part order); from completion (`recurrence == "2"` vs `from_completion`); end type and remaining count; parent; alarm count; list archived (`isarchived` vs the user's `ListPrefs`, when a config path is given via `--config`).
+  - Compare: completed state; due date; due time (`duetime` HHMM, where `999999`/`-1` means none and `0` is 00:00, as 05 says); start date/time; repeat (`repeattype`/`repeatval` → expected RRULE via the 01 §6 mapping, compared after canonicalising part order); from completion (`recurrence == "2"` vs `from_completion`); end type and remaining count; parent; alarm count; list archived (`isarchived` vs the user's `ListPrefs`, when a config path is given via `--config`).
   - Report per-list counts, explaining special lists (Starred/Scheduled/Inbox and smart lists from `col/` are not collections; spec §9). Mismatch lines name UIDs only unless `--show-titles` is given.
 
 - [ ] **Step 1: Write the failing tests** with synthetic JSON:
@@ -429,7 +429,7 @@ tools/capture_fixture.py, tools/reconcile.py, tools/tests/
   - `test_clean_match_exit_0`
   - `test_mismatches_reported_by_uid`: a due-date shift and a missing child → exit 1; output names UIDs and no titles
   - `test_special_lists_explained`: a Starred `col` entry appears under "not a collection", not as missing
-  - `test_duetime_sentinels`: `999999`, `-1`, `0` → no time
+  - `test_duetime_sentinels`: `999999`, `-1` → no time; `0` → 00:00
 - [ ] **Step 2:** Run `python3 -m unittest discover -s tools/tests -v`. Expected: FAIL.
 - [ ] **Step 3:** Implement with the stdlib.
 - [ ] **Step 4:** Run the tests. Expected: PASS.

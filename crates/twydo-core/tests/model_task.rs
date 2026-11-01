@@ -94,6 +94,71 @@ fn start_from_metadata_and_conflict() {
     assert!(ok.warnings.is_empty());
 }
 
+/// `X-2DOAPP-METADATA` as 2Do 3.91 writes it over CalDAV: `<2Do Meta>`, URL-encoded JSON,
+/// `</2Do Meta>` and an escaped newline.
+fn json_meta(json: &str) -> String {
+    let enc: String = json
+        .chars()
+        .map(|c| match c {
+            '{' => "%7B".to_string(),
+            '}' => "%7D".to_string(),
+            '"' => "%22".to_string(),
+            ':' => "%3A".to_string(),
+            ',' => "%2C".to_string(),
+            c => c.to_string(),
+        })
+        .collect();
+    format!("X-2DOAPP-METADATA;SHARE-SCOPE=GLOBAL:<2Do Meta>{enc}</2Do Meta>\\n")
+}
+
+#[test]
+fn json_metadata_start_wins_over_dtstart() {
+    // 2Do copies the due date into DTSTART; the real start (3 Feb 2031, midnight UTC) is in the JSON.
+    let t = todo(&format!(
+        "DTSTART;VALUE=DATE:20310211\r\nDUE;VALUE=DATE:20310211\r\n{}",
+        json_meta(r#"{"StartDate":1927843200,"TaskType":0}"#)
+    ));
+    assert_eq!(t.start, Some(IcalDateTime::Date(d(2031, 2, 3))));
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+}
+
+#[test]
+fn json_metadata_without_start_means_no_start() {
+    let t = todo(&format!(
+        "DTSTART:20250420T000000\r\nDUE:20250420T000000\r\n{}",
+        json_meta(r#"{"TaskType":0,"StartDayDelay":0}"#)
+    ));
+    assert_eq!(t.start, None);
+    assert!(t.warnings.is_empty(), "{:?}", t.warnings);
+}
+
+#[test]
+fn json_metadata_task_type_and_flags() {
+    let kind = |v: &str| todo(&json_meta(&format!(r#"{{"TaskType":{v}}}"#))).kind;
+    assert_eq!(kind("0"), TaskKind::Task);
+    assert_eq!(kind("1"), TaskKind::Checklist);
+    assert_eq!(kind("2"), TaskKind::Project);
+
+    let t = todo(&json_meta(r#"{"IsStarred":1,"RecurrenceFrom":2}"#));
+    assert!(t.meta.has("starred"));
+    assert!(t.from_completion);
+    let t = todo(&json_meta(r#"{"IsStarred":0,"RecurrenceFrom":1}"#));
+    assert!(!t.meta.has("starred"));
+    assert!(!t.from_completion);
+}
+
+#[test]
+fn json_metadata_unreadable_warns_and_keeps_dtstart() {
+    let t =
+        todo("DTSTART;VALUE=DATE:20261103\r\nX-2DOAPP-METADATA:<2Do Meta>%7Bnot json</2Do Meta>");
+    assert_eq!(t.start, Some(IcalDateTime::Date(d(2026, 11, 3))));
+    assert!(
+        t.warnings.contains(&"unreadable 2Do metadata".to_string()),
+        "{:?}",
+        t.warnings
+    );
+}
+
 #[test]
 fn start_conflict_warns() {
     let t = todo("DTSTART;VALUE=DATE:20261102\r\nX-2DOAPP-METADATA:@startdate:2026-11-03");

@@ -30,7 +30,7 @@ DAY_ORDER = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 # 01-features.md section 6: Sun 1, Sat 2, Fri 4, Thu 8, Wed 16, Tue 32, Mon 64.
 WEEKDAY_BITS = {"SU": 1, "SA": 2, "FR": 4, "TH": 8, "WE": 16, "TU": 32, "MO": 64}
 SPECIAL_FLAGS = ("isinboxcal", "istodaycal", "isallcal", "isscheduled", "donecal", "starred")
-NO_TIME = {"", "999999", "-1", "0"}
+NO_TIME = {"", "999999", "-1"}
 
 
 def _ordinal(val: int, top: int = 4) -> int:
@@ -102,14 +102,20 @@ def split_end(canon: str):
 
 
 def source_due_time(duetime):
-    """HHMM string to 'HH:MM'; 999999, -1, 0 and empty mean no time."""
+    """HHMM string to 'HH:MM'; 999999, -1 and empty mean no time; 0 is 00:00.
+    Whole decimals such as '999999.000000' (the decoder's form of the DOUBLE column) count too."""
     v = (duetime or "").strip()
-    if v in NO_TIME:
-        return None
     try:
-        n = int(v)
+        f = float(v) if v else None
     except ValueError:
         raise ValueError(f"invalid duetime {v!r}") from None
+    if f is not None:
+        if not f.is_integer():
+            raise ValueError(f"invalid duetime {v!r}")
+        v = str(int(f))
+    if v in NO_TIME:
+        return None
+    n = int(v)
     if not (0 <= n <= 2359 and n % 100 < 60):
         raise ValueError(f"invalid duetime {v!r}")
     return f"{n // 100:02d}:{n % 100:02d}"

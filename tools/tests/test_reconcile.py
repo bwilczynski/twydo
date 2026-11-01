@@ -78,11 +78,23 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(c("FREQ=DAILY;UNTIL=20300506T000000Z"), c("FREQ=DAILY;UNTIL=20300506"))
 
     def test_duetime_sentinels(self):
-        for v in ("999999", "-1", "0", "", None):
+        for v in ("999999", "-1", "", None):
             self.assertIsNone(rc.source_due_time(v), v)
+        self.assertEqual(rc.source_due_time("0"), "00:00")
         self.assertEqual(rc.source_due_time("930"), "09:30")
         self.assertEqual(rc.source_due_time("1405"), "14:05")
         for bad in ("abc", "2500", "975"):
+            with self.assertRaises(ValueError):
+                rc.source_due_time(bad)
+
+    def test_duetime_decimal_strings(self):
+        # The .tod decoder writes the DOUBLE column as "999999.000000".
+        for v in ("999999.000000", "-1.000000"):
+            self.assertIsNone(rc.source_due_time(v), v)
+        self.assertEqual(rc.source_due_time("0.000000"), "00:00")
+        self.assertEqual(rc.source_due_time("930.000000"), "09:30")
+        self.assertEqual(rc.source_due_time("1405.0"), "14:05")
+        for bad in ("930.5", "2500.000000", "nan", "inf"):
             with self.assertRaises(ValueError):
                 rc.source_due_time(bad)
 

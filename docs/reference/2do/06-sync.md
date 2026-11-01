@@ -133,7 +133,7 @@ unpushed local edits.
   `STATUS`/`COMPLETED`/`PERCENT-COMPLETE`, `CATEGORIES` (tags), `RELATED-TO` (parent),
   `RRULE` (repeat), `VALARM`+`TRIGGER` (alerts), `URL`, `CREATED`, `LAST-MODIFIED`, `LOCATION`.
 - 2Do extensions: `X-2DOAPP-METADATA` (2Do-only fields such as start date semantics, star,
-  task type, actions, repeat-from-completion; `TaskNoteMetaData`) [? encoding §2.6],
+  task type, actions, repeat-from-completion) [obs: `<2Do Meta>` JSON, §2.6],
   `X-2DOAPP-RELDUETIME`, `X-2DOAPP-RELATIVE-PROJECTION`, `X-2DOAPP-ISSNOOZE`,
   `X-2DOAPP-LOCATION-ONLY`, `X-2DOAPP-ISBIRTH`, `X-2DOAPP-EMAIL`, and media
   `X-2DOAPP-IMAGE` / `-AUDIO` (+ `-SYNC`, `-DURATION`), plus Apple's `X-APPLE-STRUCTURED-LOCATION`,
@@ -232,11 +232,37 @@ Dataset contents and inventory are excluded; numeric examples below are syntheti
    (conflict), deleting on one side while editing on the other.
 4. Keep 2Do's "Backup before performing Sync" on while testing.
 
-## 2.6 2Do task metadata format [obs: decompiled `TaskNoteMetaData.makeExtendedStringForNotes`]
+## 2.6 2Do task metadata format
 
-2Do encodes the fields that standard formats can't hold as a line of `@key:value` tokens ending in a newline.
-The same `TaskNoteMetaData` is used for Todoist task descriptions and, very likely, for CalDAV
-`X-2DOAPP-METADATA` [inf: `calDAVImportHas2DoMetadata`, `syncsTaskNoteMetaData`]. Tokens, in emit order:
+### CalDAV: `<2Do Meta>` JSON [obs: phase-0 upload from 2Do 3.91 iOS to Synology Calendar]
+
+Over CalDAV, `X-2DOAPP-METADATA` is **not** the token line below. 2Do writes
+`<2Do Meta>` + URL-encoded JSON object + `</2Do Meta>` + an escaped newline, e.g.
+`X-2DOAPP-METADATA;SHARE-SCOPE=GLOBAL:<2Do Meta>%7B%22StartDate%22%3A1927843200%2C…%7D</2Do Meta>\n`.
+Every uploaded task carried it. Keys seen:
+
+| Key | Meaning |
+|---|---|
+| `StartDate` | start date, epoch seconds at **UTC midnight** of the start day; key absent = no start. Present on exactly the tasks with a `.tod` `startdatetime` |
+| `TaskType` | `.tod` `tasktype`: 0 task, 1 checklist, 2 project |
+| `IsStarred` | 0/1 |
+| `RecurrenceFrom` | seen 0 and 1 only; assumed to follow `.tod` `recurrence` (2 = from completion) [inf] |
+| `RecurrenceType`, `RecurrenceValue`, `RecurrenceEndType`, `RecurrenceEndRepetitions(Orig)` | 2Do's own repeat fields (`.tod` `repeattype` / `repeatval` / …) |
+| `StartDayDelay`, `TaskDuration`, `DisplayOrder`, `isExpandedToShowChildProjects` | as in `.tod` |
+| `RUID`, `uid`, `parentuid` | task / parent ids |
+| `duetime` | present (value 0) only on tasks whose `.tod` `duetime` is 0 |
+
+**`DTSTART` is not the start date.** 2Do sets `DTSTART` to a copy of `DUE` on every dated task
+and omits it on undated ones; the real start lives only in `StartDate`. So when this JSON is
+present, read the start from it and ignore `DTSTART`. A repeating task with a start date but no
+due date is uploaded **without** `RRULE` (no anchor), so its repeat is lost on the server.
+
+### Token line [obs: decompiled `TaskNoteMetaData.makeExtendedStringForNotes`]
+
+2Do encodes the fields that standard formats can't hold as a line of `@key:value` tokens ending in
+a newline. This is used for Todoist task descriptions; it was assumed for CalDAV too
+[inf: `calDAVImportHas2DoMetadata`, `syncsTaskNoteMetaData`], but the upload above shows the JSON
+form instead. Twydo reads both. Tokens, in emit order:
 
 | Token | Value |
 |---|---|
@@ -257,7 +283,7 @@ The same `TaskNoteMetaData` is used for Todoist task descriptions and, very like
 | `@tags:` | comma-separated (`, `) tag names |
 | `@action:` / `@actionvalue:` | action type (`call`, `message`, `mail`, `visit`, `browse`, `google`) and its value |
 
-**Rule for the port:** treat any `X-2DOAPP-*` property (and an `@…` metadata line) as opaque. Parse
+**Rule for the port:** treat any `X-2DOAPP-*` property (and an `@…` metadata line or `<2Do Meta>` JSON) as opaque. Parse
 the fields you need, but always write back what you read unchanged, except for fields you
 deliberately edit. Then the 2Do iPhone app keeps start dates, task types and repeat-from-completion.
 
