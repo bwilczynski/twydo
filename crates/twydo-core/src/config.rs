@@ -81,6 +81,22 @@ pub struct Group {
     pub lists: Vec<String>,
 }
 
+/// `verified` runs only operations the compatibility matrix passes; `test` also runs
+/// unverified ones and must only be used against the isolated test account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WriteMode {
+    #[default]
+    Verified,
+    Test,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Writes {
+    pub mode: WriteMode,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -97,6 +113,10 @@ pub struct Config {
     pub lists: BTreeMap<String, ListPrefs>,
     #[serde(default)]
     pub groups: Vec<Group>,
+    #[serde(default)]
+    pub writes: Writes,
+    #[serde(default)]
+    pub state_dir: Option<PathBuf>,
 }
 
 fn default_week_start() -> Weekday {
@@ -146,6 +166,18 @@ impl Config {
         base.join("twydo").join("config.toml")
     }
 
+    /// Configured `state_dir`, else `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo`.
+    pub fn state_dir(&self) -> PathBuf {
+        if let Some(d) = &self.state_dir {
+            return d.clone();
+        }
+        let xdg = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        state_dir_from(xdg.as_deref(), &home)
+    }
+
     /// Defaults with the given vdir (system timezone, no list prefs).
     pub fn with_vdir(vdir: PathBuf) -> Config {
         Config {
@@ -156,6 +188,8 @@ impl Config {
             default_list: None,
             lists: BTreeMap::new(),
             groups: Vec::new(),
+            writes: Writes::default(),
+            state_dir: None,
         }
     }
 
@@ -170,6 +204,7 @@ impl Config {
         })?;
         if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
             cfg.vdir = expand_tilde(&cfg.vdir, Path::new(&home));
+            cfg.state_dir = cfg.state_dir.map(|d| expand_tilde(&d, Path::new(&home)));
         }
         Ok(cfg)
     }
@@ -191,6 +226,15 @@ impl Config {
     pub fn list_prefs(&self, id: &str) -> ListPrefs {
         self.lists.get(id).cloned().unwrap_or_default()
     }
+}
+
+/// Pure form of the default state dir. An empty `xdg_state` counts as unset.
+pub fn state_dir_from(xdg_state: Option<&Path>, home: &Path) -> PathBuf {
+    let base = match xdg_state {
+        Some(x) if !x.as_os_str().is_empty() => x.to_path_buf(),
+        _ => home.join(".local").join("state"),
+    };
+    base.join("twydo")
 }
 
 /// Expand a leading `~` or `~/` against `home`. Other paths (including `~user`) are unchanged.

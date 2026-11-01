@@ -124,6 +124,8 @@ fn config(lists: &[(&str, ListPrefs)]) -> Config {
             .map(|(k, v)| (k.to_string(), v.clone()))
             .collect::<BTreeMap<_, _>>(),
         groups: vec![],
+        writes: Default::default(),
+        state_dir: None,
     }
 }
 

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use twydo_core::compat::{Matrix, Verdict};
+use twydo_core::compat::{Matrix, Verdict, combined_verdicts};
 use twydo_core::model::Status;
 
 use super::{CliError, load_snapshot, task_rule_class};
@@ -13,11 +13,12 @@ pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(),
     let snap = load_snapshot(vdir)?;
     let errors = &snap.errors;
 
+    // A missing matrix behaves as an empty one: every row counts as unverified.
     let matrix = if matrix_path.exists() {
-        Some(Matrix::load(matrix_path)?)
+        Matrix::load(matrix_path)?
     } else {
         println!("matrix not found: {}", matrix_path.display());
-        None
+        Matrix::default()
     };
 
     // Active rule: an open task with an RRULE, archived lists included.
@@ -30,7 +31,7 @@ pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(),
 
     let mut unverified = 0;
     for (class, titles) in &active {
-        let (p, x, e) = combined_verdicts(matrix.as_ref(), class);
+        let (p, x, e) = combined_verdicts(&matrix, class);
         if p != Verdict::Pass || x != Verdict::Pass {
             unverified += 1;
         }
@@ -84,38 +85,4 @@ pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(),
         );
     }
     Ok(())
-}
-
-fn severity(v: Verdict) -> u8 {
-    match v {
-        Verdict::Pass => 0,
-        Verdict::Unverified => 1,
-        Verdict::Unsupported => 2,
-        Verdict::Fail => 3,
-    }
-}
-
-fn worst(a: Verdict, b: Verdict) -> Verdict {
-    if severity(b) > severity(a) { b } else { a }
-}
-
-/// Worst verdicts over the class's base row and one `mod:<name>` row per `+modifier`.
-/// A missing row counts as unverified.
-fn combined_verdicts(matrix: Option<&Matrix>, class: &str) -> (Verdict, Verdict, Verdict) {
-    let mut parts = class.split('+');
-    let base = parts.next().unwrap_or(class);
-    let keys = std::iter::once(base.to_string()).chain(parts.map(|m| format!("mod:{m}")));
-    let mut out = (Verdict::Pass, Verdict::Pass, Verdict::Pass);
-    for key in keys {
-        let (p, x, e) = matrix.and_then(|m| m.rule(&key)).map_or(
-            (
-                Verdict::Unverified,
-                Verdict::Unverified,
-                Verdict::Unverified,
-            ),
-            |r| (r.preserve, r.execute, r.edit),
-        );
-        out = (worst(out.0, p), worst(out.1, x), worst(out.2, e));
-    }
-    out
 }

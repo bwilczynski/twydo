@@ -13,6 +13,18 @@ names the key. Twydo only reads this file.
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. |
 | `morning_time` | `"HH:MM"` | `"09:00"` | Time used for date-only tasks that need one (e.g. reminders). |
 | `default_list` | list id | none | List new tasks go to. |
+| `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state. A leading `~` expands to `$HOME`. |
+
+## `[writes]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `mode` | `"verified"` or `"test"` | `"verified"` | `verified` runs only operations the compatibility matrix marks as passing. `test` also runs unverified operations. |
+
+`test` must only be used with a config that points at the isolated test account, never at
+production data: unverified operations may write something 2Do on the iPhone cannot read. Every
+`tdo op` run in `test` mode prints `tdo: test write mode: unverified operations are enabled` to
+stderr.
 
 ## `[lists.<id>]`
 
