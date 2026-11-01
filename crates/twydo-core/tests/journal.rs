@@ -295,3 +295,23 @@ fn shared_lock_creates_state_dir() {
     let _l = VdirLock::shared(&dir).unwrap();
     assert!(dir.join("vdir.lock").exists());
 }
+
+#[test]
+fn reader_lock_only_when_state_dir_exists() {
+    let state = tempfile::tempdir().unwrap();
+    let missing = state.path().join("nested/tdo");
+    assert!(VdirLock::reader(&missing).unwrap().is_none());
+    assert!(!state.path().join("nested").exists(), "created a state dir");
+
+    let reader = VdirLock::reader(state.path()).unwrap();
+    assert!(reader.is_some());
+    // It is shared: another shared lock is granted, an exclusive one is not.
+    let f = fs::File::open(state.path().join("vdir.lock")).unwrap();
+    f.try_lock_shared().unwrap();
+    f.unlock().unwrap();
+    let g = fs::File::open(state.path().join("vdir.lock")).unwrap();
+    assert!(matches!(
+        g.try_lock(),
+        Err(std::fs::TryLockError::WouldBlock)
+    ));
+}

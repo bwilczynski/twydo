@@ -201,3 +201,49 @@ fn recover_runs_before_export() {
     assert!(out(&o).contains("Recovered title"), "{}", out(&o));
     assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), after);
 }
+
+/// Readers take the shared vdir lock (spec §6): `export-json` waits while a writer holds the
+/// exclusive lock.
+#[test]
+fn export_waits_for_writer_lock() {
+    use std::time::{Duration, Instant};
+    let env = Env::new("verified");
+    let sdir = env.state().join("twydo");
+    fs::create_dir_all(&sdir).unwrap();
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(sdir.join("vdir.lock"))
+        .unwrap();
+    lock.lock().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
+        .arg("export-json")
+        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
+        .env("XDG_STATE_HOME", env.state())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_millis(700) {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "export-json finished while the exclusive lock was held"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    lock.unlock().unwrap();
+    let status = child.wait().unwrap();
+    assert!(status.success());
+}
+
+/// A read-only command does not create the state dir.
+#[test]
+fn export_creates_no_state_dir() {
+    let env = Env::new("verified");
+    let o = env.tdo(&["export-json"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(!env.state().exists(), "export-json created the state dir");
+}
