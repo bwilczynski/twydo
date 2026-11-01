@@ -6,11 +6,12 @@
 //!
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //! 2. [`task_case`]: the task's matrix case, or why it has none;
-//! 3. the `[[operation]]` rows of every case the op touches (the only rule the write mode
-//!    changes);
+//! 3. the `[[operation]]` rows of every case the op touches (with rule 6, the only rules
+//!    the write mode changes);
 //! 4. the `[[rule]]` verdicts of a repeating task;
 //! 5. the verified shape of a repeating completion;
-//! 6. reopening a repeat's history copy.
+//! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
+//!    rule 3 (so the write mode applies).
 
 use std::fmt;
 
@@ -117,10 +118,9 @@ pub fn check(
     if let Op::Reopen { .. } = op
         && is_history_copy(task)
     {
-        let reopen_ok = ["monthly", "yearly"].iter().any(|c| {
-            m.operation(c, "reopen")
-                .is_some_and(|e| e.iphone_baseline == Verdict::Pass)
-        });
+        let reopen_ok = ["monthly", "yearly"]
+            .iter()
+            .any(|c| operation_row(m, mode, c, "reopen").is_ok());
         if !reopen_ok {
             return blocked("reopening a repeat's history copy is not verified yet");
         }
