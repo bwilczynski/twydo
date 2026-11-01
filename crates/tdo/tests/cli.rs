@@ -103,7 +103,7 @@ mod gate {
         assert!(out.contains("parse errors: 0"), "{out}");
         assert!(out.contains("GATE: NOT PASSED ("), "{out}");
         assert!(
-            out.contains("rule classes unverified, 0 parse errors)"),
+            out.contains("rule classes unverified, 0 parse errors, 0 blocked)"),
             "{out}"
         );
         assert!(!out.contains("Pay rent"), "{out}");
@@ -188,7 +188,7 @@ mod gate {
         let out = stdout(&tdo(&["--vdir", &bad, "check", "--matrix", &m2]));
         assert!(out.contains("parse errors: 1"), "{out}");
         assert!(
-            out.contains("GATE: NOT PASSED (0 rule classes unverified, 1 parse error)"),
+            out.contains("GATE: NOT PASSED (0 rule classes unverified, 1 parse error, 0 blocked)"),
             "{out}"
         );
     }
@@ -209,11 +209,39 @@ mod gate {
             "{out}"
         );
         assert!(
-            out.contains("GATE: NOT PASSED (1 rule classes unverified, 0 parse errors)"),
+            out.contains("GATE: NOT PASSED (1 rule classes unverified, 0 parse errors, 0 blocked)"),
             "{out}"
         );
         let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "pass")]);
         let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
         assert!(out.contains("GATE: PASSED"), "{out}");
+    }
+
+    #[test]
+    fn blocked_open_task_fails_gate() {
+        let d = tempfile::tempdir().unwrap();
+        let v = d.path().join("vdir/c");
+        std::fs::create_dir_all(&v).unwrap();
+        // A daily task with a recurrence override (blocked), and a completed blocked task.
+        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nRECURRENCE-ID;VALUE=DATE:20261108\r\nDUE;VALUE=DATE:20261109\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        std::fs::write(v.join("a.ics"), ics).unwrap();
+        let done = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t2\r\nSUMMARY:Synthetic done\r\nSTATUS:COMPLETED\r\nRRULE:FREQ=HOURLY\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        std::fs::write(v.join("b.ics"), done).unwrap();
+        let vd = d.path().join("vdir");
+        let vd = vd.to_str().unwrap();
+        let m = matrix_file(d.path(), &[("days", "pass")]);
+        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
+        assert!(out.contains("blocked: 1\n"), "{out}");
+        assert!(
+            out.contains("    recurrence overrides are not supported: 1\n"),
+            "{out}"
+        );
+        assert!(!out.contains("Synthetic override"), "{out}");
+        assert!(
+            out.contains("GATE: NOT PASSED (0 rule classes unverified, 0 parse errors, 1 blocked)"),
+            "{out}"
+        );
+        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m, "--verbose"]));
+        assert!(out.contains("        Synthetic override\n"), "{out}");
     }
 }
