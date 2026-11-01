@@ -1,4 +1,5 @@
-//! `tdo check`: report whether every active repeat rule class is verified (spec §9).
+//! `tdo check`: report whether every active repeat rule class is verified and no open task is
+//! blocked from editing (spec §9).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -52,13 +53,33 @@ pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(),
             println!("    {}: {msg}", path.display());
         }
     }
-    if unverified == 0 && errors.is_empty() {
+
+    // Open tasks Twydo would refuse to edit (recurrence overrides, unsupported rules).
+    let mut blocked: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for t in snap.tasks.iter().filter(|t| t.status == Status::Open) {
+        if let Some(reason) = &t.blocked {
+            blocked.entry(reason).or_default().push(&t.summary);
+        }
+    }
+    let n_blocked: usize = blocked.values().map(Vec::len).sum();
+    println!("blocked: {n_blocked}");
+    for (reason, titles) in &blocked {
+        println!("    {reason}: {}", titles.len());
+        if verbose {
+            for title in titles {
+                println!("        {title}");
+            }
+        }
+    }
+
+    if unverified == 0 && errors.is_empty() && n_blocked == 0 {
         println!("GATE: PASSED");
     } else {
         let n = errors.len();
         let plural = if n == 1 { "" } else { "s" };
         println!(
-            "GATE: NOT PASSED ({unverified} rule classes unverified, {n} parse error{plural})"
+            "GATE: NOT PASSED ({unverified} rule classes unverified, {n} parse error{plural}, \
+             {n_blocked} blocked)"
         );
     }
     Ok(())
