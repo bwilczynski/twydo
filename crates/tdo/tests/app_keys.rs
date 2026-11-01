@@ -122,10 +122,7 @@ fn enter_toggles_parent() {
 fn enter_on_leaf_is_blocked() {
     let mut a = app();
     a.handle_key(code(KeyCode::Enter));
-    assert_eq!(
-        a.message.as_deref(),
-        Some("edit task: not enabled until the phase-0 compatibility gate passes")
-    );
+    assert_eq!(a.message.as_deref(), Some("edit task: not available yet"));
 }
 
 #[test]
@@ -133,10 +130,7 @@ fn write_keys_are_blocked_with_reason() {
     let mut a = app();
     let before = format!("{:?}", a.snapshot.tasks);
     a.handle_key(key('x'));
-    assert_eq!(
-        a.message.as_deref(),
-        Some("toggle done: not enabled until the phase-0 compatibility gate passes")
-    );
+    assert_eq!(a.message.as_deref(), Some("toggle done: not available yet"));
     for (k, name) in [
         (key(' '), "toggle done"),
         (key('o'), "new task"),
@@ -158,19 +152,11 @@ fn write_keys_are_blocked_with_reason() {
     ] {
         a.message = None;
         a.handle_key(k);
-        assert_eq!(
-            a.message,
-            Some(format!(
-                "{name}: not enabled until the phase-0 compatibility gate passes"
-            ))
-        );
+        assert_eq!(a.message, Some(format!("{name}: not available yet")));
     }
     a.message = None;
     type_str(&mut a, "dd");
-    assert_eq!(
-        a.message.as_deref(),
-        Some("delete: not enabled until the phase-0 compatibility gate passes")
-    );
+    assert_eq!(a.message.as_deref(), Some("delete: not available yet"));
     a.handle_key(code(KeyCode::Esc));
     assert!(a.message.is_none());
     assert_eq!(format!("{:?}", a.snapshot.tasks), before);
@@ -181,17 +167,11 @@ fn blocked_commands() {
     let mut a = app();
     type_str(&mut a, ":sync");
     a.handle_key(code(KeyCode::Enter));
-    assert_eq!(
-        a.message.as_deref(),
-        Some("sync: not enabled until the phase-0 compatibility gate passes")
-    );
+    assert_eq!(a.message.as_deref(), Some("sync: not available yet"));
     assert_eq!(a.mode, Mode::Normal);
     type_str(&mut a, ":conflicts");
     a.handle_key(code(KeyCode::Enter));
-    assert_eq!(
-        a.message.as_deref(),
-        Some("conflicts: not enabled until the phase-0 compatibility gate passes")
-    );
+    assert_eq!(a.message.as_deref(), Some("conflicts: not available yet"));
 }
 
 #[test]

@@ -201,9 +201,9 @@ fn modes_help_and_messages_render() {
     assert!(!t.contains("Renew library books"), "{t}");
 
     let mut a = app();
-    a.message = Some("toggle done: not enabled until the phase-0 compatibility gate passes".into());
+    a.message = Some("toggle done: not available yet".into());
     let t = text(&render(&a, 120, 30));
-    assert!(t.contains("not enabled until"), "{t}");
+    assert!(t.contains("not available yet"), "{t}");
 
     let mut a = app();
     a.show_help = true;

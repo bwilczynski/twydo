@@ -26,6 +26,12 @@ production data: unverified operations may write something 2Do on the iPhone can
 `tdo op` run in `test` mode prints `tdo: test write mode: unverified operations are enabled` to
 stderr.
 
+`tdo op` (add, edit, complete, reopen, delete, move, undo, check, journal, recover, abandon) is
+the scriptable write interface. It prints the operation id and exits 0; exit 1 means the
+operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, config or IO error.
+`tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries in
+`state_dir`.
+
 ## `[lists.<id>]`
 
 `<id>` is the collection directory name. A list without an entry gets the defaults below.

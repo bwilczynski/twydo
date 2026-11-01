@@ -69,7 +69,7 @@ pub struct App {
 const RELOAD_FAILED: &str = "reload failed: ";
 
 fn blocked(action: &str) -> String {
-    format!("{action}: not enabled until the phase-0 compatibility gate passes")
+    format!("{action}: not available yet")
 }
 
 impl App {
