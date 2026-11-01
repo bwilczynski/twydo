@@ -221,3 +221,19 @@ fn format_date_time_forms() {
     assert_eq!(p[0].name, "TZID");
     assert_eq!(v, "20261203T173000");
 }
+
+#[test]
+fn remove_children_keeps_other_bytes_and_order() {
+    let b = b"BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:x\r\nBEGIN:VALARM\r\nX-K:1\r\nEND:VALARM\r\nSUMMARY:s\r\n folded\r\n\r\nBEGIN:VALARM\r\nX-K:2\r\nEND:VALARM\r\nSTATUS:NEEDS-ACTION\r\nBEGIN:VALARM\r\nX-K:3\r\nEND:VALARM\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+    let mut cal = parse(b).unwrap();
+    let t = todo(&mut cal);
+    let gone = t.remove_children(|c| c.prop("X-K").is_some_and(|p| p.value == "2"));
+    assert_eq!(gone, 1);
+    assert_eq!(t.remove_children(|_| false), 0);
+    t.insert_prop(Property::new("X-NEW", vec![], "n"), Some("STATUS"));
+    let s = String::from_utf8(serialize(&cal)).unwrap();
+    assert_eq!(
+        s,
+        "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:x\r\nBEGIN:VALARM\r\nX-K:1\r\nEND:VALARM\r\nSUMMARY:s\r\n folded\r\n\r\nSTATUS:NEEDS-ACTION\r\nX-NEW:n\r\nBEGIN:VALARM\r\nX-K:3\r\nEND:VALARM\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+    );
+}

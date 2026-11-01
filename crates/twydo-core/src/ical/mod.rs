@@ -220,6 +220,30 @@ impl Component {
         });
         n
     }
+
+    /// Remove every child component matching `pred` (and its layout slot); returns how many.
+    pub fn remove_children(&mut self, pred: impl Fn(&Component) -> bool) -> usize {
+        let gone: Vec<bool> = self.children.iter().map(&pred).collect();
+        let n = gone.iter().filter(|&&g| g).count();
+        if n == 0 {
+            return 0;
+        }
+        let mut i = 0;
+        self.layout.retain(|s| {
+            if matches!(s, Slot::Child) {
+                i += 1;
+                !gone.get(i - 1).copied().unwrap_or(false)
+            } else {
+                true
+            }
+        });
+        let mut k = 0;
+        self.children.retain(|_| {
+            k += 1;
+            !gone[k - 1]
+        });
+        n
+    }
 }
 
 /// Original BEGIN/END bytes, or a generated line when the component is new.

@@ -2,6 +2,7 @@
 
 pub mod compat;
 pub mod config;
+pub mod edit;
 pub mod format;
 pub mod ical;
 pub mod model;
