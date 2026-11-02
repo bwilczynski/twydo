@@ -27,6 +27,10 @@ app replacing 2Do for one user, plan by plan.
    one of them (cross-device operations, edge cases, conflicts, unused rule classes), verify it with
    the user's help first (spec §6, §10).
 3. Ask the user before any action that touches their production 2Do data, NAS or iPhone.
+4. **Done so far:** Plan 1 (read-only foundation), Plan 4 (writable core, `tdo op`) and Plan 3
+   (sync runner and conflicts, `tdo sync`; verified against the iPhone in
+   [`docs/phase0/plan3-sync.md`](docs/phase0/plan3-sync.md)). Next: Plan 5 (TUI editing) or
+   Plan 2 (notifier); write the plan first. Setup and limits of sync: [`docs/sync.md`](docs/sync.md).
 
 ## Ground rules
 
