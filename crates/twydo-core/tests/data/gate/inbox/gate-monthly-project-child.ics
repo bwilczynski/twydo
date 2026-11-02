@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-monthly-project-child
+SUMMARY:Synthetic repeating project child
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-monthly-project
+END:VTODO
+END:VCALENDAR

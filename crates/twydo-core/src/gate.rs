@@ -5,9 +5,16 @@
 //! rules here are the only guard. Rules are applied in order and the first failure wins:
 //!
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
-//! 2. [`task_case`]: the task's matrix case, or why it has none;
-//! 3. the `[[operation]]` rows of every case the op touches (with rule 6, the only rules
-//!    the write mode changes);
+//!
+//!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
+//!    so each child must pass the same lookup (or the op is refused with the child's reason);
+//!    moving or deleting one item alone, or reopening an item of a completed parent, is refused;
+//! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
+//!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
+//!    none (nested families, repeating checklists, a repeating child of a repeating project,
+//!    children of a plain task);
+//! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
+//!    attribute cases (with rule 6, the only rules the write mode changes);
 //! 4. the `[[rule]]` verdicts of a repeating task;
 //! 5. the verified shape of a repeating completion;
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
@@ -24,7 +31,7 @@ use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::parse_rrule;
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
-use crate::views::{Snapshot, task_rule_class};
+use crate::views::{Snapshot, UNTYPED_PARENT, task_rule_class};
 
 /// Why the gate refused an operation. `Display` is the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +49,11 @@ fn blocked<T>(reason: impl Into<String>) -> Result<T, Blocked> {
     Err(Blocked(reason.into()))
 }
 
-const PROJECTS: &str = "projects and checklists cannot be edited yet";
+const NESTED: &str = "nested projects and checklists are not verified yet";
+const REPEATING_CHECKLIST: &str = "repeating checklists are not verified yet";
+const CHILD_RECURRENCE: &str = "a repeating task inside a repeating project is not verified yet \
+                                (project-child-own-recurrence)";
+const PLAIN_PARENT: &str = "subtasks of a plain task are not verified yet";
 const START_OFFSETS: &str =
     "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
 
@@ -70,15 +81,23 @@ pub fn check(
         }
     };
 
-    // Rule 2: the task's case.
-    let case = match target {
-        Some(i) => task_case(snap, i)?,
-        None => "one-time",
+    // Rule 1b: family operations.
+    if let Some(i) = target {
+        family_op(snap, op, i)?;
+    }
+
+    // Rule 2: the task's cases.
+    let cases = match target {
+        Some(i) => task_cases(snap, i)?,
+        None => Cases {
+            own: "one-time",
+            family: None,
+        },
     };
 
     // Rule 3: matrix rows for every case the op touches.
     let name = op_name(op);
-    for c in op_cases(snap, target, case, op) {
+    for c in op_cases(snap, target, cases, op) {
         operation_row(m, mode, c, name)?;
     }
 
@@ -128,20 +147,71 @@ pub fn check(
     Ok(())
 }
 
-/// The matrix case of the task at `idx`: `one-time`, `monthly` or `yearly`.
-pub fn task_case(snap: &Snapshot, idx: usize) -> Result<&'static str, Blocked> {
+/// The matrix cases of a task: its own case and, for a member of a family (a checklist, a
+/// project, or one of their items), the family's case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cases {
+    /// `one-time`, `monthly` or `yearly`.
+    pub own: &'static str,
+    /// `checklist`, `project`, `recurring-project` or `project-recurring-child`.
+    pub family: Option<&'static str>,
+}
+
+/// The matrix cases of the task at `idx`, or why it has none. Only the shapes the Plan 6
+/// iPhone session captured have cases: one level of children under a typed checklist or
+/// project, no repeating checklist or item, no repeating child of a repeating project.
+pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     let t = &snap.tasks[idx];
-    let typed = json_meta(t)
-        .and_then(|m| m.get_i64("TaskType"))
-        .is_some_and(|n| n != 0);
-    if t.kind != TaskKind::Task
-        || typed
-        || t.parent.is_some()
-        || snap.parent(idx).is_some()
-        || !snap.children(idx).is_empty()
-    {
-        return blocked(PROJECTS);
+    let parent = snap.parent(idx);
+    let children = snap.children(idx);
+    if t.parent.is_some() && parent.is_none() {
+        return blocked("broken parent link");
     }
+    let nested = match parent {
+        Some(p) => !children.is_empty() || snap.parent(p).is_some() || t.kind != TaskKind::Task,
+        None => children.iter().any(|&c| !snap.children(c).is_empty()),
+    };
+    if nested {
+        return blocked(NESTED);
+    }
+    if parent.is_none() && t.kind == TaskKind::Task {
+        let typed = json_meta(t)
+            .and_then(|m| m.get_i64("TaskType"))
+            .is_some_and(|n| n != 0);
+        if typed {
+            return blocked("this 2Do task type is not verified yet");
+        }
+        return Ok(Cases {
+            own: own_case(snap, t)?,
+            family: None,
+        });
+    }
+    // The checklist or project: the task itself or its parent.
+    let head = &snap.tasks[parent.unwrap_or(idx)];
+    // `Snapshot::new` shows a parent without `@tasktype` as a project; it is still a plain task.
+    let untyped = head.kind == TaskKind::Task || head.warnings.iter().any(|w| w == UNTYPED_PARENT);
+    if untyped {
+        return blocked(PLAIN_PARENT);
+    }
+    let (head_repeats, own_repeats) = (head.rrule.is_some(), t.rrule.is_some());
+    let family = match head.kind {
+        TaskKind::Checklist if head_repeats || own_repeats => return blocked(REPEATING_CHECKLIST),
+        TaskKind::Checklist => "checklist",
+        _ if parent.is_none() && head_repeats => "recurring-project",
+        _ if parent.is_none() => "project",
+        _ if head_repeats && own_repeats => return blocked(CHILD_RECURRENCE),
+        _ if head_repeats => "recurring-project",
+        _ if own_repeats => "project-recurring-child",
+        _ => "project",
+    };
+    Ok(Cases {
+        own: own_case(snap, t)?,
+        family: Some(family),
+    })
+}
+
+/// A task's own case from its repeat rule: `one-time`, `monthly` or `yearly`.
+fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
     let Some(class) = task_rule_class(t, snap) else {
         return Ok("one-time");
     };
@@ -155,6 +225,38 @@ pub fn task_case(snap: &Snapshot, idx: usize) -> Result<&'static str, Blocked> {
     } else {
         blocked(format!("{class} repeats are not verified yet"))
     }
+}
+
+/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`]; an item
+/// moved, deleted or reopened (under a completed parent) on its own is not verified.
+fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
+    if let Some(p) = snap.parent(idx) {
+        match op {
+            Op::Move { .. } => {
+                return blocked(
+                    "moving one item out of its project or checklist is not verified yet",
+                );
+            }
+            Op::Delete { .. } => {
+                return blocked("deleting one item of a project or checklist is not verified yet");
+            }
+            Op::Reopen { .. } if snap.tasks[p].status == Status::Completed => {
+                return blocked(
+                    "reopening an item of a completed project or checklist is not verified yet",
+                );
+            }
+            _ => {}
+        }
+    }
+    if matches!(
+        op,
+        Op::Complete { .. } | Op::Reopen { .. } | Op::Move { .. } | Op::Delete { .. }
+    ) {
+        for &c in snap.children(idx) {
+            lookup(snap, &snap.tasks[c].uid)?;
+        }
+    }
+    Ok(())
 }
 
 /// The single task with `uid`, unless it is missing, duplicated or blocked.
@@ -195,15 +297,10 @@ fn due_case(timed: bool) -> &'static str {
     if timed { "timed" } else { "date-only" }
 }
 
-/// The matrix cases `op` touches: the task case, then the attribute cases of a create
-/// (the new task's due and start) or an edit (`Due`: the due before and after; `Start`).
-fn op_cases(
-    snap: &Snapshot,
-    target: Option<usize>,
-    case: &'static str,
-    op: &Op,
-) -> Vec<&'static str> {
-    let mut out = vec![case];
+/// The matrix cases `op` touches: the own and family cases, then the attribute cases of a
+/// create (the new task's due and start) or an edit (`Due`: the due before and after; `Start`).
+fn op_cases(snap: &Snapshot, target: Option<usize>, cases: Cases, op: &Op) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = std::iter::once(cases.own).chain(cases.family).collect();
     let mut add = |c: &'static str| {
         if !out.contains(&c) {
             out.push(c);

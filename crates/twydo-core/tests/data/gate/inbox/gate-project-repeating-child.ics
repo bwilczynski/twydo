@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-project-repeating-child
+SUMMARY:Synthetic project repeating child
+STATUS:NEEDS-ACTION
+DTSTART;VALUE=DATE:20261110
+DUE;VALUE=DATE:20261110
+RRULE:FREQ=MONTHLY
+RELATED-TO:gate-project
+X-2DOAPP-METADATA;SHARE-SCOPE=GLOBAL:<2Do Meta>%7B%22RecurrenceValue%22%3A1%2C%22RecurrenceEndRepetitionsOrig%22%3A0%2C%22RecurrenceEndRepetitions%22%3A0%2C%22TaskDuration%22%3A0%2C%22TaskType%22%3A0%2C%22RecurrenceType%22%3A258%2C%22StartDayDelay%22%3A0%2C%22isExpandedToShowChildProjects%22%3A0%2C%22RecurrenceFrom%22%3A1%2C%22RecurrenceEndType%22%3A0%2C%22IsStarred%22%3A0%2C%22RUID%22%3A%22gate-project-repeating-child%22%2C%22DisplayOrder%22%3A0%7D</2Do Meta>\n
+END:VTODO
+END:VCALENDAR

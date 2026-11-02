@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-recurring-repeating-child
+SUMMARY:Synthetic repeating child of a repeating project
+STATUS:NEEDS-ACTION
+DTSTART;VALUE=DATE:20261112
+DUE;VALUE=DATE:20261112
+RRULE:FREQ=MONTHLY
+RELATED-TO:gate-monthly-project
+END:VTODO
+END:VCALENDAR

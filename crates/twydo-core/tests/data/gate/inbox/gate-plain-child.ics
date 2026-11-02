@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-plain-child
+SUMMARY:Synthetic plain child
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-plain-parent
+END:VTODO
+END:VCALENDAR

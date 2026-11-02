@@ -900,3 +900,28 @@ fn future_start_checklist_item_hidden_under_parent() {
     let r = build_view(&s, &View::Today, now(), &no_expand());
     assert_eq!(uids(&s, &r), vec!["cl", "now-item"]);
 }
+
+#[test]
+fn open_items_counts_open_children() {
+    let mut cancelled = TaskBuilder::new("c3", "inbox").parent("p").build();
+    cancelled.status = Status::Cancelled;
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .build(),
+            TaskBuilder::new("c1", "inbox").parent("p").build(),
+            TaskBuilder::new("c2", "inbox")
+                .parent("p")
+                .completed_at("2026-11-03 09:00")
+                .build(),
+            cancelled,
+            TaskBuilder::new("c4", "inbox").parent("p").build(),
+            TaskBuilder::new("alone", "inbox").build(),
+        ],
+        &[],
+    );
+    assert_eq!(s.open_items(idx(&s, "p")), 2);
+    assert_eq!(s.open_items(idx(&s, "c1")), 0);
+    assert_eq!(s.open_items(idx(&s, "alone")), 0);
+}

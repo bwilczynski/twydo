@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-done-project-child
+SUMMARY:Synthetic child of a completed project
+STATUS:COMPLETED
+COMPLETED:20261101T120000Z
+RELATED-TO:gate-done-project
+END:VTODO
+END:VCALENDAR

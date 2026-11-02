@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-nested-grandchild
+SUMMARY:Synthetic nested grandchild
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-nested-child
+END:VTODO
+END:VCALENDAR

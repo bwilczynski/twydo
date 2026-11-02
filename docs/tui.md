@@ -50,7 +50,7 @@ each date shows how it was read.
 The status line says why, and nothing is written:
 
 - **Not verified yet:** the compatibility gate's reason, for example
-  `projects and checklists cannot be edited yet`. See `compat/matrix.toml`.
+  `deleting one item of a project or checklist is not verified yet`. See `compat/matrix.toml`.
 - **`… changed on disk; reload and try again`:** a sync changed the task after you started.
   The view reloads; an open form switches to the synced version, so you see the new data
   before saving again.
