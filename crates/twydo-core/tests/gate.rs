@@ -357,36 +357,79 @@ fn recurring_needs_rule_verdicts() {
     );
 }
 
+const START_OFFSETS: &str =
+    "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
+const MISSED: &str = "completing a repeating task after a missed occurrence is not verified yet \
+                      (monthly-15th-three-months-late)";
+
+/// `m` plus an `[[edge_case]]` row.
+fn edge(m: Matrix, id: &str, verdict: &str) -> Matrix {
+    let mut m = m;
+    let extra = Matrix::from_toml_str(&format!(
+        "matrix_version = 1\n[[edge_case]]\nid = \"{id}\"\nverdict = \"{verdict}\"\n"
+    ))
+    .unwrap();
+    m.edge_case.extend(extra.edge_case);
+    m
+}
+
 #[test]
-fn late_recurring_completion_blocked() {
+fn repeat_shapes_need_their_edge_cases() {
     let s = snap();
+    let shapes = [
+        "gate-monthly-start",
+        "gate-monthly-alarm",
+        "gate-monthly-timed-start",
+    ];
+    let unverified = edge(full(), "start-due-alarm-offsets", "unverified");
+    let pass = edge(full(), "start-due-alarm-offsets", "pass");
+    for uid in shapes {
+        assert_eq!(
+            check(&s, &unverified, WriteMode::Test, &complete(uid), today()),
+            blocked(START_OFFSETS),
+            "{uid}"
+        );
+        assert_eq!(
+            check(&s, &pass, WriteMode::Test, &complete(uid), today()),
+            Ok(()),
+            "{uid}"
+        );
+    }
+}
+
+#[test]
+fn missed_occurrence_needs_its_edge_case() {
+    let s = snap();
+    let op = complete("gate-monthly-late");
+    let unverified = edge(full(), "monthly-15th-three-months-late", "unverified");
+    let pass = edge(full(), "monthly-15th-three-months-late", "pass");
+    assert_eq!(
+        check(&s, &unverified, WriteMode::Test, &op, today()),
+        blocked(MISSED)
+    );
+    assert_eq!(check(&s, &pass, WriteMode::Test, &op, today()), Ok(()));
+}
+
+#[test]
+fn absolute_alert_stays_blocked() {
+    let s = snap();
+    let m = edge(full(), "start-due-alarm-offsets", "pass");
     assert_eq!(
         check(
             &s,
-            &full(),
+            &m,
             WriteMode::Test,
-            &complete("gate-monthly-late"),
+            &complete("gate-monthly-absolute"),
             today()
         ),
-        blocked(
-            "completing a repeating task after a missed occurrence is not verified yet \
-             (monthly-15th-three-months-late)"
-        )
+        blocked("completing a repeating task with an absolute alert is not verified yet")
     );
 }
 
 #[test]
-fn recurring_with_start_or_alarm_blocked() {
+fn start_day_delay_stays_blocked() {
     let s = snap();
-    let m = full();
-    let reason = "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
-    for uid in ["gate-monthly-start", "gate-monthly-alarm"] {
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &complete(uid), today()),
-            blocked(reason),
-            "{uid}"
-        );
-    }
+    let m = edge(full(), "start-due-alarm-offsets", "pass");
     assert_eq!(
         check(
             &s,
@@ -397,6 +440,20 @@ fn recurring_with_start_or_alarm_blocked() {
         ),
         blocked("completing a repeating task with a start-day delay is not verified yet")
     );
+}
+
+#[test]
+fn recurring_with_start_or_alarm_blocked() {
+    let s = snap();
+    // Rule verdicts pass, but the start-due-alarm-offsets edge case is unverified.
+    let m = edge(full(), "start-due-alarm-offsets", "unverified");
+    for uid in ["gate-monthly-start", "gate-monthly-alarm"] {
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &complete(uid), today()),
+            blocked(START_OFFSETS),
+            "{uid}"
+        );
+    }
     // Only completion is restricted: editing the title of the same task is allowed.
     let op = edit(
         "gate-monthly-start",
