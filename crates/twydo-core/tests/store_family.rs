@@ -311,3 +311,79 @@ fn undo_recurring_project_completion_restores_all() {
     store.undo_last(later()).unwrap();
     assert_eq!(env.files(), before);
 }
+
+/// Changes `uid`'s file on disk (after the snapshot was taken).
+fn touch(env: &Env, uid: &str) {
+    let changed = fs::read_to_string(env.file(uid))
+        .unwrap()
+        .replace("\nSUMMARY:", "\nSUMMARY:changed ");
+    fs::write(env.file(uid), &changed).unwrap();
+}
+
+/// `op` is refused Stale naming `uid`'s file, with no file changed and nothing applied.
+fn refused_stale(
+    env: &Env,
+    store: &mut Store,
+    snap: &twydo_core::views::Snapshot,
+    op: Op,
+    uid: &str,
+) {
+    let before = env.files();
+    let applied = env
+        .journal()
+        .iter()
+        .filter(|e| e.stage == Stage::Applied)
+        .count();
+    match store.apply(snap, &op, now()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, env.file(uid)),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(env.files(), before);
+    let after = env
+        .journal()
+        .iter()
+        .filter(|e| e.stage == Stage::Applied)
+        .count();
+    assert_eq!(after, applied);
+}
+
+#[test]
+fn recurring_project_completion_refused_when_open_child_changed() {
+    // r2 is open: the op does not write it, but copies its loaded bytes.
+    let (env, mut store) = env();
+    let snap = env.snap();
+    touch(&env, R2);
+    refused_stale(&env, &mut store, &snap, Op::Complete { uid: R.into() }, R2);
+}
+
+#[test]
+fn checklist_completion_refused_when_completed_item_changed() {
+    let (env, mut store) = env();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: K2.into() }, now())
+        .unwrap();
+    let snap = env.snap();
+    assert_eq!(status(&env.files(), K2), "COMPLETED");
+    touch(&env, K2);
+    refused_stale(&env, &mut store, &snap, Op::Complete { uid: K.into() }, K2);
+}
+
+#[test]
+fn project_reopen_refused_when_open_item_changed() {
+    let (env, mut store) = env();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: P.into() }, now())
+        .unwrap();
+    // p2 reopened elsewhere, so it is open while the parent is completed.
+    let p2 = fs::read_to_string(env.file(P2)).unwrap();
+    let p2: String = p2
+        .split_inclusive('\n')
+        .filter(|l| !l.starts_with("COMPLETED:"))
+        .map(|l| l.replace("STATUS:COMPLETED", "STATUS:NEEDS-ACTION"))
+        .collect();
+    fs::write(env.file(P2), p2).unwrap();
+    assert_eq!(status(&env.files(), P2), "NEEDS-ACTION");
+    let snap = env.snap();
+    touch(&env, P2);
+    refused_stale(&env, &mut store, &snap, Op::Reopen { uid: P.into() }, P2);
+}
