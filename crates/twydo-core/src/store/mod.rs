@@ -48,6 +48,9 @@ pub enum WriteError {
     NothingToUndo,
     #[error("nothing to redo")]
     NothingToRedo,
+    /// The vdir lock is held (a sync is running) and the store was told not to wait.
+    #[error("a sync is running; try again in a moment")]
+    Busy,
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -162,6 +165,8 @@ pub struct Store {
     done: Vec<String>,
     /// Undo entries of this session; `Ctrl-r` reverts the last. A new apply clears it.
     undone: Vec<String>,
+    /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
+    no_wait: bool,
 }
 
 /// The parts of a journal entry an operation produces.
@@ -242,8 +247,23 @@ impl Store {
             journal,
             done: Vec::new(),
             undone: Vec::new(),
+            no_wait: false,
         };
         Ok((store, report))
+    }
+
+    /// Do not wait for the vdir lock: while another process (a sync) holds it, writes return
+    /// [`WriteError::Busy`]. For the TUI, which must not freeze.
+    pub fn set_no_wait(&mut self, no_wait: bool) {
+        self.no_wait = no_wait;
+    }
+
+    fn lock(&self) -> Result<VdirLock, WriteError> {
+        if self.no_wait {
+            VdirLock::try_exclusive(&self.state)?.ok_or(WriteError::Busy)
+        } else {
+            Ok(VdirLock::exclusive(&self.state)?)
+        }
     }
 
     /// The per-vdir state directory holding this store's journal and lock.
@@ -275,7 +295,7 @@ impl Store {
             writes: plan.writes,
         };
 
-        let _lock = VdirLock::exclusive(&self.state)?;
+        let _lock = self.lock()?;
         self.check_not_stuck()?;
         for w in &entry.writes {
             self.check_holds(&w.path, w.before.as_deref())?;
@@ -323,7 +343,7 @@ impl Store {
                 after: content.map(str::to_string),
             }],
         };
-        let _lock = VdirLock::exclusive(&self.state)?;
+        let _lock = self.lock()?;
         self.check_not_stuck()?;
         self.check_holds(path, expect)?;
         self.run(entry)
@@ -362,7 +382,7 @@ impl Store {
     /// Mark the unfinished entry `id` Abandoned so writes can continue. Its files are left
     /// as they are; the entry stays in the journal for manual recovery.
     pub fn abandon(&mut self, id: &str) -> Result<(), WriteError> {
-        let _lock = VdirLock::exclusive(&self.state)?;
+        let _lock = self.lock()?;
         let e = self.journal.get(id)?.ok_or_else(|| no_entry(id))?;
         if e.stage != Stage::Prepared {
             return Err(io_error(
@@ -375,7 +395,7 @@ impl Store {
     }
 
     fn revert(&self, id: &str, now: DateTime<Utc>) -> Result<String, WriteError> {
-        let _lock = VdirLock::exclusive(&self.state)?;
+        let _lock = self.lock()?;
         self.check_not_stuck()?;
         let e = self.journal.get(id)?.ok_or_else(|| no_entry(id))?;
         if e.stage != Stage::Applied {

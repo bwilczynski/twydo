@@ -95,6 +95,16 @@ impl VdirLock {
         Ok(VdirLock(f))
     }
 
+    /// The exclusive lock if it is free now, else `Ok(None)` (another process holds it).
+    pub fn try_exclusive(state_dir: &Path) -> io::Result<Option<VdirLock>> {
+        let f = Self::open(state_dir)?;
+        match f.try_lock() {
+            Ok(()) => Ok(Some(VdirLock(f))),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => Err(e),
+        }
+    }
+
     /// Blocks until a shared lock is held. Creates the state directory.
     pub fn shared(state_dir: &Path) -> io::Result<VdirLock> {
         let f = Self::open(state_dir)?;
