@@ -93,12 +93,12 @@ fn complete_then_undo_then_redo() {
     );
     assert_eq!(
         w.run(&env.snapshot(), &Request::Undo, now()),
-        Ok("undone".into())
+        Ok("undone: A2".into())
     );
     assert_eq!(fs::read(env.task_file()).unwrap(), original);
     assert_eq!(
         w.run(&env.snapshot(), &Request::Redo, now()),
-        Ok("redone".into())
+        Ok("redone: A2".into())
     );
     assert_ne!(fs::read(env.task_file()).unwrap(), original);
 }
@@ -319,5 +319,50 @@ fn write_during_sync_is_refused_without_waiting() {
     assert_eq!(
         w.run(&env.snapshot(), &complete_a(), now()),
         Ok("done".into())
+    );
+}
+
+#[test]
+fn undo_and_redo_name_the_task() {
+    let env = Env::new();
+    let (mut w, _) = writer(&env.config());
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Undo, now()),
+        Ok("undone: A2".into())
+    );
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Redo, now()),
+        Ok("redone: A2".into())
+    );
+}
+
+#[test]
+fn undo_of_a_delete_names_the_deleted_task() {
+    let env = Env::new();
+    let (mut w, _) = writer(&env.config());
+    let delete = Request::Apply(Op::Delete { uid: TASK_A.into() });
+    w.run(&env.snapshot(), &delete, now()).unwrap();
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Undo, now()),
+        Ok("undone: A2".into())
+    );
+}
+
+#[test]
+fn stale_message_names_the_task_not_the_file() {
+    let env = Env::new();
+    let snap = env.snapshot();
+    let mut bytes = fs::read(env.task_file()).unwrap();
+    bytes.extend_from_slice(b"X-EXTRA:1\r\n");
+    fs::write(env.task_file(), &bytes).unwrap();
+    let (mut w, _) = writer(&env.config());
+    let edit = Request::Apply(Op::Edit {
+        uid: TASK_A.into(),
+        changes: vec![Change::Summary("A3".into())],
+    });
+    assert_eq!(
+        w.run(&snap, &edit, now()),
+        Err("\"A2\" changed on disk; reload and try again".into())
     );
 }
