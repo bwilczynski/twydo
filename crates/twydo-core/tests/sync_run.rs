@@ -1054,3 +1054,33 @@ fn timed_out_run_confirms_nothing_in_conflicted_collection() {
     assert!(r.confirmed.is_empty(), "{r:?}");
     assert!(!synced(&fx, &e.id), "a timed-out run confirms nothing");
 }
+
+/// A manifest that can be neither read nor written (here: a directory) only costs warnings:
+/// the run still reconciles and saves its status.
+#[test]
+fn unusable_manifest_does_not_stop_the_run() {
+    let fx = Fx::new(&format!("{}\nexit 0", cat_fixture("clean.txt")));
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::create_dir_all(fx.state().join("sync/manifest.json")).unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(r.confirmed, vec![e.id.clone()]);
+    assert!(r.transient.is_none(), "{r:?}");
+    assert_eq!(r.warnings.len(), 2, "{:?}", r.warnings);
+    assert!(
+        r.warnings[0].starts_with("sync/manifest.json is unreadable ("),
+        "{:?}",
+        r.warnings
+    );
+    assert!(
+        r.warnings[1].starts_with("sync/manifest.json could not be written ("),
+        "{:?}",
+        r.warnings
+    );
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.last_success, Some(now()));
+}

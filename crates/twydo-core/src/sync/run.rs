@@ -72,6 +72,8 @@ pub struct RunReport {
     /// The part of `forced` that the runner chose itself (a list Twydo emptied).
     pub auto_forced: Vec<String>,
     pub metasync_error: Option<String>,
+    /// Problems that did not stop the run (an unreadable or unwritable manifest).
+    pub warnings: Vec<String>,
 }
 
 /// Grace for the stderr reader threads after the child is gone (a grandchild may still
@@ -194,6 +196,16 @@ fn one_pass(
     let shared = VdirLock::shared(state)?;
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
+    // Read before vdirsyncer runs: past that point an error would skip reconciliation. An
+    // unreadable manifest is no evidence (nothing is auto-forced); the refresh below
+    // rewrites it.
+    let mut manifest = Manifest::load(state).unwrap_or_else(|e| {
+        report.warnings.push(format!(
+            "sync/manifest.json is unreadable ({e}); emptied lists will not be applied \
+             automatically until the next sync rewrites it"
+        ));
+        Manifest::default()
+    });
     fs::write(&hook_log, b"")?;
     let mut args = vec!["sync".to_string()];
     if force.is_empty() {
@@ -216,7 +228,7 @@ fn one_pass(
         sync,
         &out,
         &pending,
-        &Manifest::load(state)?,
+        &manifest,
         ConflictStore::existing(state)?,
         force,
     )?;
@@ -269,17 +281,22 @@ fn one_pass(
         report.unexpected.extend(r.unexpected);
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
-        // What each counted collection holds now: the evidence a later auto-force needs.
+        // What each counted collection holds now: the evidence a later auto-force needs. A
+        // failure here is a warning, so the status below is still saved.
         if out.unattributed.is_empty() && !matches!(ran.outcome, Outcome::TimedOut) {
-            let mut manifest = Manifest::load(state)?;
-            manifest.refresh(
-                &cfg.vdir,
-                collections
-                    .iter()
-                    .filter(|(_, s)| matches!(s, CollState::Ok | CollState::Conflict))
-                    .map(|(c, _)| c.as_str()),
-            )?;
-            manifest.save(state)?;
+            let counted = collections
+                .iter()
+                .filter(|(_, s)| matches!(s, CollState::Ok | CollState::Conflict))
+                .map(|(c, _)| c.as_str());
+            if let Err(e) = manifest
+                .refresh(&cfg.vdir, counted)
+                .and_then(|()| manifest.save(state))
+            {
+                report.warnings.push(format!(
+                    "sync/manifest.json could not be written ({e}); emptied lists will not be \
+                     applied automatically until a sync writes it"
+                ));
+            }
         }
     }
 
