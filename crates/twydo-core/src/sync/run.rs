@@ -229,9 +229,10 @@ fn one_pass(
 
     let mut collections = coll_states(&out, &hook, &sync.local_storage);
     if matches!(ran.outcome, Outcome::TimedOut) {
-        // A killed run may have stopped in the middle of any collection it reported.
+        // A killed run may have stopped in the middle of any collection it reported,
+        // conflicted ones included (reconciliation counts those too).
         for s in collections.values_mut() {
-            if *s == CollState::Ok {
+            if matches!(s, CollState::Ok | CollState::Conflict) {
                 *s = CollState::Error {
                     message: "sync timed out".into(),
                 };
