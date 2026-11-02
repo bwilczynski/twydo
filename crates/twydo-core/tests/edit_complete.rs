@@ -505,6 +505,25 @@ fn start_on_day_31_is_refused() {
     );
 }
 
+#[test]
+fn unusual_start_date_is_refused() {
+    // 0, negative, and not on a UTC midnight (2026-10-31 plus one hour).
+    for secs in ["0", "-86400", "1793408400"] {
+        let s = p6_text(S).replace(
+            "%22StartDate%22%3A1796083200",
+            &format!("%22StartDate%22%3A{secs}"),
+        );
+        assert!(s.contains(&format!("StartDate%22%3A{secs}")), "{secs}");
+        let cal = parse(s.as_bytes()).unwrap();
+        let err = complete_recurring(&cal, now(), S_COPY).unwrap_err();
+        assert_eq!(
+            unsupported(&err),
+            "completing a repeat with an unusual start date is not verified",
+            "{secs}"
+        );
+    }
+}
+
 const R: &str = "8f603cfaa41f4c229b9adcd6223e7393";
 const R_COPY: &str = "14b5a37a52224e8c959b5002e2275fc9";
 

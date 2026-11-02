@@ -801,6 +801,35 @@ fn repeat_shapes_need_their_edge_cases() {
 }
 
 #[test]
+fn unusual_start_date_blocked() {
+    let s = snap();
+    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    let i = idx(&s, "gate-monthly-start");
+    // 0, negative, and not on a UTC midnight.
+    for secs in ["0", "-86400", "1762563600"] {
+        let mut bad = s.clone();
+        let raw = bad.tasks[i].meta.raw.clone().unwrap();
+        let changed = raw.replace(
+            "StartDate%22%3A1762560000",
+            &format!("StartDate%22%3A{secs}"),
+        );
+        assert_ne!(raw, changed);
+        bad.tasks[i].meta.raw = Some(changed);
+        assert_eq!(
+            check(
+                &bad,
+                &m,
+                WriteMode::Test,
+                &complete("gate-monthly-start"),
+                today()
+            ),
+            blocked("completing a repeating task with an unusual start date is not verified yet"),
+            "{secs}"
+        );
+    }
+}
+
+#[test]
 fn missed_occurrence_needs_its_edge_case() {
     let s = snap();
     let op = complete("gate-monthly-late");

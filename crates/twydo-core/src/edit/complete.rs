@@ -345,6 +345,11 @@ pub fn complete_recurring(
     // JSON `StartDate` (UTC midnight, H9) moves by one interval too (H11).
     let mut live_meta = meta.clone();
     if let Some(secs) = meta.get_i64("StartDate") {
+        if secs <= 0 || secs % 86_400 != 0 {
+            return Err(unsupported(
+                "completing a repeat with an unusual start date is not verified",
+            ));
+        }
         let start = DateTime::from_timestamp(secs, 0)
             .map(|t| t.date_naive())
             .ok_or_else(|| unsupported("2Do start date is out of range"))?;
