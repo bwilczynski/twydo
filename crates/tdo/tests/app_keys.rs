@@ -840,3 +840,17 @@ fn overlays_swallow_write_keys() {
         assert_eq!(a.handle_key(ctrl('r')), Outcome::Continue, "{open}");
     }
 }
+
+#[test]
+fn paste_goes_to_form_and_never_runs_keys() {
+    let mut a = app();
+    let before = a.snapshot.tasks.clone();
+    assert_eq!(a.paste("x\ndd"), Outcome::Continue);
+    assert!(a.form.is_none() && a.message.is_none());
+    a.handle_key(key('i'));
+    a.handle_key(ctrl('u'));
+    assert_eq!(a.paste("fix door\nand window"), Outcome::Continue);
+    let f = a.form.as_ref().expect("form stays open");
+    assert_eq!(f.title, "fix door and window");
+    assert_eq!(format!("{:?}", a.snapshot.tasks), format!("{before:?}"));
+}

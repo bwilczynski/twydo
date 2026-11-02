@@ -10,7 +10,9 @@ use chrono_tz::Tz;
 use notify::event::{EventKind, MetadataKind, ModifyKind};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use ratatui::DefaultTerminal;
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind,
+};
 use twydo_core::sync::resolve::{Resolution, resolve};
 use twydo_core::views::Snapshot;
 
@@ -51,9 +53,9 @@ fn is_change(kind: &EventKind) -> bool {
 /// Run the TUI until the user quits. The terminal is restored on exit and on panic.
 pub fn run(mut app: App, root: PathBuf, tz: Tz) -> io::Result<()> {
     let mut writer = Writer::open(&app.snapshot.config);
-    let mut terminal = ratatui::init();
+    let mut terminal = init_terminal();
     let result = event_loop(&mut terminal, &mut app, &mut writer, &root, tz);
-    ratatui::restore();
+    restore_terminal();
     result
 }
 
@@ -108,13 +110,13 @@ fn event_loop(
                             app.write_finished(result);
                         }
                         Outcome::EditNotes(notes) => {
-                            ratatui::restore();
+                            restore_terminal();
                             let editor = crate::editor::editor_command(
                                 std::env::var("VISUAL").ok().as_deref(),
                                 std::env::var("EDITOR").ok().as_deref(),
                             );
                             let result = crate::editor::edit_text(&editor, &notes);
-                            *terminal = ratatui::init();
+                            *terminal = init_terminal();
                             terminal.clear()?;
                             let size = terminal.size()?;
                             app.resize(size.width, size.height);
@@ -137,6 +139,10 @@ fn event_loop(
                             refresh_sync(app);
                         }
                     }
+                    ticked = true;
+                }
+                Event::Paste(text) => {
+                    app.paste(&text);
                     ticked = true;
                 }
                 Event::Resize(w, h) => {
@@ -170,6 +176,19 @@ fn event_loop(
             last_tick = Instant::now();
         }
     }
+}
+
+/// Raw mode and the alternate screen, with bracketed paste so a paste arrives as one
+/// event rather than as keys.
+fn init_terminal() -> DefaultTerminal {
+    let terminal = ratatui::init();
+    let _ = ratatui::crossterm::execute!(io::stdout(), EnableBracketedPaste);
+    terminal
+}
+
+fn restore_terminal() {
+    let _ = ratatui::crossterm::execute!(io::stdout(), DisableBracketedPaste);
+    ratatui::restore();
 }
 
 /// Reload under the shared vdir lock (see [`crate::cli::load_vdir`]).

@@ -670,6 +670,15 @@ impl App {
         Outcome::Continue
     }
 
+    /// Pasted text (bracketed paste). It only ever fills a form field: a paste never runs
+    /// as keys, so a pasted newline cannot save, complete or delete anything.
+    pub fn paste(&mut self, text: &str) -> Outcome {
+        if let Some(form) = self.form.as_mut() {
+            form.paste(text);
+        }
+        Outcome::Continue
+    }
+
     /// The editor from [`Outcome::EditNotes`] closed: take its text, or keep the notes and
     /// say why not.
     pub fn notes_edited(&mut self, result: Result<String, String>) {
