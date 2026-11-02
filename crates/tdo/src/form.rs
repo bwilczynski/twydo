@@ -175,8 +175,9 @@ impl EditForm {
         if self.title.trim().is_empty() {
             return Err("title must not be empty".into());
         }
-        if self.title != i.title {
-            out.push(Change::Summary(self.title.clone()));
+        let title = self.title.trim();
+        if title != i.title.trim() {
+            out.push(Change::Summary(title.to_string()));
         }
         if self.due != i.due {
             let d = parse(&self.due, today).map_err(|e| format!("due: {e}"))?;
@@ -192,7 +193,9 @@ impl EditForm {
         if self.repeat != i.repeat
             && let Some(r) = &self.repeat
         {
+            let was = i.repeat.as_deref().and_then(|w| w.parse::<u32>().ok());
             match r.parse::<u32>() {
+                Ok(n) if n >= 1 && Some(n) == was => {}
                 Ok(n) if n >= 1 => out.push(Change::RepeatInterval(n)),
                 _ => return Err(format!("repeat: enter a number of {}", self.repeat_unit)),
             }
