@@ -227,3 +227,69 @@ fn no_sync_without_after_edit() {
     assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
     assert_eq!(calls.get(), 0);
 }
+
+/// Review Focus 1 through the form: a sync that lands while the form is open (here, a
+/// phone edit of the title) must make the save fail as stale, not overwrite it.
+#[test]
+fn sync_while_form_open_is_stale_not_overwritten() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let env = Env::new();
+    let tz = chrono_tz::America::New_York;
+    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
+    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    let row = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
+        .unwrap();
+    app.cursor = row;
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    for _ in 0..2 {
+        app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    }
+    // Start = "3d".
+    app.handle_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+
+    // The phone renames the task; the sync lands and the watcher reloads.
+    let synced = String::from_utf8(fs::read(env.task_file()).unwrap())
+        .unwrap()
+        .replace("SUMMARY:A2", "SUMMARY:From phone");
+    fs::write(env.task_file(), &synced).unwrap();
+    app.reload(env.snapshot());
+
+    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected a write");
+    };
+    let (mut w, _) = writer(&env.config());
+    let result = w.run(app.write_snapshot(), &req, now());
+    assert!(
+        result
+            .as_ref()
+            .is_err_and(|e| e.contains("changed on disk")),
+        "{result:?}"
+    );
+    assert_eq!(fs::read_to_string(env.task_file()).unwrap(), synced);
+
+    app.write_finished(result);
+    let f = app.form.as_ref().expect("form stays open");
+    assert_eq!(
+        f.title, "From phone",
+        "the form now shows the synced version"
+    );
+    assert!(f.error.as_deref().unwrap().contains("changed on disk"));
+
+    // Saving again now applies against the version the user can see.
+    for c in "3d".chars() {
+        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected a write");
+    };
+    assert_eq!(w.run(app.write_snapshot(), &req, now()), Ok("saved".into()));
+    let text = fs::read_to_string(env.task_file()).unwrap();
+    assert!(text.contains("SUMMARY:From phone"), "{text}");
+}

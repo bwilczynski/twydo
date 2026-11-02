@@ -103,7 +103,7 @@ fn event_loop(
                             }
                         }
                         Outcome::Write(req) => {
-                            let result = writer.run(&app.snapshot, &req, Utc::now());
+                            let result = writer.run(app.write_snapshot(), &req, Utc::now());
                             // Reload after failures too: a stale write means the vdir moved on.
                             reload(app, root);
                             refresh_sync(app);
