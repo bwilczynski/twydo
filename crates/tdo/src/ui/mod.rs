@@ -3,6 +3,7 @@
 
 mod conflicts;
 mod details;
+mod picker;
 mod sidebar;
 mod status;
 mod tasks;
@@ -60,6 +61,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if app.show_conflicts {
         conflicts::render(f, area, app);
+    }
+    if let Some(p) = &app.picker {
+        picker::render(f, area, app, p);
     }
 }
 
@@ -201,7 +205,8 @@ const HELP: &[(&str, &str, bool)] = &[
     ("u  Ctrl-r", "undo / redo", false),
     ("t  T", "due today / tomorrow", false),
     ("]  [  }  {", "due +1/-1 day, +1/-1 week", false),
-    ("r  a  m", "edit repeat / alerts / move list", true),
+    ("m", "move to another list", false),
+    ("r  a", "edit repeat / alerts", true),
     ("/  n  N", "search in view", false),
     ("1-5", "Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),

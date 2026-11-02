@@ -74,6 +74,14 @@ pub enum Outcome {
     Write(Request),
 }
 
+/// The `m` overlay: lists to move task `uid` to, in sidebar order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListPicker {
+    pub uid: String,
+    pub lists: Vec<String>,
+    pub cursor: usize,
+}
+
 pub struct App {
     pub snapshot: Snapshot,
     pub view: View,
@@ -95,6 +103,8 @@ pub struct App {
     /// The `:conflicts` overlay.
     pub show_conflicts: bool,
     pub conflict_cursor: usize,
+    /// The `m` list picker, open until its write finishes or Esc.
+    pub picker: Option<ListPicker>,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
@@ -129,6 +139,7 @@ impl App {
             sync: None,
             show_conflicts: false,
             conflict_cursor: 0,
+            picker: None,
             now,
             page: 10,
             pending: None,
@@ -377,6 +388,9 @@ impl App {
     }
 
     pub fn handle_key(&mut self, k: KeyEvent) -> Outcome {
+        if self.picker.is_some() {
+            return self.picker_key(k);
+        }
         match self.mode {
             Mode::Normal => self.normal_key(k),
             Mode::Search => {
@@ -500,7 +514,7 @@ impl App {
             'J' | 'K' => self.block("move task"),
             'r' => self.block("edit repeat"),
             'a' => self.block("edit alerts"),
-            'm' => self.block("move to list"),
+            'm' => self.open_picker(),
             _ => {}
         }
         Outcome::Continue
@@ -538,8 +552,56 @@ impl App {
         })
     }
 
+    fn open_picker(&mut self) {
+        if self.focus == Pane::Sidebar {
+            return;
+        }
+        let Some(i) = self.selected() else { return };
+        let task = &self.snapshot.tasks[i];
+        let lists: Vec<String> = self
+            .sidebar_items()
+            .into_iter()
+            .filter_map(|v| match v {
+                View::List(id) if id != task.collection => Some(id),
+                _ => None,
+            })
+            .collect();
+        if lists.is_empty() {
+            self.message = Some("no other list to move to".into());
+            return;
+        }
+        self.picker = Some(ListPicker {
+            uid: task.uid.clone(),
+            lists,
+            cursor: 0,
+        });
+    }
+
+    fn picker_key(&mut self, k: KeyEvent) -> Outcome {
+        let Some(p) = self.picker.as_mut() else {
+            return Outcome::Continue;
+        };
+        let last = p.lists.len().saturating_sub(1);
+        match k.code {
+            KeyCode::Esc => self.picker = None,
+            KeyCode::Char('j') | KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
+            KeyCode::Char('k') | KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
+            KeyCode::Enter => {
+                if let Some(to) = p.lists.get(p.cursor) {
+                    return Outcome::Write(Request::Apply(Op::Move {
+                        uid: p.uid.clone(),
+                        to: to.clone(),
+                    }));
+                }
+            }
+            _ => {}
+        }
+        Outcome::Continue
+    }
+
     /// A write requested by [`Outcome::Write`] ended: show its result.
     pub fn write_finished(&mut self, result: Result<String, String>) {
+        self.picker = None;
         self.message = Some(match result {
             Ok(m) | Err(m) => m,
         });

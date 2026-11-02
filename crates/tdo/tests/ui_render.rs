@@ -763,3 +763,30 @@ fn focus_label_does_not_overwrite_search_or_commands() {
         assert!(!line(&buf, 29).contains("Tasks · "));
     }
 }
+
+#[test]
+fn picker_overlay_lists_names() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    let names: Vec<String> = a
+        .picker
+        .as_ref()
+        .unwrap()
+        .lists
+        .iter()
+        .map(|id| {
+            a.snapshot
+                .collections
+                .iter()
+                .find(|c| &c.id == id)
+                .and_then(|c| c.display_name.clone())
+                .unwrap_or_else(|| id.clone())
+        })
+        .collect();
+    let buf = render(&mut a, 80, 24);
+    let t = text(&buf);
+    assert!(t.contains(" Move to "), "{t}");
+    for n in names {
+        assert!(t.contains(&format!("▌ {n}")), "{n} missing:\n{t}");
+    }
+}
