@@ -1,0 +1,113 @@
+# Living alongside 2Do
+
+Twydo is meant to be used together with 2Do on the iPhone: both apps edit the same tasks through
+a CalDAV server. This page explains what that needs, how Twydo avoids writing anything the
+iPhone could misread, and what has been checked.
+
+## What you need
+
+- **2Do on the iPhone, syncing over CalDAV.** 2Do's Dropbox sync is not supported: Twydo reads and
+  writes iCalendar files, and 2Do uses that format only for CalDAV.
+- **A CalDAV server that stores tasks (`VTODO`).** Testing used Synology Calendar; any server that
+  keeps tasks as 2Do uploads them should work.
+- **vdirsyncer**, to mirror the server into a local folder ([sync.md](sync.md)).
+
+2Do for the Mac has not been tested (it needs a subscription that was not available). The iPhone
+app is the reference for everything below.
+
+## Moving from Dropbox to CalDAV
+
+Switching 2Do's sync method replaces what the server holds, so do it carefully:
+
+1. **Back up.** In 2Do, make a backup. If you use Dropbox sync, also copy the Dropbox folder
+   `Apps/2Do` somewhere safe (copy it, never move it).
+2. **Take an inventory** of the Dropbox data, so you can compare after the move:
+   `python3 tools/decode_2do_dropbox.py <copy of Apps/2Do> inventory.2do.json`. The output holds
+   your task data: keep it out of any repository.
+3. **Create an empty task collection** on the CalDAV server.
+4. **In 2Do, add the CalDAV account** and upload your data to it. Use *Replace Server Data* only
+   when the destination collection is empty.
+5. **Set up vdirsyncer and Twydo** ([sync.md](sync.md), [install.md](install.md)) and pull the
+   collections.
+6. **Compare**: `tdo export-json > export.json`, then
+   `python3 tools/reconcile.py inventory.2do.json export.json` reports tasks and lists that do not
+   match. Its output contains list names (and titles with `--show-titles`).
+
+Then run `tdo check`: it reports the repeat kinds in your data, whether each is verified, and any
+task Twydo cannot read.
+
+## What Twydo keeps intact
+
+Twydo changes only what an operation is about. A file it does not change is never rewritten; in a
+file it changes, every unrelated line keeps its exact bytes, including properties and metadata
+Twydo does not understand. Details: [data-model.md](data-model.md#what-twydo-preserves).
+
+## Verified mode
+
+Every write Twydo makes was first made on the iPhone, captured, and reproduced: Twydo writes the
+same change the iPhone writes, then the iPhone was checked to read it back correctly, and to edit
+it again. The results are recorded in [`compat/matrix.toml`](../compat/matrix.toml), which is
+built into `tdo`.
+
+By default (`[writes] mode = "verified"`), Twydo runs **only** writes the matrix marks as passing,
+for the kind of task at hand. Anything else is refused before a file is touched, with the reason
+on the status line (or on stderr from `tdo op`, which exits 1):
+
+```
+weekdays-set repeats are not verified yet
+reopen for yearly tasks is not verified yet (twydo_to_iphone)
+nested projects and checklists are not verified yet
+```
+
+The part in parentheses names the direction that is missing: `twydo_to_iphone` (the iPhone has
+not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked
+reading the iPhone's). Reading is never refused: every task is shown.
+
+To see what is allowed for one task: `tdo op check <uid>` prints each operation with `ok` or the
+reason. To see it for your whole data: `tdo check`.
+
+`[writes] mode = "test"` turns the check off. It exists for testing against a separate test
+account, and must never point at your real data: an unverified write can produce something 2Do
+on the iPhone reads differently. See [config.md](config.md).
+
+## What is verified today
+
+| Kind of task | Create | Edit | Complete | Reopen | Move | Delete |
+|---|---|---|---|---|---|---|
+| One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Monthly repeat (day 1–28) | — | ✅ | ✅ | — | — | ✅ |
+| Yearly repeat | — | ✅ | ✅ | — | — | ✅ |
+| Checklist | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Recurring project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
+
+"—" means not verified yet. Creating is limited anyway: the TUI cannot add tasks yet, and
+`tdo op add` creates plain tasks only. Within these, dates with and without a time, start dates, and 2Do's automatic alert
+are handled as described in [tasks.md](tasks.md).
+
+Verified behaviour that is easy to get wrong, each checked on the iPhone:
+
+- a monthly task completed months late moves one month per completion (no skipping);
+- completing a task with a start date moves the start by as many days as the due date;
+- completing a recurring project with some items done and some open;
+- changing a checklist's date removes its items' copies of the old date;
+- undoing a completion before and after it was synced.
+
+Not verified yet, so refused for writing: repeats daily, weekly, on set weekdays, on the
+29th–31st or the last day of the month, on the nth weekday, on February 29, repeating from the
+completion date, and repeats with an end; repeating checklists; a repeating item inside a
+repeating project; nested projects and checklists; moving, deleting or reopening a single item on
+its own; editing alerts.
+
+## How far this has been tested
+
+One user's data, one iPhone (2Do 3.91 on iOS 27), one server (Synology Calendar), vdirsyncer
+0.21.0 on Linux. Each verified row was tested both ways: the iPhone's change read by Twydo, and
+Twydo's change read by the iPhone. The session logs are in
+[reference/phase0/](reference/phase0/README.md), with synthetic test data in
+[`fixtures/phase0/`](../fixtures/phase0/).
+
+Verifying more needs a 2Do device and a test account. The method is in the
+[phase-0 checklist](reference/phase0/README.md); `tools/seed_fixture.py` sets up test tasks on
+the server so they do not have to be typed on the phone.
