@@ -514,6 +514,52 @@ fn parent_op_refused_when_child_has_no_case() {
     assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }
 
+#[test]
+fn parent_op_refused_when_child_rule_not_preserved() {
+    let s = snap();
+    // The child's own case is "monthly", but its rule class has no `[[rule]]` verdict.
+    assert_eq!(
+        task_cases(&s, idx(&s, "gate-project-last-day-child")),
+        cs("monthly", Some("project-recurring-child"))
+    );
+    let m = fam();
+    let mv = Op::Move {
+        uid: "gate-project-last-day".into(),
+        to: "errands".into(),
+    };
+    for op in [
+        complete("gate-project-last-day"),
+        reopen("gate-project-last-day"),
+        mv,
+        Op::Delete {
+            uid: "gate-project-last-day".into(),
+        },
+    ] {
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &op, today()),
+            blocked("months-last-day repeats are not verified yet"),
+            "{op:?}"
+        );
+    }
+    // The same parent op passes once the class preserves.
+    let m = cases(
+        &["one-time", "monthly", "project", "project-recurring-child"],
+        "pass",
+        "pass",
+        &["months-last-day"],
+    );
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-project-last-day"),
+            today()
+        ),
+        Ok(())
+    );
+}
+
 /// The real matrix: family baselines pass, the twydo columns and the recurring-project edit
 /// row do not.
 #[test]

@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-project-last-day-child
+SUMMARY:Synthetic last-day project child
+STATUS:NEEDS-ACTION
+DUE;VALUE=DATE:20261130
+RRULE:FREQ=MONTHLY;BYMONTHDAY=-1
+RELATED-TO:gate-project-last-day
+END:VTODO
+END:VCALENDAR

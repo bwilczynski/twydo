@@ -7,8 +7,8 @@
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
-//!    so each child must pass the same lookup, then have cases (rule 2), or the op is refused
-//!    with the child's reason; moving or deleting one item alone, or reopening an item of a
+//!    so each child must pass the same lookup, then have cases (rule 2) and, if it repeats,
+//!    its class's preserve verdict (rule 4), or the op is refused with the child's reason; moving or deleting one item alone, or reopening an item of a
 //!    completed or cancelled parent, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
 //!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
@@ -88,7 +88,7 @@ pub fn check(
 
     // Rule 1b: family operations.
     if let Some(i) = target {
-        family_op(snap, op, i)?;
+        family_op(snap, m, op, i)?;
     }
 
     // Rule 2: the task's cases.
@@ -253,10 +253,11 @@ fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
     }
 }
 
-/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`] and then
-/// have cases ([`task_cases`]); an item moved, deleted, or reopened under a completed or
-/// cancelled parent, on its own is not verified.
-fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
+/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`], then have
+/// cases ([`task_cases`]) and, if it repeats, its class's `[[rule]]` preserve verdict (rule
+/// 4); an item moved, deleted, or reopened under a completed or cancelled parent, on its own
+/// is not verified.
+fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
         match op {
             Op::Move { .. } => {
@@ -285,6 +286,11 @@ fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
         }
         for &c in snap.children(idx) {
             task_cases(snap, c)?;
+            if let Some(class) = task_rule_class(&snap.tasks[c], snap)
+                && combined_verdicts(m, &class).0 != Verdict::Pass
+            {
+                return blocked(format!("{class} repeats are not verified yet"));
+            }
         }
     }
     Ok(())
