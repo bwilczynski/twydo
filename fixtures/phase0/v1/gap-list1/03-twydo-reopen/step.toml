@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "03-twydo-reopen"
+device = "twydo"
+action = "reopen p3's completed copy (Dec 12)"
+captured_at = "2026-11-02T20:22:18Z"

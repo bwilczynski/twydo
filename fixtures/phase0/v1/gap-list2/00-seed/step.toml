@@ -1,0 +1,5 @@
+scenario = "gap-list2"
+step = "00-seed"
+device = "twydo"
+action = "seed from plan6-twydo-list1/00-setup: C (c1 c2), P (p1 p2 p3 monthly), Q (q1 q2), R monthly (r1 r2), M missed monthly, Y yearly timed+start+alert"
+captured_at = "2026-11-02T20:14:51Z"

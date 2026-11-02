@@ -1,0 +1,5 @@
+scenario = "gap-list2"
+step = "04-phone-complete"
+device = "iphone"
+action = "complete Q (confirm), C (confirm), R (confirm), Y, M"
+captured_at = "2026-11-02T20:24:18Z"

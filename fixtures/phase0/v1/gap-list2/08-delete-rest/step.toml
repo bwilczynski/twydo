@@ -1,0 +1,5 @@
+scenario = "gap-list2"
+step = "08-delete-rest"
+device = "iphone"
+action = "delete everything left (R copy with items, Y copy, M copy); list 1 synced with --force-delete"
+captured_at = "2026-11-02T20:33:09Z"

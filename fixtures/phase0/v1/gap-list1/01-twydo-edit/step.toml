@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "01-twydo-edit"
+device = "twydo"
+action = "P -> P2 + notes n; p1 due 2026-12-06; Q due 2026-12-20; complete p3"
+captured_at = "2026-11-02T20:18:28Z"

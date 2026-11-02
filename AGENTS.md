@@ -33,7 +33,10 @@ app replacing 2Do for one user, plan by plan.
    keys, move, edit form, notes in `$EDITOR`; keys in [`docs/tui.md`](docs/tui.md), verified in
    [`docs/phase0/plan5-tui.md`](docs/phase0/plan5-tui.md)) and Plan 6 (checklists, projects,
    recurring projects and the real repeat shapes, mirroring 2Do's family semantics; verified in
-   [`docs/phase0/plan6-baseline.md`](docs/phase0/plan6-baseline.md)). Next: natural-language add (`o`/`O`,
+   [`docs/phase0/plan6-baseline.md`](docs/phase0/plan6-baseline.md)), and the gap session
+   that verified the real task shapes both ways
+   ([`docs/phase0/gap-session.md`](docs/phase0/gap-session.md); seed test data with
+   `tools/seed_fixture.py` instead of typing on the phone). Next: natural-language add (`o`/`O`,
    reusing `twydo_core::dateinput`), Plan 5b (manual order `J`/`K`, list management) or Plan 2
    (notifier); write the plan first. Setup and limits of sync: [`docs/sync.md`](docs/sync.md).
 
