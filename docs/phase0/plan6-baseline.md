@@ -135,3 +135,49 @@ Session 2026-11-02, iPhone 2Do 3.91 against Synology Calendar, vdirsyncer 0.21.0
 - **Not covered:** editing a recurring project itself or a repeating child, moving or deleting
   a single child, a repeating child inside a recurring project
   (`project-child-own-recurrence`), absolute alerts.
+
+# Twydo → iPhone verification (Plan 6 Task 7)
+
+Twydo now performs the family operations and the real repeat shapes (`tdo op`, and the TUI for
+one confirmation), and the iPhone checks them. Three phone baselines are still missing, so the
+phone captures those first. Then the phone edits Twydo-written tasks and Twydo reads them back.
+A case/op passes when both directions look right. Same test account, same two lists, synthetic
+single-letter titles; `Twydo test` = list 1, `Twydo test 2` = list 2. Both lists start empty.
+
+## Setup (🤖)
+
+```sh
+cargo build -q -p tdo
+tdo() { XDG_CONFIG_HOME=~/twydo-phase0/xdg "$PWD/target/debug/tdo" "$@"; }   # `test` write mode
+uid() { tdo export-json | jq -r --arg s "$1" '.tasks[] | select(.summary==$s and .status=="open") | .uid'; }
+```
+
+After each round: 🤖 `vdirsyncer sync twydo` (with `--force-delete <list>` when a list empties),
+capture both lists into scenarios `plan6-twydo-list1` / `plan6-twydo-list2` with `--device twydo`
+(Twydo rounds) or `--device iphone` (phone rounds), and `tdo export-json` to check Twydo's view.
+👤 checks each 🤖 round on the phone after letting 2Do sync.
+
+Phone rounds 01–03 capture the three missing iPhone baselines. Before round 04 🤖 sets their
+`iphone_baseline` in `compat/matrix.toml` (if they match 2Do's other encodings) and rebuilds, so
+Twydo may edit those shapes in round 07.
+
+## Rounds
+
+| Round | Who | Actions | Check |
+|---|---|---|---|
+| 00-setup | 👤 | in list 1: checklist `C` due 2026-12-10 with `c1` `c2` `c3`; project `P` (no date) with `p1` due 2026-12-05, `p2` (no date), `p3` due 2026-12-12 repeat monthly; project `R` due 2026-12-15 repeat monthly with `r1` due 2026-12-08, `r2`, `r3` (no dates); `M` due 2026-09-15 repeat monthly; `S` start 2026-12-01, due 2026-12-05, repeat monthly; `T` start 2026-12-14, due 2026-12-20 09:00, alert at due time, repeat monthly; `Y` start 2027-02-13, due 2027-02-28 09:00, alert at due time, repeat yearly; `A` due 2026-12-22 10:00, alert 15 minutes before, repeat monthly | 🤖 `export-json`: all read, families linked |
+| 01-phone-edit | 👤 | `R` → title `R2` (recurring project itself); `p3` → title `p3b` (repeating project item) | baseline: `recurring-project` edit, `project-recurring-child` edit |
+| 02-phone-complete | 👤 | complete `p3b` | advances to 2027-01-12 with a history copy under `P` |
+| 03-phone-reopen | 👤 | reopen `p3b`'s history copy (Dec 12) | baseline: `project-recurring-child` reopen |
+| 04-complete-shapes | 🤖 | `tdo op complete` on `M`, `S`, `T`, `Y`, `A`, and on item `r1` | 👤 `M` due 2026-10-15; `S` Jan 5 / start Jan 1; `T` Jan 20 09:00 / start Jan 14, alert; `Y` 2028-02-28 09:00 / start 2028-02-13, alert; `A` Jan 22 10:00 with its 15-minute alert; `r1` completed; each repeat has one history copy |
+| 05-complete-parents | 🤖 | TUI: select `C`, `x` (question shows), `x`; CLI: `tdo op complete <P> --all`; `tdo op complete <R2> --all` | 👤 `C` and `c1`–`c3` completed; `P`, `p1`, `p2` completed, live `p3b` completed with its repeat kept (not advanced); `R2` due 2027-01-15 with a completed copy holding copies of `r1`–`r3`, live `r1` reopened, `r2`, `r3` open, dates unchanged |
+| 06-reopen-parents | 🤖 | reopen `C`, `P`, and `R2`'s completed copy | 👤 all items open again (including `p3b`'s history copies); the `R2` copy an open project without repeat; live `R2` unchanged |
+| 07-edit | 🤖 | `R2` → title `R3`; `p3b` → notes `n`; `c1` → title `c1b` | 👤 the three changes show |
+| 08-move | 🤖 | move `C`, `P` and the live `R3` to list 2 | 👤 the three families in list 2 with all items under the right parent; the open `R2` copy stays in list 1 |
+| 09-phone-edit | 👤 | `c1b` → title `c1c`; complete `r2` (under the moved `R3`); `M` → notes `m` | 🤖 `export-json` shows all three, families still linked |
+| 10-delete | 🤖 | delete `C`, `P`, the live `R3`, the open `R2` copy, and the live `M`, `S`, `T`, `Y`, `A` | 👤 those families and tasks gone, items with them; history copies remain |
+| 11-delete-rest | 👤 | delete every remaining task (history copies) | both lists empty |
+
+## Results
+
+(Filled in after the session: per case/op, `twydo_to_iphone` and `iphone_to_twydo`, plus findings.)
