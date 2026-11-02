@@ -830,6 +830,22 @@ fn unusual_start_date_blocked() {
 }
 
 #[test]
+fn zoned_due_blocked() {
+    let s = snap();
+    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-monthly-zoned"),
+            today()
+        ),
+        blocked("completing a repeating task with a zoned due time is not verified yet")
+    );
+}
+
+#[test]
 fn missed_occurrence_needs_its_edge_case() {
     let s = snap();
     let op = complete("gate-monthly-late");
