@@ -431,7 +431,9 @@ impl App {
             (KeyCode::Char('c'), true) => return Outcome::Quit,
             (KeyCode::Char('d'), true) => self.move_cursor(half),
             (KeyCode::Char('u'), true) => self.move_cursor(-half),
-            (KeyCode::Char('r'), true) => return Outcome::Write(Request::Redo),
+            (KeyCode::Char('r'), true) if !self.overlay_open() => {
+                return Outcome::Write(Request::Redo);
+            }
             (_, true) => {}
             (KeyCode::Esc, _) => {
                 self.message = None;
@@ -481,6 +483,10 @@ impl App {
     fn normal_char(&mut self, c: char, pending: Option<char>) -> Outcome {
         if self.focus == Pane::Sidebar && c == 'l' {
             self.open_sidebar();
+            return Outcome::Continue;
+        }
+        // An overlay hides the task list: keys that write or edit must not reach it.
+        if self.overlay_open() && "xtT[]{}duimr ".contains(c) {
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
@@ -610,6 +616,11 @@ impl App {
             },
         }
         Outcome::Continue
+    }
+
+    /// Help, `:errors` or `:conflicts` is drawn over the task list.
+    fn overlay_open(&self) -> bool {
+        self.show_help || self.show_errors || self.show_conflicts
     }
 
     fn open_picker(&mut self) {

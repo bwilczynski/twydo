@@ -822,3 +822,21 @@ fn failing_editor_keeps_notes() {
         Some("notes: editor exited with status 1")
     );
 }
+
+#[test]
+fn overlays_swallow_write_keys() {
+    for open in ["help", "errors", "conflicts"] {
+        let mut a = app();
+        match open {
+            "help" => a.show_help = true,
+            "errors" => a.show_errors = true,
+            _ => a.show_conflicts = true,
+        }
+        for k in ["x", " ", "t", "]", "dd", "u", "i", "m", "r"] {
+            let outs = type_keys(&mut a, k);
+            assert!(outs.iter().all(|o| *o == Outcome::Continue), "{open}: {k}");
+            assert!(a.form.is_none() && a.picker.is_none(), "{open}: {k}");
+        }
+        assert_eq!(a.handle_key(ctrl('r')), Outcome::Continue, "{open}");
+    }
+}
