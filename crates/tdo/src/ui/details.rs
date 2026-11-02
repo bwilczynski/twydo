@@ -81,7 +81,13 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::styled("── Notes ──", dim()));
         lines.extend(notes.lines().map(|l| Line::raw(l.to_string())));
     }
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+    let page = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let rows = page.line_count(inner.width);
+    app.details_max.set(
+        rows.saturating_sub(inner.height as usize)
+            .min(u16::MAX as usize) as u16,
+    );
+    f.render_widget(page.scroll((app.details_offset(), 0)), inner);
 }
 
 /// A parent's tasks: the open ones by due date (undated last), then how many are done, then

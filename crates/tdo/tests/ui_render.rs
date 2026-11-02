@@ -975,3 +975,91 @@ fn details_in_a_flat_view_list_tasks_without_the_enter_hint() {
     assert!(t.contains("Undated child"), "{t}");
     assert!(!t.contains("Enter:"), "{t}");
 }
+
+/// Two tasks due today; the first ("Long notes task") has 40 lines of notes.
+fn long_notes_app() -> (tempfile::TempDir, App) {
+    let notes = (1..=40)
+        .map(|i| format!("Note line {i:02}"))
+        .collect::<Vec<_>>()
+        .join("\\n");
+    let long = todo(
+        "n",
+        "Long notes task",
+        &format!("DUE;VALUE=DATE:20261104\r\nDESCRIPTION:{notes}\r\nSTATUS:NEEDS-ACTION\r\n"),
+    );
+    let other = todo(
+        "s",
+        "Second task",
+        "DUE;VALUE=DATE:20261104\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let dir = vdir_with(&[("n.ics", &long), ("s.ics", &other)]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    render(&mut a, 140, 20);
+    a.focus = Pane::Details;
+    (dir, a)
+}
+
+fn press(a: &mut App, c: char) {
+    a.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+}
+
+fn details_text(a: &mut App) -> String {
+    details_lines(&render(a, 140, 20)).join("\n")
+}
+
+#[test]
+fn jk_in_details_scroll_the_pane_not_the_task_list() {
+    let (_dir, mut a) = long_notes_app();
+    assert!(details_text(&mut a).contains("Long notes task"));
+    for _ in 0..5 {
+        press(&mut a, 'j');
+    }
+    let t = details_text(&mut a);
+    assert!(!t.contains("Long notes task"), "{t}");
+    assert!(t.contains("Note line 05"), "{t}");
+    assert_eq!(a.cursor, 0, "the selected task stays");
+    for _ in 0..5 {
+        press(&mut a, 'k');
+    }
+    assert!(details_text(&mut a).contains("Long notes task"));
+}
+
+#[test]
+fn details_scroll_stops_at_the_last_line() {
+    let (_dir, mut a) = long_notes_app();
+    press(&mut a, 'G');
+    let t = details_text(&mut a);
+    assert!(t.contains("Note line 40"), "{t}");
+    press(&mut a, 'k');
+    let t = details_text(&mut a);
+    assert!(
+        !t.contains("Note line 40"),
+        "one line up from the bottom:\n{t}"
+    );
+    press(&mut a, 'g');
+    press(&mut a, 'g');
+    assert!(details_text(&mut a).contains("Long notes task"));
+}
+
+#[test]
+fn details_page_keys_scroll_by_half_a_page() {
+    let (_dir, mut a) = long_notes_app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+    let t = details_text(&mut a);
+    assert!(!t.contains("Long notes task"), "{t}");
+    assert_eq!(a.cursor, 0);
+    a.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+    assert!(details_text(&mut a).contains("Long notes task"));
+}
+
+#[test]
+fn another_task_opens_details_at_the_top() {
+    let (_dir, mut a) = long_notes_app();
+    for _ in 0..5 {
+        press(&mut a, 'j');
+    }
+    press(&mut a, 'h');
+    press(&mut a, 'j');
+    press(&mut a, 'k');
+    assert!(details_text(&mut a).contains("Long notes task"));
+}

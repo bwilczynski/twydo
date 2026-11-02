@@ -1,6 +1,7 @@
 //! TUI application state and vim-style keys. No terminal here: the renderer reads the public
 //! fields and the terminal loop feeds `handle_key` / `tick`.
 
+use std::cell::Cell;
 use std::collections::HashSet;
 
 use chrono::DateTime;
@@ -123,6 +124,11 @@ pub struct App {
     pub page: usize,
     pending: Option<char>,
     details_visible: bool,
+    /// Lines the Details pane is scrolled down, for the task `details_uid`.
+    details_scroll: u16,
+    details_uid: Option<String>,
+    /// The furthest the Details pane can scroll; the renderer sets it on each draw.
+    pub(crate) details_max: Cell<u16>,
 }
 
 /// Terminal width at which the Details pane becomes visible.
@@ -164,6 +170,9 @@ impl App {
             page: 10,
             pending: None,
             details_visible: true,
+            details_scroll: 0,
+            details_uid: None,
+            details_max: Cell::new(0),
         }
     }
 
@@ -437,7 +446,33 @@ impl App {
         self.handle_key(k)
     }
 
+    /// Lines to scroll the Details pane down: 0 once another task is selected.
+    pub fn details_offset(&self) -> u16 {
+        if self.details_uid.is_some() && self.details_uid == self.selected_uid() {
+            self.details_scroll.min(self.details_max.get())
+        } else {
+            0
+        }
+    }
+
+    fn scroll_details(&mut self, delta: i32) {
+        let to =
+            (i32::from(self.details_offset()) + delta).clamp(0, i32::from(self.details_max.get()));
+        self.details_scroll = to as u16;
+        self.details_uid = self.selected_uid();
+    }
+
     pub fn handle_key(&mut self, k: KeyEvent) -> Outcome {
+        let before = self.selected_uid();
+        let out = self.dispatch_key(k);
+        if self.selected_uid() != before {
+            self.details_scroll = 0;
+            self.details_uid = None;
+        }
+        out
+    }
+
+    fn dispatch_key(&mut self, k: KeyEvent) -> Outcome {
         if self.picker.is_some() {
             return self.picker_key(k);
         }
@@ -471,6 +506,12 @@ impl App {
         let half = self.page.max(1) as isize;
         match (k.code, ctrl) {
             (KeyCode::Char('c'), true) => return Outcome::Quit,
+            (KeyCode::Char('d'), true) if self.focus == Pane::Details => {
+                self.scroll_details(half as i32)
+            }
+            (KeyCode::Char('u'), true) if self.focus == Pane::Details => {
+                self.scroll_details(-half as i32)
+            }
             (KeyCode::Char('d'), true) => self.move_cursor(half),
             (KeyCode::Char('u'), true) => self.move_cursor(-half),
             (KeyCode::Char('r'), true) if !self.overlay_open() => {
@@ -533,6 +574,20 @@ impl App {
         }
         if let Some(op) = self.task_write(c, pending) {
             return Outcome::Write(Request::Apply(op));
+        }
+        // Details is a page, not a list: movement keys scroll it.
+        if self.focus == Pane::Details {
+            let delta = match c {
+                'j' => Some(1),
+                'k' => Some(-1),
+                'G' => Some(i32::from(u16::MAX)),
+                'g' if pending == Some('g') => Some(-i32::from(u16::MAX)),
+                _ => None,
+            };
+            if let Some(d) = delta {
+                self.scroll_details(d);
+                return Outcome::Continue;
+            }
         }
         match c {
             'j' => self.move_cursor(1),
