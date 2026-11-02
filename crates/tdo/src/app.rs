@@ -112,6 +112,9 @@ pub struct App {
     pub picker: Option<ListPicker>,
     /// The `i` edit form; open while `mode` is Insert.
     pub form: Option<EditForm>,
+    /// The snapshot the form opened on: its save is checked against these bytes, so a sync
+    /// that lands meanwhile makes the save stale instead of being overwritten.
+    form_base: Option<Snapshot>,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
@@ -148,6 +151,7 @@ impl App {
             conflict_cursor: 0,
             picker: None,
             form: None,
+            form_base: None,
             now,
             page: 10,
             pending: None,
@@ -583,12 +587,57 @@ impl App {
         }
         form.focus = focus;
         self.form = Some(form);
+        self.form_base = Some(self.snapshot.clone());
         self.mode = Mode::Insert;
     }
 
     fn close_form(&mut self) {
         self.form = None;
+        self.form_base = None;
         self.mode = Mode::Normal;
+    }
+
+    /// The snapshot an [`Outcome::Write`] applies against: the one the open form was built
+    /// from, else the current one.
+    pub fn write_snapshot(&self) -> &Snapshot {
+        match (&self.form, &self.form_base) {
+            (Some(_), Some(base)) => base,
+            _ => &self.snapshot,
+        }
+    }
+
+    /// After a refused save: if the task changed on disk since the form opened, rebuild the
+    /// form from the current version so the next save cannot overwrite what the user has not
+    /// seen. When the task is gone the form closes and the error becomes the message.
+    fn refresh_form(&mut self, error: String) {
+        let (Some(form), Some(base)) = (&self.form, &self.form_base) else {
+            return;
+        };
+        let old = base.find(&form.uid).map(|i| &base.tasks[i]);
+        let Some(now_idx) = self.snapshot.find(&form.uid) else {
+            self.close_form();
+            self.message = Some(error);
+            return;
+        };
+        let task = &self.snapshot.tasks[now_idx];
+        let changed = old.is_none_or(|o| {
+            o.path != task.path || base.source(&o.path) != self.snapshot.source(&task.path)
+        });
+        let focus = form.focus;
+        let mut form = if changed {
+            let mut f = EditForm::open(task, self.snapshot.tz());
+            if f.fields().contains(&focus) {
+                f.focus = focus;
+            }
+            f.error = Some(format!("{error}; the form now shows the saved version"));
+            self.form_base = Some(self.snapshot.clone());
+            f
+        } else {
+            let mut f = form.clone();
+            f.error = Some(error);
+            f
+        };
+        std::mem::swap(self.form.as_mut().expect("form is open"), &mut form);
     }
 
     fn form_key(&mut self, k: KeyEvent) -> Outcome {
@@ -697,9 +746,10 @@ impl App {
     /// A write requested by [`Outcome::Write`] ended: show its result.
     pub fn write_finished(&mut self, result: Result<String, String>) {
         self.picker = None;
-        // A refused edit keeps the form and its typing, with the reason in it.
-        if let (Some(form), Err(e)) = (self.form.as_mut(), &result) {
-            form.error = Some(e.clone());
+        // A refused edit keeps the form (and its typing, unless the task changed meanwhile),
+        // with the reason in it.
+        if let (Some(_), Err(e)) = (&self.form, &result) {
+            self.refresh_form(e.clone());
             return;
         }
         if self.form.is_some() {
