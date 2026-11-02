@@ -9,6 +9,7 @@ use ratatui::widgets::{Padding, Paragraph, Wrap};
 use twydo_core::format::{describe_alarm, relative_date};
 use twydo_core::model::Status;
 use twydo_core::model::repeat::{describe, parse_rrule};
+use twydo_core::views::View;
 
 use super::tasks::glyph;
 use super::{dim, list_name, pane_block, theme};
@@ -84,7 +85,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
 }
 
 /// A parent's tasks: the open ones by due date (undated last), then how many are done, then
-/// how to see them in the list. Nothing for a task without children.
+/// (in views that nest tasks) how to see them in the list. Nothing for a task without children.
 fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
     let snap = &app.snapshot;
     let kids = snap.children(idx);
@@ -118,11 +119,14 @@ fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
     if !done.is_empty() {
         lines.push(Line::styled(format!("+ {} completed", done.len()), dim()));
     }
-    let verb = if app.expanded.contains(&snap.tasks[idx].uid) {
-        "collapse"
-    } else {
-        "expand"
-    };
-    lines.push(Line::styled(format!("Enter: {verb} in list"), dim()));
+    // Only All and list views nest tasks; Enter does nothing in the date views (#8).
+    if matches!(app.view, View::All | View::List(_)) {
+        let verb = if app.expanded.contains(&snap.tasks[idx].uid) {
+            "collapse"
+        } else {
+            "expand"
+        };
+        lines.push(Line::styled(format!("Enter: {verb} in list"), dim()));
+    }
     lines
 }

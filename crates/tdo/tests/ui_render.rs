@@ -954,3 +954,24 @@ fn details_of_a_leaf_task_have_no_task_list() {
     assert!(!t.contains("Tasks ("), "{t}");
     assert!(!t.contains("Enter:"), "{t}");
 }
+
+#[test]
+fn details_in_a_flat_view_list_tasks_without_the_enter_hint() {
+    let parent = todo(
+        "p",
+        "Synthetic project",
+        "X-2DOAPP-METADATA:@tasktype:project\r\nDUE;VALUE=DATE:20261104\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let child = todo(
+        "c",
+        "Undated child",
+        "RELATED-TO:p\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let dir = vdir_with(&[("p.ics", &parent), ("c.ics", &child)]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    assert_eq!(a.view, View::Today);
+    let t = details_lines(&render(&mut a, 140, 30)).join("\n");
+    assert!(t.contains("Synthetic project"), "{t}");
+    assert!(t.contains("Undated child"), "{t}");
+    assert!(!t.contains("Enter:"), "{t}");
+}
