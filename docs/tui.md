@@ -17,7 +17,9 @@
 | `i`, `Enter` on a task without children | edit form |
 | `r` | edit form, on the Repeat field (repeating tasks only) |
 
-Write keys act when the Tasks or Details pane has focus. They do nothing while help, `:errors`
+Write keys act when the Tasks or Details pane has focus. With Details focused, `j`/`k`,
+`gg`/`G` and `Ctrl-d`/`Ctrl-u` scroll the pane instead of moving between tasks; another task
+opens at the top. They do nothing while help, `:errors`
 or `:conflicts` is open.
 
 ## Edit form

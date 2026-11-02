@@ -198,9 +198,9 @@ pub(crate) fn pad(s: &str, width: usize) -> String {
 }
 
 const HELP: &[(&str, &str, bool)] = &[
-    ("j/k  gg/G  Ctrl-d/u", "move", false),
+    ("j/k  gg/G  Ctrl-d/u", "move (in Details: scroll)", false),
     ("h/l  Tab", "focus pane", false),
-    ("Enter", "expand/collapse a parent", false),
+    ("Enter", "expand/collapse a parent (All, lists)", false),
     (
         "Enter on a leaf, i",
         "edit task (Tab fields, Enter save)",
