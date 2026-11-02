@@ -160,7 +160,8 @@ vdirsyncer refuses to sync a list that became empty on either side until it is t
 ## Backoff and timeout
 
 vdirsyncer is killed (with its child processes) after `timeout_secs` (default 300); the run counts
-as a failure. A run fails transiently when the command cannot be started, times out, prints
+as a failure, and every list it reported (conflicted ones too) is marked `error`, so a timed-out
+run confirms no edit. A run fails transiently when the command cannot be started, times out, prints
 errors that belong to no conflict or emptied-list report, leaves a list in `error`, or exits
 non-zero for no stated reason. Conflicts and emptied lists are not failures.
 

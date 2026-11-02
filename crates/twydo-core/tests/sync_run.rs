@@ -1024,3 +1024,33 @@ fn last_error_ignores_syncing_progress_lines() {
     let st = SyncStatus::load(&fx.state()).unwrap();
     assert_eq!(st.last_error.as_deref(), Some("c2: boom"));
 }
+
+/// A run that reports a conflict for u2 in c1 and is then killed before it uploads the
+/// pending edit of u1 in the same collection confirms nothing there.
+#[test]
+fn timed_out_run_confirms_nothing_in_conflicted_collection() {
+    let mut fx = Fx::new(
+        "printf 'Syncing twydo/c1\\n\
+         error: twydo/c1: One item changed on both sides. Resolve this conflict manually, \
+         or by setting the `conflict_resolution` parameter in your config file.\\n\
+         error: Item ID: u2\\nerror: Item href on side A: u2.ics\\n\
+         error: Item href on side B: u2.ics\\n' >&2\n\
+         sleep 30",
+    );
+    fx.sync_mut().timeout_secs = 1;
+    let (b, a) = (task("u1", "before"), task("u1", "after"));
+    let e = applied(
+        "20261101T090000Z-00000001",
+        &[("c1/u1.ics", Some(&b), Some(&a))],
+    );
+    apply(&fx, &e);
+    fs::write(fx.cfg.vdir.join("c1/u2.ics"), task("u2", "here")).unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some(), "{r:?}");
+    assert!(
+        matches!(r.collections.get("c1"), Some(CollState::Error { .. })),
+        "{r:?}"
+    );
+    assert!(r.confirmed.is_empty(), "{r:?}");
+    assert!(!synced(&fx, &e.id), "a timed-out run confirms nothing");
+}
