@@ -854,3 +854,46 @@ fn paste_goes_to_form_and_never_runs_keys() {
     assert_eq!(f.title, "fix door and window");
     assert_eq!(format!("{:?}", a.snapshot.tasks), format!("{before:?}"));
 }
+
+#[test]
+fn success_messages_clear_after_a_few_seconds() {
+    let t0 = now();
+    let secs = |n| t0 + chrono::Duration::seconds(n);
+    let mut a = app();
+    a.sync_finished("sync done".into());
+    a.expire_message(t0); // the loop's first look starts the clock
+    a.expire_message(secs(4));
+    assert_eq!(a.message.as_deref(), Some("sync done"));
+    a.expire_message(secs(5));
+    assert_eq!(a.message, None);
+
+    a.write_finished(Ok("done".into()));
+    a.expire_message(secs(100));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("done"),
+        "clock starts when first seen"
+    );
+    a.expire_message(secs(105));
+    assert_eq!(a.message, None);
+
+    // Errors stay until Esc or the next message.
+    let mut a = app();
+    a.sync_finished("vdirsyncer: connection refused".into());
+    a.expire_message(secs(600));
+    assert!(a.message.is_some());
+    a.write_finished(Err("nothing to undo".into()));
+    a.expire_message(secs(600));
+    assert_eq!(a.message.as_deref(), Some("nothing to undo"));
+}
+
+#[test]
+fn newer_message_is_not_cleared_by_old_timer() {
+    let t0 = now();
+    let mut a = app();
+    a.sync_finished("sync done".into());
+    a.expire_message(t0);
+    a.handle_key(key('a'));
+    a.expire_message(t0 + chrono::Duration::seconds(60));
+    assert_eq!(a.message.as_deref(), Some("edit alerts: not available yet"));
+}
