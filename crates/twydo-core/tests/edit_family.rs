@@ -174,6 +174,32 @@ fn member_copy_refusals() {
     );
 }
 
+/// r1 with its JSON `key` set to its own UID.
+fn r1_naming_itself(key: &str) -> Calendar {
+    let mut cal = parse(&fixture(L1, "04-reopen-child", R1)).unwrap();
+    let mut m = meta(&cal);
+    m.set_str(key, R1);
+    let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("X-2DOAPP-METADATA")
+        .unwrap()
+        .set_value(&m.encode());
+    cal
+}
+
+#[test]
+fn member_copy_refused_when_metadata_names_itself() {
+    for key in ["RUID", "uid"] {
+        let cal = r1_naming_itself(key);
+        assert_eq!(meta(&cal).get_str(key), Some(R1));
+        let err = member_copy(&cal, R1_COPY, R_COPY, t0(), t0()).unwrap_err();
+        assert_eq!(
+            unsupported(&err),
+            "copying an item that refers to itself is not verified yet",
+            "{key}"
+        );
+    }
+}
+
 #[test]
 fn moving_without_parent_keeps_related_to() {
     // `None` leaves the parent link as it is (the store decides what a lone move means).
