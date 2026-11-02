@@ -4,10 +4,13 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 **macOS**. Tasks are stored as standard iCalendar (`VTODO`) and synced through CalDAV, so the
 2Do iPhone app keeps working against the same data. Command: `tdo`.
 
-Status: **implementation in progress** (plans in `docs/superpowers/plans/`). Plan 1 built the
-phase-0 compatibility-gate kit and a read-only `tdo` (TUI, `export-json`, `check`); the phase-0 CalDAV
-compatibility gate has passed (see [`docs/phase0/README.md`](docs/phase0/README.md)), so writable work
-can start.
+Status: **implementation in progress** (plans in `docs/superpowers/plans/`). The phase-0 CalDAV
+compatibility gate has passed (see [`docs/phase0/README.md`](docs/phase0/README.md)). Done so far:
+a read-only foundation (`export-json`, `check`, the TUI), the writable core (`tdo op`), the sync
+runner with conflict handling (`tdo sync`, [`docs/sync.md`](docs/sync.md)) and editing in the TUI
+([`docs/tui.md`](docs/tui.md)). Not yet: adding tasks in the TUI, the notifier, manual order and
+list management. Writes the compatibility matrix has not verified (`compat/matrix.toml`) are
+refused with a reason, which today includes completing many repeating tasks.
 
 ## Start here
 
