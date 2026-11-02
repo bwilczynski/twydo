@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-cancelled-checklist
+SUMMARY:Synthetic cancelled checklist
+STATUS:CANCELLED
+X-2DOAPP-METADATA:@tasktype:checklist
+END:VTODO
+END:VCALENDAR

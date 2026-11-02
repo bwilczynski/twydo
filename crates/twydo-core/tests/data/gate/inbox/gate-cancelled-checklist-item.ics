@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-cancelled-checklist-item
+SUMMARY:Synthetic item of a cancelled checklist
+STATUS:COMPLETED
+COMPLETED:20261101T120000Z
+RELATED-TO:gate-cancelled-checklist
+END:VTODO
+END:VCALENDAR

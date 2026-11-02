@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-broken-child
+SUMMARY:Synthetic child of a missing parent
+STATUS:NEEDS-ACTION
+RELATED-TO:gate-missing
+END:VTODO
+END:VCALENDAR

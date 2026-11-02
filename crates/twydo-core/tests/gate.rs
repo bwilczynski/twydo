@@ -552,6 +552,40 @@ fn embedded_matrix_allows_family_baselines() {
 }
 
 #[test]
+fn unknown_task_type_and_broken_link_refused() {
+    let s = snap();
+    let m = fam();
+    let typed = "this 2Do task type is not verified yet";
+    for (uid, reason) in [
+        ("gate-typed", typed),
+        ("gate-typed-child", typed),
+        ("gate-broken-child", "broken parent link"),
+    ] {
+        assert_eq!(
+            task_cases(&s, idx(&s, uid)),
+            Err(Blocked(reason.into())),
+            "{uid}"
+        );
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &complete(uid), today()),
+            blocked(reason),
+            "{uid}"
+        );
+    }
+    // The typed child refuses its parent's family ops too.
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-typed-project"),
+            today()
+        ),
+        blocked(typed)
+    );
+}
+
+#[test]
 fn single_child_move_and_delete_blocked() {
     let s = snap();
     let m = fam();
@@ -578,6 +612,16 @@ fn single_child_move_and_delete_blocked() {
             &m,
             WriteMode::Test,
             &reopen("gate-done-project-child"),
+            today()
+        ),
+        blocked("reopening an item of a completed project or checklist is not verified yet")
+    );
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &reopen("gate-cancelled-checklist-item"),
             today()
         ),
         blocked("reopening an item of a completed project or checklist is not verified yet")
