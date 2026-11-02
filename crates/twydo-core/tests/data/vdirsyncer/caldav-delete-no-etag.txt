@@ -1,0 +1,16 @@
+Syncing twydo/c1
+Syncing twydo/c2
+Syncing twydo/c3
+Syncing twydo/c4
+Syncing twydo/c5
+Syncing twydo/c6
+Syncing twydo/c7
+Syncing twydo/c8
+Syncing twydo/c9
+Syncing twydo/c10
+Syncing twydo/c11
+Syncing twydo/c12
+Syncing twydo/c13
+Syncing twydo/c14
+Deleting item u5 from twydo_remote/c13
+warning: Deleting an item with no etag.

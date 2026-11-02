@@ -1,0 +1,16 @@
+Syncing twydo/c1
+Syncing twydo/c2
+Syncing twydo/c3
+Syncing twydo/c4
+Syncing twydo/c5
+Syncing twydo/c6
+Syncing twydo/c7
+Syncing twydo/c8
+Syncing twydo/c9
+Syncing twydo/c10
+Syncing twydo/c11
+Syncing twydo/c12
+Syncing twydo/c13
+Syncing twydo/c14
+error: twydo/c14: Storage "twydo_local/c14" was completely emptied. If you want to delete ALL entries on BOTH sides,then use `vdirsyncer sync --force-delete twydo/c14`. Otherwise delete the files for twydo/c14 in your status directory.
+Copying (uploading) item u9 to twydo_remote/c13

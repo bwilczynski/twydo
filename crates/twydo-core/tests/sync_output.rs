@@ -179,3 +179,118 @@ fn collection_name_containing_to_and_from() {
         ]
     );
 }
+
+fn all_collections() -> BTreeSet<String> {
+    (1..=14).map(|i| format!("c{i}")).collect()
+}
+
+#[test]
+fn caldav_hook_conflict() {
+    let o = fx("caldav-hook-conflict");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(o.conflict_items, vec!["u1"]);
+    assert!(o.transfers.is_empty());
+    assert!(o.errors.is_empty() && o.unattributed.is_empty() && o.unhooked.is_empty());
+}
+
+#[test]
+fn caldav_same_content() {
+    let o = fx("caldav-same-content");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(o.conflict_items, vec!["u2"]);
+    assert_eq!(
+        o.transfers,
+        vec![
+            t(Action::Upload, "u3", "twydo_local", "c13"),
+            t(Action::Upload, "u4", "twydo_remote", "c13"),
+        ]
+    );
+    assert!(o.errors.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_delete_vs_edit_local() {
+    let o = fx("caldav-delete-vs-edit-local");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(
+        o.transfers,
+        vec![t(Action::Upload, "u5", "twydo_local", "c13")]
+    );
+    assert!(o.conflict_items.is_empty() && o.errors.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_delete_no_etag() {
+    let o = fx("caldav-delete-no-etag");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(
+        o.transfers,
+        vec![t(Action::Delete, "u5", "twydo_remote", "c13")]
+    );
+    assert!(o.conflict_items.is_empty() && o.errors.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_delete_vs_edit_remote() {
+    let o = fx("caldav-delete-vs-edit-remote");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(
+        o.transfers,
+        vec![t(Action::Upload, "u6", "twydo_remote", "c13")]
+    );
+    assert!(o.conflict_items.is_empty() && o.errors.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_emptied_remote() {
+    let o = fx("caldav-emptied-remote");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(o.emptied.len(), 1);
+    assert_eq!(o.emptied["c14"], "twydo_remote");
+    assert_eq!(o.errors.len(), 1);
+    assert!(o.errors["c14"][0].starts_with("Storage \"twydo_remote/c14\" was completely emptied."));
+    assert!(o.transfers.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_emptied_local() {
+    let o = fx("caldav-emptied-local");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(o.emptied.len(), 1);
+    assert_eq!(o.emptied["c14"], "twydo_local");
+    assert_eq!(o.errors.len(), 1);
+    assert_eq!(
+        o.transfers,
+        vec![t(Action::Upload, "u9", "twydo_remote", "c13")]
+    );
+    assert!(o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_offline_attributes_every_collection() {
+    let o = fx("caldav-offline");
+    assert_eq!(o.synced, all_collections());
+    assert_eq!(
+        o.errors.keys().cloned().collect::<BTreeSet<_>>(),
+        all_collections()
+    );
+    for (coll, lines) in &o.errors {
+        assert_eq!(lines.len(), 2, "{coll}");
+        assert!(
+            lines[0].starts_with("Unknown error occurred: Cannot connect to host 127.0.0.1:9"),
+            "{coll}"
+        );
+        assert_eq!(lines[1], "Use `-vdebug` to see the full traceback.");
+    }
+    assert!(o.emptied.is_empty() && o.transfers.is_empty() && o.unattributed.is_empty());
+}
+
+#[test]
+fn caldav_config_changed_is_unattributed() {
+    let o = fx("caldav-config-changed");
+    assert_eq!(
+        o.unattributed,
+        vec!["Detected change in config file, please run `vdirsyncer discover twydo`."]
+    );
+    assert!(o.synced.is_empty() && o.errors.is_empty() && o.transfers.is_empty());
+}
