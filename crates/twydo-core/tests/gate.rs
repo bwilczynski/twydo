@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
-use twydo_core::gate::{Blocked, check, task_case};
+use twydo_core::gate::{Blocked, Cases, check, task_cases};
 use twydo_core::views::Snapshot;
 
 const ALL_OPS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
@@ -258,28 +258,261 @@ fn task_blocked_reason_wins() {
     );
 }
 
+/// `full()` plus every family case, fully verified.
+fn fam() -> Matrix {
+    cases(
+        &[
+            "one-time",
+            "monthly",
+            "yearly",
+            "date-only",
+            "timed",
+            "start-date",
+            "checklist",
+            "project",
+            "recurring-project",
+            "project-recurring-child",
+        ],
+        "pass",
+        "pass",
+        &["months-day-1-28", "years"],
+    )
+}
+
+fn cs(own: &'static str, family: Option<&'static str>) -> Result<Cases, Blocked> {
+    Ok(Cases { own, family })
+}
+
 #[test]
-fn project_and_checklist_blocked() {
+fn family_cases() {
     let s = snap();
-    let m = full();
-    let reason = "projects and checklists cannot be edited yet";
-    for uid in [
-        "gate-project",
-        "gate-project-child",
-        "gate-checklist",
-        "gate-checklist-item",
-        "gate-monthly-project",
-    ] {
+    let at = |uid: &str| task_cases(&s, idx(&s, uid));
+    assert_eq!(at("gate-date"), cs("one-time", None));
+    assert_eq!(at("gate-monthly"), cs("monthly", None));
+    assert_eq!(at("gate-yearly"), cs("yearly", None));
+    assert_eq!(at("gate-checklist"), cs("one-time", Some("checklist")));
+    assert_eq!(at("gate-checklist-item"), cs("one-time", Some("checklist")));
+    assert_eq!(at("gate-project"), cs("one-time", Some("project")));
+    assert_eq!(at("gate-project-child"), cs("one-time", Some("project")));
+    assert_eq!(
+        at("gate-project-repeating-child"),
+        cs("monthly", Some("project-recurring-child"))
+    );
+    assert_eq!(
+        at("gate-monthly-project"),
+        cs("monthly", Some("recurring-project"))
+    );
+    assert_eq!(
+        at("gate-monthly-project-child"),
+        cs("one-time", Some("recurring-project"))
+    );
+    // A completed project without RRULE (like a recurring project's copy) is a plain project.
+    assert_eq!(at("gate-done-project"), cs("one-time", Some("project")));
+}
+
+const NESTED: &str = "nested projects and checklists are not verified yet";
+
+#[test]
+fn family_refusals() {
+    let s = snap();
+    let m = fam();
+    let refused = [
+        ("gate-nested", NESTED),
+        ("gate-nested-child", NESTED),
+        ("gate-nested-grandchild", NESTED),
+        (
+            "gate-monthly-checklist",
+            "repeating checklists are not verified yet",
+        ),
+        (
+            "gate-monthly-checklist-item",
+            "repeating checklists are not verified yet",
+        ),
+        (
+            "gate-checklist-repeating-item",
+            "repeating checklists are not verified yet",
+        ),
+        (
+            "gate-recurring-repeating-child",
+            "a repeating task inside a repeating project is not verified yet \
+             (project-child-own-recurrence)",
+        ),
+        (
+            "gate-plain-parent",
+            "subtasks of a plain task are not verified yet",
+        ),
+        (
+            "gate-plain-child",
+            "subtasks of a plain task are not verified yet",
+        ),
+    ];
+    for (uid, reason) in refused {
+        assert_eq!(
+            task_cases(&s, idx(&s, uid)),
+            Err(Blocked(reason.into())),
+            "{uid}"
+        );
         assert_eq!(
             check(&s, &m, WriteMode::Test, &complete(uid), today()),
             blocked(reason),
             "{uid}"
         );
-        assert_eq!(task_case(&s, idx(&s, uid)), Err(Blocked(reason.into())));
     }
-    assert_eq!(task_case(&s, idx(&s, "gate-date")), Ok("one-time"));
-    assert_eq!(task_case(&s, idx(&s, "gate-monthly")), Ok("monthly"));
-    assert_eq!(task_case(&s, idx(&s, "gate-yearly")), Ok("yearly"));
+}
+
+#[test]
+fn family_ops_check_own_and_family_rows() {
+    let s = snap();
+    let m = fam();
+    for uid in [
+        "gate-checklist",
+        "gate-checklist-item",
+        "gate-project",
+        "gate-project-child",
+        "gate-project-repeating-child",
+        "gate-monthly-project",
+        "gate-monthly-project-child",
+    ] {
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &complete(uid), today()),
+            Ok(()),
+            "{uid}"
+        );
+    }
+    // The family row is checked as well as the own row.
+    let m = full();
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-project-child"),
+            today()
+        ),
+        blocked("complete for project tasks is not verified yet (iphone_baseline)")
+    );
+    // The own row of a repeating child is checked before its family row.
+    let m = cases(
+        &["project-recurring-child"],
+        "pass",
+        "pass",
+        &["months-day-1-28"],
+    );
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-project-repeating-child"),
+            today()
+        ),
+        blocked("complete for monthly tasks is not verified yet (iphone_baseline)")
+    );
+    // An unverified family row blocks the op: editing in a recurring project.
+    let m = matrix(
+        &[("one-time", "edit"), ("recurring-project", "complete")],
+        "pass",
+        "pass",
+        &[],
+    );
+    let op = edit(
+        "gate-monthly-project-child",
+        vec![Change::Summary("Renamed".into())],
+    );
+    assert_eq!(
+        check(&s, &m, WriteMode::Test, &op, today()),
+        blocked("edit for recurring-project tasks is not verified yet (iphone_baseline)")
+    );
+}
+
+#[test]
+fn parent_op_refused_when_child_blocked() {
+    let s = snap();
+    let m = fam();
+    // A second task with a child's UID.
+    let mut dup = s.clone();
+    let child = dup.tasks[idx(&s, "gate-project-child")].clone();
+    dup.tasks.push(child);
+    let mv = Op::Move {
+        uid: "gate-project".into(),
+        to: "errands".into(),
+    };
+    for op in [
+        complete("gate-project"),
+        reopen("gate-project"),
+        mv.clone(),
+        Op::Delete {
+            uid: "gate-project".into(),
+        },
+    ] {
+        assert_eq!(
+            check(&dup, &m, WriteMode::Test, &op, today()),
+            blocked("duplicate UID"),
+            "{op:?}"
+        );
+    }
+    // Editing the parent alone does not touch the children.
+    let op = edit("gate-project", vec![Change::Summary("Renamed".into())]);
+    assert_eq!(check(&dup, &m, WriteMode::Test, &op, today()), Ok(()));
+
+    let mut bad = s.clone();
+    let i = idx(&s, "gate-checklist-item");
+    bad.tasks[i].blocked = Some("unreadable 2Do metadata".into());
+    assert_eq!(
+        check(
+            &bad,
+            &m,
+            WriteMode::Test,
+            &complete("gate-checklist"),
+            today()
+        ),
+        blocked("unreadable 2Do metadata")
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &mv, today()), Ok(()));
+}
+
+#[test]
+fn single_child_move_and_delete_blocked() {
+    let s = snap();
+    let m = fam();
+    for uid in ["gate-project-child", "gate-checklist-item"] {
+        let mv = Op::Move {
+            uid: uid.into(),
+            to: "errands".into(),
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &mv, today()),
+            blocked("moving one item out of its project or checklist is not verified yet"),
+            "{uid}"
+        );
+        let del = Op::Delete { uid: uid.into() };
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &del, today()),
+            blocked("deleting one item of a project or checklist is not verified yet"),
+            "{uid}"
+        );
+    }
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &reopen("gate-done-project-child"),
+            today()
+        ),
+        blocked("reopening an item of a completed project or checklist is not verified yet")
+    );
+    // Reopening the completed project itself is a family op.
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &reopen("gate-done-project"),
+            today()
+        ),
+        Ok(())
+    );
 }
 
 #[test]
@@ -554,22 +787,6 @@ fn history_copy_reopen_mode_aware() {
     assert_eq!(
         check(&s, &m, WriteMode::Verified, &op, today()),
         blocked("reopening a repeat's history copy is not verified yet")
-    );
-}
-
-/// Ruling R3: only a row that stays unverified (projects) is asserted on the real matrix.
-#[test]
-fn embedded_matrix_blocks_projects() {
-    let s = snap();
-    assert_eq!(
-        check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Verified,
-            &complete("gate-project"),
-            today()
-        ),
-        blocked("projects and checklists cannot be edited yet")
     );
 }
 

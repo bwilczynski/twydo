@@ -18,7 +18,7 @@ use crate::model::{Status, Task, TaskKind};
 use crate::vdir::{Collection, LoadReport};
 
 const BROKEN_PARENT: &str = "broken parent link";
-const UNTYPED_PARENT: &str = "parent type not encoded; shown as project";
+pub(crate) const UNTYPED_PARENT: &str = "parent type not encoded; shown as project";
 const UNSUPPORTED_REPEAT: &str = "unsupported repeat rule";
 
 /// Loaded tasks plus the parent/child structure derived from `RELATED-TO`.
@@ -112,6 +112,14 @@ impl Snapshot {
 
     pub fn parent(&self, idx: usize) -> Option<usize> {
         self.parents[idx]
+    }
+
+    /// How many children of `idx` are neither completed nor cancelled.
+    pub fn open_items(&self, idx: usize) -> usize {
+        self.children[idx]
+            .iter()
+            .filter(|&&c| self.tasks[c].status == Status::Open)
+            .count()
     }
 
     /// The bytes of the file at `path` as loaded (a task's `path`).
