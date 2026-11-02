@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-project-weekly-child
+SUMMARY:Synthetic weekly project child
+STATUS:NEEDS-ACTION
+DUE;VALUE=DATE:20261110
+RRULE:FREQ=WEEKLY
+RELATED-TO:gate-project-weekly
+END:VTODO
+END:VCALENDAR

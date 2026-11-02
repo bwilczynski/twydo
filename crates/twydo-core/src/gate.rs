@@ -7,12 +7,14 @@
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
-//!    so each child must pass the same lookup (or the op is refused with the child's reason);
-//!    moving or deleting one item alone, or reopening an item of a completed parent, is refused;
+//!    so each child must pass the same lookup, then have cases (rule 2), or the op is refused
+//!    with the child's reason; moving or deleting one item alone, or reopening an item of a
+//!    completed parent, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
 //!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
-//!    none (nested families, repeating checklists, a repeating child of a repeating project,
-//!    children of a plain task);
+//!    none: a broken parent link, an unknown 2Do task type (JSON `TaskType` other than 0–2),
+//!    nested families, repeating checklists, a repeating child of a repeating project,
+//!    children of a plain task, or the repeat refusals of the own case;
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
 //!    attribute cases (with rule 6, the only rules the write mode changes);
 //! 4. the `[[rule]]` verdicts of a repeating task;
@@ -227,8 +229,9 @@ fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
     }
 }
 
-/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`]; an item
-/// moved, deleted or reopened (under a completed parent) on its own is not verified.
+/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`] and then
+/// have cases ([`task_cases`]); an item moved, deleted or reopened (under a completed parent)
+/// on its own is not verified.
 fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
         match op {
@@ -254,6 +257,9 @@ fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
     ) {
         for &c in snap.children(idx) {
             lookup(snap, &snap.tasks[c].uid)?;
+        }
+        for &c in snap.children(idx) {
+            task_cases(snap, c)?;
         }
     }
     Ok(())
