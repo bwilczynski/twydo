@@ -8,14 +8,32 @@
 //! child here is a supported shape. Cancelled children are left as they are by complete and
 //! reopen, and go with the family on move and delete. A checklist's new date also removes
 //! its items' own dates (`plan6-twydo-list1/01-phone-edit`).
+//!
+//! The loaded files' bytes do not show an item a sync added after the snapshot, so a family
+//! op also rescans the parent's list under the lock ([`Store::check_family`]) and is refused
+//! if the parent has an item it did not load.
+
+use std::collections::BTreeSet;
+use std::fs;
+use std::io;
 
 use chrono::{DateTime, Utc};
 
 use super::{Plan, Store, Target, WriteError, create};
+
+/// A family as loaded: the parent's list, its UID and the vdir-relative files of the parent
+/// and every item.
+pub(super) struct Family {
+    collection: String,
+    parent_uid: String,
+    loaded: BTreeSet<String>,
+}
+use crate::edit::Op;
 use crate::edit::{
     Change, apply_changes, complete_member, complete_one_time, complete_recurring,
     drop_member_dates, member_copy, moved_copy, new_uid, reopen_member, reopen_one_time,
 };
+use crate::ical;
 use crate::model::Status;
 use crate::views::Snapshot;
 
@@ -27,6 +45,70 @@ struct Child {
 }
 
 impl Store {
+    /// The family `op` acts on as a whole (the routing of `Store::plan`), or `None`.
+    pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
+        let uid = match op {
+            Op::Complete { uid }
+            | Op::Reopen { uid }
+            | Op::Move { uid, .. }
+            | Op::Delete { uid } => uid,
+            Op::Edit { uid, .. } => uid,
+            Op::Create(_) => return Ok(None),
+        };
+        let Some(idx) = snap.find(uid).filter(|&i| !snap.children(i).is_empty()) else {
+            return Ok(None);
+        };
+        if matches!(op, Op::Edit { .. }) && !crate::gate::checklist_date_change(snap, idx, op) {
+            return Ok(None);
+        }
+        let mut loaded = BTreeSet::new();
+        for &i in std::iter::once(&idx).chain(snap.children(idx)) {
+            loaded.insert(self.rel(&snap.tasks[i].path)?);
+        }
+        Ok(Some(Family {
+            collection: snap.tasks[idx].collection.clone(),
+            parent_uid: uid.clone(),
+            loaded,
+        }))
+    }
+
+    /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
+    /// item of the parent that was not loaded. The caller holds the lock.
+    pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
+        let dir = self.vdir.join(&f.collection);
+        for e in fs::read_dir(&dir)? {
+            let path = e?.path();
+            if path.extension().is_none_or(|x| x != "ics") {
+                continue;
+            }
+            let rel = self.rel(&path)?;
+            if f.loaded.contains(&rel) {
+                continue;
+            }
+            let bytes = match fs::read(&path) {
+                Ok(b) => b,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e.into()),
+            };
+            let needle = f.parent_uid.as_bytes();
+            if !bytes.windows(needle.len()).any(|w| w == needle) {
+                continue;
+            }
+            // Mentions the parent: an item of it, or unreadable (then refuse to be safe).
+            let joined = match ical::parse(&bytes) {
+                Ok(cal) => cal.root.children_named("VTODO").any(|t| {
+                    t.props_named("RELATED-TO")
+                        .any(|p| p.value.trim() == f.parent_uid)
+                }),
+                Err(_) => true,
+            };
+            if joined {
+                return Err(WriteError::Stale(path));
+            }
+        }
+        Ok(())
+    }
+
     fn children(&self, snap: &Snapshot, idx: usize) -> Result<Vec<Child>, WriteError> {
         snap.children(idx)
             .iter()

@@ -504,3 +504,53 @@ fn checklist_date_change_refused_when_item_changed() {
     }
     assert_eq!(env.files(), before);
 }
+
+/// A sync adds an item to K after the snapshot was loaded: a copy of k3 under a new UID.
+fn add_item_behind_snapshot(env: &Env) -> std::path::PathBuf {
+    let new = "0000000000000000000000000000beef";
+    let text = fs::read_to_string(env.file(K3))
+        .unwrap()
+        .replace(K3, new)
+        .replace("SUMMARY:k3", "SUMMARY:k4");
+    let path = env.file(new);
+    fs::write(&path, text).unwrap();
+    path
+}
+
+#[test]
+fn family_op_refused_when_an_item_joined_after_load() {
+    for op in [
+        Op::Delete { uid: K.into() },
+        Op::Move {
+            uid: K.into(),
+            to: "list2".into(),
+        },
+        Op::Complete { uid: K.into() },
+    ] {
+        let (env, mut store) = env();
+        let snap = env.snap();
+        let added = add_item_behind_snapshot(&env);
+        let before = env.files();
+        match store.apply(&snap, &op, now()) {
+            Err(WriteError::Stale(p)) => assert_eq!(p, added, "{op:?}"),
+            other => panic!("{op:?}: expected Stale, got {other:?}"),
+        }
+        assert_eq!(env.files(), before, "{op:?}");
+        assert!(env.journal().iter().all(|e| e.stage != Stage::Applied));
+    }
+}
+
+#[test]
+fn family_op_runs_when_unrelated_files_appear() {
+    let (env, mut store) = env();
+    let snap = env.snap();
+    // A new task in the same list that is not K's item does not block the op.
+    let text = fs::read_to_string(env.file(K3))
+        .unwrap()
+        .replace(K3, "0000000000000000000000000000cafe")
+        .replace(&format!("RELATED-TO:{K}"), &format!("RELATED-TO:{P}"));
+    fs::write(env.file("0000000000000000000000000000cafe"), text).unwrap();
+    store
+        .apply(&snap, &Op::Delete { uid: K.into() }, now())
+        .unwrap();
+}
