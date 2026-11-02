@@ -960,3 +960,67 @@ fn upload_of_created_then_edited_task_is_not_a_conflict() {
     assert!(r.new_conflicts.is_empty(), "{r:?}");
     assert_eq!(r.confirmed, vec![create.id.clone(), edit.id.clone()]);
 }
+
+#[test]
+fn metasync_error_is_the_first_error_line_not_the_first_line() {
+    let mut fx = Fx::new(
+        "if [ \"$1\" = metasync ]; then\n\
+         echo 'Metasyncing twydo/c1' >&2\n\
+         echo 'Metasyncing twydo/c2' >&2\n\
+         echo 'error: twydo/c2: Metasync failed' >&2\n\
+         echo 'error: Use `-vdebug` to see the full traceback.' >&2\n\
+         exit 1\n\
+         fi\n\
+         echo 'Syncing twydo/c1' >&2\nexit 0",
+    );
+    fx.sync_mut().metasync = true;
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(
+        r.metasync_error.as_deref(),
+        Some("twydo/c2: Metasync failed")
+    );
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(
+        st.metasync_error.as_deref(),
+        Some("twydo/c2: Metasync failed")
+    );
+}
+
+#[test]
+fn metasync_failure_without_error_line_reports_first_nonempty_line() {
+    let mut fx = Fx::new(
+        "if [ \"$1\" = metasync ]; then\n\
+         echo >&2\necho 'Metasyncing twydo/c1' >&2\nexit 1\nfi\n\
+         exit 0",
+    );
+    fx.sync_mut().metasync = true;
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(r.metasync_error.as_deref(), Some("Metasyncing twydo/c1"));
+}
+
+#[test]
+fn critical_line_counts_as_metasync_error() {
+    let mut fx = Fx::new(
+        "if [ \"$1\" = metasync ]; then\n\
+         echo 'Metasyncing twydo/c1' >&2\n\
+         echo 'critical: Detected change in config file' >&2\nexit 1\nfi\n\
+         exit 0",
+    );
+    fx.sync_mut().metasync = true;
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(
+        r.metasync_error.as_deref(),
+        Some("Detected change in config file")
+    );
+}
+
+#[test]
+fn last_error_ignores_syncing_progress_lines() {
+    let fx = Fx::new(
+        "echo 'Syncing twydo/c1' >&2\necho 'Syncing twydo/c2' >&2\n\
+         echo 'error: twydo/c2: boom' >&2\nexit 1",
+    );
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.last_error.as_deref(), Some("c2: boom"));
+}

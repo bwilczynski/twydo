@@ -462,17 +462,22 @@ fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
     let sync = env.sync;
     let args = ["metasync".to_string(), sync.pair.clone()];
     let ran = run_command(env, &args)?;
-    let first_line = || {
-        ran.stderr
-            .lines()
-            .map(|l| l.strip_prefix("error: ").unwrap_or(l).trim())
-            .find(|l| !l.is_empty())
-            .map(str::to_string)
+    // The first `error:`/`critical:` line (progress lines like `Metasyncing …` come first),
+    // else the first non-empty line.
+    let message = || {
+        let lines = || ran.stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+        lines()
+            .find_map(|l| {
+                l.strip_prefix("error: ")
+                    .or_else(|| l.strip_prefix("critical: "))
+            })
+            .or_else(|| lines().next())
+            .map(|l| l.trim().to_string())
     };
     Ok(match &ran.outcome {
         Outcome::Exited(st) if st.success() => None,
         Outcome::Exited(st) => {
-            Some(first_line().unwrap_or_else(|| format!("metasync exited with {st}")))
+            Some(message().unwrap_or_else(|| format!("metasync exited with {st}")))
         }
         Outcome::TimedOut => Some(format!("metasync timed out after {} s", sync.timeout_secs)),
         Outcome::SpawnFailed(msg) => Some(msg.clone()),
