@@ -8,11 +8,11 @@
 //!   copy-and-advance. The live task's due date moves to the next occurrence, and a completed
 //!   history copy with a new UID records the occurrence that was done.
 //!
-//! Only the captured repeat shape is supported: a date-only `DUE`, `RRULE` `FREQ=MONTHLY` or
+//! Only the captured repeat shape is supported: a date-only or floating-time `DUE`, `RRULE` `FREQ=MONTHLY` or
 //! `FREQ=YEARLY` with an optional `INTERVAL`, repeating from the due date. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
 
-use chrono::{DateTime, Datelike, Months, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveTime, Utc};
 
 use super::{
     EditError, Meta, has_own_dtstart, meta_of, set_date_prop, the_todo, touch, unsupported,
@@ -179,10 +179,36 @@ fn rule_text(r: &RRule) -> String {
     parts.join(";")
 }
 
-/// The next due date of a date-only repeat. Verified shape only: `FREQ=MONTHLY|YEARLY` with
-/// an optional `INTERVAL` and nothing else. A result on another day of the month (day 29–31
-/// or Feb 29, which the gate excludes) is refused rather than clamped.
-pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError> {
+/// `d` moved forward by `months`. A result on another day of the month (day 29-31 or Feb 29,
+/// which the gate excludes) is refused rather than clamped.
+pub fn shift_months(d: NaiveDate, months: u32) -> Result<NaiveDate, EditError> {
+    let next = d
+        .checked_add_months(Months::new(months))
+        .ok_or_else(|| unsupported("date is out of range"))?;
+    if next.day() != d.day() {
+        return Err(unsupported(format!(
+            "the next date would not fall on day {} of the month",
+            d.day()
+        )));
+    }
+    Ok(next)
+}
+
+/// [`shift_months`] with the refusal worded for `what` ("due" or "start").
+fn shift_named(d: NaiveDate, months: u32, what: &str) -> Result<NaiveDate, EditError> {
+    shift_months(d, months).map_err(|e| match e {
+        EditError::Unsupported(m) if m.starts_with("the next date") => unsupported(format!(
+            "next {what} date after {d} would not fall on day {} of the month",
+            d.day()
+        )),
+        EditError::Unsupported(_) => unsupported(format!("next {what} date is out of range")),
+        e => e,
+    })
+}
+
+/// The months one repeat interval spans. Verified shape only: `FREQ=MONTHLY|YEARLY` with an
+/// optional `INTERVAL` and nothing else.
+fn rule_months(rule: &RRule) -> Result<u32, EditError> {
     let plain = rule.by_day.is_empty()
         && rule.by_month_day.is_empty()
         && rule.by_month.is_empty()
@@ -194,23 +220,17 @@ pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError> {
         Freq::Yearly if plain => rule.interval.checked_mul(12),
         _ => None,
     };
-    let shape = || {
+    months.filter(|&m| m >= 1).ok_or_else(|| {
         unsupported(format!(
             "repeat rule shape not verified: {}",
             rule_text(rule)
         ))
-    };
-    let months = months.filter(|&m| m >= 1).ok_or_else(shape)?;
-    let next = due
-        .checked_add_months(Months::new(months))
-        .ok_or_else(|| unsupported("next due date is out of range"))?;
-    if next.day() != due.day() {
-        return Err(unsupported(format!(
-            "next due date after {due} would not fall on day {} of the month",
-            due.day()
-        )));
-    }
-    Ok(next)
+    })
+}
+
+/// The next due date of a date-only repeat (see [`rule_months`] and [`shift_months`]).
+pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError> {
+    shift_named(due, rule_months(rule)?, "due")
 }
 
 /// The JSON repeat fields must describe the same verified rule as `RRULE`: repeat from the
@@ -248,7 +268,8 @@ fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<(), EditError> {
 /// Complete a repeating task the way 2Do does. Returns (the advanced live resource, the
 /// completed history copy with UID `copy_uid`); `cal` is not changed.
 ///
-/// - Live: `DUE` and its `DTSTART` mirror move to [`next_due`]; stamps touched.
+/// - Live: `DUE` and its `DTSTART` mirror move by one interval (a floating time keeps its
+///   time), as does JSON `StartDate`; stamps touched.
 /// - Copy: cloned from `cal`; `UID` = `copy_uid`, stamps touched, completed (`STATUS`,
 ///   `PERCENT-COMPLETE`, `COMPLETED`), `RRULE` removed, JSON `RecurrenceValue`,
 ///   `RecurrenceType`, `RecurrenceFrom` = 0, `RUID` kept (set to the original UID if missing
@@ -282,20 +303,27 @@ pub fn complete_recurring(
         .prop("DUE")
         .ok_or_else(|| unsupported("completing a repeat without a due date is not verified"))?;
     let due = match parse_date_time(due_prop) {
-        Ok(IcalDateTime::Date(d)) => d,
+        Ok(v @ (IcalDateTime::Date(_) | IcalDateTime::Floating(_))) => v,
         Ok(_) => {
             return Err(unsupported(
-                "completing a repeat with a due time is not verified",
+                "completing a repeat with a zoned due time is not verified",
             ));
         }
         Err(e) => return Err(unsupported(format!("unreadable due date: {e}"))),
     };
-    let next = next_due(due, &rule).map_err(|e| match e {
+    let months = rule_months(&rule).map_err(|e| match e {
         EditError::Unsupported(m) if m.starts_with("repeat rule shape") => {
             unsupported(format!("repeat rule shape not verified: {raw}"))
         }
         e => e,
     })?;
+    let next = match &due {
+        IcalDateTime::Floating(t) => {
+            IcalDateTime::Floating(shift_named(t.date(), months, "due")?.and_time(t.time()))
+        }
+        IcalDateTime::Date(d) => IcalDateTime::Date(shift_named(*d, months, "due")?),
+        _ => unreachable!("zoned due times are refused above"),
+    };
     let meta = match meta_of(todo) {
         Meta::Json(m) => m,
         _ => {
@@ -312,11 +340,24 @@ pub fn complete_recurring(
         ));
     }
 
-    let v = IcalDateTime::Date(next);
-    if mirror {
-        set_date_prop(todo, "DTSTART", &v, &[]);
+    // JSON `StartDate` (UTC midnight, H9) moves by one interval too (H11).
+    let mut live_meta = meta.clone();
+    if let Some(secs) = meta.get_i64("StartDate") {
+        let start = DateTime::from_timestamp(secs, 0)
+            .map(|t| t.date_naive())
+            .ok_or_else(|| unsupported("2Do start date is out of range"))?;
+        let next_start = shift_named(start, months, "start")?;
+        live_meta.set_i64(
+            "StartDate",
+            next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
+        );
     }
-    set_date_prop(todo, "DUE", &v, &[]);
+
+    if mirror {
+        set_date_prop(todo, "DTSTART", &next, &[]);
+    }
+    set_date_prop(todo, "DUE", &next, &[]);
+    write_meta(todo, Some(&meta), &live_meta);
     touch(todo, now);
 
     let mut copy = cal.clone();
@@ -330,6 +371,9 @@ pub fn complete_recurring(
     let mut m = meta.clone();
     for key in ["RecurrenceValue", "RecurrenceType", "RecurrenceFrom"] {
         m.set_i64(key, 0);
+    }
+    if m.get_str("uid") == Some(uid.as_str()) {
+        m.set_str("uid", copy_uid);
     }
     if m.get_str("RUID").is_none_or(str::is_empty) {
         m.set_str("RUID", &uid);

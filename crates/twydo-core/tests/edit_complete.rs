@@ -19,6 +19,16 @@ const MONTHLY_COPY: &str = "6f19ef6b404644a38451520da5804e9f";
 const YEARLY: &str = "c3e7283649dd413abf3f73745121bce5";
 const YEARLY_COPY: &str = "8c164aa9120c42df846a5680e1788e5f";
 const L1: &str = "plan4-list1";
+const P6: &str = "plan6-list1";
+const L: &str = "441bfb76e9e14d93a024aceaebee05e7";
+const L_COPY1: &str = "e6e12fe5069f4f7895a8d2f61f34e8fb";
+const L_COPY2: &str = "8a33f149c12143b183bcdbf446cb5268";
+const S: &str = "06c9664dd9144be185b7436957745800";
+const S_COPY: &str = "108f857c7247424bae7a6a82fee5c778";
+const T: &str = "094c6d401ec74cfd848329c3359e2283";
+const T_COPY: &str = "cd6ab25e6f2643ec827a61ce798a119d";
+const Y: &str = "d27d9dc0b8954b9687896bf711797856";
+const Y_COPY: &str = "602bb1883b974d728f4dff6d8e5f8da0";
 
 fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -273,6 +283,7 @@ fn check_copy_and_advance(
     uid: &str,
     copy_uid: &str,
     live_due: &str,
+    changed: &[&str],
 ) {
     let ctx = format!("{scenario} {from}->{to} {uid}");
     let input = fixture(scenario, from, uid);
@@ -294,22 +305,37 @@ fn check_copy_and_advance(
         &live_out,
         &want_live,
         now,
-        &["DTSTART", "DUE"],
+        changed,
     );
 
-    // Copy: same properties as 2Do's history copy (COMPLETED = now).
+    // Copy: same properties as 2Do's history copy (COMPLETED and the stamps = now; 2Do
+    // stamps the copy and the live task a second apart in some captures).
     let copy = parse(&serialize(&copy)).unwrap();
-    assert_eq!(
-        sorted(lines(&copy)),
-        sorted(with_completed_now(lines(&want_copy), now)),
-        "{ctx}: copy"
-    );
+    let mut want = with_completed_now(lines(&want_copy), now);
+    for l in want.iter_mut().filter(|l| is_stamp(&l.1)) {
+        l.3 = stamp(now);
+    }
+    assert_eq!(sorted(lines(&copy)), sorted(want), "{ctx}: copy");
     assert_eq!(todo(&copy).prop("UID").unwrap().value, copy_uid);
+
+    // Child components (VALARM) are carried over untouched, live and copy.
+    let input_cal = parse(&input).unwrap();
+    let kids = &todo(&input_cal).children;
+    assert_eq!(&todo(&live).children, kids, "{ctx}: live children");
+    assert_eq!(&todo(&copy).children, kids, "{ctx}: copy children");
 }
 
 #[test]
 fn monthly_copy_and_advance_matches_2do_plan4() {
-    check_copy_and_advance(L1, "02-edit", "03-complete", E, E_COPY, "20270110");
+    check_copy_and_advance(
+        L1,
+        "02-edit",
+        "03-complete",
+        E,
+        E_COPY,
+        "20270110",
+        &["DTSTART", "DUE"],
+    );
 }
 
 #[test]
@@ -321,6 +347,7 @@ fn monthly_copy_and_advance_matches_2do() {
         MONTHLY,
         MONTHLY_COPY,
         "20261210",
+        &["DTSTART", "DUE"],
     );
     let evidence = parse(&fixture("rule-months-day-1-28", "02-complete", MONTHLY)).unwrap();
     assert_eq!(stamp(dtstamp(&evidence)), "20261101T121650Z");
@@ -335,6 +362,7 @@ fn yearly_copy_and_advance_matches_2do() {
         YEARLY,
         YEARLY_COPY,
         "20271115",
+        &["DTSTART", "DUE"],
     );
 }
 
@@ -451,10 +479,10 @@ fn complete_recurring_refuses_unverified_cases() {
             monthly_with(|s| s.replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=MONTHLY;BYMONTHDAY=10")),
         ),
         (
-            "timed due",
+            "UTC due time",
             monthly_with(|s| {
-                s.replace("DTSTART;VALUE=DATE:20261110", "DTSTART:20261110T090000")
-                    .replace("DUE;VALUE=DATE:20261110", "DUE:20261110T090000")
+                s.replace("DTSTART;VALUE=DATE:20261110", "DTSTART:20261110T090000Z")
+                    .replace("DUE;VALUE=DATE:20261110", "DUE:20261110T090000Z")
             }),
         ),
         (
@@ -525,4 +553,112 @@ fn copy_without_ruid_gets_original_uid() {
     let m = MetaJson::parse(&todo(&copy).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(m.get_str("RUID"), Some(MONTHLY));
     assert!(todo(&copy).prop("RRULE").is_none());
+}
+
+const META_ALL: &[&str] = &["DTSTART", "DUE", "X-2DOAPP-METADATA"];
+
+#[test]
+fn missed_monthly_advances_one_interval() {
+    let d = &["DTSTART", "DUE"];
+    check_copy_and_advance(
+        P6,
+        "02-edit",
+        "03-complete-child",
+        L,
+        L_COPY1,
+        "20260915",
+        d,
+    );
+    check_copy_and_advance(
+        P6,
+        "03-complete-child",
+        "04-reopen-child",
+        L,
+        L_COPY2,
+        "20261015",
+        d,
+    );
+}
+
+#[test]
+fn monthly_with_start_shifts_start_date() {
+    check_copy_and_advance(
+        P6,
+        "02-edit",
+        "03-complete-child",
+        S,
+        S_COPY,
+        "20270105",
+        META_ALL,
+    );
+}
+
+#[test]
+fn timed_monthly_with_start_and_alert_matches_2do() {
+    check_copy_and_advance(
+        P6,
+        "02-edit",
+        "03-complete-child",
+        T,
+        T_COPY,
+        "20270120T090000",
+        META_ALL,
+    );
+}
+
+#[test]
+fn timed_yearly_with_start_and_alert_matches_2do() {
+    check_copy_and_advance(
+        P6,
+        "02-edit",
+        "03-complete-child",
+        Y,
+        Y_COPY,
+        "20280228T090000",
+        META_ALL,
+    );
+}
+
+fn p6_text(uid: &str) -> String {
+    String::from_utf8(fixture(P6, "02-edit", uid)).unwrap()
+}
+
+#[test]
+fn zoned_due_time_is_refused() {
+    let t = p6_text(T);
+    for (due, start) in [
+        (
+            "DUE;TZID=Europe/Warsaw:20261220T090000",
+            "DTSTART;TZID=Europe/Warsaw:20261220T090000",
+        ),
+        ("DUE:20261220T080000Z", "DTSTART:20261220T080000Z"),
+    ] {
+        let s = t
+            .replace("DUE:20261220T090000", due)
+            .replace("DTSTART:20261220T090000", start);
+        let cal = parse(s.as_bytes()).unwrap();
+        let err = complete_recurring(&cal, now(), T_COPY).unwrap_err();
+        assert_eq!(
+            unsupported(&err),
+            "completing a repeat with a zoned due time is not verified",
+            "{due}"
+        );
+    }
+}
+
+#[test]
+fn start_on_day_31_is_refused() {
+    // StartDate 2026-10-31 (UTC midnight), due 2026-11-05.
+    let s = p6_text(S)
+        .replace(
+            "%22StartDate%22%3A1796083200",
+            "%22StartDate%22%3A1793404800",
+        )
+        .replace("20261205", "20261105");
+    let cal = parse(s.as_bytes()).unwrap();
+    let err = complete_recurring(&cal, now(), S_COPY).unwrap_err();
+    assert_eq!(
+        unsupported(&err),
+        "next start date after 2026-10-31 would not fall on day 31 of the month"
+    );
 }
