@@ -24,12 +24,9 @@ impl Manifest {
     pub fn load(state: &Path) -> io::Result<Manifest> {
         let path = manifest_path(state);
         match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map(Manifest).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("{}: {e}", path.display()),
-                )
-            }),
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map(Manifest)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Manifest::default()),
             Err(e) => Err(e),
         }

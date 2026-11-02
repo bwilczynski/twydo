@@ -48,6 +48,9 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     for p in &problems {
         eprintln!("tdo: {p}");
     }
+    for w in &report.warnings {
+        eprintln!("tdo: warning: {w}");
+    }
     for path in &report.unexpected {
         eprintln!("tdo: warning: {path} changed before its edit synced; the edit stays pending");
     }

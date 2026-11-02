@@ -407,6 +407,37 @@ fn edit_is_confirmed_after_sync() {
     assert!(p.conflicts().list().unwrap().is_empty());
 }
 
+/// A corrupt manifest costs only the automatic force: the run reconciles, warns, and
+/// rewrites the manifest.
+#[test]
+fn corrupt_manifest_warns_and_sync_completes() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    assert_eq!(p.tdo_sync().0, 0);
+    let manifest = p.vdir_state().join("sync/manifest.json");
+    fs::write(&manifest, "{ not json").unwrap();
+    let id = p.op(&["edit", "u1", "--title", "one-edited"]);
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains("tdo: warning: sync/manifest.json is unreadable ("),
+        "{err}"
+    );
+    assert!(
+        err.contains(
+            "emptied lists will not be applied automatically until the next sync rewrites it"
+        ),
+        "{err}"
+    );
+    assert!(p.synced(&id));
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+    assert_eq!(json["c1"].as_array().map(Vec::len), Some(3), "{json}");
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert!(!err.contains("manifest"), "{err}");
+}
+
 #[test]
 fn local_delete_vs_remote_edit_becomes_conflict() {
     require_vdirsyncer!();
