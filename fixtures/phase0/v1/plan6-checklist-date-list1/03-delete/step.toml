@@ -1,0 +1,5 @@
+scenario = "plan6-checklist-date-list1"
+step = "03-delete"
+device = "iphone"
+action = "phone: delete D (items with it); list emptied, synced with --force-delete"
+captured_at = "2026-11-02T19:50:44Z"

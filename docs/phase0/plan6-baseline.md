@@ -222,3 +222,31 @@ or another session.
   them in lists (spec). Issue #11.
 - **vdirsyncer "completely emptied"** came up after rounds 10 (list 2) and 11 (list 1);
   synced with `--force-delete`.
+
+# Checklist date change written by Twydo (edge case `checklist-item-dates`)
+
+Checks Twydo's version of round 01's finding: when a checklist's items carry their own copy of
+its date, a new checklist date also removes those copies. Same setup and capture commands as
+the Task 7 session; scenario `plan6-checklist-date-list1`, list `Twydo test`.
+
+| Round | Who | Actions | Check |
+|---|---|---|---|
+| 00-setup | 👤 | checklist `D` due 2026-12-10, then items `d1`, `d2` | 🤖 the items carry `DUE`/`DTSTART` 2026-12-10 (if not, re-create them in the other order: items first, then the date) |
+| 01-twydo-date | 🤖 | `tdo op edit <D> --due 2026-12-11` | 👤 `D` on Dec 11, `d1` and `d2` show no date of their own; 🤖 the items lost `DUE`/`DTSTART`, nothing else changed |
+| 02-phone-date | 👤 | `D` → date 2026-12-12 | 🤖 `export-json`: `D` on Dec 12, items unchanged and still linked |
+| 03-delete | 👤 | delete `D` | list empty |
+
+## Result
+
+Session 2026-11-02. Fixtures in `fixtures/phase0/v1/plan6-checklist-date-list1/`. **Pass**:
+edge case `checklist-item-dates` set to `pass`, so verified mode allows a new date-only due on a
+checklist whose items carry dates.
+
+- **00:** with `D`'s date set before the items were added, `d1` and `d2` got their own
+  `DUE`/`DTSTART` copy of Dec 10. So the order explains the difference between session 1 (no
+  copies) and Task 7 (copies).
+- **01:** Twydo's write matched 2Do's round 01 exactly: `D` on Dec 11, the items' `DUE` and
+  `DTSTART` removed, nothing else changed but the stamps. The phone showed it right.
+- **02:** the phone moved `D` to Dec 12 and left the dateless items untouched, as for `K` in
+  session 1; Twydo read it back.
+- **03:** deleting `D` on the phone took the items; the emptied list needed `--force-delete`.

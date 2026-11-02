@@ -1101,9 +1101,9 @@ fn dated_checklist_date_change_needs_its_edge_case_when_verified() {
         check(&s, &fam(), WriteMode::Verified, &title, today()),
         Ok(())
     );
-    // The shipped matrix does not verify it yet.
+    // The shipped matrix verifies it (checklist-date round, plan6-baseline.md).
     assert_eq!(
         check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
-        blocked(reason)
+        Ok(())
     );
 }
