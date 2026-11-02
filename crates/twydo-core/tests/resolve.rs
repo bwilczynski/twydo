@@ -156,3 +156,26 @@ fn unknown_and_finished_conflicts_are_refused() {
         Err(ResolveError::NotUnresolved(_))
     ));
 }
+
+#[test]
+fn keeping_what_the_vdir_held_after_it_changed_is_refused() {
+    let fx = Fx::new();
+    // The vdir held the remote version when the conflict was recorded; since then the task
+    // was deleted (or changed again) on the server and that synced.
+    let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("r\r\n"));
+    assert!(matches!(
+        resolve(&fx.cfg, &id, Side::Remote, now()),
+        Err(ResolveError::Changed(_))
+    ));
+    assert!(!fx.file().exists(), "nothing written");
+    fs::write(fx.file(), "third\r\n").unwrap();
+    assert!(matches!(
+        resolve(&fx.cfg, &id, Side::Remote, now()),
+        Err(ResolveError::Changed(_))
+    ));
+    assert_eq!(fs::read_to_string(fx.file()).unwrap(), "third\r\n");
+    assert_eq!(
+        fx.store.get(&id).unwrap().unwrap().state,
+        ConflictState::Open
+    );
+}

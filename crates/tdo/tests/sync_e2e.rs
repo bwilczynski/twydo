@@ -781,6 +781,34 @@ fn keep_remote_deletion_removes_local() {
     assert!(p.read_server("u3").is_none());
 }
 
+/// The server deleted the task after the conflict was recorded: the vdir no longer holds the
+/// remote edit, so keeping it is not "already in place".
+#[test]
+fn keep_remote_after_server_delete_is_refused() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = local_delete_conflict(&p);
+    fs::remove_file(p.server().join(COLL).join("u2.ics")).unwrap();
+    let (code, err) = p.tdo_sync();
+    assert_ne!(code, 2, "{err}");
+    assert!(p.read_vdir("u2").is_none(), "the server's deletion synced");
+    let journal = p.tdo(&["op", "journal"]);
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "remote"]);
+    assert!(!o.status.success(), "{o:?}");
+    assert!(!stdout(&o).contains("already in place"), "{}", stdout(&o));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains("changed since the conflict was recorded"),
+        "{err}"
+    );
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Open
+    );
+    assert!(p.read_vdir("u2").is_none(), "nothing written");
+    assert_eq!(p.tdo(&["op", "journal"]).stdout, journal.stdout);
+}
+
 #[test]
 fn resolve_held_via_cli() {
     require_vdirsyncer!();
