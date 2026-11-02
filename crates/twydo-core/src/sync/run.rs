@@ -18,6 +18,7 @@ use chrono::{DateTime, Utc};
 
 use super::SyncError;
 use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
+use super::manifest::Manifest;
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
 use super::status::{CollState, SyncStatus, backoff, coll_states};
@@ -130,7 +131,8 @@ fn skipped(s: Skip) -> RunReport {
 /// 4. Under the shared vdir lock: runs `<command> sync <pair>` (or `--force-delete` for the
 ///    forced collections), killed after `timeout_secs`, then `metasync` when configured.
 /// 5. Under the exclusive vdir lock: reconciles the result with the journal and the
-///    conflicts (see [`reconcile`]).
+///    conflicts (see [`reconcile`]), then records the files of every counted collection in
+///    the manifest (see [`Manifest`]).
 /// 6. Classifies each collection and saves `status.json`. A run whose command could not
 ///    run, timed out, exited non-zero without explanation, printed unattributed errors, or
 ///    left a collection in `Error`, is a transient failure and backs off.
@@ -210,7 +212,14 @@ fn one_pass(
     let mut out = parse(&sync.pair, &ran.stderr);
     report.forced.extend(force.iter().cloned());
     // Local emptied by Twydo itself: rerun forced, once, still under the shared lock.
-    let auto = auto_force(sync, &out, &pending, ConflictStore::existing(state)?, force)?;
+    let auto = auto_force(
+        sync,
+        &out,
+        &pending,
+        &Manifest::load(state)?,
+        ConflictStore::existing(state)?,
+        force,
+    )?;
     if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
         let mut args = vec!["sync".to_string(), "--force-delete".to_string()];
         args.extend(auto.iter().map(|c| format!("{}/{c}", sync.pair)));
@@ -260,6 +269,18 @@ fn one_pass(
         report.unexpected.extend(r.unexpected);
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
+        // What each counted collection holds now: the evidence a later auto-force needs.
+        if out.unattributed.is_empty() && !matches!(ran.outcome, Outcome::TimedOut) {
+            let mut manifest = Manifest::load(state)?;
+            manifest.refresh(
+                &cfg.vdir,
+                collections
+                    .iter()
+                    .filter(|(_, s)| matches!(s, CollState::Ok | CollState::Conflict))
+                    .map(|(c, _)| c.as_str()),
+            )?;
+            manifest.save(state)?;
+        }
     }
 
     // Step 6: status.
@@ -288,13 +309,16 @@ fn one_pass(
     Ok(())
 }
 
-/// Collections to force-delete automatically: emptied on the local side, with a pending
-/// entry that removed the last task (`after: None`) and no unresolved conflict. An emptied
-/// collection without such an entry (files removed by hand, a broken vdir) is never forced.
+/// Collections to force-delete automatically: emptied on the local side, not forced
+/// explicitly, with no unresolved conflict, and whose every file at the last counted run
+/// (the manifest) a pending entry removed (see [`Manifest::emptied_by`]). An emptied
+/// collection the journal does not fully account for (files removed by hand, a broken
+/// vdir, no Twydo sync yet) is never forced.
 fn auto_force(
     sync: &SyncConfig,
     out: &SyncOutput,
     pending: &[crate::store::journal::Entry],
+    manifest: &Manifest,
     conflicts: Option<ConflictStore>,
     explicit: &[String],
 ) -> Result<Vec<String>, SyncError> {
@@ -309,14 +333,7 @@ fn auto_force(
         .filter(|c| states.get(*c) == Some(&CollState::EmptiedLocal))
         .filter(|c| !explicit.contains(c))
         .filter(|c| !unresolved.iter().any(|u| &u.collection == *c))
-        .filter(|c| {
-            pending.iter().any(|e| {
-                e.writes.iter().any(|w| {
-                    w.after.is_none()
-                        && Path::new(&w.path).parent().and_then(Path::to_str) == Some(c.as_str())
-                })
-            })
-        })
+        .filter(|c| manifest.emptied_by(c, pending))
         .cloned()
         .collect())
 }
