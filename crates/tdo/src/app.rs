@@ -138,6 +138,8 @@ pub struct App {
 pub(crate) const DETAILS_MIN_TERMINAL: u16 = 110;
 
 const RELOAD_FAILED: &str = "reload failed: ";
+/// The end of the question a parent's `x` asks before completing its open items.
+const CONFIRM_X: &str = "? x to confirm";
 /// The message a sync that went well leaves.
 pub const SYNC_DONE: &str = "sync done";
 /// How long a success message stays.
@@ -323,13 +325,25 @@ impl App {
     }
 
     /// Store `now`; keep the selection on the same task as the view rebuilds around it.
-    /// A pending `d` or `g` is dropped when the selected task leaves the view.
+    /// A pending `d`, `g` or `x` is dropped when the selected task leaves the view.
     pub fn tick(&mut self, now: DateTime<Tz>) {
         let uid = self.selected_uid();
         self.now = now;
         self.restore(uid.clone());
         if self.selected_uid() != uid {
-            self.pending = None;
+            self.drop_pending();
+        }
+    }
+
+    /// Forget a pending `d`, `g` or `x`; the "… x to confirm" question goes with its `x`.
+    fn drop_pending(&mut self) {
+        if self.pending.take() == Some('x')
+            && self
+                .message
+                .as_deref()
+                .is_some_and(|m| m.ends_with(CONFIRM_X))
+        {
+            self.message = None;
         }
     }
 
@@ -338,8 +352,8 @@ impl App {
         let uid = self.selected_uid();
         let side = self.sidebar_items().get(self.sidebar_cursor).cloned();
         self.snapshot = s;
-        // The row under a pending `d` or `g` may have changed: the second key starts afresh.
-        self.pending = None;
+        // The row under a pending `d`, `g` or `x` may have changed: the second key starts afresh.
+        self.drop_pending();
         if self
             .reload_error
             .take()
@@ -677,7 +691,7 @@ impl App {
                 let open = self.snapshot.open_items(idx);
                 if open > 0 && pending != Some('x') {
                     self.message = Some(format!(
-                        "complete \"{}\" and its {open} open {}? x to confirm",
+                        "complete \"{}\" and its {open} open {}{CONFIRM_X}",
                         task.summary,
                         if open == 1 { "item" } else { "items" }
                     ));
