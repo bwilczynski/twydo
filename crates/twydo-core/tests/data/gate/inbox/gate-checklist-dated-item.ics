@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-checklist-dated-item
+SUMMARY:Synthetic dated checklist item
+STATUS:NEEDS-ACTION
+DUE;VALUE=DATE:20261210
+RELATED-TO:gate-checklist-dated
+END:VTODO
+END:VCALENDAR

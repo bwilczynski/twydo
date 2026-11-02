@@ -29,8 +29,13 @@ completes every open item; reopening it reopens the completed ones; moving it to
 and deleting it carry all items. Because completing writes many
 tasks, `x` on a parent with open items shows `complete "<title>" and its <n> open items? x to
 confirm` and waits; a parent whose items are all done completes at once. Cancelled items are
-left as they are. A repeating project asks the same way, as in 2Do. `tdo op complete <uid>` refuses such a parent (exit 1) unless `--all` is
-passed.
+left as they are. A repeating project asks the same way, as in 2Do. `tdo op complete <uid>`
+refuses such a parent (exit 1) unless `--all` is passed.
+
+Checklist items take their date from the checklist, so date keys and the form's Due and Start
+are refused on an item. Some items carry a copy of the checklist's date; when the checklist gets
+a new date, those copies are removed in the same write, as 2Do does. Removing such a
+checklist's date, or giving it a time or a start date, is refused until verified.
 
 ## Edit form
 

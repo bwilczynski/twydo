@@ -557,6 +557,12 @@ impl Store {
                 let w = create(&n.collection, &uid, &cal)?;
                 one("create", &uid, w)
             }
+            Op::Edit { uid, changes }
+                if let Some(i) = parent(uid)
+                    && crate::gate::checklist_date_change(snap, i, op) =>
+            {
+                self.plan_checklist_date(snap, i, self.target(snap, uid)?, changes, now)?
+            }
             Op::Edit { uid, changes } => {
                 let t = self.target(snap, uid)?;
                 let mut cal = t.cal.clone();
