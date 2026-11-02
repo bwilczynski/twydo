@@ -4,7 +4,10 @@ use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tdo::app::{App, Mode, Outcome, Pane};
+use tdo::write::Request;
 use twydo_core::config::Config;
+use twydo_core::dateinput::{DueShift, shift_due};
+use twydo_core::edit::{Change, Op};
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Snapshot, View};
 
@@ -127,40 +130,156 @@ fn enter_on_leaf_is_blocked() {
 }
 
 #[test]
-fn write_keys_are_blocked_with_reason() {
+fn keys_without_support_are_blocked_with_reason() {
     let mut a = app();
-    let before = format!("{:?}", a.snapshot.tasks);
-    a.handle_key(key('x'));
-    assert_eq!(a.message.as_deref(), Some("toggle done: not available yet"));
     for (k, name) in [
-        (key(' '), "toggle done"),
         (key('o'), "new task"),
         (key('O'), "new item"),
         (key('i'), "edit task"),
         (key('J'), "move task"),
         (key('K'), "move task"),
-        (key('u'), "undo"),
-        (ctrl('r'), "redo"),
-        (key('t'), "due today"),
-        (key('T'), "due tomorrow"),
-        (key(']'), "due +1 day"),
-        (key('['), "due -1 day"),
-        (key('}'), "due +1 week"),
-        (key('{'), "due -1 week"),
         (key('r'), "edit repeat"),
         (key('a'), "edit alerts"),
         (key('m'), "move to list"),
     ] {
         a.message = None;
-        a.handle_key(k);
+        assert_eq!(a.handle_key(k), Outcome::Continue);
         assert_eq!(a.message, Some(format!("{name}: not available yet")));
     }
-    a.message = None;
-    type_str(&mut a, "dd");
-    assert_eq!(a.message.as_deref(), Some("delete: not available yet"));
     a.handle_key(code(KeyCode::Esc));
     assert!(a.message.is_none());
-    assert_eq!(format!("{:?}", a.snapshot.tasks), before);
+}
+
+fn write_op(o: Outcome) -> Op {
+    match o {
+        Outcome::Write(Request::Apply(op)) => op,
+        other => panic!("expected a write, got {other:?}"),
+    }
+}
+
+fn selected_uid(a: &App) -> String {
+    a.snapshot.tasks[a.selected().unwrap()].uid.clone()
+}
+
+#[test]
+fn x_requests_complete_or_reopen() {
+    let mut a = app();
+    let uid = selected_uid(&a);
+    assert_eq!(write_op(a.handle_key(key('x'))), Op::Complete { uid });
+    a.handle_key(key('4'));
+    let uid = selected_uid(&a);
+    assert_eq!(
+        a.snapshot.tasks[a.selected().unwrap()].status,
+        twydo_core::model::Status::Completed
+    );
+    assert_eq!(write_op(a.handle_key(key(' '))), Op::Reopen { uid });
+}
+
+#[test]
+fn date_keys_request_due_edits() {
+    let today = now().date_naive();
+    for (c, shift) in [
+        ('t', DueShift::Today),
+        ('T', DueShift::Tomorrow),
+        (']', DueShift::Days(1)),
+        ('[', DueShift::Days(-1)),
+        ('}', DueShift::Days(7)),
+        ('{', DueShift::Days(-7)),
+    ] {
+        let mut a = app();
+        let task = a.snapshot.tasks[a.selected().unwrap()].clone();
+        let want = shift_due(task.due.as_ref(), NY, today, shift);
+        assert_eq!(
+            write_op(a.handle_key(key(c))),
+            Op::Edit {
+                uid: task.uid.clone(),
+                changes: vec![Change::Due(Some(want))],
+            },
+            "key {c}"
+        );
+    }
+}
+
+#[test]
+fn dd_requests_delete_and_single_d_does_not() {
+    let mut a = app();
+    let uid = selected_uid(&a);
+    assert_eq!(a.handle_key(key('d')), Outcome::Continue);
+    assert_eq!(write_op(a.handle_key(key('d'))), Op::Delete { uid });
+}
+
+#[test]
+fn u_and_ctrl_r_request_undo_redo() {
+    let mut a = app();
+    assert_eq!(a.handle_key(key('u')), Outcome::Write(Request::Undo));
+    assert_eq!(a.handle_key(ctrl('r')), Outcome::Write(Request::Redo));
+    a.focus = Pane::Sidebar;
+    assert_eq!(a.handle_key(key('u')), Outcome::Write(Request::Undo));
+    let mut empty = App::new(snapshot_of(empty_report()), now());
+    assert_eq!(empty.handle_key(ctrl('r')), Outcome::Write(Request::Redo));
+}
+
+fn empty_report() -> twydo_core::vdir::LoadReport {
+    let mut r = report();
+    r.tasks.clear();
+    r
+}
+
+#[test]
+fn write_keys_on_empty_view_do_nothing() {
+    let mut a = App::new(snapshot_of(empty_report()), now());
+    for k in ["x", "t", "]", "dd"] {
+        assert!(
+            type_keys(&mut a, k).iter().all(|o| *o == Outcome::Continue),
+            "{k}"
+        );
+        assert!(a.message.is_none(), "{k}");
+    }
+    let mut a = app();
+    a.focus = Pane::Sidebar;
+    for k in ["x", "t", "]", "dd"] {
+        assert!(
+            type_keys(&mut a, k).iter().all(|o| *o == Outcome::Continue),
+            "{k}"
+        );
+        assert!(a.message.is_none(), "{k}");
+    }
+}
+
+fn type_keys(a: &mut App, s: &str) -> Vec<Outcome> {
+    s.chars().map(|c| a.handle_key(key(c))).collect()
+}
+
+#[test]
+fn cursor_stays_in_place_after_row_leaves() {
+    let mut a = app();
+    let before = titles(&a);
+    assert_eq!(before.len(), 3);
+    a.cursor = 1;
+    let mut r = report();
+    r.tasks.retain(|t| t.summary != before[1]);
+    a.reload(snapshot_of(r));
+    assert_eq!(a.cursor, 1);
+    assert_eq!(titles(&a)[1], before[2]);
+
+    let mut a = app();
+    a.cursor = 2;
+    let mut r = report();
+    r.tasks.retain(|t| t.summary != before[2]);
+    a.reload(snapshot_of(r));
+    assert_eq!(a.cursor, 1);
+}
+
+#[test]
+fn write_finished_shows_message() {
+    let mut a = app();
+    a.write_finished(Err("projects and checklists cannot be edited yet".into()));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("projects and checklists cannot be edited yet")
+    );
+    a.write_finished(Ok("done".into()));
+    assert_eq!(a.message.as_deref(), Some("done"));
 }
 
 fn conflict(id: &str, uid: &str) -> twydo_core::conflicts::Conflict {
@@ -442,9 +561,9 @@ fn successful_reload_clears_reload_failed_message() {
     a.reload(snapshot_of(report()));
     assert_eq!(a.message, None);
     // Other messages survive a reload.
-    a.handle_key(key('x'));
+    a.handle_key(key('a'));
     a.reload(snapshot_of(report()));
-    assert!(a.message.as_deref().unwrap().starts_with("toggle done:"));
+    assert!(a.message.as_deref().unwrap().starts_with("edit alerts:"));
 }
 
 #[test]
