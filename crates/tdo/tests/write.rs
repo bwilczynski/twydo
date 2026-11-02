@@ -455,3 +455,20 @@ fn family_success_messages() {
         Ok("deleted \"Synthetic parent\" and 3 items · u to undo".into())
     );
 }
+
+#[test]
+fn family_success_message_uses_the_singular_for_one_item() {
+    let env = Env::new();
+    add_family(&env);
+    fs::remove_file(env.vdir().join("list1/fam-2.ics")).unwrap();
+    let mut cfg = env.config();
+    cfg.writes.mode = twydo_core::config::WriteMode::Test;
+    let (mut w, _) = writer(&cfg);
+    let done = Request::Apply(Op::Complete {
+        uid: "fam-p".into(),
+    });
+    assert_eq!(
+        w.run(&env.snapshot(), &done, now()),
+        Ok("done: \"Synthetic parent\" and 1 item".into())
+    );
+}

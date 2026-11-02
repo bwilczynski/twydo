@@ -1094,3 +1094,22 @@ fn x_on_parent_with_all_items_done_completes_at_once() {
     assert_eq!(write_op(a.handle_key(key('x'))), Op::Complete { uid });
     assert!(a.message.is_none());
 }
+
+#[test]
+fn x_on_parent_with_one_open_item_uses_the_singular() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    let uid = selected_uid(&a);
+    let child = a
+        .snapshot
+        .tasks
+        .iter()
+        .position(|t| t.parent.as_deref() == Some(uid.as_str()))
+        .unwrap();
+    a.snapshot.tasks[child].status = twydo_core::model::Status::Completed;
+    a.handle_key(key('x'));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("complete \"Prepare tax return\" and its 1 open item? x to confirm")
+    );
+}

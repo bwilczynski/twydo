@@ -311,8 +311,9 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
                     let open = snap.open_items(i);
                     if open > 0 {
                         return Err(Failure::Blocked(format!(
-                            "\"{}\" has {open} open items; pass --all to complete them too",
-                            snap.tasks[i].summary
+                            "\"{}\" has {open} open {}; pass --all to complete them too",
+                            snap.tasks[i].summary,
+                            if open == 1 { "item" } else { "items" }
                         )));
                     }
                 }
