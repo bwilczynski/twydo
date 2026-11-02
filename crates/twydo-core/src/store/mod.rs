@@ -5,6 +5,7 @@
 //! the bytes the caller loaded. It is recorded in the journal before the vdir is touched,
 //! so a crash leaves it to be rolled forward by recovery, never half applied.
 
+mod family;
 pub mod fsio;
 pub mod journal;
 
@@ -216,9 +217,10 @@ fn create(collection: &str, uid: &str, cal: &Calendar) -> Result<Write, WriteErr
     })
 }
 
-/// A completion of a repeating task: the history copy is created and the live task advanced.
+/// A completion of a repeating task or project: history copies are created and the live
+/// task advanced.
 fn is_repeat_completion(e: &Entry) -> bool {
-    e.kind == "complete" && e.writes.len() == 2 && e.writes.iter().any(|w| w.before.is_none())
+    e.kind == "complete" && e.writes.iter().any(|w| w.before.is_none())
 }
 
 fn no_entry(id: &str) -> WriteError {
@@ -533,6 +535,8 @@ impl Store {
             uids: vec![uid.clone()],
             writes: vec![w],
         };
+        // A checklist or project with children: the op acts on the whole family.
+        let parent = |uid: &str| snap.find(uid).filter(|&i| !snap.children(i).is_empty());
         Ok(match op {
             Op::Create(n) => {
                 let uid = new_uid();
@@ -545,6 +549,15 @@ impl Store {
                 let mut cal = t.cal.clone();
                 apply_changes(&mut cal, changes, now)?;
                 one("edit", uid, t.update(&cal)?)
+            }
+            Op::Complete { uid } if let Some(i) = parent(uid) => {
+                self.plan_family_complete(snap, i, self.target(snap, uid)?, now)?
+            }
+            Op::Reopen { uid } if let Some(i) = parent(uid) => {
+                self.plan_family_reopen(snap, i, self.target(snap, uid)?, now)?
+            }
+            Op::Delete { uid } if let Some(i) = parent(uid) => {
+                self.plan_family_delete(snap, i, self.target(snap, uid)?)?
             }
             Op::Complete { uid } => {
                 let t = self.target(snap, uid)?;
@@ -575,6 +588,9 @@ impl Store {
                 let t = self.target(snap, uid)?;
                 if &t.collection == to {
                     return Err(EditError::Unsupported(format!("task is already in {to}")).into());
+                }
+                if let Some(i) = parent(uid) {
+                    return self.plan_family_move(snap, i, t, to, now);
                 }
                 let new = new_uid();
                 let copy = create(to, &new, &moved_copy(&t.cal, &new, None, now)?)?;

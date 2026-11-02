@@ -1,7 +1,8 @@
 //! The store: gated, journaled apply with undo and redo, against a tempdir copy of the
 //! iPhone capture `plan4-list1/02-edit` (synthetic test-account content).
 
-use std::collections::BTreeMap;
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -9,17 +10,18 @@ use std::time::SystemTime;
 use chrono::{DateTime, TimeZone, Utc};
 
 use twydo_core::compat::Matrix;
-use twydo_core::config::{Config, WriteMode};
+use twydo_core::config::WriteMode;
 use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::ical::{Component, parse};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
 use twydo_core::store::{Store, WriteError};
-use twydo_core::views::Snapshot;
+
+use common::Env;
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
 const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
-const ALL_OPS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
+const FIXTURE: &str = "plan4-list1/02-edit";
 const CASES: [&str; 5] = ["one-time", "monthly", "date-only", "timed", "start-date"];
 
 fn now() -> DateTime<Utc> {
@@ -33,101 +35,11 @@ fn later() -> DateTime<Utc> {
 /// Every op on every case has baseline `pass` and the twydo columns `twydo`; the monthly
 /// rule class passes; the undo edge case has `edge`.
 fn matrix(twydo: &str, edge: &str) -> Matrix {
-    let mut s = String::from("matrix_version = 1\n");
-    for case in CASES {
-        for op in ALL_OPS {
-            s.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
-                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-                 twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
-            ));
-        }
-    }
-    s.push_str(
-        "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
-    );
-    s.push_str(&format!(
-        "[[edge_case]]\nid = \"reopen-undo-before-after-sync\"\nverdict = \"{edge}\"\n"
-    ));
-    Matrix::from_toml_str(&s).unwrap()
-}
-
-struct Env {
-    _tmp: tempfile::TempDir,
-    vdir: PathBuf,
-    state: PathBuf,
-    cfg: Config,
-}
-
-impl Env {
-    fn new(mode: WriteMode) -> Env {
-        let tmp = tempfile::tempdir().unwrap();
-        let vdir = tmp.path().join("vdir");
-        let state = tmp.path().join("state");
-        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/plan4-list1/02-edit");
-        let list1 = vdir.join("list1");
-        fs::create_dir_all(&list1).unwrap();
-        fs::create_dir_all(vdir.join("list2")).unwrap();
-        for e in fs::read_dir(&src).unwrap() {
-            let p = e.unwrap().path();
-            if p.extension().is_some_and(|x| x == "ics") {
-                fs::copy(&p, list1.join(p.file_name().unwrap())).unwrap();
-            }
-        }
-        let mut cfg = Config::with_vdir(vdir.clone());
-        cfg.timezone = Some("America/New_York".to_string());
-        cfg.state_dir = Some(state.clone());
-        // The store keeps its journal in the vdir's own state dir.
-        let state = twydo_core::store::vdir_state_dir(&state, &vdir).unwrap();
-        cfg.writes.mode = mode;
-        Env {
-            _tmp: tmp,
-            vdir,
-            state,
-            cfg,
-        }
-    }
-
-    fn snap(&self) -> Snapshot {
-        let report = twydo_core::vdir::load(&self.vdir).unwrap();
-        assert!(report.errors.is_empty(), "{:?}", report.errors);
-        Snapshot::new(report, self.cfg.clone())
-    }
-
-    fn store(&self, m: Matrix) -> Store {
-        let (store, report) = Store::open_with(&self.cfg, m).unwrap();
-        assert!(report.stuck.is_empty(), "{report:?}");
-        store
-    }
-
-    fn file(&self, uid: &str) -> PathBuf {
-        self.vdir.join("list1").join(format!("{uid}.ics"))
-    }
-
-    /// Every file under the vdir (relative path → bytes).
-    fn files(&self) -> BTreeMap<String, Vec<u8>> {
-        let mut out = BTreeMap::new();
-        for list in ["list1", "list2"] {
-            for e in fs::read_dir(self.vdir.join(list)).unwrap() {
-                let p = e.unwrap().path();
-                let name = format!("{list}/{}", p.file_name().unwrap().to_string_lossy());
-                out.insert(name, fs::read(&p).unwrap());
-            }
-        }
-        out
-    }
-
-    fn journal(&self) -> Vec<Entry> {
-        if !self.state.join("journal").is_dir() {
-            return Vec::new();
-        }
-        Journal::open(&self.state).unwrap().list().unwrap()
-    }
+    common::matrix(&CASES, twydo, &[("reopen-undo-before-after-sync", edge)])
 }
 
 fn test_env() -> (Env, Store) {
-    let env = Env::new(WriteMode::Test);
+    let env = Env::new(WriteMode::Test, FIXTURE);
     let store = env.store(matrix("unverified", "unverified"));
     (env, store)
 }
@@ -413,7 +325,7 @@ fn create_writes_new_uid_file() {
 
 #[test]
 fn blocked_op_writes_nothing() {
-    let env = Env::new(WriteMode::Verified);
+    let env = Env::new(WriteMode::Verified, FIXTURE);
     let mut store = env.store(matrix("unverified", "pass"));
     let before = env.files();
     match store.apply(&env.snap(), &complete(A), now()) {
@@ -429,7 +341,7 @@ fn blocked_op_writes_nothing() {
 
 #[test]
 fn undo_of_recurring_completion_needs_edge_case_in_verified_mode() {
-    let env = Env::new(WriteMode::Verified);
+    let env = Env::new(WriteMode::Verified, FIXTURE);
     let mut store = env.store(matrix("pass", "unverified"));
     store.apply(&env.snap(), &complete(E), now()).unwrap();
     let applied = env.files();
@@ -447,7 +359,7 @@ fn undo_of_recurring_completion_needs_edge_case_in_verified_mode() {
     store.apply(&env.snap(), &complete(A), later()).unwrap();
     store.undo_last(later()).unwrap();
 
-    let env = Env::new(WriteMode::Verified);
+    let env = Env::new(WriteMode::Verified, FIXTURE);
     let before = env.files();
     let mut store = env.store(matrix("pass", "pass"));
     store.apply(&env.snap(), &complete(E), now()).unwrap();
@@ -457,7 +369,7 @@ fn undo_of_recurring_completion_needs_edge_case_in_verified_mode() {
 
 #[test]
 fn stuck_journal_blocks_writes() {
-    let env = Env::new(WriteMode::Test);
+    let env = Env::new(WriteMode::Test, FIXTURE);
     let journal = Journal::open(&env.state).unwrap();
     let stuck = Entry {
         format: 1,
@@ -583,7 +495,7 @@ fn undo_works_on_synced_entry() {
 #[test]
 fn restore_writes_through_journal_and_refuses_stale() {
     // Verified mode and an all-unverified matrix: `restore` has no gate.
-    let env = Env::new(WriteMode::Verified);
+    let env = Env::new(WriteMode::Verified, FIXTURE);
     let mut store = env.store(matrix("unverified", "unverified"));
     let rel = format!("list1/{A}.ics");
     let before = fs::read_to_string(env.file(A)).unwrap();

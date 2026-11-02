@@ -1,11 +1,120 @@
-//! Fixture comparison helpers shared by the edit tests.
+//! Fixture comparison helpers shared by the edit tests, and the store test environment.
 #![allow(dead_code)]
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use twydo_core::compat::Matrix;
+use twydo_core::config::{Config, WriteMode};
 use twydo_core::ical::{Calendar, Component, Param, parse};
+use twydo_core::store::Store;
+use twydo_core::store::journal::{Entry, Journal};
+use twydo_core::views::Snapshot;
+
+const ALL_OPS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
+
+/// Every op on every case in `cases` has baseline `pass` and the twydo columns `twydo`; the
+/// monthly rule class passes; each `(id, verdict)` in `edges` is an edge case.
+pub fn matrix(cases: &[&str], twydo: &str, edges: &[(&str, &str)]) -> Matrix {
+    let mut s = String::from("matrix_version = 1\n");
+    for case in cases {
+        for op in ALL_OPS {
+            s.push_str(&format!(
+                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
+                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+                 twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
+            ));
+        }
+    }
+    s.push_str(
+        "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
+    );
+    for (id, verdict) in edges {
+        s.push_str(&format!(
+            "[[edge_case]]\nid = \"{id}\"\nverdict = \"{verdict}\"\n"
+        ));
+    }
+    Matrix::from_toml_str(&s).unwrap()
+}
+
+/// A vdir in a tempdir with lists `list1` (the `.ics` files of fixture step `fixture`, e.g.
+/// `plan4-list1/02-edit`) and an empty `list2`, and a state dir beside it.
+pub struct Env {
+    _tmp: tempfile::TempDir,
+    pub vdir: PathBuf,
+    pub state: PathBuf,
+    pub cfg: Config,
+}
+
+impl Env {
+    pub fn new(mode: WriteMode, fixture: &str) -> Env {
+        let tmp = tempfile::tempdir().unwrap();
+        let vdir = tmp.path().join("vdir");
+        let state = tmp.path().join("state");
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/phase0/v1")
+            .join(fixture);
+        let list1 = vdir.join("list1");
+        fs::create_dir_all(&list1).unwrap();
+        fs::create_dir_all(vdir.join("list2")).unwrap();
+        for e in fs::read_dir(&src).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "ics") {
+                fs::copy(&p, list1.join(p.file_name().unwrap())).unwrap();
+            }
+        }
+        let mut cfg = Config::with_vdir(vdir.clone());
+        cfg.timezone = Some("America/New_York".to_string());
+        cfg.state_dir = Some(state.clone());
+        // The store keeps its journal in the vdir's own state dir.
+        let state = twydo_core::store::vdir_state_dir(&state, &vdir).unwrap();
+        cfg.writes.mode = mode;
+        Env {
+            _tmp: tmp,
+            vdir,
+            state,
+            cfg,
+        }
+    }
+
+    pub fn snap(&self) -> Snapshot {
+        let report = twydo_core::vdir::load(&self.vdir).unwrap();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        Snapshot::new(report, self.cfg.clone())
+    }
+
+    pub fn store(&self, m: Matrix) -> Store {
+        let (store, report) = Store::open_with(&self.cfg, m).unwrap();
+        assert!(report.stuck.is_empty(), "{report:?}");
+        store
+    }
+
+    pub fn file(&self, uid: &str) -> PathBuf {
+        self.vdir.join("list1").join(format!("{uid}.ics"))
+    }
+
+    /// Every file under the vdir (relative path → bytes).
+    pub fn files(&self) -> BTreeMap<String, Vec<u8>> {
+        let mut out = BTreeMap::new();
+        for list in ["list1", "list2"] {
+            for e in fs::read_dir(self.vdir.join(list)).unwrap() {
+                let p = e.unwrap().path();
+                let name = format!("{list}/{}", p.file_name().unwrap().to_string_lossy());
+                out.insert(name, fs::read(&p).unwrap());
+            }
+        }
+        out
+    }
+
+    pub fn journal(&self) -> Vec<Entry> {
+        if !self.state.join("journal").is_dir() {
+            return Vec::new();
+        }
+        Journal::open(&self.state).unwrap().list().unwrap()
+    }
+}
 
 pub fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
