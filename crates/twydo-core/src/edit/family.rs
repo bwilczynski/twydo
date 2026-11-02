@@ -58,7 +58,8 @@ pub fn reopen_member(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditE
 /// The copy of a repeating project's member that goes under the project's history copy
 /// `parent_uid`: `UID` = `copy_uid`, parent link = `parent_uid`, stamps = `now`; an open
 /// member is completed at `at`, a completed one keeps its `COMPLETED`. Every other line keeps
-/// its bytes; `cal` is not changed. A repeating member is refused (not captured).
+/// its bytes; `cal` is not changed. A repeating member, or one whose JSON `uid` or `RUID`
+/// names itself, is refused (not captured).
 pub fn member_copy(
     cal: &Calendar,
     copy_uid: &str,
@@ -74,6 +75,7 @@ pub fn member_copy(
     if copy_uid.is_empty() || uid.value == copy_uid {
         return Err(unsupported("a member's copy needs a new UID"));
     }
+    let old_uid = uid.value.clone();
     uid.set_value(copy_uid);
     if todo.prop("RRULE").is_some() {
         return Err(unsupported("copying a repeating member is not verified"));
@@ -87,6 +89,16 @@ pub fn member_copy(
     }
     match meta_of(todo) {
         Meta::Json(orig) => {
+            // A JSON `uid` or `RUID` naming the member itself would name the live member
+            // from its copy: not captured.
+            if ["uid", "RUID"]
+                .iter()
+                .any(|k| orig.get_str(k) == Some(old_uid.as_str()))
+            {
+                return Err(unsupported(
+                    "copying an item that refers to itself is not verified yet",
+                ));
+            }
             let mut m = orig.clone();
             m.set_str("parentuid", parent_uid);
             write_meta(todo, Some(&orig), &m);
