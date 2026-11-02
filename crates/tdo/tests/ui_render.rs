@@ -815,3 +815,43 @@ fn status_shows_insert_mode() {
     assert!(last.contains(" INSERT "), "{last}");
     assert!(last.contains("Esc cancel"), "{last}");
 }
+
+/// With more lists than fit, the picker scrolls so the selected destination stays visible.
+#[test]
+fn picker_scrolls_to_keep_selection_visible() {
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..30 {
+        let list = dir.path().join(format!("list-{i:02}"));
+        fs::create_dir_all(&list).unwrap();
+        fs::write(list.join("displayname"), format!("list-{i:02}")).unwrap();
+    }
+    let task = dir.path().join("list-00/t.ics");
+    fs::write(
+        &task,
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:x\r\nBEGIN:VTODO\r\nUID:t1\r\n\
+         SUMMARY:Synthetic\r\nDUE;VALUE=DATE:20261104\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+    )
+    .unwrap();
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    assert_eq!(a.picker.as_ref().unwrap().lists.len(), 29);
+    for _ in 0..40 {
+        a.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    }
+    // The picker's first row is the line under its " Move to " title.
+    let first_row = |buf: &Buffer| {
+        let y = (0..buf.area.height)
+            .find(|y| line(buf, *y).contains(" Move to "))
+            .unwrap();
+        let l = line(buf, y + 1);
+        let x = l.find("│▌").map(|i| i + "│".len()).unwrap_or(0);
+        l[x..].split('│').next().unwrap().trim().to_string()
+    };
+    let buf = render(&mut a, 80, 24);
+    assert!(text(&buf).contains("▌ list-29"), "selected list not visible");
+    assert_ne!(first_row(&buf), "▌ list-01", "top should have scrolled away");
+    for _ in 0..40 {
+        a.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+    }
+    assert_eq!(first_row(&render(&mut a, 80, 24)), "▌ list-01");
+}
