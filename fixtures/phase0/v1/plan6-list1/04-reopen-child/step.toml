@@ -1,0 +1,5 @@
+scenario = "plan6-list1"
+step = "04-reopen-child"
+device = "iphone"
+action = "reopen k1b, reopen p1, complete L again"
+captured_at = "2026-11-02T15:49:32Z"
