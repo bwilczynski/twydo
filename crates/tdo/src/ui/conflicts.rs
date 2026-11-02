@@ -51,7 +51,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::styled(
-        "j/k move  l keep local  r keep remote  Esc close",
+        "j/k move  l keep local  r keep remote  c keep current  Esc close",
         dim(),
     ));
     f.render_widget(Clear, rect);

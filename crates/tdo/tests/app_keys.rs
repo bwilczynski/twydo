@@ -5,7 +5,7 @@ use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tdo::app::{App, Mode, Outcome};
 use twydo_core::config::Config;
-use twydo_core::conflicts::Side;
+use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Snapshot, View};
 
 const NY: Tz = chrono_tz::America::New_York;
@@ -229,7 +229,7 @@ fn conflicts_overlay_keys_return_resolve() {
         a.handle_key(key('l')),
         Outcome::Resolve {
             id: "b".into(),
-            keep: Side::Local
+            keep: Keep::Local
         }
     );
     a.handle_key(key('k'));
@@ -237,7 +237,21 @@ fn conflicts_overlay_keys_return_resolve() {
         a.handle_key(key('r')),
         Outcome::Resolve {
             id: "a".into(),
-            keep: Side::Remote
+            keep: Keep::Remote
+        }
+    );
+}
+
+#[test]
+fn conflicts_overlay_c_keeps_current() {
+    let mut a = app();
+    with_conflicts(&mut a, vec![conflict("a", "u1")]);
+    run_cmd(&mut a, ":conflicts");
+    assert_eq!(
+        a.handle_key(key('c')),
+        Outcome::Resolve {
+            id: "a".into(),
+            keep: Keep::Current
         }
     );
 }

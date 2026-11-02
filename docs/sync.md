@@ -111,9 +111,10 @@ did not sync cleanly, the entry stays pending instead, and every run warns
 ## Conflicts
 
 `tdo status` and `tdo conflicts` list unresolved ones. `tdo conflicts show <id>` prints both
-versions and the paths of their `.ics` files. `tdo conflicts resolve <id> --keep local|remote`
-keeps one version. In the TUI, `:conflicts` opens the list (`j`/`k` move, `l` keep local, `r` keep
-remote, `Esc` closes); a conflicted task is marked `!`.
+versions and the paths of their `.ics` files, then the task as the vdir holds it now (`current:`,
+or `(absent)`). `tdo conflicts resolve <id> --keep local|remote|current` keeps one version. In the
+TUI, `:conflicts` opens the list (`j`/`k` move, `l` keep local, `r` keep remote, `c` keep current,
+`Esc` closes); a conflicted task is marked `!`.
 
 Conflict states: `open`, `chosen` (shown as `chosen: keep local` / `chosen: keep remote`),
 `resolved`, `superseded` (a newer conflict for the same task replaced it). Open and chosen ones
@@ -138,9 +139,13 @@ What a choice does:
   holds one version. Keeping that one prints `already in place; conflict resolved`. Keeping the
   other writes it into the vdir through the journal (a deletion removes the file) and prints
   `written; conflict resolved`; the next sync propagates it like any edit. Either way the file
-  is checked first: if a later sync changed or deleted it, so it no longer holds the version it
-  held when the conflict was recorded, `resolve` refuses, writes nothing and leaves the conflict
-  open (run `tdo sync` and check `tdo conflicts`).
+  is checked first: if it no longer holds the version it held when the conflict was recorded (a
+  later sync or edit changed or deleted the task), `resolve` refuses, writes nothing and leaves
+  the conflict open, pointing to `tdo conflicts show <id>` and `--keep current`.
+- **`--keep current`** (any conflict that is not held) closes the conflict and leaves the vdir
+  file exactly as it is now, whichever version that is (`kept as it is now; conflict resolved`).
+  Both stored versions stay in the conflict's files. A held conflict refuses it: vdirsyncer
+  still keeps both sides apart, so choose local or remote.
 
 Until you choose, nothing is discarded: both versions stay in the conflict store, other tasks keep
 syncing.

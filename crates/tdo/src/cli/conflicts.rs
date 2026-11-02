@@ -9,7 +9,7 @@ use twydo_core::conflicts::{Conflict, ConflictState, ConflictStore, Side};
 use twydo_core::ical;
 use twydo_core::store::existing_vdir_state;
 use twydo_core::sync::hook::{VDIR_ENV, conflict_hook};
-use twydo_core::sync::resolve::{Resolution, resolve};
+use twydo_core::sync::resolve::{Keep as CoreKeep, Resolution, resolve};
 
 use super::sync::spawn_background;
 use super::{EXIT_ERROR, resolve_config};
@@ -21,6 +21,9 @@ pub enum Keep {
     Local,
     /// The version on the other device (the server)
     Remote,
+    /// The task as this device holds it now, whichever version that is (not for a conflict
+    /// vdirsyncer still holds); see `tdo conflicts show`
+    Current,
 }
 
 #[derive(Subcommand)]
@@ -157,7 +160,19 @@ fn show(vdir: Option<&Path>, id: &str) -> i32 {
             }
         }
     }
-    println!("vdir file: {}", cfg.vdir.join(&c.path).display());
+    let file = cfg.vdir.join(&c.path);
+    println!("current:");
+    match std::fs::read(&file) {
+        Ok(b) => {
+            let t = String::from_utf8_lossy(&b);
+            for prop in ["SUMMARY", "DUE", "STATUS", "LAST-MODIFIED"] {
+                println!("  {prop}: {}", field(&t, prop).unwrap_or_default());
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => println!("  (absent)"),
+        Err(e) => return fail(format!("{}: {e}", file.display())),
+    }
+    println!("vdir file: {}", file.display());
     0
 }
 
@@ -167,8 +182,9 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
         Err(e) => return fail(e),
     };
     let side = match keep {
-        Keep::Local => Side::Local,
-        Keep::Remote => Side::Remote,
+        Keep::Local => CoreKeep::Local,
+        Keep::Remote => CoreKeep::Remote,
+        Keep::Current => CoreKeep::Current,
     };
     match resolve(&cfg, id, side, Utc::now()) {
         Ok(r) => {
@@ -178,6 +194,7 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
                 }
                 Resolution::AlreadyInPlace => println!("already in place; conflict resolved"),
                 Resolution::Written(_) => println!("written; conflict resolved"),
+                Resolution::KeptCurrent => println!("kept as it is now; conflict resolved"),
             }
             if cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
                 spawn_background(&cfg, vdir);

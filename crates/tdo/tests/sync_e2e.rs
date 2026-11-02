@@ -821,7 +821,8 @@ fn keep_remote_after_server_delete_is_refused() {
     let id = local_delete_conflict(&p);
     fs::remove_file(p.server().join(COLL).join("u2.ics")).unwrap();
     let (code, err) = p.tdo_sync();
-    assert_ne!(code, 2, "{err}");
+    // An open conflict that is not held is no failure.
+    assert_eq!(code, 0, "{err}");
     assert!(p.read_vdir("u2").is_none(), "the server's deletion synced");
     let journal = p.tdo(&["op", "journal"]);
     let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "remote"]);
@@ -838,6 +839,74 @@ fn keep_remote_after_server_delete_is_refused() {
     );
     assert!(p.read_vdir("u2").is_none(), "nothing written");
     assert_eq!(p.tdo(&["op", "journal"]).stdout, journal.stdout);
+}
+
+/// The server edited the task again after a local-delete/remote-edit conflict: the vdir
+/// holds a third version, so neither side can be kept, but the task as it is now can.
+#[test]
+fn keep_current_closes_a_conflict_whose_task_changed() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = local_delete_conflict(&p);
+    let third = task("u2", "two-third");
+    p.write_server("u2", &third);
+    assert_eq!(p.tdo_sync().0, 0);
+    assert_eq!(p.read_vdir("u2"), Some(third.clone()));
+    for side in ["local", "remote"] {
+        let o = p.tdo(&["conflicts", "resolve", &id, "--keep", side]);
+        assert_eq!(o.status.code(), Some(2), "{o:?}");
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(err.contains(&format!("tdo conflicts show {id}")), "{err}");
+        assert!(err.contains("--keep current"), "{err}");
+    }
+    let o = p.tdo(&["conflicts", "show", &id]);
+    let shown = stdout(&o);
+    assert!(shown.contains("current:\n  SUMMARY: two-third"), "{shown}");
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "current"]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(
+        stdout(&o).contains("kept as it is now; conflict resolved"),
+        "{}",
+        stdout(&o)
+    );
+    assert_eq!(p.read_vdir("u2"), Some(third.clone()));
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Resolved
+    );
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(p.read_server("u2"), Some(third));
+}
+
+#[test]
+fn keep_current_is_refused_for_a_held_conflict() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let (_, id) = held_conflict(&p);
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "current"]);
+    assert_eq!(o.status.code(), Some(2), "{o:?}");
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("keep local or remote"), "{err}");
+    assert_eq!(
+        p.conflicts().get(&id).unwrap().unwrap().state,
+        ConflictState::Open
+    );
+}
+
+#[test]
+fn show_prints_absent_current_file() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let id = local_delete_conflict(&p);
+    fs::remove_file(p.vdir().join(COLL).join("u2.ics")).unwrap();
+    let o = p.tdo(&["conflicts", "show", &id]);
+    assert!(o.status.success(), "{o:?}");
+    assert!(
+        stdout(&o).contains("current:\n  (absent)"),
+        "{}",
+        stdout(&o)
+    );
 }
 
 #[test]
