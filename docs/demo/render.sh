@@ -12,9 +12,11 @@ cd "$(dirname "$0")/../.."
 command -v ffmpeg >/dev/null || { echo "render.sh: vhs needs ffmpeg on PATH" >&2; exit 1; }
 cargo build --release --quiet
 
+# The demo runs in New York time; generate its dates for today there too.
+export TZ=America/New_York
 demo_dir=$(mktemp -d)
 trap 'rm -rf "$demo_dir"' EXIT
-python3 tools/demo_vdir.py "$demo_dir/vdir"
+python3 tools/demo_vdir.py "$demo_dir/vdir" --today "$(date +%F)"
 mkdir -p "$demo_dir/config/twydo"
 cat > "$demo_dir/config/twydo/config.toml" <<TOML
 vdir = "$demo_dir/vdir"
@@ -23,7 +25,7 @@ TOML
 
 # The tape points XDG_CONFIG_HOME and XDG_STATE_HOME at the demo directory inside the recorded
 # shell only: changing them here would also hide mise's own state from the vhs and ttyd shims.
-export TWYDO_DEMO_DIR="$demo_dir" TZ=America/New_York PATH="$PWD/target/release:$PATH"
+export TWYDO_DEMO_DIR="$demo_dir" PATH="$PWD/target/release:$PATH"
 
 if [[ "${1:-}" == "--shell" ]]; then
   # Debugging aid: a shell with the demo environment, to try the tape's keys by hand.

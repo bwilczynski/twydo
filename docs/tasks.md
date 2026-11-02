@@ -13,7 +13,7 @@ against 2Do on an iPhone; where Twydo cannot write something yet, it says so (se
 | **Checklist** | A task with items. Items are simple: they have no dates of their own and take the checklist's |
 | **Project** | A task with items that are full tasks: each has its own due date, start date and repeat |
 
-In the TUI, a checklist shows `[3]` (its open items) and the word `checklist`; a project shows
+In the TUI, a checklist shows `[3]` (its number of items) and the word `checklist`; a project shows
 `project`. `Enter` expands or collapses a parent in All and in lists; the Details pane lists its
 items. Today, Scheduled and Next 3 Days show a checklist's items under it.
 
@@ -55,7 +55,7 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 
 ## Repeats
 
-A repeating task shows ↻ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
+A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
 (`Every Mon`). 2Do can express many rules; Twydo reads all of them but, by default, **changes only
 monthly tasks on a day from 1 to 28 and yearly tasks**, which have been checked against the
 iPhone. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the last day of the month,
@@ -96,13 +96,13 @@ The edit form (`r`, or `i` then the Repeat field) changes a repeat's interval: t
 |---|---|
 | **Today** | open tasks that are overdue, due today, or started (start date reached) |
 | **All** | every open task that has started, from lists not excluded from All |
-| **Scheduled** | open tasks whose start date is in the future, grouped by start date |
+| **Scheduled** | open tasks whose start date is in the future, sorted by start date under one Scheduled header |
 | **Done** | completed tasks, newest first, grouped by completion day |
 | **Next 3 Days** | open tasks due today, tomorrow or the day after (not overdue) |
 | **a list** | its open tasks that have started |
 
 The number beside a view is `due│total`: tasks due today or overdue, then all of them (checklist
-items are not counted).
+items are not counted; Done shows its total only).
 
 Tasks are grouped by due date, in this order:
 

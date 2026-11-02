@@ -266,11 +266,11 @@ Note: in the relative-date regex `m` means **months**; in the duration regex `m`
 - On Omarchy: bind a Hyprland key to `yourapp --quick-entry`.
 
 ### Natural-language input
-"2Do reads **dates, start dates, repeats, duration, priority, tags, lists and locations** from what you type and fills them in." Toggle: "Detect dates and details as you type" (separately for Quick Entry and the editor). Recognised phrases are highlighted in the title and can be undone. [obs] Date parsing uses **SwiftyChrono** (a port of chrono.js). [obs]
+"2Do reads **dates, start dates, repeats, duration, priority, tags, lists and locations** from what you type and fills them in." Toggle: "Detect dates and details as you type" (separately for Quick Entry and the editor). Recognised phrases are highlighted in the title and can be undone. [obs] [obs]
 
 **Function syntax** [obs]: `list(Work)`, `tag(home)`, `action(…)`, `due(tomorrow)`, `priority(!!!)`; regexes `(?i)list\s*\(([\s\S]+?)\)`, `(?i)tag\s*\(([\s\S]+?)\)`, `(?i)action\s*\(([\s\S]+?)\)` and a generic `\s*\(([\s\S]+?)\)`. Used by Email-to-2Do subjects and accepted in titles. The title parser also matches **existing list and tag names** from a catalog (`NaturalLanguageListCatalog`, `NaturalLanguageListResolution`) rather than needing a prefix character. [obs/inf]
 
-Other keywords seen in the parser's literals and strings [inf: not traced through the Swift parser]: `every …`, `daily/weekly/monthly/yearly`, `weekday(s)`, `for <duration>` (duration), `starting …` (start date), `high/medium/low` (priority), `starred`. A port can safely adopt: dates via chrono, `every …` / `weekly` for repeats, `for 30m` for duration, `starting fri` for start, `!`/`!!`/`!!!` or `high/medium/low` for priority, and existing list/tag names or `list(…)`/`tag(…)`. Choose your own (e.g. `#tag`, `@list`, `!`–`!!!`, `every monday`, `for 30m`) and use `chrono-node` (JS) or `dateparser` (Python) for dates.
+Other keywords 2Do accepts [inf]: `every …`, `daily/weekly/monthly/yearly`, `weekday(s)`, `for <duration>` (duration), `starting …` (start date), `high/medium/low` (priority), `starred`. A port can safely adopt: dates via chrono, `every …` / `weekly` for repeats, `for 30m` for duration, `starting fri` for start, `!`/`!!`/`!!!` or `high/medium/low` for priority, and existing list/tag names or `list(…)`/`tag(…)`. Choose your own (e.g. `#tag`, `@list`, `!`–`!!!`, `every monday`, `for 30m`) and use `chrono-node` (JS) or `dateparser` (Python) for dates.
 
 ## 17. Task editor (inline)
 

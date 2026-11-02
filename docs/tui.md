@@ -13,7 +13,7 @@
 │   All   2│10 ││ ▌○ Renew library books    Yesterday  ││                       │
 │   Scheduled 1││                                      ││ List    Inbox         │
 │   Done      2││ TODAY                               1 ││ Due     Yesterday     │
-│ ─ Lists ──── ││ ▌↻ Water plants    weekly   Today    ││                       │
+│ ─ Lists ──── ││ ▌↺ Water plants    weekly   Today    ││                       │
 │ ▌ Bills     6││                                      ││                       │
 │ ▌ Inbox   1│2││                                      ││                       │
 │ ▌ Personal1│2││                                      ││                       │
@@ -26,8 +26,8 @@
 - **Views** (left): the views, your lists with their colour bars, and smart lists. `2│3` is
   "due today or overdue │ all"; see [tasks.md](tasks.md#views-and-date-groups) for what each view
   shows. List groups come from `[[groups]]` in [config.md](config.md).
-- **Tasks** (middle): the current view under date-group headers. `○` a task, `↻` a repeating
-  task with its rule, `[3]` a checklist or project with 3 open items. The bar on the left is the
+- **Tasks** (middle): the current view under date-group headers. `○` a task, `↺` a repeating
+  task with its rule, `[3]` a checklist or project with 3 items. The bar on the left is the
   list's colour. Overdue rows are red.
 - **Details** (right): the selected task's list, dates, repeat, alerts, warnings, its items (on a
   parent) and notes. It appears when the terminal is at least 110 columns wide.

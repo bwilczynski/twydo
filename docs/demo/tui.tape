@@ -14,11 +14,17 @@ Sleep 2.5s
 Type "2"
 Sleep 2s
 
-# Complete "Pay electricity bill" (fourth row).
-Type@400ms "jjj"
-Sleep 800ms
+# Find "Pay electricity bill" and complete it, then clear the search.
+Type "/"
+Type@100ms "electricity"
+Sleep 600ms
+Enter
+Sleep 600ms
 Type "x"
 Sleep 2s
+Type "/"
+Escape
+Sleep 600ms
 
 # Expand the packing checklist (the row above the last one).
 Type "G"

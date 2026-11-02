@@ -123,7 +123,7 @@ unpushed local edits.
 
 ## 1.7 CalDAV provider in detail [obs]
 
-- Uses **libical**. HTTP methods: `PROPFIND`, `REPORT`, `PUT`,
+- HTTP methods: `PROPFIND`, `REPORT`, `PUT`,
   `DELETE`, `MKCALENDAR`, `MKCOL`, `PROPPATCH`, `MOVE`. Uses **sync-token** when the server supports
   it (`caldav_synctoken`, `caldav_usessynctoken` on each list), otherwise ETag comparison.
 - **List = calendar collection** that supports `VTODO`. **Task = one `VTODO` resource.**

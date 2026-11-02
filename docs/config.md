@@ -10,9 +10,9 @@ names the key. Twydo only reads this file.
 |---|---|---|---|
 | `vdir` | path | required | Root of the vdir: one subdirectory per list, one `.ics` per task. A leading `~` or `~/` expands to `$HOME`. |
 | `timezone` | IANA name | system zone, else UTC | Zone used for "today" and floating times. |
-| `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. |
-| `morning_time` | `"HH:MM"` | `"09:00"` | Time used for date-only tasks that need one (e.g. reminders). |
-| `default_list` | list id | none | List new tasks go to. |
+| `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. Reserved: accepted, not used yet. |
+| `morning_time` | `"HH:MM"` | `"09:00"` | Time for date-only tasks that need one, such as reminders. Reserved: accepted, not used yet (notifications are not available yet). |
+| `default_list` | list id | none | List new tasks will go to. Reserved: accepted, not used yet (`tdo op add` takes `--list`; adding in the TUI is not available yet). |
 | `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see [architecture.md](architecture.md#the-operation-journal)). A leading `~` expands to `$HOME`. |
 
 ## `[writes]`
@@ -83,9 +83,6 @@ devices.
 ```toml
 vdir = "~/.local/share/vdirsyncer/tasks"
 timezone = "America/New_York"
-week_start = "mon"
-morning_time = "09:00"
-default_list = "inbox"
 
 [lists.bills]
 show_in_today = false
