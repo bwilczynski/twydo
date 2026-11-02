@@ -1,0 +1,5 @@
+scenario = "plan6-twydo-list1"
+step = "03-phone-reopen"
+device = "iphone"
+action = "reopen p3b's history copy (Dec 12)"
+captured_at = "2026-11-02T18:38:52Z"

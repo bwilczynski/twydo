@@ -180,4 +180,44 @@ Twydo may edit those shapes in round 07.
 
 ## Results
 
-(Filled in after the session: per case/op, `twydo_to_iphone` and `iphone_to_twydo`, plus findings.)
+Session 2026-11-02, same environment as above. Fixtures in `fixtures/phase0/v1/plan6-twydo-list1/`
+and `plan6-twydo-list2/` (round numbers as above). Every round matched the Check column on the
+phone and in `tdo export-json`. Matrix columns set from these rounds:
+
+| Case | Twydo → iPhone (`twydo_to_iphone`) | iPhone → Twydo (`iphone_to_twydo`) | New iPhone baselines |
+|---|---|---|---|
+| checklist | edit, complete, reopen, move, delete | create, edit | — |
+| project | complete, reopen, move, delete | create | — |
+| recurring-project | edit, complete, reopen, move, delete | create, edit, complete (an item) | edit (01) |
+| project-recurring-child | edit | create, edit, complete, reopen | edit (01), reopen (03) |
+| yearly | complete | — | — |
+| timed, start-date, alarms | complete (`T`, `Y`, `A`, `S`) | — | complete (session 1, round 03) |
+
+Usable in `verified` mode now (both columns pass): recurring-project edit and complete,
+project-recurring-child edit, plus what Plan 4 verified. Everything else still needs `test` mode
+or another session.
+
+### Findings
+
+- **Checklist items can carry their own due date.** In this session `c1`–`c3` were created with
+  `DUE`/`DTSTART` equal to `C`'s date (in session 1 `K`'s items had none). Changing `C`'s date on
+  the phone (round 01) **removed the items' `DUE` and `DTSTART`**. Twydo does not do this yet: a
+  Twydo edit of a checklist's date leaves its items on the old date. To fix before checklist date
+  edits are relied on.
+- **Repeats with real shapes complete as 2Do does** (round 04): missed monthly `M` moved one
+  month; `S`, `T`, `Y` moved due and start by one interval, kept `duetime` and the at-due alert;
+  `A`'s 15-minutes-before alert (`TRIGGER:-PT15M`) moved with the due and stayed on both the live
+  task and the copy, so any relative alert behaves as the PT0S one.
+- **Family operations written by Twydo were accepted by the phone** (rounds 05–08, 10): the
+  checklist completed from the TUI after its `x`/`x` question; `P` and `R2` were refused by
+  `tdo op complete` without `--all`. The phone showed the recurring project's completed copy with
+  its items, the reopened copy as a plain project, moved families intact, and deleted families
+  gone with their items.
+- **The phone edits Twydo-written families** (round 09) and Twydo reads them back: renamed item,
+  completed item under a moved recurring project, notes on a repeat.
+- **"Remote server returned an invalid task reference during incremental sync"** appeared once on
+  the phone after round 08 (moves delete without an etag, as in Plan 4); the next sync was fine.
+- **The iPhone list shows future-start and done tasks** when its clock toggle is on; Twydo hides
+  them in lists (spec). Issue #11.
+- **vdirsyncer "completely emptied"** came up after rounds 10 (list 2) and 11 (list 1);
+  synced with `--force-delete`.

@@ -7,10 +7,11 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 Status: **implementation in progress** (plans in `docs/superpowers/plans/`). The phase-0 CalDAV
 compatibility gate has passed (see [`docs/phase0/README.md`](docs/phase0/README.md)). Done so far:
 a read-only foundation (`export-json`, `check`, the TUI), the writable core (`tdo op`), the sync
-runner with conflict handling (`tdo sync`, [`docs/sync.md`](docs/sync.md)) and editing in the TUI
-([`docs/tui.md`](docs/tui.md)). Not yet: adding tasks in the TUI, the notifier, manual order and
-list management. Writes the compatibility matrix has not verified (`compat/matrix.toml`) are
-refused with a reason, which today includes completing many repeating tasks.
+runner with conflict handling (`tdo sync`, [`docs/sync.md`](docs/sync.md)), editing in the TUI
+([`docs/tui.md`](docs/tui.md)), and checklists, projects and recurring projects plus repeats with
+a due time, start date or missed occurrence (Plan 6). Not yet: adding tasks in the TUI, the
+notifier, manual order and list management. Writes the compatibility matrix has not verified
+(`compat/matrix.toml`) are refused with a reason.
 
 ## Start here
 

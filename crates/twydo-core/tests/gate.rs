@@ -581,10 +581,10 @@ fn embedded_matrix_allows_family_baselines() {
         "gate-monthly-project-child",
         vec![Change::Summary("Renamed".into())],
     );
-    assert_eq!(
-        check(&s, m, WriteMode::Test, &op, today()),
-        blocked("edit for recurring-project tasks is not verified yet (iphone_baseline)")
-    );
+    // Verified both ways in the Plan 6 Task 7 session (rounds 01 and 07).
+    assert_eq!(check(&s, m, WriteMode::Test, &op, today()), Ok(()));
+    assert_eq!(check(&s, m, WriteMode::Verified, &op, today()), Ok(()));
+    // Twydo completed a checklist and the phone showed it; the phone side was not captured.
     assert_eq!(
         check(
             &s,
@@ -593,7 +593,7 @@ fn embedded_matrix_allows_family_baselines() {
             &complete("gate-checklist"),
             today()
         ),
-        blocked("complete for checklist tasks is not verified yet (twydo_to_iphone)")
+        blocked("complete for checklist tasks is not verified yet (iphone_to_twydo)")
     );
 }
 

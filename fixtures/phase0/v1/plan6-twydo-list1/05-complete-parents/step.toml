@@ -1,0 +1,5 @@
+scenario = "plan6-twydo-list1"
+step = "05-complete-parents"
+device = "twydo"
+action = "TUI: C x x (confirmation); tdo op complete P --all (refused without); tdo op complete R2 --all (refused without)"
+captured_at = "2026-11-02T19:13:48Z"
