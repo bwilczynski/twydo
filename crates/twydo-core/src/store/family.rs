@@ -9,9 +9,9 @@
 //! reopen, and go with the family on move and delete. A checklist's new date also removes
 //! its items' own dates (`plan6-twydo-list1/01-phone-edit`).
 //!
-//! The loaded files' bytes do not show an item a sync added after the snapshot, so a family
-//! op also rescans the parent's list under the lock ([`Store::check_family`]) and is refused
-//! if the parent has an item it did not load.
+//! The loaded files' bytes do not show an item a sync added after the snapshot, so these ops
+//! also rescan the task's list under the lock ([`Store::check_family`]) and are refused if
+//! the task has an item that was not loaded, including a first item of a task that had none.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -34,7 +34,7 @@ use crate::edit::{
     drop_member_dates, member_copy, moved_copy, new_uid, reopen_member, reopen_one_time,
 };
 use crate::ical;
-use crate::model::Status;
+use crate::model::{Status, TaskKind};
 use crate::views::Snapshot;
 
 /// A loaded child and its status.
@@ -45,7 +45,8 @@ struct Child {
 }
 
 impl Store {
-    /// The family `op` acts on as a whole (the routing of `Store::plan`), or `None`.
+    /// The task `op` acts on and the items loaded with it, for the rescan under the lock: every
+    /// complete, reopen, move and delete, and a checklist's date change; `None` otherwise.
     pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
         let uid = match op {
             Op::Complete { uid }
@@ -55,11 +56,19 @@ impl Store {
             Op::Edit { uid, .. } => uid,
             Op::Create(_) => return Ok(None),
         };
-        let Some(idx) = snap.find(uid).filter(|&i| !snap.children(i).is_empty()) else {
+        let Some(idx) = snap.find(uid) else {
             return Ok(None);
         };
-        if matches!(op, Op::Edit { .. }) && !crate::gate::checklist_date_change(snap, idx, op) {
-            return Ok(None);
+        // Any task may have gained an item since the snapshot, even one that had none (an
+        // empty checklist or project, or a plain task). An edit matters only for a checklist's
+        // dates, which its items follow.
+        if let Op::Edit { changes, .. } = op {
+            let dates = changes
+                .iter()
+                .any(|c| matches!(c, Change::Due(_) | Change::Start(_)));
+            if snap.tasks[idx].kind != TaskKind::Checklist || !dates {
+                return Ok(None);
+            }
         }
         let mut loaded = BTreeSet::new();
         for &i in std::iter::once(&idx).chain(snap.children(idx)) {

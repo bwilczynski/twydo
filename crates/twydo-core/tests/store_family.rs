@@ -554,3 +554,66 @@ fn family_op_runs_when_unrelated_files_appear() {
         .apply(&snap, &Op::Delete { uid: K.into() }, now())
         .unwrap();
 }
+
+/// K's items removed before load, so K is an empty checklist in the snapshot.
+fn empty_checklist() -> (Env, Store) {
+    let (env, store) = env();
+    for uid in [K1B, K2, K3] {
+        fs::remove_file(env.file(uid)).unwrap();
+    }
+    (env, store)
+}
+
+#[test]
+fn op_on_empty_parent_refused_when_its_first_item_arrives_after_load() {
+    for op in [
+        Op::Delete { uid: K.into() },
+        Op::Move {
+            uid: K.into(),
+            to: "list2".into(),
+        },
+        Op::Complete { uid: K.into() },
+    ] {
+        let (env, mut store) = empty_checklist();
+        let snap = env.snap();
+        let k = snap.find(K).unwrap();
+        assert!(snap.children(k).is_empty());
+        let item = env.file("0000000000000000000000000000f00d");
+        let text = fixture(L1, "04-reopen-child", K2)
+            .iter()
+            .map(|&b| b as char)
+            .collect::<String>()
+            .replace(K2, "0000000000000000000000000000f00d");
+        fs::write(&item, text).unwrap();
+        let before = env.files();
+        match store.apply(&snap, &op, now()) {
+            Err(WriteError::Stale(p)) => assert_eq!(p, item, "{op:?}"),
+            other => panic!("{op:?}: expected Stale, got {other:?}"),
+        }
+        assert_eq!(env.files(), before, "{op:?}");
+    }
+}
+
+#[test]
+fn op_on_plain_task_refused_when_an_item_arrives_after_load() {
+    let (env, mut store) = env();
+    let snap = env.snap();
+    // L (a plain monthly task) gains an item behind the snapshot.
+    let l = snap
+        .tasks
+        .iter()
+        .find(|t| t.summary == "L" && t.rrule.is_some())
+        .unwrap()
+        .uid
+        .clone();
+    let item = env.file("0000000000000000000000000000d00d");
+    let text = String::from_utf8(fixture(L1, "04-reopen-child", K2))
+        .unwrap()
+        .replace(K2, "0000000000000000000000000000d00d")
+        .replace(K, &l);
+    fs::write(&item, text).unwrap();
+    match store.apply(&snap, &Op::Delete { uid: l }, now()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, item),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+}
