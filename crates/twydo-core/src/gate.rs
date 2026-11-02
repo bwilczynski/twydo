@@ -23,7 +23,7 @@ use crate::edit::{Change, Due, Op, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::parse_rrule;
-use crate::model::{MetaFormat, Status, Task, TaskKind};
+use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::views::{Snapshot, task_rule_class};
 
 /// Why the gate refused an operation. `Display` is the reason.
@@ -110,7 +110,7 @@ pub fn check(
             if execute != Verdict::Pass {
                 return not_verified();
             }
-            recurring_complete_shape(task, today)?;
+            recurring_complete_shape(task, m, today)?;
         }
     }
 
@@ -256,32 +256,41 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
     }
 }
 
-/// Rule 5: the only repeating completion `complete_recurring` was built for: a date-only due,
-/// a rule [`next_due`] accepts, no start date, alarms or start-day delay, and an occurrence
-/// that is not already missed (the next due lies after `today`).
-fn recurring_complete_shape(t: &Task, today: NaiveDate) -> Result<(), Blocked> {
-    let due = match &t.due {
+/// Rule 5: the repeating completions `complete_recurring` was built for: a date-only or
+/// floating due, a rule [`next_due`] accepts, no absolute alert and no start-day delay. A due
+/// time, start date or relative alerts need the `start-due-alarm-offsets` edge case to pass;
+/// a next due on or before `today` (a missed occurrence) needs `monthly-15th-three-months-late`.
+fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<(), Blocked> {
+    let passes = |id: &str| m.edge_case(id).is_some_and(|e| e.verdict == Verdict::Pass);
+    let offsets = passes("start-due-alarm-offsets");
+    let (due, timed) = match &t.due {
         None => {
             return blocked("completing a repeating task without a due date is not verified yet");
         }
-        Some(IcalDateTime::Date(d)) => *d,
+        Some(IcalDateTime::Date(d)) => (*d, false),
+        Some(IcalDateTime::Floating(dt)) => (dt.date(), true),
         Some(_) => {
-            return blocked("completing a repeating task with a due time is not verified yet");
+            return blocked(
+                "completing a repeating task with a zoned due time is not verified yet",
+            );
         }
     };
     let raw = t.rrule.as_deref().unwrap_or_default();
     let rule = parse_rrule(raw).or_else(|e| blocked(format!("unreadable repeat rule: {e}")))?;
     let next = next_due(due, &rule).or_else(|e| blocked(e.to_string()))?;
     let meta = json_meta(t);
-    if t.start.is_some()
+    let has_start = t.start.is_some()
         || meta
             .as_ref()
-            .is_some_and(|m| m.get_i64("StartDate").is_some())
-    {
+            .is_some_and(|m| m.get_i64("StartDate").is_some());
+    if (timed || has_start || !t.alarms.is_empty()) && !offsets {
         return blocked(START_OFFSETS);
     }
-    if !t.alarms.is_empty() {
-        return blocked(START_OFFSETS);
+    if t.alarms
+        .iter()
+        .any(|a| matches!(a.trigger, Trigger::Absolute(_)))
+    {
+        return blocked("completing a repeating task with an absolute alert is not verified yet");
     }
     if meta
         .as_ref()
@@ -290,7 +299,7 @@ fn recurring_complete_shape(t: &Task, today: NaiveDate) -> Result<(), Blocked> {
     {
         return blocked("completing a repeating task with a start-day delay is not verified yet");
     }
-    if next <= today {
+    if next <= today && !passes("monthly-15th-three-months-late") {
         return blocked(
             "completing a repeating task after a missed occurrence is not verified yet \
              (monthly-15th-three-months-late)",
