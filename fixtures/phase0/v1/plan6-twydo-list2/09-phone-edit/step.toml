@@ -1,0 +1,5 @@
+scenario = "plan6-twydo-list2"
+step = "09-phone-edit"
+device = "iphone"
+action = "phone: c1b -> c1c; complete r2 under moved R3; M notes m (phone showed 'invalid task reference' once after round 08)"
+captured_at = "2026-11-02T19:27:47Z"

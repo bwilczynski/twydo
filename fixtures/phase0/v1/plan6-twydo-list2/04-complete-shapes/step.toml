@@ -1,0 +1,5 @@
+scenario = "plan6-twydo-list2"
+step = "04-complete-shapes"
+device = "twydo"
+action = "tdo op complete M (missed), S, T, Y, A, item r1"
+captured_at = "2026-11-02T18:40:13Z"

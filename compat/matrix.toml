@@ -293,10 +293,10 @@ op = "complete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/rule-years/02-complete"]
-notes = "iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+evidence = ["fixtures/phase0/v1/rule-years/02-complete", "fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. iphone_baseline from the Plan 4 iPhone session (docs/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "yearly"
@@ -404,20 +404,20 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create"]
-notes = "iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "recurring-project"
 op = "edit"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the recurring project itself changes only SUMMARY and stamps; a child edit (plan6-list1 02-edit) is a plain edit. Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "recurring-project"
@@ -425,10 +425,10 @@ op = "complete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent"]
-notes = "Completing the project: live parent advances one interval and keeps its UID; a completed copy of the parent and of every child is added (new UIDs, RELATED-TO the copy); live children are reopened, and their dates do not move (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Completing the project: live parent advances one interval and keeps its UID; a completed copy of the parent and of every child is added (new UIDs, RELATED-TO the copy); live children are reopened, and their dates do not move (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "recurring-project"
@@ -436,10 +436,10 @@ op = "reopen"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
-notes = "Reopening the completed copy: it becomes an open project without RRULE and every child copy is reopened; the live project is untouched. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the completed copy: it becomes an open project without RRULE and every child copy is reopened; the live project is untouched. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "recurring-project"
@@ -447,10 +447,10 @@ op = "move"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move"]
-notes = "New UIDs for the project and its children; RUID becomes the new UID. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. New UIDs for the project and its children; RUID becomes the new UID. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "recurring-project"
@@ -458,10 +458,10 @@ op = "delete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest"]
-notes = "Deleting the live project deletes its children; the completed copy and its children stay. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/plan6-twydo-list1/10-delete"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the live project deletes its children; the completed copy and its children stay. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -470,9 +470,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create"]
-notes = "iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -480,10 +480,10 @@ op = "edit"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/02-edit"]
-notes = "Item title and checklist date. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/02-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Item title and checklist date. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -491,10 +491,10 @@ op = "complete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent"]
-notes = "Item alone (03); the checklist after a confirmation completes every open item (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Item alone (03); the checklist after a confirmation completes every open item (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -502,10 +502,10 @@ op = "reopen"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
-notes = "Reopening the checklist reopens every item (06). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the checklist reopens every item (06). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -513,10 +513,10 @@ op = "move"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move"]
-notes = "Moving the checklist recreates it and every item with new UIDs. Moving one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the checklist recreates it and every item with new UIDs. Moving one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "checklist"
@@ -524,10 +524,10 @@ op = "delete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete"]
-notes = "Deleting the checklist deletes its items. Deleting one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the checklist deletes its items. Deleting one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project"
@@ -536,9 +536,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create"]
-notes = "iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project"
@@ -557,10 +557,10 @@ op = "complete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent"]
-notes = "Child alone (03); the project after a confirmation completes every open child, including a repeating one, which keeps its RRULE and does not advance (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Child alone (03); the project after a confirmation completes every open child, including a repeating one, which keeps its RRULE and does not advance (05). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project"
@@ -568,10 +568,10 @@ op = "reopen"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
-notes = "Reopening the project reopens every child, including a repeating child's completed history copy (06). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the project reopens every child, including a repeating child's completed history copy (06). iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project"
@@ -579,10 +579,10 @@ op = "move"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move"]
-notes = "Moving the project recreates it and every child with new UIDs. Moving one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the project recreates it and every child with new UIDs. Moving one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project"
@@ -590,10 +590,10 @@ op = "delete"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete"]
-notes = "Deleting the project deletes its children, history copies included. Deleting one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the project deletes its children, history copies included. Deleting one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project-recurring-child"
@@ -602,20 +602,20 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create"]
-notes = "iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project-recurring-child"
 op = "edit"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "The repeating child was not edited. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the repeating item changes only SUMMARY and stamps. The repeating child was not edited. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project-recurring-child"
@@ -624,20 +624,20 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child"]
-notes = "Like a plain monthly completion; the history copy keeps RELATED-TO and parentuid. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-twydo-list1/02-phone-complete"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Like a plain monthly completion; the history copy keeps RELATED-TO and parentuid. iphone_baseline from the Plan 6 iPhone session (docs/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project-recurring-child"
 op = "reopen"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Only reopened through its parent (06-reopen-parent), which also reopened its history copy. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/03-phone-reopen"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Plan 6 Task 7 round 03: reopening the repeating item's history copy is a plain reopen (PERCENT-COMPLETE:0, COMPLETED removed); RUID and parent kept. Only reopened through its parent (06-reopen-parent), which also reopened its history copy. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
 
 [[operation]]
 case = "project-recurring-child"
@@ -752,13 +752,13 @@ notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-b
 [[operation]]
 case = "timed"
 op = "complete"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "timed"
@@ -818,13 +818,13 @@ notes = "Twydo columns from the Plan 4 verification session (docs/phase0/plan4-b
 [[operation]]
 case = "start-date"
 op = "complete"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "start-date"
@@ -884,13 +884,13 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "alarms"
 op = "complete"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child"]
+notes = "Plan 6 Task 7 session (docs/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
 [[operation]]
 case = "alarms"
