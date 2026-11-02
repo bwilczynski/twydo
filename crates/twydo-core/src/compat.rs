@@ -204,15 +204,15 @@ mod tests {
             }
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
-        assert_eq!(m.operation.len(), 66);
+        assert_eq!(m.operation.len(), 72);
         assert_eq!(m.edge_case.len(), 11);
     }
 
     #[test]
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
-        assert_eq!(m.operation.len(), 66);
-        let e = m.operation("checklist", "create").unwrap();
+        assert_eq!(m.operation.len(), 72);
+        let e = m.operation("from-completion", "create").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Unverified);
         assert!(m.edge_case(&m.edge_case[0].id).is_some());
         assert!(m.operation("nope", "create").is_none());

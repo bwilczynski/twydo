@@ -1,0 +1,5 @@
+scenario = "plan6-list2"
+step = "05-complete-parent"
+device = "iphone"
+action = "complete K (k1b,k2,k3 open), P (p1,p2,p3 open), R (r2 open, r1 r3 done); each asked for confirmation"
+captured_at = "2026-11-02T15:53:22Z"
