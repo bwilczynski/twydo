@@ -8,8 +8,10 @@
 //!   copy-and-advance. The live task's due date moves to the next occurrence, and a completed
 //!   history copy with a new UID records the occurrence that was done.
 //!
-//! Only the captured repeat shape is supported: a date-only or floating-time `DUE`, `RRULE` `FREQ=MONTHLY` or
-//! `FREQ=YEARLY` with an optional `INTERVAL`, repeating from the due date. Anything else is
+//! Only the captured repeat shape is supported: a date-only or floating-time `DUE` (the time
+//! is kept), `RRULE` `FREQ=MONTHLY` or `FREQ=YEARLY` with an optional `INTERVAL`, repeating
+//! from the due date. A JSON `StartDate` moves by the same interval (H11), and a JSON `uid`
+//! naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
 
 use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveTime, Utc};
