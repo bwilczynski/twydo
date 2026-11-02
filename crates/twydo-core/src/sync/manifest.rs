@@ -8,6 +8,7 @@ use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
+use super::status::CollState;
 use crate::store::fsio::write_atomic;
 use crate::store::journal::Entry;
 
@@ -15,14 +16,15 @@ use crate::store::journal::Entry;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Manifest(pub BTreeMap<String, Vec<String>>);
 
-fn manifest_path(state: &Path) -> PathBuf {
-    state.join("sync").join("manifest.json")
-}
-
 impl Manifest {
+    /// `<state>/sync/manifest.json`.
+    pub fn path(state: &Path) -> PathBuf {
+        state.join("sync").join("manifest.json")
+    }
+
     /// Reads `<state>/sync/manifest.json`; a missing file is an empty manifest.
     pub fn load(state: &Path) -> io::Result<Manifest> {
-        let path = manifest_path(state);
+        let path = Manifest::path(state);
         match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map(Manifest)
@@ -37,7 +39,7 @@ impl Manifest {
         fs::create_dir_all(state.join("sync"))?;
         let mut json = serde_json::to_string_pretty(&self.0).map_err(io::Error::other)?;
         json.push('\n');
-        write_atomic(&manifest_path(state), json.as_bytes())
+        write_atomic(&Manifest::path(state), json.as_bytes())
     }
 
     /// Replaces the entry of each of `colls` with a fresh listing of its directory in
@@ -75,6 +77,38 @@ impl Manifest {
             self.0.insert(coll.to_string(), files);
         }
         Ok(())
+    }
+
+    /// Brings the manifest up to date after a run that reached vdirsyncer, from the run's
+    /// collection `states`. When the run's reach is unknown (`uncertain`: it timed out or
+    /// printed errors of its own), every entry is dropped except those of `EmptiedLocal`
+    /// collections. Otherwise `Ok` and `Conflict` collections are re-listed and `Error`
+    /// ones dropped: a failed run may have downloaded tasks the old listing lacks.
+    /// `EmptiedLocal` and `EmptiedRemote` keep their entry: vdirsyncer stops on an emptied
+    /// collection before it transfers anything in it.
+    pub fn update(
+        &mut self,
+        vdir: &Path,
+        states: &BTreeMap<String, CollState>,
+        uncertain: bool,
+    ) -> io::Result<()> {
+        if uncertain {
+            self.0
+                .retain(|c, _| states.get(c) == Some(&CollState::EmptiedLocal));
+            return Ok(());
+        }
+        for (c, s) in states {
+            if matches!(s, CollState::Error { .. }) {
+                self.0.remove(c);
+            }
+        }
+        self.refresh(
+            vdir,
+            states
+                .iter()
+                .filter(|(_, s)| matches!(s, CollState::Ok | CollState::Conflict))
+                .map(|(c, _)| c.as_str()),
+        )
     }
 
     /// Whether `pending` (sorted by id, as [`crate::store::journal::Journal::pending`]
@@ -166,6 +200,42 @@ mod tests {
         let p = [entry("1", &[("c1/a.ics", None)])];
         assert!(!Manifest::default().emptied_by("c1", &p));
         assert!(!manifest(&[]).emptied_by("c1", &p));
+    }
+
+    #[test]
+    fn update_drops_failed_collections_and_keeps_emptied_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let vdir = dir.path().join("vdir");
+        fs::create_dir_all(vdir.join("ok")).unwrap();
+        fs::write(vdir.join("ok/n.ics"), "x").unwrap();
+        let mut m = Manifest::default();
+        for c in ["ok", "err", "el", "er", "other"] {
+            m.0.insert(c.into(), vec![format!("{c}/a.ics")]);
+        }
+        let states: BTreeMap<String, CollState> = [
+            ("ok", CollState::Ok),
+            (
+                "err",
+                CollState::Error {
+                    message: "x".into(),
+                },
+            ),
+            ("el", CollState::EmptiedLocal),
+            ("er", CollState::EmptiedRemote),
+        ]
+        .into_iter()
+        .map(|(c, s)| (c.to_string(), s))
+        .collect();
+        let mut clean = m.clone();
+        clean.update(&vdir, &states, false).unwrap();
+        assert_eq!(
+            clean.0.keys().collect::<Vec<_>>(),
+            ["el", "er", "ok", "other"]
+        );
+        assert_eq!(clean.0["ok"], vec!["ok/n.ics".to_string()]);
+        assert_eq!(clean.0["el"], vec!["el/a.ics".to_string()]);
+        m.update(&vdir, &states, true).unwrap();
+        assert_eq!(m.0.keys().collect::<Vec<_>>(), ["el"]);
     }
 
     #[test]

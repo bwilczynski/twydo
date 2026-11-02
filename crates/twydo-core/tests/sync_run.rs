@@ -12,6 +12,7 @@ use twydo_core::conflicts::{ConflictKind, ConflictStore, Side};
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
+use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
@@ -1083,4 +1084,63 @@ fn unusable_manifest_does_not_stop_the_run() {
     );
     let st = SyncStatus::load(&fx.state()).unwrap();
     assert_eq!(st.last_success, Some(now()));
+}
+
+/// Seeds the manifest with entries for c1, c2 and c3, runs `fake`, and returns the
+/// collections left in the manifest.
+fn manifest_after(fake: &str, timeout: Option<u64>) -> Vec<String> {
+    let mut fx = Fx::new(fake);
+    if let Some(t) = timeout {
+        fx.sync_mut().timeout_secs = t;
+    }
+    let mut m = Manifest::default();
+    for c in ["c1", "c2", "c3"] {
+        m.0.insert(c.into(), vec![format!("{c}/a.ics")]);
+    }
+    m.save(&fx.state()).unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some(), "{r:?}");
+    assert_eq!(
+        r.collections.get("c1"),
+        Some(&CollState::EmptiedLocal),
+        "{r:?}"
+    );
+    Manifest::load(&fx.state()).unwrap().0.into_keys().collect()
+}
+
+#[test]
+fn timed_out_run_drops_evidence_but_keeps_emptied_local() {
+    let kept = manifest_after(
+        &format!(
+            "{}\nprintf 'Syncing twydo/c2\\n' >&2\nsleep 30",
+            cat_fixture("emptied-local.txt")
+        ),
+        Some(1),
+    );
+    assert_eq!(kept, vec!["c1".to_string()]);
+}
+
+#[test]
+fn unattributed_error_drops_evidence_but_keeps_emptied_local() {
+    let kept = manifest_after(
+        &format!(
+            "{}\nprintf 'Syncing twydo/c2\\nerror: Connection refused\\n' >&2\nexit 1",
+            cat_fixture("emptied-local.txt")
+        ),
+        None,
+    );
+    assert_eq!(kept, vec!["c1".to_string()]);
+}
+
+#[test]
+fn errored_collection_drops_its_evidence_only() {
+    let kept = manifest_after(
+        &format!(
+            "{}\nprintf 'Syncing twydo/c2\\nerror: twydo/c2: Connection reset\\n' >&2\nexit 1",
+            cat_fixture("emptied-local.txt")
+        ),
+        None,
+    );
+    // "Twydo test" synced cleanly in the fixture, so it gains an entry.
+    assert_eq!(kept, vec!["Twydo test", "c1", "c3"]);
 }

@@ -680,6 +680,53 @@ fn partial_journal_deletion_does_not_force() {
     assert_eq!(p.read_server("u3"), Some(task("u3", "three")));
 }
 
+/// A run that fails for the list after downloading a task leaves no evidence: the list is
+/// not forced later, even when every task the last clean sync saw was deleted through
+/// Twydo, because the downloaded one vanished without a journal entry.
+#[test]
+fn download_in_failed_run_disables_auto_force() {
+    require_vdirsyncer!();
+    // vdirsyncer, then an injected failure of c1 while `fail` exists.
+    let root = tempfile::tempdir().unwrap();
+    let flag = root.path().join("fail");
+    let wrapper = root.path().join("vdirsyncer-wrapper");
+    fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\nvdirsyncer \"$@\"\nrc=$?\n\
+             if [ -e '{}' ] && [ \"$1\" = sync ]; then\n\
+             echo 'error: twydo/c1: injected failure' >&2\nexit 1\nfi\nexit $rc\n",
+            flag.display()
+        ),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let p = Pair::with_sync(&format!("command = \"{}\"\n", wrapper.display()));
+    assert_eq!(p.tdo_sync().0, 0);
+    p.write_server("u4", &task("u4", "four"));
+    fs::write(&flag, "").unwrap();
+    let (code, err) = p.tdo_sync();
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("injected failure"), "{err}");
+    assert_eq!(p.read_vdir("u4"), Some(task("u4", "four")), "downloaded");
+    fs::remove_file(&flag).unwrap();
+    for u in ["u1", "u2", "u3"] {
+        p.op(&["delete", u]);
+    }
+    fs::remove_file(p.vdir().join(COLL).join("u4.ics")).unwrap();
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        err.contains("was emptied here; to apply that on the server run: tdo sync --force-delete"),
+        "{err}"
+    );
+    assert!(!out.contains("applied the emptied list"), "{out}");
+    assert_eq!(p.read_server("u4"), Some(task("u4", "four")));
+}
+
 /// Without a Twydo sync of the list there is no record of what it held: never forced.
 #[test]
 fn emptying_before_any_twydo_sync_is_not_forced() {
