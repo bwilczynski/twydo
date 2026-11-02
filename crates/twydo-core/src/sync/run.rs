@@ -25,7 +25,7 @@ use super::status::{CollState, SyncStatus, backoff, coll_states};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::store::bind_vdir_state;
-use crate::store::fsio::VdirLock;
+use crate::store::fsio::{VdirLock, remove_durable};
 use crate::store::journal::{Journal, Stage, recover_locked};
 
 /// How `run` was asked to run.
@@ -197,16 +197,30 @@ fn one_pass(
     let shared = VdirLock::shared(state)?;
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
-    // Read before vdirsyncer runs: past that point an error would skip reconciliation. An
-    // unreadable manifest is no evidence (nothing is auto-forced); the refresh below
-    // rewrites it.
-    let mut manifest = Manifest::load(state).unwrap_or_else(|e| {
+    // The evidence is consumed before vdirsyncer runs: read into memory (past that point an
+    // error would skip reconciliation), then removed from disk, so a run that does not reach
+    // its update in step 5 (killed, failed, or unable to save) leaves none behind. The copy
+    // in memory, which predates this run, decides this run's auto-force. An unreadable or
+    // unremovable manifest is no evidence (nothing is auto-forced).
+    let mut manifest = match Manifest::load(state) {
+        Ok(m) => m,
+        Err(e) => {
+            report.warnings.push(format!(
+                "sync/manifest.json is unreadable ({e}); emptied lists will not be applied \
+                 automatically until the next sync rewrites it"
+            ));
+            Manifest::default()
+        }
+    };
+    if let Err(e) = remove_durable(&Manifest::path(state))
+        && manifest != Manifest::default()
+    {
         report.warnings.push(format!(
-            "sync/manifest.json is unreadable ({e}); emptied lists will not be applied \
-             automatically until the next sync rewrites it"
+            "sync/manifest.json could not be removed before the sync ({e}); emptied lists \
+             will not be applied automatically in this run"
         ));
-        Manifest::default()
-    });
+        manifest = Manifest::default();
+    }
     fs::write(&hook_log, b"")?;
     let mut args = vec!["sync".to_string()];
     if force.is_empty() {
@@ -283,24 +297,17 @@ fn one_pass(
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
         // The evidence a later auto-force needs (see [`Manifest::update`]). A failure here
-        // is a warning, so the status below is still saved; the file is then removed, so
-        // stale evidence cannot force anything.
+        // is a warning, so the status below is still saved; the file was removed before
+        // vdirsyncer ran, so no stale evidence is left behind.
         let uncertain = !out.unattributed.is_empty() || matches!(ran.outcome, Outcome::TimedOut);
         if let Err(e) = manifest
             .update(&cfg.vdir, &collections, uncertain)
             .and_then(|()| manifest.save(state))
         {
-            let warning = match fs::remove_file(Manifest::path(state)) {
-                Err(r) if r.kind() != io::ErrorKind::NotFound => format!(
-                    "sync/manifest.json could not be written ({e}) or removed ({r}); remove it \
-                     by hand to be sure no emptied list is applied automatically from it"
-                ),
-                _ => format!(
-                    "sync/manifest.json could not be written ({e}) and was removed; emptied \
-                     lists will not be applied automatically until a sync writes it"
-                ),
-            };
-            report.warnings.push(warning);
+            report.warnings.push(format!(
+                "sync/manifest.json could not be written ({e}); emptied lists will not be \
+                 applied automatically until a sync writes it"
+            ));
         }
     }
 

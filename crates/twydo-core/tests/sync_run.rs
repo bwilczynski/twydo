@@ -1144,3 +1144,21 @@ fn errored_collection_drops_its_evidence_only() {
     // "Twydo test" synced cleanly in the fixture, so it gains an entry.
     assert_eq!(kept, vec!["Twydo test", "c1", "c3"]);
 }
+
+/// The evidence is consumed before vdirsyncer runs: a run that dies after vdirsyncer (here
+/// the hook log is unreadable) leaves no manifest for the next run to force from.
+#[test]
+fn run_failing_after_vdirsyncer_leaves_no_manifest() {
+    let fx = Fx::new(&format!(
+        "{}\nrm -f \"$TWYDO_SYNC_HOOKLOG\"\nmkdir \"$TWYDO_SYNC_HOOKLOG\"\nexit 0",
+        cat_fixture("emptied-local.txt")
+    ));
+    let mut m = Manifest::default();
+    m.0.insert("c1".into(), vec!["c1/a.ics".into()]);
+    m.save(&fx.state()).unwrap();
+    assert!(run(&fx.cfg, &manual(), now()).is_err());
+    assert!(
+        !Manifest::path(&fx.state()).exists(),
+        "a run that did not finish its update leaves no evidence"
+    );
+}
