@@ -10,12 +10,15 @@
 //!   (`05-complete-parent` r1, r2): an open member's copy is completed, a completed one's
 //!   keeps its `COMPLETED`.
 //!
+//! - Changing a checklist's date removes its items' own `DUE` and mirrored `DTSTART`
+//!   (`plan6-twydo-list1/01-phone-edit` c1–c3): items take their date from the checklist.
+//!
 //! Each function edits one resource; the store applies them to a whole family.
 
 use chrono::{DateTime, Utc};
 
 use super::complete::{State, mark_completed, mark_open, state};
-use super::{EditError, Meta, meta_of, the_todo, touch, unsupported, write_meta};
+use super::{EditError, Meta, has_own_dtstart, meta_of, the_todo, touch, unsupported, write_meta};
 use crate::ical::{Calendar, Component, Property};
 
 /// Complete an open member at `at` (its parent's completion time), stamps = `now`. A
@@ -139,5 +142,38 @@ pub(super) fn set_related_to(todo: &mut Component, parent_uid: &str) -> Result<(
             Some("UID"),
         ),
     }
+    Ok(())
+}
+
+/// Remove a checklist item's own `DUE` and its `DTSTART` mirror, as 2Do does when the
+/// checklist's date changes; stamps = `now`. Refused for an item without `DUE`, with its own
+/// `DTSTART`, or with a due time or start date in its metadata (not captured). All or nothing.
+pub fn drop_member_dates(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    if todo.prop("DUE").is_none() {
+        return Err(unsupported("item has no date of its own"));
+    }
+    if has_own_dtstart(todo) {
+        return Err(unsupported(
+            "removing an item's own start (DTSTART) is not verified yet",
+        ));
+    }
+    let timed = match meta_of(todo) {
+        Meta::Json(m) => m.get_i64("duetime").is_some() || m.get_i64("StartDate").is_some(),
+        Meta::Absent => false,
+        Meta::Tokens | Meta::UnreadableJson => {
+            return Err(unsupported("this task's 2Do metadata format is read-only"));
+        }
+    };
+    if timed {
+        return Err(unsupported(
+            "removing an item's due time or start date is not verified yet",
+        ));
+    }
+    todo.remove_props("DUE");
+    todo.remove_props("DTSTART");
+    touch(todo, now);
+    *cal = work;
     Ok(())
 }

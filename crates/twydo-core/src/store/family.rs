@@ -6,14 +6,15 @@
 //!
 //! The gate (rule 1b) has already refused a family with a child it has no case for, so each
 //! child here is a supported shape. Cancelled children are left as they are by complete and
-//! reopen, and go with the family on move and delete.
+//! reopen, and go with the family on move and delete. A checklist's new date also removes
+//! its items' own dates (`plan6-twydo-list1/01-phone-edit`).
 
 use chrono::{DateTime, Utc};
 
 use super::{Plan, Store, Target, WriteError, create};
 use crate::edit::{
-    complete_member, complete_one_time, complete_recurring, member_copy, moved_copy, new_uid,
-    reopen_member, reopen_one_time,
+    Change, apply_changes, complete_member, complete_one_time, complete_recurring,
+    drop_member_dates, member_copy, moved_copy, new_uid, reopen_member, reopen_one_time,
 };
 use crate::model::Status;
 use crate::views::Snapshot;
@@ -140,6 +141,40 @@ impl Store {
             uids,
             writes,
             holds: Vec::new(),
+        })
+    }
+
+    /// A checklist's date change: the checklist's `changes`, and every item with a date of
+    /// its own loses it, as 2Do does (the gate allows only a new date-only due here). Items
+    /// without a date are held.
+    pub(super) fn plan_checklist_date(
+        &self,
+        snap: &Snapshot,
+        idx: usize,
+        p: Target,
+        changes: &[Change],
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        let mut cal = p.cal.clone();
+        apply_changes(&mut cal, changes, now)?;
+        let mut uids = vec![snap.tasks[idx].uid.clone()];
+        let mut writes = vec![p.update(&cal)?];
+        let mut holds = Vec::new();
+        for (&c, child) in snap.children(idx).iter().zip(self.children(snap, idx)?) {
+            if snap.tasks[c].due.is_none() {
+                holds.push(child.target.hold());
+                continue;
+            }
+            let mut cal = child.target.cal.clone();
+            drop_member_dates(&mut cal, now)?;
+            uids.push(child.uid);
+            writes.push(child.target.update(&cal)?);
+        }
+        Ok(Plan {
+            kind: "edit",
+            uids,
+            writes,
+            holds,
         })
     }
 

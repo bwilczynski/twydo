@@ -201,9 +201,10 @@ or another session.
 
 - **Checklist items can carry their own due date.** In this session `c1`–`c3` were created with
   `DUE`/`DTSTART` equal to `C`'s date (in session 1 `K`'s items had none). Changing `C`'s date on
-  the phone (round 01) **removed the items' `DUE` and `DTSTART`**. Twydo does not do this yet: a
-  Twydo edit of a checklist's date leaves its items on the old date. To fix before checklist date
-  edits are relied on.
+  the phone (round 01) **removed the items' `DUE` and `DTSTART`**. Twydo now does the same: a
+  new date-only due on such a checklist writes the checklist and removes its items' dates in one
+  entry (`tests/store_family.rs`). Removing the date, a time or a start date stays refused, and
+  items cannot get dates of their own.
 - **Repeats with real shapes complete as 2Do does** (round 04): missed monthly `M` moved one
   month; `S`, `T`, `Y` moved due and start by one interval, kept `duetime` and the at-due alert;
   `A`'s 15-minutes-before alert (`TRIGGER:-PT15M`) moved with the due and stayed on both the live

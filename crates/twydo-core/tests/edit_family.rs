@@ -4,7 +4,9 @@
 mod common;
 
 use chrono::{DateTime, Utc};
-use twydo_core::edit::{EditError, complete_member, member_copy, moved_copy, reopen_member};
+use twydo_core::edit::{
+    EditError, complete_member, drop_member_dates, member_copy, moved_copy, reopen_member,
+};
 use twydo_core::ical::{Calendar, parse, serialize};
 use twydo_core::model::meta_edit::MetaJson;
 
@@ -207,4 +209,48 @@ fn moving_without_parent_keeps_related_to() {
     let moved = moved_copy(&cal, K1B_MOVED, None, t0()).unwrap();
     assert_eq!(todo(&moved).prop("RELATED-TO").unwrap().value, K);
     assert_eq!(meta(&moved).get_str("parentuid"), Some(K));
+}
+
+// Plan 6 Task 7 round 01: the phone moved checklist C's date and removed its items' own dates.
+const T1: &str = "plan6-twydo-list1";
+const C1: &str = "f2bcae42b8f84b37b48c18b7f89c5ac0";
+
+#[test]
+fn dropping_item_dates_matches_2do() {
+    let input = fixture(T1, "00-setup", C1);
+    let evidence = parse(&fixture(T1, "01-phone-edit", C1)).unwrap();
+    let mut cal = parse(&input).unwrap();
+    drop_member_dates(&mut cal, dtstamp(&evidence)).unwrap();
+    let out = serialize(&cal);
+    check_lines(C1, &input, &out, lines(&evidence), &["DUE", "DTSTART"], &[]);
+}
+
+#[test]
+fn dropping_item_dates_refuses_an_item_without_a_date() {
+    let mut cal = parse(&fixture(T1, "01-phone-edit", C1)).unwrap();
+    let before = cal.clone();
+    let err = drop_member_dates(&mut cal, t0()).unwrap_err();
+    assert_eq!(unsupported(&err), "item has no date of its own");
+    assert_eq!(cal, before);
+}
+
+#[test]
+fn dropping_item_dates_refuses_a_timed_or_started_item() {
+    for (key, value) in [("duetime", 900), ("StartDate", 1796083200)] {
+        let mut cal = parse(&fixture(T1, "00-setup", C1)).unwrap();
+        let mut m = meta(&cal);
+        m.set_i64(key, value);
+        let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+        todo.prop_mut("X-2DOAPP-METADATA")
+            .unwrap()
+            .set_value(&m.encode());
+        let before = cal.clone();
+        let err = drop_member_dates(&mut cal, t0()).unwrap_err();
+        assert_eq!(
+            unsupported(&err),
+            "removing an item's due time or start date is not verified yet",
+            "{key}"
+        );
+        assert_eq!(cal, before);
+    }
 }

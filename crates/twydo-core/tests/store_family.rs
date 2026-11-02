@@ -423,3 +423,84 @@ fn verified_undo_of_recurring_project_completion_needs_its_edge_case() {
         }
     }
 }
+
+// Plan 6 Task 7 round 01: checklist C dated Dec 10, its items carrying the same date; the
+// phone moved C to Dec 11 and removed c1–c3's own dates.
+const T1: &str = "plan6-twydo-list1";
+const C: &str = "c05c77f7a0bc42d79f32d95ebf519ea3";
+const C_ITEMS: [&str; 3] = [
+    "f2bcae42b8f84b37b48c18b7f89c5ac0",
+    "9e8d9baa64ba4737ad5cdb5566c6a992",
+    "a80ca289da5a4ff88e80ee3754703699",
+];
+
+fn dated_checklist() -> (Env, Store) {
+    let env = Env::new(WriteMode::Test, "plan6-twydo-list1/00-setup");
+    let mut cases = CASES.to_vec();
+    cases.push("date-only");
+    let store = env.store(common::matrix(&cases, "unverified", &[]));
+    (env, store)
+}
+
+fn new_date() -> Op {
+    Op::Edit {
+        uid: C.into(),
+        changes: vec![twydo_core::edit::Change::Due(Some(
+            twydo_core::edit::Due::Date(chrono::NaiveDate::from_ymd_opt(2026, 12, 11).unwrap()),
+        ))],
+    }
+}
+
+/// Non-stamp lines of a resource.
+fn content(bytes: &[u8]) -> Vec<Line> {
+    sorted(
+        lines(&parse(bytes).unwrap())
+            .into_iter()
+            .filter(|l| !is_stamp(&l.1))
+            .collect(),
+    )
+}
+
+#[test]
+fn checklist_date_change_drops_item_dates_like_2do() {
+    let (env, mut store) = dated_checklist();
+    let id = store.apply(&env.snap(), &new_date(), now()).unwrap();
+    for uid in std::iter::once(C).chain(C_ITEMS) {
+        let want = fixture(T1, "01-phone-edit", uid);
+        assert_eq!(
+            content(&fs::read(env.file(uid)).unwrap()),
+            content(&want),
+            "{uid}"
+        );
+    }
+    let entry = env.journal().into_iter().find(|e| e.id == id).unwrap();
+    assert_eq!(entry.writes.len(), 4);
+    assert_eq!(entry.uids[0], C);
+}
+
+#[test]
+fn checklist_date_change_undo_restores_all() {
+    let (env, mut store) = dated_checklist();
+    let before = env.files();
+    store.apply(&env.snap(), &new_date(), now()).unwrap();
+    assert_ne!(env.files(), before);
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+}
+
+#[test]
+fn checklist_date_change_refused_when_item_changed() {
+    let (env, mut store) = dated_checklist();
+    let snap = env.snap();
+    let item = env.file(C_ITEMS[1]);
+    let changed = fs::read_to_string(&item)
+        .unwrap()
+        .replace("SUMMARY:c2", "SUMMARY:c2b");
+    fs::write(&item, &changed).unwrap();
+    let before = env.files();
+    match store.apply(&snap, &new_date(), now()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, item),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(env.files(), before);
+}

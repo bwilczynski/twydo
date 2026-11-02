@@ -19,7 +19,7 @@ pub mod family;
 
 pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
 pub use create::{file_name, new_task, new_uid};
-pub use family::{complete_member, member_copy, reopen_member};
+pub use family::{complete_member, drop_member_dates, member_copy, reopen_member};
 
 const META_PROP: &str = "X-2DOAPP-METADATA";
 const META_OPEN: &str = "<2Do Meta>";

@@ -8,8 +8,11 @@
 //!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
 //!    so each child must pass the same lookup, then have cases (rule 2) and, if it repeats,
-//!    its class's preserve verdict (rule 4), or the op is refused with the child's reason; moving or deleting one item alone, or reopening an item of a
-//!    completed or cancelled parent, is refused;
+//!    its class's preserve verdict (rule 4), or the op is refused with the child's reason.
+//!    A checklist's date change whose items have dates of their own is such an op too
+//!    ([`checklist_date_change`]); it may only set a new date-only due. Moving or deleting
+//!    one item alone, reopening an item of a completed or cancelled parent, or giving a
+//!    checklist item a due or start date, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
 //!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
 //!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
@@ -253,12 +256,41 @@ fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
     }
 }
 
+const ITEM_DATES: &str = "checklist items take their date from the checklist";
+const DATED_ITEMS: &str = "removing a checklist's date, or giving it a time or a start date, \
+                           is not verified yet while its items have dates of their own";
+
+/// Whether `op` changes the due or start date of the checklist at `idx` while some of its
+/// items carry a date of their own. 2Do then removes the items' dates
+/// (`plan6-twydo-list1/01-phone-edit`), so the op writes the family.
+pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
+    let Op::Edit { changes, .. } = op else {
+        return false;
+    };
+    snap.tasks[idx].kind == TaskKind::Checklist
+        && changes
+            .iter()
+            .any(|c| matches!(c, Change::Due(_) | Change::Start(_)))
+        && snap
+            .children(idx)
+            .iter()
+            .any(|&c| snap.tasks[c].due.is_some())
+}
+
 /// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`], then have
 /// cases ([`task_cases`]) and, if it repeats, its class's `[[rule]]` preserve verdict (rule
 /// 4); an item moved, deleted, or reopened under a completed or cancelled parent, on its own
-/// is not verified.
+/// is not verified, nor is a date on a checklist item.
 fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
+        if let Op::Edit { changes, .. } = op
+            && snap.tasks[p].kind == TaskKind::Checklist
+            && changes
+                .iter()
+                .any(|c| matches!(c, Change::Due(_) | Change::Start(_)))
+        {
+            return blocked(ITEM_DATES);
+        }
         match op {
             Op::Move { .. } => {
                 return blocked(
@@ -276,10 +308,23 @@ fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blo
             _ => {}
         }
     }
-    if matches!(
-        op,
-        Op::Complete { .. } | Op::Reopen { .. } | Op::Move { .. } | Op::Delete { .. }
-    ) {
+    let date_change = checklist_date_change(snap, idx, op);
+    if date_change
+        && let Op::Edit { changes, .. } = op
+        && !changes.iter().all(|c| match c {
+            Change::Due(d) => matches!(d, Some(Due::Date(_))),
+            Change::Start(_) => false,
+            _ => true,
+        })
+    {
+        return blocked(DATED_ITEMS);
+    }
+    if date_change
+        || matches!(
+            op,
+            Op::Complete { .. } | Op::Reopen { .. } | Op::Move { .. } | Op::Delete { .. }
+        )
+    {
         // Two passes: any child's lookup reason wins over any child's shape reason.
         for &c in snap.children(idx) {
             lookup(snap, &snap.tasks[c].uid)?;

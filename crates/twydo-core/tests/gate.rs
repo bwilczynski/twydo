@@ -1009,3 +1009,67 @@ fn history_copy_reopen_mode_aware() {
 fn blocked_displays_reason() {
     assert_eq!(Blocked("duplicate UID".into()).to_string(), "duplicate UID");
 }
+
+const ITEM_DATES: &str = "checklist items take their date from the checklist";
+const DATED_ITEMS: &str = "removing a checklist's date, or giving it a time or a start date, \
+                           is not verified yet while its items have dates of their own";
+
+fn day(d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 12, d).unwrap()
+}
+
+#[test]
+fn checklist_item_dates_refused() {
+    let s = snap();
+    let m = fam();
+    for uid in ["gate-checklist-item", "gate-checklist-dated-item"] {
+        for change in [
+            Change::Due(Some(Due::Date(day(11)))),
+            Change::Due(None),
+            Change::Start(Some(day(1))),
+        ] {
+            let op = edit(uid, vec![change.clone()]);
+            assert_eq!(
+                check(&s, &m, WriteMode::Test, &op, today()),
+                blocked(ITEM_DATES),
+                "{uid} {change:?}"
+            );
+        }
+        // Other fields of an item stay editable.
+        let op = edit(uid, vec![Change::Summary("Renamed".into())]);
+        assert_eq!(
+            check(&s, &m, WriteMode::Test, &op, today()),
+            Ok(()),
+            "{uid}"
+        );
+    }
+}
+
+#[test]
+fn dated_checklist_takes_only_a_new_date() {
+    let s = snap();
+    let m = fam();
+    let at = |changes| {
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &edit("gate-checklist-dated", changes),
+            today(),
+        )
+    };
+    assert_eq!(at(vec![Change::Due(Some(Due::Date(day(11))))]), Ok(()));
+    assert_eq!(at(vec![Change::Summary("Renamed".into())]), Ok(()));
+    let time = day(11).and_hms_opt(9, 0, 0).unwrap();
+    for changes in [
+        vec![Change::Due(None)],
+        vec![Change::Due(Some(Due::Time(time)))],
+        vec![Change::Start(Some(day(1)))],
+        vec![Change::Due(Some(Due::Date(day(11)))), Change::Start(None)],
+    ] {
+        assert_eq!(at(changes.clone()), blocked(DATED_ITEMS), "{changes:?}");
+    }
+    // A checklist whose items carry no dates keeps every date edit (session 1, H2).
+    let op = edit("gate-checklist", vec![Change::Due(None)]);
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+}
