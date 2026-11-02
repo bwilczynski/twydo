@@ -87,7 +87,7 @@ Observed options [obs] (UI strings):
 
 Behaviour on completion [obs, from the user's synced data]: 2Do **creates a completed copy** of the occurrence (shown in Done, no repeat, linked back via `ruid`) and **moves the original task's due date (and start date) forward** by the rule. The repeating task keeps its uid forever. Synthetic example: a monthly task on the 10th has completed copies for January and February 2000, and the live task is due March 10, 2000.
 
-### Exact encoding (decompiled `TodoTask.getReadableRepeatInfo`, `TaskHelper.checkIfTaskRepeats`) [obs]
+### Exact encoding [obs]
 
 A rule is three integers: `recurrenceType` (sync key `repeattype`), `recurrenceValue` (`repeatval`), `recurrenceFrom` (`recurrence`).
 
@@ -169,7 +169,7 @@ The sort bar sits above the list: **direction arrow ↓/↑** and a **sort field
 `Status, Priority, List, Start Date, Due Date, Creation, Modified, Note, Title, Manually, Tag, Location, Duration`, and a **Separated** toggle.
 
 - Sort settings are **per list and per project**. [obs] (`calendars.tasksortfield/tasksortorder`, `tasks.sortfield/sortorder`)
-- **Stored sort codes** (`tasksortfield` on lists, `sortfield` on projects) [obs: `TaskSortingType` 0–15 and the static `TaskSorting.listAndProjectFields` array, cross-checked against a local dataset]:
+- **Stored sort codes** (`tasksortfield` on lists, `sortfield` on projects) [obs: cross-checked against a local dataset]:
 
   | Status | Priority | List | Start Date | Due Date | Creation | Modified | Note | Title | Manually | Tag | Location | Duration |
   |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -177,7 +177,7 @@ The sort bar sits above the list: **direction arrow ↓/↑** and a **sort field
 
   `sortorder`: 0 ascending, 1 descending [inf]. Date-based sorts (1, 11, 13, 15) produce date group headers; due-date grouping applies to 1, start-date grouping to 11. [obs: `createSectionWithDate:…sortBy:`]
 
-- **Date group headers** (exact rules from `ListSection.configureDueDateSection` / `configureTodayOrFutureSection`) [obs]. Measured from the start of today:
+- **Date group headers** (exact rules) [obs]. Measured from the start of today:
 
   | Condition | Header |
   |---|---|

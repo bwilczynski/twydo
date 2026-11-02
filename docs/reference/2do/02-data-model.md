@@ -1,7 +1,7 @@
 # 02 — Data model
 
-2Do keeps everything in one SQLite database. The `CREATE TABLE` statements below were extracted
-verbatim from `TodoDAOFramework` [obs]. Comments are mine. **In-scope** columns are marked ★;
+2Do keeps everything in one SQLite database. The `CREATE TABLE` statements below are 2Do's
+schema as observed [obs]. Comments are mine. **In-scope** columns are marked ★;
 the rest are sync-, sharing- or legacy-specific and can be dropped in the port.
 
 Conventions [obs]: every row has `primid` (local integer PK) and `uid` (stable string ID, used
@@ -229,7 +229,7 @@ CREATE TABLE IF NOT EXISTS taggroups (primid INTEGER PRIMARY KEY NOT NULL, uid V
   modduringsync INTEGER NOT NULL DEFAULT 0)
 ```
 
-### Tag string format (`tasks.tags`) [obs: decompiled `TaskHelper getRawStringFromTags:takeFromExistingTags:`]
+### Tag string format (`tasks.tags`) [obs]
 
 Tasks embed their tags in **one string**, not a join table:
 
@@ -241,7 +241,7 @@ each tag = title ~|$$@$$|~ 0 ~|$$@$$|~ metaData ~|$$@$$|~ primid ~|$$@$$|~ uid ~
 Format string `%@%@0%@%@%@%ld%@%@%@%@%@%@%@%@`, entry separator `+$$|$$+`, field separator `~|$$@$$|~`.
 Missing metadata or group values are empty. Tags titled `format(s)`, `?` or `~`, empty titles and duplicates (by catalog name key) are skipped. To read it: split on `+$$|$$+`, then on `~|$$@$$|~`, and take field 0 as the tag name.
 
-### Other sentinels [obs: SQL in the binary]
+### Other sentinels [obs]
 - `6406192800` is used as a "no date" placeholder in date comparisons; values below `120.0` count as unset.
 - In date SQL, `parenttasktype = 1` (checklist) makes child items use the parent's due/start dates, which confirms **checklist = 1, project = 2**.
 
@@ -274,7 +274,7 @@ CREATE TABLE IF NOT EXISTS alarms (
 )
 ```
 
-Alarm action names in code: `CalAlarmActionDisplay`, `CalAlarmActionSound`, `CalAlarmActionEmail`, `CalAlarmActionProcedure`. [obs]
+Alarm action names: `CalAlarmActionDisplay`, `CalAlarmActionSound`, `CalAlarmActionEmail`, `CalAlarmActionProcedure`. [obs]
 
 ## Other tables (out of scope)
 

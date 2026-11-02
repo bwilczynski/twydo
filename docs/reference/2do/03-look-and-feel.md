@@ -90,7 +90,7 @@ Quick entry [obs]: a floating panel (rounded ~16 px, shadow, light grey frame) t
 - **Quick Open**: a wide rounded search field over the content; results grouped "Matched 1 Task" / "Matched 2 Lists"; the selected row has a blue fill with the parent list as a subtitle and a coloured dot.
 - **Search field mode**: the toolbar becomes a long rounded search field with a preset icon, query text, a clear ⊗, and a **token chip** for the date preset ("Coming 3 days ✕"); the header shows a red 🔍 + smart list name.
 
-## 7. Colour palette (exact, from Assets.car) [obs]
+## 7. Colour palette (exact) [obs]
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
@@ -129,7 +129,7 @@ Additional (approximate, sampled from screenshots) [inf]:
 
 ## 9. Icons
 
-2Do draws its icons in code (PaintCode-style `drawTaskPriorityHigh`, `drawWidgetPriorityStarred`, …), **outline style, ~1.5 px stroke**, matching SF Symbols. [obs] On Linux use **Lucide** or **Phosphor (regular)**, which match closely: `layout-grid` (All), `calendar` with day number (Today), `star`, `clock`, `circle-check`, `inbox`, `briefcase` (project), `list-checks` (checklist), `map-pin`, `phone`, `mail`, `link`, `timer`, `repeat`/`rotate-ccw`, `alarm-clock`, `tag`, `sun` (focus), `search`, `panel-left`, `panel-right`, `plus`.
+2Do's icons are **outline style, ~1.5 px stroke**, matching SF Symbols. [obs] On Linux use **Lucide** or **Phosphor (regular)**, which match closely: `layout-grid` (All), `calendar` with day number (Today), `star`, `clock`, `circle-check`, `inbox`, `briefcase` (project), `list-checks` (checklist), `map-pin`, `phone`, `mail`, `link`, `timer`, `repeat`/`rotate-ccw`, `alarm-clock`, `tag`, `sun` (focus), `search`, `panel-left`, `panel-right`, `plus`.
 
 ## 10. Motion and interaction details
 

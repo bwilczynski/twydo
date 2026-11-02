@@ -2,7 +2,7 @@
 
 Part 1 explains how 2Do syncs. Part 2 explains how a Linux port could join the same
 sync so the Mac and iPhone apps keep working alongside it.
-Legend: **[obs]** seen in the binary or the user's data · **[inf]** inferred · **[?]** open.
+Legend: **[obs]** seen in the app or the user's data · **[inf]** inferred · **[?]** open.
 
 ---
 
@@ -10,18 +10,16 @@ Legend: **[obs]** seen in the binary or the user's data · **[inf]** inferred ·
 
 ## 1.1 Architecture [obs]
 
-- Engine: `SyncEngine` / `SyncEngineCoordinator` in `TodoDAOFramework`, one **provider** per
-  service, each with its own settings class: CloudKit (iCloud), CalDAV, WebDAV, Dropbox, Reminders
+- One sync **provider** per
+  service, each with its own settings: CloudKit (iCloud), CalDAV, WebDAV, Dropbox, Reminders
   (EventKit), Todoist, Toodledo, local folder (plus in-memory/local for tests).
   **Exactly one provider is active** (`syncmethod` table: `syncmethod`, `subtype`).
-- The engine runs in a **separate helper process** (`TDMSyncProcessHost`, `SyncTerminationSession`),
-  so the UI stays responsive.
-- Self-signed or unknown TLS certificates ask the user (`SyncServerTrustChallenge`,
-  `TDMSyncProcessTrustRequest`).
+- Sync runs in a **separate helper process**, so the UI stays responsive.
+- Self-signed or unknown TLS certificates ask the user.
 - Shared lists (iCloud/LAN) are a separate system: Automerge CRDT documents in the `shared*`
   tables. Not covered here.
 
-## 1.2 Local change tracking [obs: SQL in the binary]
+## 1.2 Local change tracking [obs]
 
 Every syncable row (tasks, calendars, calgroups, tags, taggroups, alarms, tasksections,
 taskattachments, locations) carries:
@@ -69,8 +67,8 @@ taskattachments, locations) carries:
 
 - On launch ("Sync on Launch"), manually (⌘S), and automatically after local edits ("Making a change on one device informs the rest of your devices to sync too").
 - CloudKit push subscriptions trigger a sync (`[PUSH SYNC]`).
-- **LAN hints:** devices on the same Wi-Fi announce changes over Bonjour `_2do-sync._tcp` (`SyncLANHintService`) so peers sync sooner.
-- Some UI actions block automatic sync briefly (`URLActionAutomaticSyncBlocker`, `SyncAutomaticBlockerRegistry`).
+- **LAN hints:** devices on the same Wi-Fi announce changes over Bonjour `_2do-sync._tcp` so peers sync sooner.
+- Some UI actions block automatic sync briefly.
 
 ## 1.6 Dropbox provider in detail [obs]
 
@@ -99,7 +97,7 @@ whose values are **strings** (numbers as `"0"`, `"1.000000"`, dates as Unix-epoc
 **Change detection.** Dropbox `list_folder` + `list_folder/continue` with a saved **cursor**
 ("Dbx queryDelta, using previous cursor", "delta sync asked for, but no saved cursor was found.
 Listing everything instead"). The cursor is saved per sync policy at the end of a successful run
-and tied to the verified Dropbox account. A cursor reset (`CursorResetSnapshot`) triggers an
+and tied to the verified Dropbox account. A cursor reset triggers an
 authoritative sweep of the lists.
 
 **Download.** Whole folder as a ZIP (`download_zip`) when possible, validated for size, content
@@ -115,7 +113,7 @@ too many write operations") with **`WriteMode.overwrite`** (§2.7). The rev from
 batch deletes (`delete_batch`), "Dbx delete all objs of type", folder deletes. Other devices see
 the deletion as a `deleted` entry in `list_folder/continue`.
 
-**Locking.** `DropboxSyncLock`: a `/<deviceID>_<timestamp>.tsl` file at the folder root, created
+**Locking.** A `/<deviceID>_<timestamp>.tsl` file at the folder root, created
 for the destructive *Replace Server Data* operation ("A Dropbox Replace Remote sync lock is active").
 Details in §2.7.
 
@@ -123,9 +121,9 @@ Details in §2.7.
 Dropbox…", "Dbx section membership changed…") that defer to the conflict step when there are
 unpushed local edits.
 
-## 1.7 CalDAV provider in detail [obs: DAVKit.framework + strings]
+## 1.7 CalDAV provider in detail [obs]
 
-- Built on **libical** inside `DAVKit.framework`. HTTP methods: `PROPFIND`, `REPORT`, `PUT`,
+- Uses **libical**. HTTP methods: `PROPFIND`, `REPORT`, `PUT`,
   `DELETE`, `MKCALENDAR`, `MKCOL`, `PROPPATCH`, `MOVE`. Uses **sync-token** when the server supports
   it (`caldav_synctoken`, `caldav_usessynctoken` on each list), otherwise ETag comparison.
 - **List = calendar collection** that supports `VTODO`. **Task = one `VTODO` resource.**
@@ -257,7 +255,7 @@ and omits it on undated ones; the real start lives only in `StartDate`. So when 
 present, read the start from it and ignore `DTSTART`. A repeating task with a start date but no
 due date is uploaded **without** `RRULE` (no anchor), so its repeat is lost on the server.
 
-### Token line [obs: decompiled `TaskNoteMetaData.makeExtendedStringForNotes`]
+### Token line [obs]
 
 2Do encodes the fields that standard formats can't hold as a line of `@key:value` tokens ending in
 a newline. This is used for Todoist task descriptions; it was assumed for CalDAV too
@@ -287,9 +285,9 @@ form instead. Twydo reads both. Tokens, in emit order:
 the fields you need, but always write back what you read unchanged, except for fields you
 deliberately edit. Then the 2Do iPhone app keeps start dates, task types and repeat-from-completion.
 
-## 2.7 Dropbox details recovered from the code (not needed for CalDAV)
+## 2.7 More Dropbox details (not needed for CalDAV)
 
-**Full folder set** [obs: folder enumeration at `0x4aec1c`/`0x4b393c` lists `col`, `sec`, `tod`, `cag`, `cat`; builders for `cal`, `loc`; attachment code uses `tsm`, `tmg`, `tvn`]:
+**Full folder set** [obs: `col`, `sec`, `tod`, `cag`, `cat`, `cal`, `loc`; attachments use `tsm`, `tmg`, `tvn`]:
 
 | Folder / extension | Content | File name |
 |---|---|---|
@@ -307,14 +305,14 @@ deliberately edit. Then the 2Do iPhone app keeps start dates, task types and rep
 So the old-style `o_u_k_…_d_.<ext>` files hold objects, while plain `<uid>.<ext>` files in the same
 folders hold the newer per-object side data (memberships, media).
 
-**Upload write mode** [obs]: the only SwiftyDropbox `WriteMode` case 2Do imports is `.overwrite`.
+**Upload write mode** [obs]: 2Do always uploads with `overwrite`.
 `update(rev)` and `add` are never referenced. Uploads go through batched `upload_session` +
 `upload_session/finish_batch_v2` with `CommitInfo(path, mode: .overwrite)`. **Conflict safety comes
 entirely from 2Do's own pre-upload checks** (cursor delta + stored rev, §1.4), not from Dropbox.
 A port writing to the same folder must do the same: re-check the cursor right before uploading,
 because Dropbox won't reject a stale overwrite.
 
-**Sync lock** [obs: decompiled lock creator at `0x5aada8`]:
+**Sync lock** [obs]:
 - A file at the **root of the 2Do folder**: `/<deviceID>_<unix time, "%.6f", en_US_POSIX>.tsl`
   (e.g. `/3F2A…-…_1793460013.123456.tsl`). `deviceID` is the app's `uniqueGlobalDeviceIdentifier`;
   creation fails without one.

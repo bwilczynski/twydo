@@ -1,6 +1,6 @@
 # 04 — Keyboard shortcuts
 
-Extracted from the main menu (`TDMMainMenu.nib`, decoded with REA) [obs]. 2Do relies heavily on
+Taken from the app's main menu [obs]. 2Do relies heavily on
 **single-key shortcuts** when the task list has focus (no modifier). Keep those, because they're
 most of the feel.
 
