@@ -5,7 +5,8 @@
 //! other conflict the vdir already holds one version; keeping it closes the conflict once the
 //! file is checked to still hold it, and keeping the other writes it through
 //! [`Store::restore`] (which the next sync propagates as an ordinary change), then closes the
-//! conflict. A file that no longer holds the version it held then is refused. Lock order:
+//! conflict. A file that no longer holds the version it held then is refused; keeping
+//! [`Keep::Current`] closes such a conflict and leaves the file as it is. Lock order:
 //! the vdir lock, then the conflicts lock (inside `mark_resolved`); `restore` takes and
 //! releases the exclusive vdir lock itself, before `mark_resolved`.
 
@@ -19,6 +20,16 @@ use crate::conflicts::{Conflict, ConflictState, ConflictStore, Side};
 use crate::store::fsio::VdirLock;
 use crate::store::{Store, WriteError, existing_vdir_state};
 
+/// Which version of a conflict to keep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keep {
+    Local,
+    Remote,
+    /// The task as the vdir holds it now, whichever version that is (not for held
+    /// conflicts: vdirsyncer still keeps both sides apart there).
+    Current,
+}
+
 /// What `resolve` did.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Resolution {
@@ -28,6 +39,8 @@ pub enum Resolution {
     AlreadyInPlace,
     /// The kept version was written to the vdir (journal entry id); the conflict is closed.
     Written(String),
+    /// [`Keep::Current`]: the conflict is closed and the vdir file left as it is.
+    KeptCurrent,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -36,8 +49,14 @@ pub enum ResolveError {
     NotFound(String),
     #[error("conflict {0} is already resolved or superseded")]
     NotUnresolved(String),
-    #[error("{0} changed since the conflict was recorded; run tdo sync and check tdo conflicts")]
-    Changed(String),
+    #[error(
+        "the task changed since the conflict was recorded ({path} holds neither version); \
+         see tdo conflicts show {id}, or keep it as it is now: \
+         tdo conflicts resolve {id} --keep current"
+    )]
+    Changed { id: String, path: String },
+    #[error("conflict {0} is held by vdirsyncer until you choose one side: keep local or remote")]
+    Held(String),
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
@@ -68,7 +87,7 @@ fn version(c: &Conflict, side: Side) -> Option<&str> {
 pub fn resolve(
     cfg: &Config,
     id: &str,
-    keep: Side,
+    keep: Keep,
     now: DateTime<Utc>,
 ) -> Result<Resolution, ResolveError> {
     let not_found = || ResolveError::NotFound(id.to_string());
@@ -78,6 +97,16 @@ pub fn resolve(
     if !matches!(c.state, ConflictState::Open | ConflictState::Chosen) {
         return Err(ResolveError::NotUnresolved(id.to_string()));
     }
+    let keep = match (keep, c.held) {
+        (Keep::Current, true) => return Err(ResolveError::Held(id.to_string())),
+        (Keep::Current, false) => {
+            // Both versions stay in the conflict's files; the vdir is not touched.
+            store.mark_resolved(id, now)?;
+            return Ok(Resolution::KeptCurrent);
+        }
+        (Keep::Local, _) => Side::Local,
+        (Keep::Remote, _) => Side::Remote,
+    };
     if c.held {
         store.choose(id, keep)?;
         return Ok(Resolution::Recorded);
@@ -102,21 +131,20 @@ pub fn resolve(
         store.mark_resolved(id, now)?;
         return Ok(Resolution::AlreadyInPlace);
     }
-    // The file no longer holds the version it held then (a later sync changed or deleted
-    // it): closing the conflict now would drop the kept version unseen.
-    if keep == c.vdir_holds {
-        return Err(ResolveError::Changed(c.path));
+    // The file no longer holds the version it held then (a later sync or edit changed or
+    // deleted it): keeping either side now would drop the current task, or close the
+    // conflict on a version that is gone. Keeping the current one is the user's call.
+    if keep == c.vdir_holds || !same_text(actual.as_deref(), holds) {
+        return Err(ResolveError::Changed {
+            id: id.to_string(),
+            path: c.path,
+        });
     }
     drop(shared);
-    // A file that differs from the recorded version only in line endings still holds it; hand
-    // `restore` the bytes actually on disk.
-    let expect = if same_text(actual.as_deref(), holds) {
-        actual.as_deref()
-    } else {
-        holds
-    };
+    // The file holds `holds`, perhaps with other line endings: hand `restore` the bytes
+    // actually on disk (it refuses if they change before it takes the lock).
     let (mut writer, _) = Store::open(cfg)?;
-    let op = writer.restore(&c.path, expect, kept, vec![c.uid.clone()], now)?;
+    let op = writer.restore(&c.path, actual.as_deref(), kept, vec![c.uid.clone()], now)?;
     store.mark_resolved(id, now)?;
     Ok(Resolution::Written(op))
 }

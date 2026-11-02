@@ -6,8 +6,9 @@ use std::collections::HashSet;
 use chrono::DateTime;
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use twydo_core::conflicts::{Conflict, Side};
+use twydo_core::conflicts::Conflict;
 use twydo_core::sync::SyncSummary;
+use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Row, Snapshot, View, build_view};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,7 +52,7 @@ pub enum Outcome {
     /// Keep one version of conflict `id`.
     Resolve {
         id: String,
-        keep: Side,
+        keep: Keep,
     },
 }
 
@@ -287,8 +288,12 @@ impl App {
                 self.conflict_cursor = (self.conflict_cursor + 1).min(n.saturating_sub(1))
             }
             KeyCode::Char('k') => self.conflict_cursor = self.conflict_cursor.saturating_sub(1),
-            KeyCode::Char(c @ ('l' | 'r')) => {
-                let keep = if c == 'l' { Side::Local } else { Side::Remote };
+            KeyCode::Char(c @ ('l' | 'r' | 'c')) => {
+                let keep = match c {
+                    'l' => Keep::Local,
+                    'r' => Keep::Remote,
+                    _ => Keep::Current,
+                };
                 if let Some(c) = self.conflicts().get(self.conflict_cursor) {
                     return Some(Outcome::Resolve {
                         id: c.id.clone(),
