@@ -577,7 +577,7 @@ impl Store {
                     return Err(EditError::Unsupported(format!("task is already in {to}")).into());
                 }
                 let new = new_uid();
-                let copy = create(to, &new, &moved_copy(&t.cal, &new, now)?)?;
+                let copy = create(to, &new, &moved_copy(&t.cal, &new, None, now)?)?;
                 Plan {
                     kind: "move",
                     uids: vec![uid.clone(), new],
