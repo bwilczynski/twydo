@@ -948,3 +948,51 @@ fn failed_reload_after_a_write_stays_visible() {
     a.expire_message(now() + chrono::Duration::seconds(10));
     assert!(a.message.is_some());
 }
+
+/// Next 3 Days just before midnight: "Water plants" (due Nov 4) is selected and leaves the
+/// view at midnight, when it becomes overdue.
+fn next3_before_midnight() -> (App, DateTime<Tz>) {
+    let before = NY.with_ymd_and_hms(2026, 11, 4, 23, 59, 59).unwrap();
+    let after = NY.with_ymd_and_hms(2026, 11, 5, 0, 0, 1).unwrap();
+    let mut a = App::new(snapshot_of(report()), before);
+    a.handle_key(key('5'));
+    assert_eq!(titles(&a)[a.cursor], "Water plants");
+    (a, after)
+}
+
+#[test]
+fn key_is_dropped_when_the_clock_moves_the_selection() {
+    let (mut a, after) = next3_before_midnight();
+    assert_eq!(a.key_at(key('x'), after), Outcome::Continue);
+    assert!(a.message.is_some(), "the user is told why nothing happened");
+}
+
+#[test]
+fn pending_d_does_not_carry_over_to_another_task() {
+    let (mut a, after) = next3_before_midnight();
+    let before = a.now;
+    assert_eq!(a.key_at(key('d'), before), Outcome::Continue);
+    assert_eq!(a.key_at(key('d'), after), Outcome::Continue);
+    assert_eq!(
+        a.key_at(key('d'), after),
+        Outcome::Continue,
+        "the dropped second d does not arm a new pending d"
+    );
+}
+
+#[test]
+fn tick_that_moves_the_selection_clears_a_pending_d() {
+    let (mut a, after) = next3_before_midnight();
+    a.handle_key(key('d'));
+    a.tick(after);
+    assert_eq!(a.handle_key(key('d')), Outcome::Continue);
+}
+
+#[test]
+fn successful_reload_clears_a_reload_error_shown_after_a_write() {
+    let mut a = app();
+    a.reload_failed("synthetic io error");
+    a.write_finished(Ok("done".into()));
+    a.reload(snapshot_of(report()));
+    assert_eq!(a.message, None);
+}
