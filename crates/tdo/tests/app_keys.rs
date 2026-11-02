@@ -140,7 +140,6 @@ fn keys_without_support_are_blocked_with_reason() {
         (key('K'), "move task"),
         (key('r'), "edit repeat"),
         (key('a'), "edit alerts"),
-        (key('m'), "move to list"),
     ] {
         a.message = None;
         assert_eq!(a.handle_key(k), Outcome::Continue);
@@ -605,4 +604,84 @@ fn narrow_navigation_skips_hidden_details_and_resize_restores_visible_focus() {
     assert_eq!(a.focus, Pane::Tasks);
     a.handle_key(key('h'));
     assert_eq!(a.focus, Pane::Sidebar);
+}
+
+fn list_ids_in_sidebar(a: &App) -> Vec<String> {
+    a.sidebar_items()
+        .into_iter()
+        .filter_map(|v| match v {
+            View::List(id) => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn m_opens_picker_without_current_list() {
+    let mut a = app();
+    let task = a.snapshot.tasks[a.selected().unwrap()].clone();
+    assert_eq!(a.handle_key(key('m')), Outcome::Continue);
+    let p = a.picker.as_ref().expect("picker open");
+    assert_eq!(p.uid, task.uid);
+    let want: Vec<String> = list_ids_in_sidebar(&a)
+        .into_iter()
+        .filter(|id| *id != task.collection)
+        .collect();
+    assert_eq!(p.lists, want);
+    assert_eq!(p.cursor, 0);
+}
+
+#[test]
+fn picker_enter_requests_move() {
+    let mut a = app();
+    let uid = selected_uid(&a);
+    a.handle_key(key('m'));
+    a.handle_key(key('j'));
+    let to = a.picker.as_ref().unwrap().lists[1].clone();
+    assert_eq!(
+        write_op(a.handle_key(code(KeyCode::Enter))),
+        Op::Move { uid, to }
+    );
+    assert!(a.picker.is_some(), "stays open until the write finishes");
+    a.write_finished(Err("blocked".into()));
+    assert!(a.picker.is_none());
+    assert_eq!(a.message.as_deref(), Some("blocked"));
+}
+
+#[test]
+fn picker_cursor_clamps() {
+    let mut a = app();
+    a.handle_key(key('m'));
+    let n = a.picker.as_ref().unwrap().lists.len();
+    for _ in 0..5 {
+        a.handle_key(key('j'));
+    }
+    assert_eq!(a.picker.as_ref().unwrap().cursor, n - 1);
+    for _ in 0..5 {
+        a.handle_key(key('k'));
+    }
+    assert_eq!(a.picker.as_ref().unwrap().cursor, 0);
+}
+
+#[test]
+fn picker_esc_closes() {
+    let mut a = app();
+    a.handle_key(key('m'));
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(a.picker.is_none());
+    a.write_finished(Ok("done".into()));
+    assert!(a.picker.is_none());
+}
+
+#[test]
+fn m_with_single_list_shows_message() {
+    let mut r = report();
+    let keep = r.tasks[0].collection.clone();
+    r.tasks.retain(|t| t.collection == keep);
+    r.collections.retain(|c| c.id == keep);
+    let mut a = App::new(snapshot_of(r), now());
+    a.handle_key(key('2'));
+    a.handle_key(key('m'));
+    assert!(a.picker.is_none());
+    assert_eq!(a.message.as_deref(), Some("no other list to move to"));
 }
