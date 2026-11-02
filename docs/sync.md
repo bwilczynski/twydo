@@ -137,7 +137,10 @@ What a choice does:
   vdirsyncer already settled the item (it restored the edit, or re-uploaded it), so the vdir
   holds one version. Keeping that one prints `already in place; conflict resolved`. Keeping the
   other writes it into the vdir through the journal (a deletion removes the file) and prints
-  `written; conflict resolved`; the next sync propagates it like any edit.
+  `written; conflict resolved`; the next sync propagates it like any edit. Either way the file
+  is checked first: if a later sync changed or deleted it, so it no longer holds the version it
+  held when the conflict was recorded, `resolve` refuses, writes nothing and leaves the conflict
+  open (run `tdo sync` and check `tdo conflicts`).
 
 Until you choose, nothing is discarded: both versions stay in the conflict store, other tasks keep
 syncing.
