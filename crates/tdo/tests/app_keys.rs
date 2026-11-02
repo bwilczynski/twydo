@@ -1082,6 +1082,48 @@ fn other_key_cancels_parent_confirmation() {
 }
 
 #[test]
+fn reload_drops_parent_confirmation_and_its_message() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    let uid = selected_uid(&a);
+    a.handle_key(key('x'));
+    assert!(a.message.is_some());
+    a.reload(a.snapshot.clone());
+    assert!(a.message.is_none(), "the confirmation no longer applies");
+    // The next x asks again instead of completing.
+    assert_eq!(selected_uid(&a), uid);
+    assert!(matches!(a.handle_key(key('x')), Outcome::Continue));
+    assert!(a.message.is_some());
+
+    // Another message survives the reload.
+    let mut a = app();
+    select_tax_return(&mut a);
+    a.message = Some("something else".into());
+    a.reload(a.snapshot.clone());
+    assert_eq!(a.message.as_deref(), Some("something else"));
+}
+
+#[test]
+fn tick_moving_the_selection_drops_parent_confirmation_and_its_message() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    let uid = selected_uid(&a);
+    a.handle_key(key('x'));
+    assert!(a.message.is_some());
+    // The parent leaves the view, so the selection moves.
+    a.snapshot.tasks.retain(|t| t.uid != uid);
+    a.tick(a.now);
+    assert_ne!(selected_uid(&a), uid);
+    assert!(a.message.is_none(), "the confirmation no longer applies");
+    // A tick that keeps the selection keeps the confirmation.
+    let mut a = app();
+    select_tax_return(&mut a);
+    a.handle_key(key('x'));
+    a.tick(a.now);
+    assert!(a.message.is_some());
+}
+
+#[test]
 fn x_on_parent_with_all_items_done_completes_at_once() {
     let mut a = app();
     select_tax_return(&mut a);
