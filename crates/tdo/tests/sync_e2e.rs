@@ -609,6 +609,8 @@ fn coll_state(p: &Pair) -> String {
 fn twydo_emptying_a_list_is_forced() {
     require_vdirsyncer!();
     let p = Pair::new();
+    // A Twydo sync records which tasks the list held.
+    assert_eq!(p.tdo_sync().0, 0);
     for u in ["u1", "u2", "u3"] {
         p.op(&["delete", u]);
     }
@@ -622,6 +624,43 @@ fn twydo_emptying_a_list_is_forced() {
         assert_eq!(p.read_server(u), None);
     }
     assert!(coll_state(&p).contains("c1: ok"), "{}", coll_state(&p));
+}
+
+/// One task deleted through Twydo, the others lost some other way: the pending deletion
+/// does not account for the whole list, so it is not forced.
+#[test]
+fn partial_journal_deletion_does_not_force() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    assert_eq!(p.tdo_sync().0, 0);
+    p.op(&["delete", "u1"]);
+    for u in ["u2", "u3"] {
+        fs::remove_file(p.vdir().join(COLL).join(format!("{u}.ics"))).unwrap();
+    }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        err.contains("was emptied here; to apply that on the server run: tdo sync --force-delete"),
+        "{err}"
+    );
+    assert!(!out.contains("applied the emptied list"), "{out}");
+    assert!(coll_state(&p).contains("c1: emptied here"));
+    assert_eq!(p.read_server("u2"), Some(task("u2", "two")));
+    assert_eq!(p.read_server("u3"), Some(task("u3", "three")));
+}
+
+/// Without a Twydo sync of the list there is no record of what it held: never forced.
+#[test]
+fn emptying_before_any_twydo_sync_is_not_forced() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for u in ["u1", "u2", "u3"] {
+        p.op(&["delete", u]);
+    }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(err.contains("was emptied here"), "{err}");
+    assert_eq!(p.read_server("u1"), Some(task("u1", "one")));
 }
 
 #[test]

@@ -147,11 +147,13 @@ syncing.
 vdirsyncer refuses to sync a list that became empty on either side until it is told to
 (`--force-delete`). Twydo handles the two cases differently:
 
-- **Emptied here by Twydo.** If a pending journal entry removed the last task (moving or deleting
-  it) and the list has no unresolved conflict, the runner reruns that list with `--force-delete`
-  itself. A foreground run prints `applied the emptied list "<name>" on the server`.
-- **Anything else** (emptied on the server, or the local files vanished some other way) is never
-  forced. `tdo sync` exits 1 with
+- **Emptied here by Twydo.** The runner remembers which task files each list held at the end of
+  the last sync in which it counted (`sync/manifest.json`). If pending journal entries removed
+  every one of those files (moving or deleting the tasks) and the list has no unresolved conflict,
+  the runner reruns that list with `--force-delete` itself. A foreground run prints
+  `applied the emptied list "<name>" on the server`.
+- **Anything else** is never forced: emptied on the server, local files that vanished some other
+  way (even if Twydo deleted some of the others), or a list Twydo has not synced yet. `tdo sync` exits 1 with
   `list "<name>" was emptied here; to apply that on the server run: tdo sync --force-delete "<name>"`
   (or `... emptied on the server; to apply that here ...`). After checking that this is what you
   want, run the command. `--force-delete` takes a list's directory name or its unique display
@@ -182,6 +184,7 @@ read; do not edit them while a sync runs.
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
+| `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
 | `conflicts/<id>/local.ics`, `remote.ics` | the two versions as plain `.ics`; a missing file means that side deleted the task |

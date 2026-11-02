@@ -2,6 +2,7 @@
 //! status.
 
 pub mod hook;
+pub mod manifest;
 pub mod output;
 pub mod reconcile;
 pub mod resolve;
