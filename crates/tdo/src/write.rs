@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::edit::Op;
+use twydo_core::model::Status;
 use twydo_core::store::{Store, WriteError};
 use twydo_core::views::Snapshot;
 
@@ -122,10 +123,40 @@ fn failure(snap: &Snapshot, e: WriteError) -> String {
     e.to_string()
 }
 
-fn success(snap: &Snapshot, op: &Op) -> String {
+/// How many children an operation writes with the task, from the snapshot before the write.
+fn family_size(snap: &Snapshot, op: &Op) -> usize {
+    let (Op::Complete { uid } | Op::Reopen { uid } | Op::Move { uid, .. } | Op::Delete { uid }) =
+        op
+    else {
+        return 0;
+    };
+    let Some(idx) = snap.find(uid) else { return 0 };
+    let kids = snap.children(idx);
     match op {
-        Op::Complete { .. } => "done".into(),
-        Op::Reopen { .. } => "reopened".into(),
+        Op::Complete { .. } if snap.tasks[idx].rrule.is_some() => kids.len(),
+        Op::Complete { .. } => snap.open_items(idx),
+        Op::Reopen { .. } => kids
+            .iter()
+            .filter(|&&c| snap.tasks[c].status == Status::Completed)
+            .count(),
+        _ => kids.len(),
+    }
+}
+
+fn success(snap: &Snapshot, op: &Op) -> String {
+    let n = family_size(snap, op);
+    let title = op_title(snap, op);
+    let with = |verb: &str| {
+        if n > 0 {
+            format!("{verb}: \"{title}\" and {n} items")
+        } else {
+            verb.to_string()
+        }
+    };
+    match op {
+        Op::Complete { .. } => with("done"),
+        Op::Reopen { .. } => with("reopened"),
+        Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} items · u to undo"),
         Op::Delete { .. } => "deleted · u to undo".into(),
         Op::Edit { .. } => "saved".into(),
         Op::Create(_) => "added".into(),
@@ -136,7 +167,11 @@ fn success(snap: &Snapshot, op: &Op) -> String {
                 .find(|c| &c.id == to)
                 .and_then(|c| c.display_name.clone())
                 .unwrap_or_else(|| to.clone());
-            format!("moved to {name}")
+            if n > 0 {
+                format!("moved \"{title}\" and {n} items to {name}")
+            } else {
+                format!("moved to {name}")
+            }
         }
     }
 }

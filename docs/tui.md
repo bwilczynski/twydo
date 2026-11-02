@@ -7,7 +7,7 @@
 
 | Key | What it does |
 |---|---|
-| `x` / `Space` | complete the selected task; on a completed task, reopen it |
+| `x` / `Space` | complete the selected task; on a completed task, reopen it. On a checklist or project with open items it asks first: press `x` or `Space` again to confirm, any other key cancels |
 | `t` / `T` | due today / tomorrow (a timed due keeps its time) |
 | `]` / `[` | due one day later / earlier (no due date: counts from today) |
 | `}` / `{` | due one week later / earlier |
@@ -21,6 +21,16 @@ Write keys act when the Tasks or Details pane has focus. With Details focused, `
 `gg`/`G` and `Ctrl-d`/`Ctrl-u` scroll the pane instead of moving between tasks; another task
 opens at the top. They do nothing while help, `:errors`
 or `:conflicts` is open.
+
+## Projects and checklists
+
+Like 2Do, a write on a checklist or project acts on the whole family. Completing the parent
+completes every open item; reopening it reopens the completed ones; moving it to another list
+and deleting it carry all items. Because completing writes many
+tasks, `x` on a parent with open items shows `complete "<title>" and its <n> open items? x to
+confirm` and waits; a parent whose items are all done completes at once. Cancelled items are
+left as they are. `tdo op complete <uid>` refuses such a parent (exit 1) unless `--all` is
+passed.
 
 ## Edit form
 

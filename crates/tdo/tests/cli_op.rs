@@ -37,6 +37,12 @@ impl Env {
         )
         .unwrap();
         let matrix = "matrix_version = 1\n\
+            [[operation]]\ncase = \"checklist\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
+            mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+            twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
+            [[operation]]\ncase = \"one-time\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
+            mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+            twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
             [[operation]]\ncase = \"monthly\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
             mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
             twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
@@ -452,4 +458,41 @@ fn after_edit_false_does_not_trigger() {
         marker_stays_absent(&marker),
         "after_edit = false still synced"
     );
+}
+
+#[test]
+fn complete_parent_needs_all_flag() {
+    let env = Env::new("test");
+    let task = |uid: &str, title: &str, extra: &str| {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+             UID:{uid}\r\nSUMMARY:{title}\r\n{extra}STATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+        )
+    };
+    let dir = env.vdir().join("list1");
+    fs::write(
+        dir.join("fam-p.ics"),
+        task(
+            "fam-p",
+            "Synthetic parent",
+            "X-2DOAPP-METADATA:@tasktype:checklist\r\n",
+        ),
+    )
+    .unwrap();
+    for n in ["fam-1", "fam-2"] {
+        fs::write(
+            dir.join(format!("{n}.ics")),
+            task(n, "Synthetic item", "RELATED-TO:fam-p\r\n"),
+        )
+        .unwrap();
+    }
+    let o = env.op(&["complete", "fam-p"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains("\"Synthetic parent\" has 2 open items; pass --all to complete them too"),
+        "{}",
+        err(&o)
+    );
+    let o = env.op(&["complete", "fam-p", "--all"]);
+    assert!(o.status.success(), "{}", err(&o));
 }

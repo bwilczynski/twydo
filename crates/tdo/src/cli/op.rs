@@ -41,7 +41,12 @@ pub enum OpCommand {
     /// Change fields of a task
     Edit(EditArgs),
     /// Complete a task
-    Complete { uid: String },
+    Complete {
+        uid: String,
+        /// Also complete the open items of a checklist or project
+        #[arg(long)]
+        all: bool,
+    },
     /// Reopen a completed task
     Reopen { uid: String },
     /// Delete a task
@@ -299,7 +304,21 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             changes: edit_changes(&a)?,
             uid: a.uid,
         },
-        OpCommand::Complete { uid } => Op::Complete { uid },
+        OpCommand::Complete { uid, all } => {
+            if !all {
+                let snap = snapshot(&cfg, store.state_dir())?;
+                if let Some(i) = snap.find(&uid) {
+                    let open = snap.open_items(i);
+                    if open > 0 {
+                        return Err(Failure::Blocked(format!(
+                            "\"{}\" has {open} open items; pass --all to complete them too",
+                            snap.tasks[i].summary
+                        )));
+                    }
+                }
+            }
+            Op::Complete { uid }
+        }
         OpCommand::Reopen { uid } => Op::Reopen { uid },
         OpCommand::Delete { uid } => Op::Delete { uid },
         OpCommand::Move { uid, to } => Op::Move { uid, to },
