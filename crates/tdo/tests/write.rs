@@ -366,3 +366,92 @@ fn stale_message_names_the_task_not_the_file() {
         Err("\"A2\" changed on disk; reload and try again".into())
     );
 }
+
+/// Writes a synthetic checklist with two open items and one completed item into list1.
+fn add_family(env: &Env) {
+    let task = |uid: &str, title: &str, extra: &str| {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+             UID:{uid}\r\nSUMMARY:{title}\r\n{extra}END:VTODO\r\nEND:VCALENDAR\r\n"
+        )
+    };
+    let dir = env.vdir().join("list1");
+    let files = [
+        (
+            "fam-p",
+            task(
+                "fam-p",
+                "Synthetic parent",
+                "STATUS:NEEDS-ACTION\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n",
+            ),
+        ),
+        (
+            "fam-1",
+            task(
+                "fam-1",
+                "Synthetic one",
+                "RELATED-TO:fam-p\r\nSTATUS:NEEDS-ACTION\r\n",
+            ),
+        ),
+        (
+            "fam-2",
+            task(
+                "fam-2",
+                "Synthetic two",
+                "RELATED-TO:fam-p\r\nSTATUS:NEEDS-ACTION\r\n",
+            ),
+        ),
+        (
+            "fam-3",
+            task(
+                "fam-3",
+                "Synthetic three",
+                "RELATED-TO:fam-p\r\nSTATUS:COMPLETED\r\n",
+            ),
+        ),
+    ];
+    for (name, body) in files {
+        fs::write(dir.join(format!("{name}.ics")), body).unwrap();
+    }
+}
+
+#[test]
+fn family_success_messages() {
+    let env = Env::new();
+    add_family(&env);
+    let mut cfg = env.config();
+    cfg.writes.mode = twydo_core::config::WriteMode::Test;
+    let (mut w, _) = writer(&cfg);
+    let run = |w: &mut Writer, op: Op| w.run(&env.snapshot(), &Request::Apply(op), now());
+    let uid = || "fam-p".to_string();
+    assert_eq!(
+        run(&mut w, Op::Complete { uid: uid() }),
+        Ok("done: \"Synthetic parent\" and 2 items".into())
+    );
+    assert_eq!(
+        run(&mut w, Op::Reopen { uid: uid() }),
+        Ok("reopened: \"Synthetic parent\" and 3 items".into())
+    );
+    assert_eq!(
+        run(
+            &mut w,
+            Op::Move {
+                uid: uid(),
+                to: "list2".into()
+            }
+        ),
+        Ok("moved \"Synthetic parent\" and 3 items to Two".into())
+    );
+    let moved = env.snapshot();
+    let new_uid = moved
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Synthetic parent")
+        .unwrap()
+        .uid
+        .clone();
+    assert_eq!(
+        run(&mut w, Op::Delete { uid: new_uid }),
+        Ok("deleted \"Synthetic parent\" and 3 items · u to undo".into())
+    );
+}

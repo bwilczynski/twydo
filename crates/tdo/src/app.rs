@@ -520,6 +520,9 @@ impl App {
 
     fn normal_key(&mut self, k: KeyEvent) -> Outcome {
         let pending = self.pending.take();
+        if pending == Some('x') && !matches!(k.code, KeyCode::Char('x' | ' ')) {
+            self.message = None;
+        }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         if self.show_conflicts
             && !ctrl
@@ -661,15 +664,27 @@ impl App {
 
     /// The write a key makes on the selected task: none outside the task panes, on an empty
     /// view, or for other keys.
-    fn task_write(&self, c: char, pending: Option<char>) -> Option<Op> {
+    fn task_write(&mut self, c: char, pending: Option<char>) -> Option<Op> {
         if self.focus == Pane::Sidebar {
             return None;
         }
-        let task = &self.snapshot.tasks[self.selected()?];
+        let idx = self.selected()?;
+        let task = &self.snapshot.tasks[idx];
         let uid = task.uid.clone();
         let shift = match c {
             'x' | ' ' if task.status == Status::Completed => return Some(Op::Reopen { uid }),
-            'x' | ' ' => return Some(Op::Complete { uid }),
+            'x' | ' ' => {
+                let open = self.snapshot.open_items(idx);
+                if open > 0 && pending != Some('x') {
+                    self.message = Some(format!(
+                        "complete \"{}\" and its {open} open items? x to confirm",
+                        task.summary
+                    ));
+                    self.pending = Some('x');
+                    return None;
+                }
+                return Some(Op::Complete { uid });
+            }
             'd' if pending == Some('d') => return Some(Op::Delete { uid }),
             't' => DueShift::Today,
             'T' => DueShift::Tomorrow,

@@ -1039,3 +1039,58 @@ fn picker_survives_the_clock_moving_the_selection() {
         other => panic!("expected a move, got {other:?}"),
     }
 }
+
+fn select_tax_return(a: &mut App) {
+    a.handle_key(key('2'));
+    a.cursor = titles(a)
+        .iter()
+        .position(|t| t == "Prepare tax return")
+        .unwrap();
+}
+
+#[test]
+fn x_on_parent_with_open_items_needs_second_x() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    let uid = selected_uid(&a);
+    assert!(matches!(a.handle_key(key('x')), Outcome::Continue));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("complete \"Prepare tax return\" and its 2 open items? x to confirm")
+    );
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Complete { uid: uid.clone() }
+    );
+    // Space confirms too.
+    a.handle_key(key('x'));
+    assert_eq!(write_op(a.handle_key(key(' '))), Op::Complete { uid });
+}
+
+#[test]
+fn other_key_cancels_parent_confirmation() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    a.handle_key(key('x'));
+    assert!(a.message.is_some());
+    a.handle_key(key('j'));
+    assert!(a.message.is_none());
+    select_tax_return(&mut a);
+    // The next x asks again instead of completing.
+    assert!(matches!(a.handle_key(key('x')), Outcome::Continue));
+    assert!(a.message.is_some());
+}
+
+#[test]
+fn x_on_parent_with_all_items_done_completes_at_once() {
+    let mut a = app();
+    select_tax_return(&mut a);
+    let uid = selected_uid(&a);
+    for t in &mut a.snapshot.tasks {
+        if t.parent.as_deref() == Some(uid.as_str()) {
+            t.status = twydo_core::model::Status::Completed;
+        }
+    }
+    assert_eq!(write_op(a.handle_key(key('x'))), Op::Complete { uid });
+    assert!(a.message.is_none());
+}
