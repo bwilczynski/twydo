@@ -18,7 +18,7 @@ use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use twydo_core::views::{Snapshot, View};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, DETAILS_MIN_TERMINAL, Pane};
+use crate::app::{App, Pane};
 
 const DETAILS_WIDTH: u16 = 36;
 
@@ -33,7 +33,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     } else {
         area.width / 3
     };
-    let details_w = if area.width >= DETAILS_MIN_TERMINAL {
+    // The App decides visibility (in `resize`) so focus never lands on a hidden pane.
+    let details_w = if app.details_visible() {
         DETAILS_WIDTH
     } else {
         0

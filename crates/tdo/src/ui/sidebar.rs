@@ -14,10 +14,10 @@ use crate::app::{App, Pane, SidebarEntry};
 /// One sidebar line, with the index into `App::sidebar_items` when it is selectable.
 type Entry = (Line<'static>, Option<usize>);
 
-fn divider(label: &str, width: usize) -> Line<'static> {
+fn divider(label: &str, width: usize, focused: bool) -> Line<'static> {
     let head = format!("─ {label} ");
     let fill = "─".repeat(width.saturating_sub(head.width()));
-    Line::styled(format!("{head}{fill}"), theme::accent())
+    Line::styled(format!("{head}{fill}"), theme::heading(focused))
 }
 
 fn item_line(app: &App, i: usize, view: &View, width: usize) -> Line<'static> {
@@ -62,7 +62,9 @@ fn entries(app: &App, width: usize) -> Vec<Entry> {
     app.sidebar_entries()
         .into_iter()
         .map(|e| match e {
-            SidebarEntry::Heading(label) => (divider(&label, width), None),
+            SidebarEntry::Heading(label) => {
+                (divider(&label, width, app.focus == Pane::Sidebar), None)
+            }
             SidebarEntry::Item(view) => {
                 let line = item_line(app, i, &view, width);
                 i += 1;

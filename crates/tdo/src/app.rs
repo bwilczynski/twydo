@@ -18,6 +18,17 @@ pub enum Pane {
     Details,
 }
 
+impl Pane {
+    /// The name shown in the status line.
+    pub fn name(self) -> &'static str {
+        match self {
+            Pane::Sidebar => "Sidebar",
+            Pane::Tasks => "Tasks",
+            Pane::Details => "Details",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Normal,
@@ -116,6 +127,11 @@ impl App {
             pending: None,
             details_visible: true,
         }
+    }
+
+    /// Whether the Details pane is drawn; set by [`App::resize`], which must run before drawing.
+    pub fn details_visible(&self) -> bool {
+        self.details_visible
     }
 
     /// Keep keyboard focus on a visible pane and paging in step with terminal size.
