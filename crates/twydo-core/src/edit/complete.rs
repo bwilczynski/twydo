@@ -10,7 +10,8 @@
 //!
 //! Only the captured repeat shape is supported: a date-only or floating-time `DUE` (the time
 //! is kept), `RRULE` `FREQ=MONTHLY` or `FREQ=YEARLY` with an optional `INTERVAL`, repeating
-//! from the due date. A JSON `StartDate` moves by the same interval (H11), and a JSON `uid`
+//! from the due date. A JSON `StartDate` moves by as many days as the due date (H11, gap
+//! session round 04), and a JSON `uid`
 //! naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
 
@@ -342,7 +343,14 @@ pub fn complete_recurring(
         ));
     }
 
-    // JSON `StartDate` (UTC midnight, H9) moves by one interval too (H11).
+    // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
+    // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
+    // 2027-02-13 -> 2028-02-14 (`gap-list1/04-phone-complete`).
+    let (due_date, next_date) = match (&due, &next) {
+        (IcalDateTime::Floating(a), IcalDateTime::Floating(b)) => (a.date(), b.date()),
+        (IcalDateTime::Date(a), IcalDateTime::Date(b)) => (*a, *b),
+        _ => unreachable!("the next due keeps the due's form"),
+    };
     let mut live_meta = meta.clone();
     if let Some(secs) = meta.get_i64("StartDate") {
         if secs <= 0 || secs % 86_400 != 0 {
@@ -353,7 +361,9 @@ pub fn complete_recurring(
         let start = DateTime::from_timestamp(secs, 0)
             .map(|t| t.date_naive())
             .ok_or_else(|| unsupported("2Do start date is out of range"))?;
-        let next_start = shift_named(start, months, "start")?;
+        let next_start = start
+            .checked_add_signed(next_date - due_date)
+            .ok_or_else(|| unsupported("next start date is out of range"))?;
         live_meta.set_i64(
             "StartDate",
             next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
