@@ -279,3 +279,30 @@ fn paste_inserts_one_line_into_focused_field() {
     f.paste("ignored");
     assert_eq!(f.notes, "");
 }
+
+#[test]
+fn title_is_saved_trimmed() {
+    let mut f = form("Buy stamps");
+    f.key(ctrl('u'));
+    type_str(&mut f, "  New title  ");
+    assert_eq!(
+        f.changes(today()),
+        Ok(vec![Change::Summary("New title".into())])
+    );
+}
+
+#[test]
+fn title_with_only_added_spaces_is_no_change() {
+    let mut f = form("Buy stamps");
+    type_str(&mut f, "  ");
+    assert_eq!(f.changes(today()), Ok(vec![]));
+}
+
+#[test]
+fn repeat_with_leading_zero_of_same_number_is_no_change() {
+    let mut f = form("Pay rent");
+    focus(&mut f, Field::Repeat);
+    f.key(ctrl('u'));
+    type_str(&mut f, "01");
+    assert_eq!(f.changes(today()), Ok(vec![]));
+}
