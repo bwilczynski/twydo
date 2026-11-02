@@ -1,2 +1,8 @@
 [tools]
 rust = "1.99.0"
+# README demo only (mise run demo); vhs also needs ffmpeg on PATH.
+vhs = "0.12.1"
+ttyd = { version = "1.7.7", os = ["linux", "windows"] }
+
+[tasks]
+demo = "docs/demo/render.sh"
