@@ -897,3 +897,54 @@ fn newer_message_is_not_cleared_by_old_timer() {
     a.expire_message(t0 + chrono::Duration::seconds(60));
     assert_eq!(a.message.as_deref(), Some("edit alerts: not available yet"));
 }
+
+#[test]
+fn reload_drops_a_pending_d() {
+    let mut a = app();
+    a.handle_key(key('d'));
+    a.reload(snapshot_of(report()));
+    assert_eq!(
+        a.handle_key(key('d')),
+        Outcome::Continue,
+        "a d before a reload must not pair with one after it"
+    );
+}
+
+#[test]
+fn key_at_uses_the_current_date() {
+    // The minute tick is late: the app still thinks it is before midnight.
+    let late = NY.with_ymd_and_hms(2026, 11, 4, 23, 59, 50).unwrap();
+    let next_day = NY.with_ymd_and_hms(2026, 11, 5, 0, 0, 5).unwrap();
+    let mut a = App::new(snapshot_of(report()), late);
+    let task = a.snapshot.tasks[a.selected().unwrap()].clone();
+    let want = shift_due(
+        task.due.as_ref(),
+        a.snapshot.tz(),
+        next_day.date_naive(),
+        DueShift::Today,
+    );
+    let op = write_op(a.key_at(key('t'), next_day));
+    let uid = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
+    assert_eq!(
+        op,
+        Op::Edit {
+            uid,
+            changes: vec![Change::Due(Some(want))],
+        }
+    );
+}
+
+#[test]
+fn failed_reload_after_a_write_stays_visible() {
+    let mut a = app();
+    a.reload_failed("synthetic io error");
+    a.write_finished(Ok("done".into()));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("done · reload failed: synthetic io error")
+    );
+    // Not a success message: it stays past the timer.
+    a.expire_message(now());
+    a.expire_message(now() + chrono::Duration::seconds(10));
+    assert!(a.message.is_some());
+}

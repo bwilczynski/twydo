@@ -91,7 +91,7 @@ fn event_loop(
         if event::poll(POLL)? {
             match event::read()? {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
-                    match app.handle_key(k) {
+                    match app.key_at(k, now()) {
                         Outcome::Quit => return Ok(()),
                         Outcome::Continue => {}
                         Outcome::Sync { force_delete } => {
