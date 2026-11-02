@@ -1,4 +1,5 @@
-//! Right pane: the selected task's list, dates, repeat, alerts, warnings and notes.
+//! Right pane: the selected task's list, dates, repeat, alerts, warnings, its tasks (on a
+//! parent) and notes.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -6,8 +7,10 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph, Wrap};
 use twydo_core::format::{describe_alarm, relative_date};
+use twydo_core::model::Status;
 use twydo_core::model::repeat::{describe, parse_rrule};
 
+use super::tasks::glyph;
 use super::{dim, list_name, pane_block, theme};
 use crate::app::{App, Pane};
 
@@ -71,10 +74,55 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             yellow,
         ));
     }
+    lines.extend(children(app, idx));
     if let Some(notes) = t.description.as_deref().filter(|n| !n.trim().is_empty()) {
         lines.push(Line::raw(""));
         lines.push(Line::styled("── Notes ──", dim()));
         lines.extend(notes.lines().map(|l| Line::raw(l.to_string())));
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+/// A parent's tasks: the open ones by due date (undated last), then how many are done, then
+/// how to see them in the list. Nothing for a task without children.
+fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
+    let snap = &app.snapshot;
+    let kids = snap.children(idx);
+    if kids.is_empty() {
+        return Vec::new();
+    }
+    let tz = snap.tz();
+    let (mut open, done): (Vec<usize>, Vec<usize>) = kids
+        .iter()
+        .partition(|&&c| !matches!(snap.tasks[c].status, Status::Completed | Status::Cancelled));
+    open.sort_by_key(|&c| {
+        let t = &snap.tasks[c];
+        let due = t.due.as_ref().map(|d| d.local_date(tz));
+        (due.is_none(), due, t.summary.to_lowercase())
+    });
+    let mut lines = vec![
+        Line::raw(""),
+        Line::styled(format!("── Tasks ({} open) ──", open.len()), dim()),
+    ];
+    for c in open {
+        let t = &snap.tasks[c];
+        let mut spans = vec![Span::raw(format!("{} {}", glyph(app, c), t.summary))];
+        if let Some(d) = &t.due {
+            spans.push(Span::styled(
+                format!("  {}", relative_date(d, app.now)),
+                dim(),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
+    if !done.is_empty() {
+        lines.push(Line::styled(format!("+ {} completed", done.len()), dim()));
+    }
+    let verb = if app.expanded.contains(&snap.tasks[idx].uid) {
+        "collapse"
+    } else {
+        "expand"
+    };
+    lines.push(Line::styled(format!("Enter: {verb} in list"), dim()));
+    lines
 }

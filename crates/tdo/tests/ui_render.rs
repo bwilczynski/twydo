@@ -848,10 +848,109 @@ fn picker_scrolls_to_keep_selection_visible() {
         l[x..].split('│').next().unwrap().trim().to_string()
     };
     let buf = render(&mut a, 80, 24);
-    assert!(text(&buf).contains("▌ list-29"), "selected list not visible");
-    assert_ne!(first_row(&buf), "▌ list-01", "top should have scrolled away");
+    assert!(
+        text(&buf).contains("▌ list-29"),
+        "selected list not visible"
+    );
+    assert_ne!(
+        first_row(&buf),
+        "▌ list-01",
+        "top should have scrolled away"
+    );
     for _ in 0..40 {
         a.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
     }
     assert_eq!(first_row(&render(&mut a, 80, 24)), "▌ list-01");
+}
+
+fn todo(uid: &str, summary: &str, extra: &str) -> String {
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+         UID:{uid}\r\nSUMMARY:{summary}\r\n{extra}END:VTODO\r\nEND:VCALENDAR\r\n"
+    )
+}
+
+/// A project with two open children (one repeating) and one completed child.
+fn project_vdir() -> tempfile::TempDir {
+    let parent = todo(
+        "p",
+        "Synthetic project",
+        "X-2DOAPP-METADATA:@tasktype:project\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let later = todo(
+        "c1",
+        "Later child",
+        "RELATED-TO:p\r\nDUE;VALUE=DATE:20261120\r\nRRULE:FREQ=MONTHLY\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let sooner = todo(
+        "c2",
+        "Sooner child",
+        "RELATED-TO:p\r\nDUE;VALUE=DATE:20261105\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let done = todo(
+        "c3",
+        "Finished child",
+        "RELATED-TO:p\r\nSTATUS:COMPLETED\r\nCOMPLETED:20261101T120000Z\r\n",
+    );
+    vdir_with(&[
+        ("p.ics", &parent),
+        ("c1.ics", &later),
+        ("c2.ics", &sooner),
+        ("c3.ics", &done),
+    ])
+}
+
+fn details_lines(buf: &Buffer) -> Vec<String> {
+    let start = (1..buf.area.width)
+        .rev()
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap();
+    (0..buf.area.height)
+        .map(|y| {
+            (start..buf.area.width)
+                .map(|x| buf[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect()
+}
+
+#[test]
+fn details_list_a_projects_open_tasks_and_completed_count() {
+    let dir = project_vdir();
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    select(&mut a, "Synthetic project");
+    let lines = details_lines(&render(&mut a, 140, 30));
+    let at = |needle: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} not in details:\n{}", lines.join("\n")))
+    };
+    let heading = at("Tasks (2 open)");
+    let sooner = at("○ Sooner child");
+    let later = at("↺ Later child");
+    assert!(heading < sooner && sooner < later, "{}", lines.join("\n"));
+    assert!(lines[sooner].contains("Tomorrow"), "{}", lines[sooner]);
+    assert!(at("+ 1 completed") > later);
+    assert!(!lines.iter().any(|l| l.contains("Finished child")));
+    at("Enter: expand in list");
+}
+
+#[test]
+fn details_of_an_expanded_project_offer_collapse() {
+    let dir = project_vdir();
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    let uid = select(&mut a, "Synthetic project");
+    a.expanded.insert(uid);
+    let t = details_lines(&render(&mut a, 140, 30)).join("\n");
+    assert!(t.contains("Enter: collapse in list"), "{t}");
+}
+
+#[test]
+fn details_of_a_leaf_task_have_no_task_list() {
+    let mut a = app();
+    select(&mut a, "Pay water bill");
+    let t = details_lines(&render(&mut a, 140, 30)).join("\n");
+    assert!(!t.contains("Tasks ("), "{t}");
+    assert!(!t.contains("Enter:"), "{t}");
 }

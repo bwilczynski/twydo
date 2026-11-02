@@ -48,7 +48,7 @@ fn group_title(g: DateGroup, today: NaiveDate) -> Option<String> {
     })
 }
 
-fn glyph(app: &App, idx: usize) -> String {
+pub(super) fn glyph(app: &App, idx: usize) -> String {
     let t = &app.snapshot.tasks[idx];
     let n = app.snapshot.children(idx).len();
     if n > 0 {
