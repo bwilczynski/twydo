@@ -294,6 +294,7 @@ impl Store {
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let plan = self.plan(snap, op, now)?;
         let holds = plan.holds;
+        let family = self.family_of(snap, op)?;
         let entry = Entry {
             format: FORMAT,
             id: new_op_id(now),
@@ -313,6 +314,9 @@ impl Store {
         }
         for (rel, source) in &holds {
             self.check_holds(rel, Some(source))?;
+        }
+        if let Some(f) = &family {
+            self.check_family(f)?;
         }
         let id = self.run(entry)?;
         self.done.push(id.clone());
