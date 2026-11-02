@@ -123,6 +123,9 @@ pub struct App {
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
     pending: Option<char>,
+    /// The message text that reports a failed reload (alone or after a write's result); a
+    /// successful reload clears the message while it still shows this.
+    reload_error: Option<String>,
     details_visible: bool,
     /// Lines the Details pane is scrolled down, for the task `details_uid`.
     details_scroll: u16,
@@ -169,6 +172,7 @@ impl App {
             now,
             page: 10,
             pending: None,
+            reload_error: None,
             details_visible: true,
             details_scroll: 0,
             details_uid: None,
@@ -319,10 +323,14 @@ impl App {
     }
 
     /// Store `now`; keep the selection on the same task as the view rebuilds around it.
+    /// A pending `d` or `g` is dropped when the selected task leaves the view.
     pub fn tick(&mut self, now: DateTime<Tz>) {
         let uid = self.selected_uid();
         self.now = now;
-        self.restore(uid);
+        self.restore(uid.clone());
+        if self.selected_uid() != uid {
+            self.pending = None;
+        }
     }
 
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
@@ -333,9 +341,9 @@ impl App {
         // The row under a pending `d` or `g` may have changed: the second key starts afresh.
         self.pending = None;
         if self
-            .message
-            .as_deref()
-            .is_some_and(|m| m.starts_with(RELOAD_FAILED))
+            .reload_error
+            .take()
+            .is_some_and(|e| self.message.as_ref() == Some(&e))
         {
             self.message = None;
         }
@@ -354,7 +362,9 @@ impl App {
 
     /// Report a failed reload; the message stays until a reload succeeds or Esc.
     pub fn reload_failed(&mut self, e: impl std::fmt::Display) {
-        self.message = Some(format!("{RELOAD_FAILED}{e}"));
+        let text = format!("{RELOAD_FAILED}{e}");
+        self.reload_error = Some(text.clone());
+        self.message = Some(text);
     }
 
     /// Store a freshly read sync summary and keep the overlay cursor in range.
@@ -440,9 +450,16 @@ impl App {
     }
 
     /// [`App::handle_key`] with the clock brought up to `now` first, so a date key never
-    /// uses a day the minute tick has not caught up with.
+    /// uses a day the minute tick has not caught up with. When that moves the selection to
+    /// another task (the selected one left the view), the key is dropped: it was meant for a
+    /// task that is no longer under the cursor, and the new one has not been drawn yet.
     pub fn key_at(&mut self, k: KeyEvent, now: DateTime<Tz>) -> Outcome {
+        let before = self.selected_uid();
         self.tick(now);
+        if self.selected_uid() != before {
+            self.message = Some("the view changed; check the selection and try again".into());
+            return Outcome::Continue;
+        }
         self.handle_key(k)
     }
 
@@ -850,13 +867,17 @@ impl App {
         }
         // The loop reloads before reporting: a failed reload must stay visible, so it
         // follows the result and the message does not clear itself.
-        let reload_error = self.message.take().filter(|m| m.starts_with(RELOAD_FAILED));
+        let reload_error = self
+            .reload_error
+            .take()
+            .filter(|e| self.message.as_ref() == Some(e));
         let clears = result.is_ok() && reload_error.is_none();
         let mut text = match result {
             Ok(m) | Err(m) => m,
         };
         if let Some(e) = reload_error {
             text = format!("{text} · {e}");
+            self.reload_error = Some(text.clone());
         }
         self.transient = clears.then(|| (text.clone(), None));
         self.message = Some(text);
