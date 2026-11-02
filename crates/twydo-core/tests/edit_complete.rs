@@ -127,10 +127,26 @@ fn check_copy_and_advance(
     live_due: &str,
     changed: &[&str],
 ) {
+    check_copy_and_advance_with(scenario, from, to, uid, copy_uid, live_due, changed, |_| {});
+}
+
+/// [`check_copy_and_advance`], with `fix_copy` applied to 2Do's copy before comparing.
+#[allow(clippy::too_many_arguments)]
+fn check_copy_and_advance_with(
+    scenario: &str,
+    from: &str,
+    to: &str,
+    uid: &str,
+    copy_uid: &str,
+    live_due: &str,
+    changed: &[&str],
+    fix_copy: impl Fn(&mut Calendar),
+) {
     let ctx = format!("{scenario} {from}->{to} {uid}");
     let input = fixture(scenario, from, uid);
     let want_live = parse(&fixture(scenario, to, uid)).unwrap();
-    let want_copy = parse(&fixture(scenario, to, copy_uid)).unwrap();
+    let mut want_copy = parse(&fixture(scenario, to, copy_uid)).unwrap();
+    fix_copy(&mut want_copy);
     let now = dtstamp(&want_live);
     let cal = parse(&input).unwrap();
     let before = cal.clone();
@@ -461,6 +477,43 @@ fn timed_yearly_with_start_and_alert_matches_2do() {
     );
 }
 
+const GAP: &str = "gap-list1";
+const GAP_Y: &str = "6f510e7fceb9423585a74beee2d2c108";
+const GAP_Y_COPY: &str = "c676c622cacf4cfaa351327fffdc3cf3";
+
+/// Gap session round 04: due 2027-03-01 09:00 moves 366 days (2028 is a leap year), so 2Do
+/// moves the start 366 days too: 2027-02-13 -> 2028-02-14, not one calendar year to 02-13.
+#[test]
+fn start_date_moves_by_the_due_dates_days() {
+    let input = parse(&fixture(GAP, "03-twydo-reopen", GAP_Y)).unwrap();
+    let created = todo(&input).prop("CREATED").unwrap().value.clone();
+    check_copy_and_advance_with(
+        GAP,
+        "03-twydo-reopen",
+        "04-phone-complete",
+        GAP_Y,
+        GAP_Y_COPY,
+        "20280301T090000",
+        META_ALL,
+        // `Y` was seeded from the server, and the phone gave the copy the time it first
+        // received `Y`, not the file's CREATED. Twydo copies the file's CREATED.
+        |copy| {
+            let vtodo = copy
+                .root
+                .children
+                .iter_mut()
+                .find(|c| c.name == "VTODO")
+                .unwrap();
+            let p = vtodo
+                .props
+                .iter_mut()
+                .find(|p| p.name == "CREATED")
+                .unwrap();
+            p.value = created.clone();
+        },
+    );
+}
+
 fn p6_text(uid: &str) -> String {
     String::from_utf8(fixture(P6, "02-edit", uid)).unwrap()
 }
@@ -489,8 +542,9 @@ fn zoned_due_time_is_refused() {
 }
 
 #[test]
-fn start_on_day_31_is_refused() {
-    // StartDate 2026-10-31 (UTC midnight), due 2026-11-05.
+fn start_on_day_31_moves_by_the_due_dates_days() {
+    // StartDate 2026-10-31 (UTC midnight), due 2026-11-05 -> 2026-12-05 (30 days), so the
+    // start moves to 2026-11-30.
     let s = p6_text(S)
         .replace(
             "%22StartDate%22%3A1796083200",
@@ -498,10 +552,18 @@ fn start_on_day_31_is_refused() {
         )
         .replace("20261205", "20261105");
     let cal = parse(s.as_bytes()).unwrap();
-    let err = complete_recurring(&cal, now(), S_COPY).unwrap_err();
-    assert_eq!(
-        unsupported(&err),
-        "next start date after 2026-10-31 would not fall on day 31 of the month"
+    let (live, _) = complete_recurring(&cal, now(), S_COPY).unwrap();
+    let start = date(2026, 11, 30)
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp();
+    let out = String::from_utf8(serialize(&live))
+        .unwrap()
+        .replace("\n ", "");
+    assert!(
+        out.contains(&format!("%22StartDate%22%3A{start}%2C")),
+        "start moves to 2026-11-30"
     );
 }
 
