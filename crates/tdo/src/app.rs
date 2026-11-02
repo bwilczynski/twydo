@@ -451,12 +451,19 @@ impl App {
 
     /// [`App::handle_key`] with the clock brought up to `now` first, so a date key never
     /// uses a day the minute tick has not caught up with. When that moves the selection to
-    /// another task (the selected one left the view), the key is dropped: it was meant for a
-    /// task that is no longer under the cursor, and the new one has not been drawn yet.
+    /// another task (the selected one left the view) and the key acts on the selected task,
+    /// it is dropped: it was meant for a task that is no longer under the cursor, and the new
+    /// one has not been drawn yet. Forms and the picker keep their own task, and command,
+    /// search, overlay and sidebar keys do not use it, so their input always goes through.
     pub fn key_at(&mut self, k: KeyEvent, now: DateTime<Tz>) -> Outcome {
+        let uses_task_cursor = self.mode == Mode::Normal
+            && self.form.is_none()
+            && self.picker.is_none()
+            && !self.overlay_open()
+            && self.focus != Pane::Sidebar;
         let before = self.selected_uid();
         self.tick(now);
-        if self.selected_uid() != before {
+        if uses_task_cursor && self.selected_uid() != before {
             self.message = Some("the view changed; check the selection and try again".into());
             return Outcome::Continue;
         }

@@ -996,3 +996,46 @@ fn successful_reload_clears_a_reload_error_shown_after_a_write() {
     a.reload(snapshot_of(report()));
     assert_eq!(a.message, None);
 }
+
+#[test]
+fn form_input_survives_the_clock_moving_the_selection() {
+    let (mut a, after) = next3_before_midnight();
+    let before = a.now;
+    let uid = selected_uid(&a);
+    a.key_at(key('i'), before);
+    a.key_at(ctrl('u'), before);
+    a.key_at(key('1'), before);
+    a.key_at(key('0'), after);
+    let op = write_op(a.key_at(code(KeyCode::Enter), after));
+    assert_eq!(
+        op,
+        Op::Edit {
+            uid,
+            changes: vec![Change::Summary("10".into())],
+        }
+    );
+}
+
+#[test]
+fn command_and_search_input_survive_the_clock_moving_the_selection() {
+    let (mut a, after) = next3_before_midnight();
+    a.key_at(key(':'), a.now);
+    a.key_at(key('q'), after);
+    assert_eq!(a.key_at(code(KeyCode::Enter), after), Outcome::Quit);
+
+    let (mut a, after) = next3_before_midnight();
+    a.key_at(key('/'), a.now);
+    a.key_at(key('w'), after);
+    assert_eq!(a.search.as_deref(), Some("w"));
+}
+
+#[test]
+fn picker_survives_the_clock_moving_the_selection() {
+    let (mut a, after) = next3_before_midnight();
+    let uid = selected_uid(&a);
+    a.key_at(key('m'), a.now);
+    match write_op(a.key_at(code(KeyCode::Enter), after)) {
+        Op::Move { uid: moved, .. } => assert_eq!(moved, uid),
+        other => panic!("expected a move, got {other:?}"),
+    }
+}
