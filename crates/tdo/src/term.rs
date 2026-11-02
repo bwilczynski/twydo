@@ -16,6 +16,7 @@ use twydo_core::views::Snapshot;
 
 use crate::app::{App, Outcome};
 use crate::ui;
+use crate::write::Writer;
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 const POLL: Duration = Duration::from_millis(250);
@@ -49,8 +50,9 @@ fn is_change(kind: &EventKind) -> bool {
 
 /// Run the TUI until the user quits. The terminal is restored on exit and on panic.
 pub fn run(mut app: App, root: PathBuf, tz: Tz) -> io::Result<()> {
+    let mut writer = Writer::open(&app.snapshot.config);
     let mut terminal = ratatui::init();
-    let result = event_loop(&mut terminal, &mut app, &root, tz);
+    let result = event_loop(&mut terminal, &mut app, &mut writer, &root, tz);
     ratatui::restore();
     result
 }
@@ -58,6 +60,7 @@ pub fn run(mut app: App, root: PathBuf, tz: Tz) -> io::Result<()> {
 fn event_loop(
     terminal: &mut DefaultTerminal,
     app: &mut App,
+    writer: &mut Writer,
     root: &Path,
     tz: Tz,
 ) -> io::Result<()> {
@@ -96,6 +99,13 @@ fn event_loop(
                                 syncing = true;
                                 start_sync(&app.snapshot.config.vdir, force_delete, &sync_tx);
                             }
+                        }
+                        Outcome::Write(req) => {
+                            let result = writer.run(&app.snapshot, &req, Utc::now());
+                            // Reload after failures too: a stale write means the vdir moved on.
+                            reload(app, root);
+                            refresh_sync(app);
+                            app.write_finished(result);
                         }
                         Outcome::Resolve { id, keep } => {
                             let cfg = &app.snapshot.config;

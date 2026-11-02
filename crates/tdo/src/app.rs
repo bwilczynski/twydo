@@ -6,7 +6,12 @@ use std::collections::HashSet;
 use chrono::DateTime;
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use crate::write::Request;
 use twydo_core::conflicts::Conflict;
+use twydo_core::dateinput::{DueShift, shift_due};
+use twydo_core::edit::{Change, Op};
+use twydo_core::model::Status;
 use twydo_core::sync::SyncSummary;
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Row, Snapshot, View, build_view};
@@ -65,6 +70,8 @@ pub enum Outcome {
         id: String,
         keep: Keep,
     },
+    /// Write to the task store; the loop reports back with [`App::write_finished`].
+    Write(Request),
 }
 
 pub struct App {
@@ -398,7 +405,7 @@ impl App {
             (KeyCode::Char('c'), true) => return Outcome::Quit,
             (KeyCode::Char('d'), true) => self.move_cursor(half),
             (KeyCode::Char('u'), true) => self.move_cursor(-half),
-            (KeyCode::Char('r'), true) => self.block("redo"),
+            (KeyCode::Char('r'), true) => return Outcome::Write(Request::Redo),
             (_, true) => {}
             (KeyCode::Esc, _) => {
                 self.message = None;
@@ -420,7 +427,7 @@ impl App {
                 Pane::Sidebar => self.open_sidebar(),
                 _ => self.enter_on_task(),
             },
-            (KeyCode::Char(c), _) => self.normal_char(c, pending),
+            (KeyCode::Char(c), _) => return self.normal_char(c, pending),
             _ => {}
         }
         Outcome::Continue
@@ -445,10 +452,13 @@ impl App {
         }
     }
 
-    fn normal_char(&mut self, c: char, pending: Option<char>) {
+    fn normal_char(&mut self, c: char, pending: Option<char>) -> Outcome {
         if self.focus == Pane::Sidebar && c == 'l' {
             self.open_sidebar();
-            return;
+            return Outcome::Continue;
+        }
+        if let Some(op) = self.task_write(c, pending) {
+            return Outcome::Write(Request::Apply(op));
         }
         match c {
             'j' => self.move_cursor(1),
@@ -482,25 +492,57 @@ impl App {
                 self.input.clear();
             }
             '?' => self.show_help = !self.show_help,
-            'd' if pending == Some('d') => self.block("delete"),
-            'd' => self.pending = Some('d'),
-            'x' | ' ' => self.block("toggle done"),
+            'd' if pending != Some('d') => self.pending = Some('d'),
+            'u' => return Outcome::Write(Request::Undo),
             'o' => self.block("new task"),
             'O' => self.block("new item"),
             'i' => self.block("edit task"),
             'J' | 'K' => self.block("move task"),
-            'u' => self.block("undo"),
-            't' => self.block("due today"),
-            'T' => self.block("due tomorrow"),
-            ']' => self.block("due +1 day"),
-            '[' => self.block("due -1 day"),
-            '}' => self.block("due +1 week"),
-            '{' => self.block("due -1 week"),
             'r' => self.block("edit repeat"),
             'a' => self.block("edit alerts"),
             'm' => self.block("move to list"),
             _ => {}
         }
+        Outcome::Continue
+    }
+
+    /// The write a key makes on the selected task: none outside the task panes, on an empty
+    /// view, or for other keys.
+    fn task_write(&self, c: char, pending: Option<char>) -> Option<Op> {
+        if self.focus == Pane::Sidebar {
+            return None;
+        }
+        let task = &self.snapshot.tasks[self.selected()?];
+        let uid = task.uid.clone();
+        let shift = match c {
+            'x' | ' ' if task.status == Status::Completed => return Some(Op::Reopen { uid }),
+            'x' | ' ' => return Some(Op::Complete { uid }),
+            'd' if pending == Some('d') => return Some(Op::Delete { uid }),
+            't' => DueShift::Today,
+            'T' => DueShift::Tomorrow,
+            ']' => DueShift::Days(1),
+            '[' => DueShift::Days(-1),
+            '}' => DueShift::Days(7),
+            '{' => DueShift::Days(-7),
+            _ => return None,
+        };
+        let due = shift_due(
+            task.due.as_ref(),
+            self.snapshot.tz(),
+            self.now.date_naive(),
+            shift,
+        );
+        Some(Op::Edit {
+            uid,
+            changes: vec![Change::Due(Some(due))],
+        })
+    }
+
+    /// A write requested by [`Outcome::Write`] ended: show its result.
+    pub fn write_finished(&mut self, result: Result<String, String>) {
+        self.message = Some(match result {
+            Ok(m) | Err(m) => m,
+        });
     }
 
     /// With the filter applied every visible row is a match, so n/N cycle through the rows.
