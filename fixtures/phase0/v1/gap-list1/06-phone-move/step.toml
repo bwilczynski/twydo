@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "06-phone-move"
+device = "iphone"
+action = "move P2, Q, C, live R, live Y to list 2"
+captured_at = "2026-11-02T20:29:59Z"

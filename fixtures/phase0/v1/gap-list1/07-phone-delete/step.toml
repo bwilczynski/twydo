@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "07-phone-delete"
+device = "iphone"
+action = "delete P2, Q, C, live R, live Y (list 2) and live M (list 1); list 2 synced with --force-delete"
+captured_at = "2026-11-02T20:32:10Z"

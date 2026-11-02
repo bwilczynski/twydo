@@ -584,7 +584,8 @@ fn embedded_matrix_allows_family_baselines() {
     // Verified both ways in the Plan 6 Task 7 session (rounds 01 and 07).
     assert_eq!(check(&s, m, WriteMode::Test, &op, today()), Ok(()));
     assert_eq!(check(&s, m, WriteMode::Verified, &op, today()), Ok(()));
-    // Twydo completed a checklist and the phone showed it; the phone side was not captured.
+    // Twydo completed a checklist and the phone showed it (Plan 6 Task 7); the phone
+    // completed one and Twydo read it back (gap session round 04).
     assert_eq!(
         check(
             &s,
@@ -593,7 +594,7 @@ fn embedded_matrix_allows_family_baselines() {
             &complete("gate-checklist"),
             today()
         ),
-        blocked("complete for checklist tasks is not verified yet (iphone_to_twydo)")
+        Ok(())
     );
 }
 

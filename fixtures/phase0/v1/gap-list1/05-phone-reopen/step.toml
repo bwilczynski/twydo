@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "05-phone-reopen"
+device = "iphone"
+action = "reopen Q, C, R's completed copy, Y's history copy, M's history copy"
+captured_at = "2026-11-02T20:27:45Z"

@@ -1,0 +1,5 @@
+scenario = "gap-list1"
+step = "02-phone-edit"
+device = "iphone"
+action = "date picker: P2 -> 2026-12-18; p2 -> 2026-12-07; Q -> 2026-12-21; Y -> 2027-03-01 09:00"
+captured_at = "2026-11-02T20:22:10Z"
