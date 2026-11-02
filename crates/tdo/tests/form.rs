@@ -268,3 +268,14 @@ fn preview_shows_parsed_or_error() {
         Some("can't read date \"fri 5pmx\"")
     );
 }
+
+#[test]
+fn paste_inserts_one_line_into_focused_field() {
+    let mut f = form("Buy stamps");
+    f.key(ctrl('u'));
+    f.paste("fix door\nand\twindow\r\n");
+    assert_eq!(f.title, "fix door and window");
+    focus(&mut f, Field::Notes);
+    f.paste("ignored");
+    assert_eq!(f.notes, "");
+}

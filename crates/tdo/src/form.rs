@@ -205,6 +205,24 @@ impl EditForm {
         Ok(out)
     }
 
+    /// Insert pasted text into the focused text field as one line: line breaks become
+    /// spaces, a trailing one is dropped. Notes take no paste (they are edited in `$EDITOR`).
+    pub fn paste(&mut self, text: &str) {
+        let line: String = text
+            .split('\n')
+            .map(|l| l.trim_end_matches('\r'))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
+        let line = line.trim_end();
+        let digits_only = self.focus == Field::Repeat;
+        if let Some(t) = self.text_mut() {
+            t.extend(line.chars().filter(|c| !digits_only || c.is_ascii_digit()));
+        }
+    }
+
     pub fn set_notes(&mut self, notes: String) {
         self.notes = notes;
     }
