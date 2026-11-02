@@ -391,7 +391,8 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
 }
 
 /// Rule 5: the repeating completions `complete_recurring` was built for: a date-only or
-/// floating due, a rule [`next_due`] accepts, no absolute alert and no start-day delay. A due
+/// floating due, a rule [`next_due`] accepts, a JSON `StartDate` (if any) on a UTC midnight
+/// after 1970, no absolute alert and no start-day delay. A due
 /// time, start date or relative alerts need the `start-due-alarm-offsets` edge case to pass;
 /// a next due on or before `today` (a missed occurrence) needs `monthly-15th-three-months-late`.
 fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<(), Blocked> {
@@ -419,6 +420,16 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
             .is_some_and(|m| m.get_i64("StartDate").is_some());
     if (timed || has_start || !t.alarms.is_empty()) && !offsets {
         return blocked(START_OFFSETS);
+    }
+    // 2Do writes `StartDate` as a UTC midnight after 1970 (H9).
+    if meta
+        .as_ref()
+        .and_then(|m| m.get_i64("StartDate"))
+        .is_some_and(|n| n <= 0 || n % 86_400 != 0)
+    {
+        return blocked(
+            "completing a repeating task with an unusual start date is not verified yet",
+        );
     }
     if t.alarms
         .iter()
