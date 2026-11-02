@@ -28,7 +28,7 @@ taskattachments, locations) carries:
 |---|---|
 | `syncstatus` | **1 = new / needs full upload** (default on insert; re-adding a list resets its rows to 1) · **2 = in sync** · **3 = modified since last sync** (editing a `2` row sets `3`; local deletes are set to `3`) |
 | `isdeleted` | soft delete; the row stays as a tombstone until the delete has been pushed |
-| `changed_properties` | which fields changed, as numeric property IDs appended by the SQL function `sqliteAppendToChangedPropertiesTracking` (e.g. `'30'` = image) |
+| `changed_properties` | which fields changed, as numeric property IDs appended on each change (e.g. `'30'` = image) |
 | `modduringsync` | the row was edited while a sync was running, so it goes out next round |
 | `modguid` | change identifier |
 | `datestamp` / `datestampnorm` | last-modified time (normalised for timezone) |
@@ -259,7 +259,7 @@ due date is uploaded **without** `RRULE` (no anchor), so its repeat is lost on t
 
 2Do encodes the fields that standard formats can't hold as a line of `@key:value` tokens ending in
 a newline. This is used for Todoist task descriptions; it was assumed for CalDAV too
-[inf: `calDAVImportHas2DoMetadata`, `syncsTaskNoteMetaData`], but the upload above shows the JSON
+[inf], but the upload above shows the JSON
 form instead. Twydo reads both. Tokens, in emit order:
 
 | Token | Value |
@@ -314,7 +314,7 @@ because Dropbox won't reject a stale overwrite.
 
 **Sync lock** [obs]:
 - A file at the **root of the 2Do folder**: `/<deviceID>_<unix time, "%.6f", en_US_POSIX>.tsl`
-  (e.g. `/3F2A…-…_1793460013.123456.tsl`). `deviceID` is the app's `uniqueGlobalDeviceIdentifier`;
+  (e.g. `/3F2A…-…_1793460013.123456.tsl`). `deviceID` is the app's unique device identifier;
   creation fails without one.
 - Its Dropbox file properties (`FileMetaData`) carry `meta = <random UUID>`, identifying the lock instance.
 - Used during **Replace Remote / Replace Server Data** ("A Dropbox Replace Remote sync lock is active").

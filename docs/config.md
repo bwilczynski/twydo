@@ -13,7 +13,7 @@ names the key. Twydo only reads this file.
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. |
 | `morning_time` | `"HH:MM"` | `"09:00"` | Time used for date-only tasks that need one (e.g. reminders). |
 | `default_list` | list id | none | List new tasks go to. |
-| `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see `docs/journal.md`). A leading `~` expands to `$HOME`. |
+| `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see [architecture.md](architecture.md#the-operation-journal)). A leading `~` expands to `$HOME`. |
 
 ## `[writes]`
 

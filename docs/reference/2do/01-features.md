@@ -154,7 +154,7 @@ Port recommendation: store the rule as an **RFC 5545 RRULE** plus a `from_comple
 |---|---|---|
 | Inbox | ⌘0 | only if Inbox is enabled |
 | **All** | ⌘1 | all unfinished tasks from lists not excluded from All |
-| **Today** | ⌘2 | tasks due today; overdue tasks (setting `showOverdueInToday`); tasks whose start date has passed ("still working on") and tasks whose duration window has started (due − duration ≤ now); starred tasks if preferred, even from lists excluded from Today; checklist items inherit their checklist's dates. **Never shows completed tasks.** [obs: query builder `queryWhereClauseForDueOrStartFromDate:…includeOverDueTasks:…includeStillWorkingOn:includeStarredTasksIfPreferred:includeChecklistSubtasks:`, `ListSection` logic; exact SQL composition inf] |
+| **Today** | ⌘2 | tasks due today; overdue tasks (setting `showOverdueInToday`); tasks whose start date has passed ("still working on") and tasks whose duration window has started (due − duration ≤ now); starred tasks if preferred, even from lists excluded from Today; checklist items inherit their checklist's dates. **Never shows completed tasks.** [obs] |
 | **Starred** | ⌘3 | starred tasks |
 | **Scheduled** | ⌘4 | tasks with a future start date |
 | **Done** | ⌘5 | completed tasks; "Tasks you complete today appear in the Done section until the day ends, whatever their due date" [obs] |
@@ -175,7 +175,7 @@ The sort bar sits above the list: **direction arrow ↓/↑** and a **sort field
   |---|---|---|---|---|---|---|---|---|---|---|---|---|
   | 0 | 4 | 5 | 11 | **1** (default) | 13 | 15 | 2 | 6 | 7 | 9 | 10 | 14 |
 
-  `sortorder`: 0 ascending, 1 descending [inf]. Date-based sorts (1, 11, 13, 15) produce date group headers; due-date grouping applies to 1, start-date grouping to 11. [obs: `createSectionWithDate:…sortBy:`]
+  `sortorder`: 0 ascending, 1 descending [inf]. Date-based sorts (1, 11, 13, 15) produce date group headers; due-date grouping applies to 1, start-date grouping to 11. [obs]
 
 - **Date group headers** (exact rules) [obs]. Measured from the start of today:
 
@@ -241,7 +241,7 @@ Tokenizer: `!+(?:\s*[^\s(),!]+)?|[^\s(),!]+|[(),]`. A trailing `AND`/`OR` is ign
 - A completed task leaves normal lists (unless "Show completed tasks for" is set) and appears in **Done**. ⌘O Show Completed shows them in place. [obs]
 - Settings [obs]: **Show completed tasks for** (Never / …), **Apply rule to sub-tasks**, **Auto-delete completed tasks** after (1 day / 1 week / 1 month / Never …), "Delay sub-tasks by 3 weeks" (see below).
 - Repeating tasks: see §6.
-- Completing all sub-tasks does **not** auto-complete the project: there is no such setting in the UI strings, and completing/uncompleting a child only refreshes its parent (`completeTask:updateParent:`). [inf]
+- Completing all sub-tasks does **not** auto-complete the project: there is no such setting in the UI strings, and completing/uncompleting a child only refreshes its parent. [inf]
 - "Delay sub-tasks by 3 weeks" sits under *Completed Tasks* next to auto-delete, so it most likely keeps completed sub-tasks 3 weeks longer before auto-deletion. [inf]
 - Undo ⌘Z / Redo ⇧⌘Z everywhere. [obs]
 

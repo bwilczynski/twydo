@@ -1,4 +1,4 @@
-//! The operation journal and crash recovery. See `docs/journal.md`.
+//! The operation journal and crash recovery. See `docs/architecture.md` (The operation journal).
 
 use std::collections::HashMap;
 use std::fs;

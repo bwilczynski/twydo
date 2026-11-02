@@ -71,7 +71,7 @@ The status line says why, and nothing is written:
   before saving again.
 - **`a sync is running; try again in a moment`:** a sync holds the vdir. The TUI does not
   wait for it, so it never freezes; press the key again once the sync is done.
-- **`cannot write: …`:** the journal could not be opened (see [journal.md](journal.md)).
+- **`cannot write: …`:** the journal could not be opened (see [architecture.md](architecture.md#the-operation-journal)).
   The TUI still shows your tasks.
 
 Success messages clear after five seconds. With `[sync] after_edit = true`, each write starts a

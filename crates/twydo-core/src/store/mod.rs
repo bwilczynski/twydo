@@ -1,5 +1,5 @@
 //! Crash-safe storage: atomic file writes, the vdir lock, the operation journal with
-//! recovery (see `docs/journal.md`), and the [`Store`] that applies operations through them.
+//! recovery (see `docs/architecture.md`), and the [`Store`] that applies operations through them.
 //!
 //! An operation runs only when the gate allows it and every file it touches still holds
 //! the bytes the caller loaded. It is recorded in the journal before the vdir is touched,

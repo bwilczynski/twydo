@@ -1,7 +1,7 @@
 # Sync
 
 Twydo does not talk to the network. It runs [vdirsyncer](https://vdirsyncer.pimutils.org/) against
-the vdir, records what it changed in the operation journal ([journal.md](journal.md)), and keeps
+the vdir, records what it changed in the operation journal ([architecture.md](architecture.md#the-operation-journal)), and keeps
 both versions of anything that was changed on two devices until you choose. Configuration keys are
 in [config.md](config.md) (`[sync]`).
 
@@ -197,7 +197,7 @@ network.
 
 ## State files
 
-All under the per-vdir state directory, `<state_dir>/vdirs/<id>/` (see [journal.md](journal.md);
+All under the per-vdir state directory, `<state_dir>/vdirs/<id>/` (see [architecture.md](architecture.md#the-operation-journal);
 `state_dir` defaults to `$XDG_STATE_HOME/twydo`). The JSON files are pretty-printed and meant to be
 read; do not edit them while a sync runs.
 
