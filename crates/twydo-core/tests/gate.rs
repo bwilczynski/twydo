@@ -472,6 +472,86 @@ fn parent_op_refused_when_child_blocked() {
 }
 
 #[test]
+fn parent_op_refused_when_child_has_no_case() {
+    let s = snap();
+    let m = fam();
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-checklist-mixed"),
+            today()
+        ),
+        blocked("repeating checklists are not verified yet")
+    );
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Test,
+            &complete("gate-monthly-project-mixed"),
+            today()
+        ),
+        blocked(
+            "a repeating task inside a repeating project is not verified yet \
+             (project-child-own-recurrence)"
+        )
+    );
+    let mv = Op::Move {
+        uid: "gate-project-weekly".into(),
+        to: "errands".into(),
+    };
+    assert_eq!(
+        check(&s, &m, WriteMode::Test, &mv, today()),
+        blocked("weeks repeats are not verified yet")
+    );
+    // Editing the parent alone does not look at its children.
+    let op = edit(
+        "gate-project-weekly",
+        vec![Change::Summary("Renamed".into())],
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+}
+
+/// The real matrix: family baselines pass, the twydo columns and the recurring-project edit
+/// row do not.
+#[test]
+fn embedded_matrix_allows_family_baselines() {
+    let s = snap();
+    let m = Matrix::embedded();
+    for uid in [
+        "gate-checklist-item",
+        "gate-checklist",
+        "gate-monthly-project",
+    ] {
+        assert_eq!(
+            check(&s, m, WriteMode::Test, &complete(uid), today()),
+            Ok(()),
+            "{uid}"
+        );
+    }
+    let op = edit(
+        "gate-monthly-project-child",
+        vec![Change::Summary("Renamed".into())],
+    );
+    assert_eq!(
+        check(&s, m, WriteMode::Test, &op, today()),
+        blocked("edit for recurring-project tasks is not verified yet (iphone_baseline)")
+    );
+    assert_eq!(
+        check(
+            &s,
+            m,
+            WriteMode::Verified,
+            &complete("gate-checklist"),
+            today()
+        ),
+        blocked("complete for checklist tasks is not verified yet (twydo_to_iphone)")
+    );
+}
+
+#[test]
 fn single_child_move_and_delete_blocked() {
     let s = snap();
     let m = fam();
