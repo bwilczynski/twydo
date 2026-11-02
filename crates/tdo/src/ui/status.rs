@@ -12,6 +12,7 @@ use twydo_core::sync::status::CollState;
 
 use super::{dim, list_name, theme, view_name};
 use crate::app::{App, Mode};
+use crate::form::Field;
 
 const HINTS: &str = "j/k move  x done  t today  ] +1d  o new  / search  : cmd  ? help";
 
@@ -20,6 +21,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         Mode::Normal => ("NORMAL", None),
         Mode::Search => ("SEARCH", Some(format!("/{}▏", app.input))),
         Mode::Command => ("COMMAND", Some(format!(":{}▏", app.input))),
+        Mode::Insert => {
+            let notes = app.form.as_ref().is_some_and(|f| f.focus == Field::Notes);
+            let hint = if notes {
+                "Enter edit in $EDITOR  Tab next field  Ctrl-s save  Esc cancel"
+            } else {
+                "Tab next field  Enter save  Esc cancel"
+            };
+            ("INSERT", Some(hint.to_string()))
+        }
     };
     let rows = app.visible_rows().len();
     let pos = format!(

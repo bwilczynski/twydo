@@ -3,6 +3,7 @@
 
 mod conflicts;
 mod details;
+mod form;
 mod picker;
 mod sidebar;
 mod status;
@@ -61,6 +62,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if app.show_conflicts {
         conflicts::render(f, area, app);
+    }
+    if let Some(e) = &app.form {
+        form::render(f, area, app, e);
     }
     if let Some(p) = &app.picker {
         picker::render(f, area, app, p);
@@ -197,7 +201,11 @@ const HELP: &[(&str, &str, bool)] = &[
     ("j/k  gg/G  Ctrl-d/u", "move", false),
     ("h/l  Tab", "focus pane", false),
     ("Enter", "expand/collapse a parent", false),
-    ("Enter on a leaf, i", "edit task", true),
+    (
+        "Enter on a leaf, i",
+        "edit task (Tab fields, Enter save)",
+        false,
+    ),
     ("x  Space", "toggle done", false),
     ("o  O", "new task / new item", true),
     ("J  K", "move task down/up", true),
@@ -206,7 +214,8 @@ const HELP: &[(&str, &str, bool)] = &[
     ("t  T", "due today / tomorrow", false),
     ("]  [  }  {", "due +1/-1 day, +1/-1 week", false),
     ("m", "move to another list", false),
-    ("r  a", "edit repeat / alerts", true),
+    ("r", "edit repeat", false),
+    ("a", "edit alerts", true),
     ("/  n  N", "search in view", false),
     ("1-5", "Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),
