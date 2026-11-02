@@ -168,6 +168,7 @@ fn event_loop(
             reload(app, root);
             refresh_sync(app);
         }
+        app.expire_message(now());
         if ticked || last_tick.elapsed() >= TICK_EVERY {
             app.tick(now());
             if last_tick.elapsed() >= TICK_EVERY {
@@ -241,5 +242,5 @@ fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String>
         .lines()
         .map(str::trim)
         .find(|l| !l.is_empty())
-        .map_or_else(|| "sync done".to_string(), str::to_string))
+        .map_or_else(|| crate::app::SYNC_DONE.to_string(), str::to_string))
 }

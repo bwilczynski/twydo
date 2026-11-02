@@ -100,6 +100,9 @@ pub struct App {
     /// The active search filter (live while typing, kept after Enter).
     pub search: Option<String>,
     pub message: Option<String>,
+    /// A success note that clears itself, with the time the loop first saw it. Only clears
+    /// `message` while it still holds that text.
+    transient: Option<(String, Option<DateTime<Tz>>)>,
     pub show_help: bool,
     /// The `:errors` overlay listing unreadable files.
     pub show_errors: bool,
@@ -126,6 +129,10 @@ pub struct App {
 pub(crate) const DETAILS_MIN_TERMINAL: u16 = 110;
 
 const RELOAD_FAILED: &str = "reload failed: ";
+/// The message a sync that went well leaves.
+pub const SYNC_DONE: &str = "sync done";
+/// How long a success message stays.
+const MESSAGE_SECS: i64 = 5;
 
 fn blocked(action: &str) -> String {
     format!("{action}: not available yet")
@@ -144,6 +151,7 @@ impl App {
             input: String::new(),
             search: None,
             message: None,
+            transient: None,
             show_help: false,
             show_errors: false,
             sync: None,
@@ -281,6 +289,26 @@ impl App {
         self.cursor = self.cursor.min(rows.len().saturating_sub(1));
     }
 
+    /// Clear a success message [`MESSAGE_SECS`] seconds after the loop first saw it. Other
+    /// messages (errors, blocked reasons) stay until Esc or the next message.
+    pub fn expire_message(&mut self, now: DateTime<Tz>) {
+        let Some((text, seen)) = &mut self.transient else {
+            return;
+        };
+        if self.message.as_ref() != Some(text) {
+            self.transient = None;
+            return;
+        }
+        match seen {
+            None => *seen = Some(now),
+            Some(t) if (now - *t).num_seconds() >= MESSAGE_SECS => {
+                self.message = None;
+                self.transient = None;
+            }
+            Some(_) => {}
+        }
+    }
+
     /// Store `now`; keep the selection on the same task as the view rebuilds around it.
     pub fn tick(&mut self, now: DateTime<Tz>) {
         let uid = self.selected_uid();
@@ -327,6 +355,7 @@ impl App {
 
     /// A background sync ended: show its first stderr line, or `sync done`.
     pub fn sync_finished(&mut self, message: String) {
+        self.transient = (message == SYNC_DONE).then(|| (message.clone(), None));
         self.message = Some(message);
     }
 
@@ -755,6 +784,7 @@ impl App {
         if self.form.is_some() {
             self.close_form();
         }
+        self.transient = result.as_ref().ok().map(|m| (m.clone(), None));
         self.message = Some(match result {
             Ok(m) | Err(m) => m,
         });
