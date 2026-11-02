@@ -387,3 +387,39 @@ fn project_reopen_refused_when_open_item_changed() {
     touch(&env, P2);
     refused_stale(&env, &mut store, &snap, Op::Reopen { uid: P.into() }, P2);
 }
+
+#[test]
+fn verified_undo_of_recurring_project_completion_needs_its_edge_case() {
+    let edges = |undo: &'static str| {
+        common::matrix(
+            &CASES,
+            "pass",
+            &[
+                ("start-due-alarm-offsets", "pass"),
+                ("monthly-15th-three-months-late", "pass"),
+                ("reopen-undo-before-after-sync", undo),
+            ],
+        )
+    };
+    for (undo, allowed) in [("unverified", false), ("pass", true)] {
+        let env = Env::new(WriteMode::Verified, FIXTURE);
+        let mut store = env.store(edges(undo));
+        let before = env.files();
+        store
+            .apply(&env.snap(), &Op::Complete { uid: R.into() }, now())
+            .unwrap();
+        let done = env.files();
+        match store.undo_last(later()) {
+            Ok(_) if allowed => assert_eq!(env.files(), before),
+            Err(WriteError::Blocked(b)) if !allowed => {
+                assert_eq!(
+                    b.to_string(),
+                    "undoing the completion of a repeating task is not verified yet \
+                     (reopen-undo-before-after-sync)"
+                );
+                assert_eq!(env.files(), done);
+            }
+            other => panic!("{undo}: unexpected {other:?}"),
+        }
+    }
+}
