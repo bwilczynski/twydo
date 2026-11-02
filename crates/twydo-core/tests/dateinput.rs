@@ -185,3 +185,14 @@ fn shift_due_cases() {
         Due::Time(d(2026, 11, 7).and_time(t(9, 0)))
     );
 }
+
+#[test]
+fn non_ascii_input_is_an_error_not_a_panic() {
+    for bad in ["pią 5p", "€pm", "ą1pm", "1ąpm", "ąą:30pm", "5ą", "１２pm"] {
+        assert_eq!(
+            parse(bad, today()),
+            Err(format!("can't read date \"{bad}\"")),
+            "{bad}"
+        );
+    }
+}

@@ -125,6 +125,11 @@ fn time_part(s: &str) -> Option<NaiveTime> {
     } else {
         (s, None)
     };
+    // Only ASCII digits and one colon may remain; this also keeps byte splits on char
+    // boundaries.
+    if !digits.bytes().all(|b| b.is_ascii_digit() || b == b':') {
+        return None;
+    }
     let (h, m) = match digits.split_once(':') {
         Some((h, m)) if m.len() == 2 => (h, m),
         Some(_) => return None,
