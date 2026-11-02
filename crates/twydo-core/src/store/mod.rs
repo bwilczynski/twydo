@@ -175,6 +175,9 @@ struct Plan {
     kind: &'static str,
     uids: Vec<String>,
     writes: Vec<Write>,
+    /// Loaded files the op reads but does not write (`rel`, loaded bytes): a family member
+    /// left as it is. Each must still hold its bytes when the entry is applied.
+    holds: Vec<(String, String)>,
 }
 
 /// The loaded resource an operation targets.
@@ -201,6 +204,11 @@ impl Target {
             before: Some(self.source),
             after: None,
         }
+    }
+
+    /// The file is left as it is, but must still hold the loaded bytes.
+    fn hold(self) -> (String, String) {
+        (self.rel, self.source)
     }
 }
 
@@ -285,6 +293,7 @@ impl Store {
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let plan = self.plan(snap, op, now)?;
+        let holds = plan.holds;
         let entry = Entry {
             format: FORMAT,
             id: new_op_id(now),
@@ -301,6 +310,9 @@ impl Store {
         self.check_not_stuck()?;
         for w in &entry.writes {
             self.check_holds(&w.path, w.before.as_deref())?;
+        }
+        for (rel, source) in &holds {
+            self.check_holds(rel, Some(source))?;
         }
         let id = self.run(entry)?;
         self.done.push(id.clone());
@@ -534,6 +546,7 @@ impl Store {
             kind,
             uids: vec![uid.clone()],
             writes: vec![w],
+            holds: Vec::new(),
         };
         // A checklist or project with children: the op acts on the whole family.
         let parent = |uid: &str| snap.find(uid).filter(|&i| !snap.children(i).is_empty());
@@ -570,6 +583,7 @@ impl Store {
                         kind: "complete",
                         uids: vec![uid.clone(), copy_uid],
                         writes: vec![copy, t.update(&live)?],
+                        holds: Vec::new(),
                     }
                 } else {
                     let mut cal = t.cal.clone();
@@ -598,6 +612,7 @@ impl Store {
                     kind: "move",
                     uids: vec![uid.clone(), new],
                     writes: vec![copy, t.remove()],
+                    holds: Vec::new(),
                 }
             }
             Op::Delete { uid } => {

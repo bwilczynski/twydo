@@ -1,7 +1,8 @@
 //! Operations on a checklist or project: like 2Do, they act on the whole family
 //! (`docs/phase0/plan6-baseline.md` H5–H9). Each writes the parent and its children in one
 //! journal entry: creates first, then updates, then removes. `uids` is the parent, then
-//! every UID the op created or touched.
+//! every UID the op created or touched. Every loaded member the op does not write is held:
+//! the entry is refused unless its file still holds the loaded bytes.
 //!
 //! The gate (rule 1b) has already refused a family with a child it has no case for, so each
 //! child here is a supported shape. Cancelled children are left as they are by complete and
@@ -57,7 +58,12 @@ impl Store {
         complete_one_time(&mut cal, now)?;
         let mut uids = vec![parent_uid];
         let mut writes = vec![p.update(&cal)?];
-        for c in children.into_iter().filter(|c| c.status == Status::Open) {
+        let mut holds = Vec::new();
+        for c in children {
+            if c.status != Status::Open {
+                holds.push(c.target.hold());
+                continue;
+            }
             let mut cal = c.target.cal.clone();
             complete_member(&mut cal, now, now)?;
             uids.push(c.uid);
@@ -67,6 +73,7 @@ impl Store {
             kind: "complete",
             uids,
             writes,
+            holds,
         })
     }
 
@@ -82,8 +89,10 @@ impl Store {
         reopen_one_time(&mut cal, now)?;
         let mut uids = vec![snap.tasks[idx].uid.clone()];
         let mut writes = vec![p.update(&cal)?];
+        let mut holds = Vec::new();
         for c in self.children(snap, idx)? {
             if c.status != Status::Completed {
+                holds.push(c.target.hold());
                 continue;
             }
             let mut cal = c.target.cal.clone();
@@ -95,6 +104,7 @@ impl Store {
             kind: "reopen",
             uids,
             writes,
+            holds,
         })
     }
 
@@ -129,6 +139,7 @@ impl Store {
             kind: "move",
             uids,
             writes,
+            holds: Vec::new(),
         })
     }
 
@@ -149,6 +160,7 @@ impl Store {
             kind: "delete",
             uids,
             writes,
+            holds: Vec::new(),
         })
     }
 }
@@ -167,8 +179,10 @@ fn plan_recurring_complete(
     let mut writes = vec![create(&p.collection, &copy_uid, &copy)?];
     let mut uids = vec![parent_uid, copy_uid.clone()];
     let mut updates = vec![p.update(&live)?];
+    let mut holds = Vec::new();
     for c in children {
         if c.status == Status::Cancelled {
+            holds.push(c.target.hold());
             continue;
         }
         let child_copy = new_uid();
@@ -180,6 +194,9 @@ fn plan_recurring_complete(
             reopen_member(&mut cal, now)?;
             uids.push(c.uid);
             updates.push(c.target.update(&cal)?);
+        } else {
+            // Copied from its loaded bytes, left as it is.
+            holds.push(c.target.hold());
         }
     }
     writes.extend(updates);
@@ -187,5 +204,6 @@ fn plan_recurring_complete(
         kind: "complete",
         uids,
         writes,
+        holds,
     })
 }
