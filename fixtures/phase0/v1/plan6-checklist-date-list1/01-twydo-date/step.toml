@@ -1,0 +1,5 @@
+scenario = "plan6-checklist-date-list1"
+step = "01-twydo-date"
+device = "twydo"
+action = "tdo op edit D --due 2026-12-11"
+captured_at = "2026-11-02T19:48:35Z"

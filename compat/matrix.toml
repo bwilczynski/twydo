@@ -987,9 +987,9 @@ evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child"]
 
 [[edge_case]]
 id = "checklist-item-dates"
-observed = "Plan 6 Task 7 round 01: changing checklist C's date on the iPhone removed DUE and DTSTART from its items c1-c3, which carried a copy of the old date. Twydo writes the same (a new date-only due plus the items' dates removed, one journal entry); not yet checked on the iPhone when Twydo writes it."
-verdict = "unverified"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit"]
+observed = "Plan 6 Task 7 round 01: changing checklist C's date on the iPhone removed DUE and DTSTART from its items c1-c3, which carried a copy of the old date (items get the copy when the checklist's date is set before they are added). Checklist-date round: Twydo moved checklist D's date and removed d1/d2's copies; the iPhone showed D on the new date and the items without dates of their own, and its next date change on D left the items as they were, read back by Twydo."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date", "fixtures/phase0/v1/plan6-checklist-date-list1/02-phone-date"]
 
 [[edge_case]]
 id = "reopen-undo-before-after-sync"

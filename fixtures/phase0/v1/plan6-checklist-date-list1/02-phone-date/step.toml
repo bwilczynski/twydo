@@ -1,0 +1,5 @@
+scenario = "plan6-checklist-date-list1"
+step = "02-phone-date"
+device = "iphone"
+action = "phone: D date -> 2026-12-12"
+captured_at = "2026-11-02T19:50:07Z"
