@@ -34,7 +34,9 @@ fn app() -> App {
     App::new(snapshot_at(&root), now())
 }
 
-fn render(app: &App, w: u16, h: u16) -> Buffer {
+/// Draw like the event loop does: size the App first, then render.
+fn render(app: &mut App, w: u16, h: u16) -> Buffer {
+    app.resize(w, h);
     let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
     term.draw(|f| draw(f, app)).unwrap();
     term.backend().buffer().clone()
@@ -73,7 +75,7 @@ fn find_in_tasks(buf: &Buffer, needle: &str) -> (u16, u16) {
 
 #[test]
 fn renders_three_panes_wide() {
-    let t = text(&render(&app(), 120, 30));
+    let t = text(&render(&mut app(), 120, 30));
     assert!(t.contains("Views"), "{t}");
     assert!(t.contains("Details"), "{t}");
     assert!(t.contains("Today · Wednesday 4 Nov"), "{t}");
@@ -83,7 +85,7 @@ fn renders_three_panes_wide() {
 
 #[test]
 fn details_hidden_when_narrow() {
-    let t = text(&render(&app(), 100, 30));
+    let t = text(&render(&mut app(), 100, 30));
     assert!(!t.contains("Details"), "{t}");
     assert!(t.contains("Views"), "{t}");
 }
@@ -97,7 +99,7 @@ fn details_pane_shows_the_selected_task() {
         .iter()
         .position(|r| a.snapshot.tasks[r.task].summary == "Pay water bill")
         .unwrap();
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("15 min before due"), "{t}");
     assert!(t.contains("List"), "{t}");
     assert!(t.contains("Bills"), "{t}");
@@ -110,7 +112,7 @@ fn only_ansi_chrome() {
     a.show_help = false;
     for (view, w) in [(View::Today, 120), (View::All, 80), (View::Done, 120)] {
         a.view = view;
-        let buf = render(&a, w, 30);
+        let buf = render(&mut a, w, 30);
         let mut bars = 0;
         for y in 0..buf.area.height {
             for x in 0..buf.area.width {
@@ -125,7 +127,7 @@ fn only_ansi_chrome() {
     }
     // Also with the help overlay open.
     a.show_help = true;
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     for y in 0..buf.area.height {
         for x in 0..buf.area.width {
             let c = &buf[(x, y)];
@@ -138,7 +140,7 @@ fn only_ansi_chrome() {
 
 #[test]
 fn overdue_row_is_red() {
-    let buf = render(&app(), 120, 30);
+    let buf = render(&mut app(), 120, 30);
     let (x, y) = find_in_tasks(&buf, "Renew library books");
     assert_eq!(buf[(x, y)].fg, Color::Red);
     let (x, y) = find_in_tasks(&buf, "OVERDUE");
@@ -149,7 +151,7 @@ fn overdue_row_is_red() {
 fn only_overdue_is_red() {
     let mut a = app();
     a.view = View::All;
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     let (x, y) = find_in_tasks(&buf, "Call the dentist");
     assert_ne!(buf[(x, y)].fg, Color::Red);
 }
@@ -158,7 +160,7 @@ fn only_overdue_is_red() {
 fn glyphs_and_counts() {
     let mut a = app();
     a.view = View::All;
-    let t = text(&render(&a, 120, 40));
+    let t = text(&render(&mut a, 120, 40));
     assert!(t.contains('↺'), "{t}");
     assert!(t.contains('○'), "{t}");
     assert!(t.contains("[3]"), "{t}");
@@ -184,7 +186,7 @@ fn selected_row_has_palette_background_without_reversing_colors() {
     let mut a = app();
     a.view = View::All;
     a.cursor = 1;
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     let rows = a.visible_rows();
     let sel = &a.snapshot.tasks[rows[1].task].summary;
     let (x, y) = find_in_tasks(&buf, sel);
@@ -202,7 +204,7 @@ fn modes_help_and_messages_render() {
     a.mode = Mode::Search;
     a.input = "water".into();
     a.search = Some("water".into());
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("SEARCH"), "{t}");
     assert!(t.contains("/water"), "{t}");
     assert!(t.contains("Pay water bill"), "{t}");
@@ -210,12 +212,12 @@ fn modes_help_and_messages_render() {
 
     let mut a = app();
     a.message = Some("toggle done: not available yet".into());
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("not available yet"), "{t}");
 
     let mut a = app();
     a.show_help = true;
-    let t = text(&render(&a, 120, 40));
+    let t = text(&render(&mut a, 120, 40));
     assert!(t.contains("Help"), "{t}");
     assert!(t.contains("(after gate)"), "{t}");
     assert!(t.contains("toggle done"), "{t}");
@@ -228,19 +230,19 @@ fn tiny_terminal_does_not_panic() {
         for view in [View::Today, View::All, View::Done] {
             a.view = view;
             a.show_help = false;
-            render(&a, w, h);
+            render(&mut a, w, h);
             a.show_help = true;
-            render(&a, w, h);
+            render(&mut a, w, h);
             a.show_help = false;
             a.show_errors = true;
-            render(&a, w, h);
+            render(&mut a, w, h);
             a.show_errors = false;
         }
     }
     a.show_help = false;
     a.mode = Mode::Command;
     a.input = "list x".into();
-    render(&a, 20, 5);
+    render(&mut a, 20, 5);
 }
 
 #[test]
@@ -267,7 +269,7 @@ fn wide_titles_truncate_by_display_width() {
     }
     let mut a = App::new(snapshot_at(dir.path()), now());
     a.view = View::All;
-    let buf = render(&a, 80, 20);
+    let buf = render(&mut a, 80, 20);
     let right = buf.area.width - 1;
     let mut ends = Vec::new();
     for y in 0..buf.area.height {
@@ -295,8 +297,8 @@ fn sidebar_lines(buf: &Buffer) -> Vec<String> {
 
 #[test]
 fn sidebar_renders_in_navigation_order() {
-    let a = app();
-    let buf = render(&a, 120, 30);
+    let mut a = app();
+    let buf = render(&mut a, 120, 30);
     let lines = sidebar_lines(&buf);
     let mut last = None;
     for v in a.sidebar_items() {
@@ -345,7 +347,7 @@ fn unreadable_files_indicator_and_errors_overlay() {
     ]);
     let mut a = App::new(snapshot_at(dir.path()), now());
     a.view = View::All;
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     let t = text(&buf);
     assert!(t.contains("! 1 file unreadable"), "{t}");
     let y = buf.area.height - 1;
@@ -356,7 +358,7 @@ fn unreadable_files_indicator_and_errors_overlay() {
     assert!(!t.contains("broken.ics"), "{t}");
 
     a.show_errors = true;
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("broken.ics"), "{t}");
     assert!(t.contains("Unreadable files"), "{t}");
 }
@@ -380,7 +382,7 @@ fn rows_with_warnings_or_blocks_are_marked() {
     let mut a = App::new(snapshot_at(dir.path()), now());
     a.view = View::All;
     // Below 110 columns there is no details pane, so the marker is the only sign.
-    let buf = render(&a, 80, 20);
+    let buf = render(&mut a, 80, 20);
     let row = |title: &str| {
         (0..buf.area.height)
             .map(|y| line(&buf, y))
@@ -412,7 +414,7 @@ fn overdue_red_is_decided_per_row() {
     let mut a = App::new(snapshot_at(&root), later);
     a.view = View::All;
     a.expanded.insert("sv-bills-4".into());
-    let buf = render(&a, 120, 40);
+    let buf = render(&mut a, 120, 40);
     let (x, y) = find_in_tasks(&buf, "Collect receipts");
     assert_eq!(buf[(x, y)].fg, Color::Red, "{}", text(&buf));
     let (x, y) = find_in_tasks(&buf, "Prepare tax return");
@@ -432,7 +434,7 @@ fn overdue_red_is_decided_per_row() {
     );
     let mut a = App::new(snap, now());
     a.view = View::List("inbox".into());
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     assert!(!text(&buf).contains("OVERDUE"), "{}", text(&buf));
     let (x, y) = find_in_tasks(&buf, "Renew library books");
     assert_eq!(buf[(x, y)].fg, Color::Red);
@@ -442,7 +444,7 @@ fn overdue_red_is_decided_per_row() {
     // Completed tasks are not overdue, whatever their due date.
     let mut a = app();
     a.view = View::Done;
-    let buf = render(&a, 120, 30);
+    let buf = render(&mut a, 120, 30);
     let (x, y) = find_in_tasks(&buf, "Buy stamps");
     assert_ne!(buf[(x, y)].fg, Color::Red);
 }
@@ -495,7 +497,7 @@ fn status_shows_synced_ago_pending_and_conflicts() {
         ..Default::default()
     };
     a.set_sync(Some(summary(st, 2, vec![conflict_on("nope")])));
-    let buf = render(&a, 140, 20);
+    let buf = render(&mut a, 140, 20);
     let l = status_line(&buf);
     assert!(l.contains("synced 3m ago · 2 pending · 1 conflict"), "{l}");
     let x = l.find("1 conflict").unwrap();
@@ -503,13 +505,13 @@ fn status_shows_synced_ago_pending_and_conflicts() {
     assert_eq!(buf[(x, buf.area.height - 1)].fg, Color::Yellow);
 
     a.set_sync(Some(summary(Default::default(), 0, vec![])));
-    assert!(status_line(&render(&a, 140, 20)).contains("not synced yet"));
+    assert!(status_line(&render(&mut a, 140, 20)).contains("not synced yet"));
     let st = twydo_core::sync::status::SyncStatus {
         last_success: Some(utc(15, 0)),
         ..Default::default()
     };
     a.set_sync(Some(summary(st, 0, vec![])));
-    assert!(status_line(&render(&a, 140, 20)).contains("just now"));
+    assert!(status_line(&render(&mut a, 140, 20)).contains("just now"));
 }
 
 #[test]
@@ -523,7 +525,7 @@ fn status_shows_emptied_list() {
     st.collections
         .insert("groceries".into(), CollState::EmptiedRemote);
     a.set_sync(Some(summary(st, 0, vec![])));
-    let l = status_line(&render(&a, 140, 20));
+    let l = status_line(&render(&mut a, 140, 20));
     assert!(
         l.contains("\"groceries\" emptied on server (:sync! groceries)"),
         "{l}"
@@ -541,7 +543,7 @@ fn status_shows_failure_with_retry_time() {
         ..Default::default()
     };
     a.set_sync(Some(summary(st, 0, vec![])));
-    let buf = render(&a, 140, 20);
+    let buf = render(&mut a, 140, 20);
     let l = status_line(&buf);
     assert!(l.contains("sync failed: timed out; retry 10:30"), "{l}");
     let x = l.find("sync failed").unwrap();
@@ -570,7 +572,7 @@ fn conflicted_row_has_marker() {
         0,
         vec![conflict_on(&uid)],
     )));
-    let buf = render(&a, 80, 20);
+    let buf = render(&mut a, 80, 20);
     let l = (0..buf.area.height)
         .map(|y| line(&buf, y))
         .find(|l| l.contains("Pay water bill"))
@@ -587,7 +589,7 @@ fn details_show_conflict_line() {
         0,
         vec![conflict_on(&uid)],
     )));
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("! conflict: changed here"), "{t}");
     assert!(t.contains(":conflicts"), "{t}");
 }
@@ -606,7 +608,7 @@ fn conflicts_overlay_lists_kind_in_words() {
         vec![conflict_on(&uid), c2],
     )));
     a.show_conflicts = true;
-    let t = text(&render(&a, 120, 30));
+    let t = text(&render(&mut a, 120, 30));
     assert!(t.contains("Pay water bill"), "{t}");
     assert!(t.contains("changed here and on another device"), "{t}");
     assert!(t.contains("deleted here, edited on another device"), "{t}");
@@ -617,8 +619,8 @@ fn conflicts_overlay_lists_kind_in_words() {
 fn sidebar_uses_wide_terminal_space_for_list_names() {
     let mut a = app();
     a.snapshot.collections[0].display_name = Some("家計と暮らしの計画".into());
-    let narrow = render(&a, 80, 30);
-    let wide = render(&a, 200, 30);
+    let narrow = render(&mut a, 80, 30);
+    let wide = render(&mut a, 200, 30);
     let sidebar_end = |buf: &Buffer| {
         (1..buf.area.width)
             .find(|&x| buf[(x, 0)].symbol() == "╭")
@@ -657,7 +659,7 @@ fn focus_keys_move_the_active_style_between_panes() {
     ] {
         a.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
         assert_eq!(a.focus, pane);
-        let buf = render(&a, 160, 30);
+        let buf = render(&mut a, 160, 30);
         let (x, y) = find_in_tasks(&buf, "Renew library books");
         assert!(!buf[(x, y)].modifier.contains(Modifier::REVERSED));
         assert_eq!(
@@ -698,12 +700,7 @@ fn focus_keys_move_the_active_style_between_panes() {
                 }
             );
         }
-        let focus_label = match pane {
-            Pane::Sidebar => "Sidebar",
-            Pane::Tasks => "Tasks",
-            Pane::Details => "Details",
-        };
-        assert!(line(&buf, 29).contains(focus_label));
+        assert!(line(&buf, 29).contains(pane.name()));
     }
 }
 
@@ -711,12 +708,41 @@ fn focus_keys_move_the_active_style_between_panes() {
 fn sidebar_active_style_matches_tasks_and_disappears_on_leaving() {
     let mut a = app();
     a.handle_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
-    let buf = render(&a, 160, 30);
-    assert_eq!(buf[(4, 1)].bg, Color::DarkGray);
-    assert!(!buf[(4, 1)].modifier.contains(Modifier::REVERSED));
+    // Find the cursor's row by its text rather than assuming the sidebar layout.
+    let name = view_name_at_cursor(&a);
+    let buf = render(&mut a, 160, 30);
+    let (x, y) = find_in_sidebar(&buf, name);
+    assert_eq!(buf[(x, y)].bg, Color::DarkGray);
+    assert!(!buf[(x, y)].modifier.contains(Modifier::REVERSED));
     a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    let buf = render(&a, 160, 30);
-    assert_eq!(buf[(4, 1)].bg, Color::Reset);
+    let buf = render(&mut a, 160, 30);
+    assert_eq!(find_in_sidebar(&buf, name), (x, y));
+    assert_eq!(buf[(x, y)].bg, Color::Reset);
+}
+
+fn view_name_at_cursor(a: &App) -> &'static str {
+    match &a.sidebar_items()[a.sidebar_cursor] {
+        View::Today => "Today",
+        View::All => "All",
+        View::Scheduled => "Scheduled",
+        View::Done => "Done",
+        View::Next3Days => "Next 3 Days",
+        View::List(id) => panic!("cursor unexpectedly on list {id}"),
+    }
+}
+
+/// Position of text inside the sidebar, which ends where the task pane's border starts.
+fn find_in_sidebar(buf: &Buffer, needle: &str) -> (u16, u16) {
+    let end = (1..buf.area.width)
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap();
+    for y in 1..buf.area.height {
+        let joined: String = (0..end).map(|x| buf[(x, y)].symbol()).collect();
+        if let Some(b) = joined.find(needle) {
+            return (joined[..b].chars().count() as u16, y);
+        }
+    }
+    panic!("{needle:?} not in sidebar:\n{}", text(buf));
 }
 
 #[test]
@@ -726,8 +752,14 @@ fn focus_label_does_not_overwrite_search_or_commands() {
         a.mode = mode;
         a.input = "a long synthetic prompt that must remain readable".into();
         for width in [80, 120, 160] {
-            let buf = render(&a, width, 30);
+            let buf = render(&mut a, width, 30);
             assert!(line(&buf, 29).contains(&a.input));
+            assert!(line(&buf, 29).contains("Tasks · "));
         }
+        // Badge + focus label + prompt exceed 66 columns: the label must go so the
+        // prompt stays whole.
+        let buf = render(&mut a, 66, 30);
+        assert!(line(&buf, 29).contains(&a.input), "{}", line(&buf, 29));
+        assert!(!line(&buf, 29).contains("Tasks · "));
     }
 }

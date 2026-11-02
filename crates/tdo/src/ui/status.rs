@@ -11,7 +11,7 @@ use unicode_width::UnicodeWidthStr;
 use twydo_core::sync::status::CollState;
 
 use super::{dim, list_name, theme, view_name};
-use crate::app::{App, Mode, Pane};
+use crate::app::{App, Mode};
 
 const HINTS: &str = "j/k move  x done  t today  ] +1d  o new  / search  : cmd  ? help";
 
@@ -54,12 +54,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     });
     // The focus label is optional: it only goes in when everything else still fits.
     let width = |spans: &[Span]| spans.iter().map(|s| s.content.width()).sum::<usize>();
-    let focus = match app.focus {
-        Pane::Sidebar => "Sidebar",
-        Pane::Tasks => "Tasks",
-        Pane::Details => "Details",
-    };
-    let focus = Span::styled(format!("{focus} · "), theme::accent());
+    let focus = Span::styled(format!("{} · ", app.focus.name()), theme::accent());
     let mut spans = badge;
     if width(&spans) + focus.content.width() + width(&rest) <= area.width as usize {
         spans.push(focus);

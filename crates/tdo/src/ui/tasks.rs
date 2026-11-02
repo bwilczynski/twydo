@@ -282,7 +282,10 @@ fn row_line(
     ];
     if mark_w > 0 {
         let mark = if flagged(app, t) { "!" } else { " " };
-        spans.push(Span::styled(pad(mark, mark_w), theme::warning()));
+        spans.push(Span::styled(
+            pad(mark, mark_w),
+            theme::warning().add_modifier(Modifier::DIM),
+        ));
     }
     spans.extend([
         Span::styled(title, text),
@@ -304,9 +307,12 @@ fn row_line(
             text,
         ));
     }
-    let mut line = Line::from(spans);
     if selected && app.focus == Pane::Tasks {
-        line = line.style(theme::selection());
+        for s in &mut spans {
+            s.style = s.style.remove_modifier(Modifier::DIM);
+        }
+        Line::from(spans).style(theme::selection())
+    } else {
+        Line::from(spans)
     }
-    line
 }
