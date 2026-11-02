@@ -165,8 +165,18 @@ pub fn describe(d: &DateInput, today: NaiveDate) -> String {
     s
 }
 
-/// The local date and optional wall time of `v` in `tz`.
+/// The local date and optional wall time of `v` in `tz`. Date-only, floating, and values
+/// zoned in `tz` itself are taken as written: resolving them first would move a time that
+/// falls in a DST gap.
 fn local_parts(v: &IcalDateTime, tz: Tz) -> (NaiveDate, Option<NaiveTime>) {
+    match v {
+        IcalDateTime::Date(d) => return (*d, None),
+        IcalDateTime::Floating(n) => return (n.date(), Some(n.time())),
+        IcalDateTime::Zoned { local, tzid } if tzid.parse::<Tz>() == Ok(tz) => {
+            return (local.date(), Some(local.time()));
+        }
+        _ => {}
+    }
     match v.resolve(tz).0 {
         Resolved::Date(d) => (d, None),
         Resolved::Instant(t) => {

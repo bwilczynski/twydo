@@ -196,3 +196,21 @@ fn non_ascii_input_is_an_error_not_a_panic() {
         );
     }
 }
+
+/// A floating time inside a DST gap (2027-03-14 02:30 does not exist in New York) keeps its
+/// wall time: shifting or showing it must not turn 02:30 into 03:30.
+#[test]
+fn floating_wall_time_survives_dst_gap() {
+    let gap = IcalDateTime::Floating(d(2027, 3, 14).and_time(t(2, 30)));
+    assert_eq!(
+        shift_due(Some(&gap), NY, today(), DueShift::Days(1)),
+        Due::Time(d(2027, 3, 15).and_time(t(2, 30)))
+    );
+    assert_eq!(input_text(&gap, NY), "2027-03-14 02:30");
+    // The same wall time zoned in the local zone itself.
+    let zoned = IcalDateTime::Zoned {
+        local: d(2027, 3, 14).and_time(t(2, 30)),
+        tzid: "America/New_York".into(),
+    };
+    assert_eq!(input_text(&zoned, NY), "2027-03-14 02:30");
+}
