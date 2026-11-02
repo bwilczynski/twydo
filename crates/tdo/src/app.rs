@@ -75,6 +75,8 @@ pub enum Outcome {
     },
     /// Write to the task store; the loop reports back with [`App::write_finished`].
     Write(Request),
+    /// Edit these notes in `$EDITOR`; the loop reports back with [`App::notes_edited`].
+    EditNotes(String),
 }
 
 /// The `m` overlay: lists to move task `uid` to, in sidebar order.
@@ -589,7 +591,8 @@ impl App {
             return Outcome::Continue;
         };
         match form.key(k) {
-            FormAction::None | FormAction::EditNotes => {}
+            FormAction::None => {}
+            FormAction::EditNotes => return Outcome::EditNotes(form.notes.clone()),
             FormAction::Cancel => self.close_form(),
             FormAction::Save => match form.changes(today) {
                 Err(e) => form.error = Some(e),
@@ -654,6 +657,21 @@ impl App {
             _ => {}
         }
         Outcome::Continue
+    }
+
+    /// The editor from [`Outcome::EditNotes`] closed: take its text, or keep the notes and
+    /// say why not.
+    pub fn notes_edited(&mut self, result: Result<String, String>) {
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        match result {
+            Ok(notes) => {
+                form.set_notes(notes);
+                form.error = None;
+            }
+            Err(e) => form.error = Some(format!("notes: {e}")),
+        }
     }
 
     /// A write requested by [`Outcome::Write`] ended: show its result.

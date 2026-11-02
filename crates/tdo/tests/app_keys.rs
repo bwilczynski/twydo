@@ -790,3 +790,35 @@ fn esc_cancels_without_write() {
     assert_eq!(a.mode, Mode::Normal);
     assert!(a.message.is_none());
 }
+
+#[test]
+fn enter_on_notes_requests_editor() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    for _ in 0..3 {
+        a.handle_key(code(KeyCode::Tab));
+    }
+    assert_eq!(a.form.as_ref().unwrap().focus, Field::Notes);
+    a.form.as_mut().unwrap().set_notes("old".into());
+    assert_eq!(
+        a.handle_key(code(KeyCode::Enter)),
+        Outcome::EditNotes("old".into())
+    );
+    a.notes_edited(Ok("new\nlines".into()));
+    assert_eq!(a.form.as_ref().unwrap().notes, "new\nlines");
+    assert_eq!(a.mode, Mode::Insert);
+}
+
+#[test]
+fn failing_editor_keeps_notes() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    a.form.as_mut().unwrap().set_notes("keep".into());
+    a.notes_edited(Err("editor exited with status 1".into()));
+    let f = a.form.as_ref().unwrap();
+    assert_eq!(f.notes, "keep");
+    assert_eq!(
+        f.error.as_deref(),
+        Some("notes: editor exited with status 1")
+    );
+}

@@ -107,6 +107,19 @@ fn event_loop(
                             refresh_sync(app);
                             app.write_finished(result);
                         }
+                        Outcome::EditNotes(notes) => {
+                            ratatui::restore();
+                            let editor = crate::editor::editor_command(
+                                std::env::var("VISUAL").ok().as_deref(),
+                                std::env::var("EDITOR").ok().as_deref(),
+                            );
+                            let result = crate::editor::edit_text(&editor, &notes);
+                            *terminal = ratatui::init();
+                            terminal.clear()?;
+                            let size = terminal.size()?;
+                            app.resize(size.width, size.height);
+                            app.notes_edited(result);
+                        }
                         Outcome::Resolve { id, keep } => {
                             let cfg = &app.snapshot.config;
                             let result = resolve(cfg, &id, keep, Utc::now());
