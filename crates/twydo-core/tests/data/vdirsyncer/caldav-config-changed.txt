@@ -1,0 +1,1 @@
+critical: Detected change in config file, please run `vdirsyncer discover twydo`.

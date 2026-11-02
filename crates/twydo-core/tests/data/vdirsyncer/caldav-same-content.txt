@@ -1,0 +1,18 @@
+Syncing twydo/c1
+Syncing twydo/c2
+Syncing twydo/c3
+Syncing twydo/c4
+Syncing twydo/c5
+Syncing twydo/c6
+Syncing twydo/c7
+Syncing twydo/c8
+Syncing twydo/c9
+Syncing twydo/c10
+Syncing twydo/c11
+Syncing twydo/c12
+Syncing twydo/c13
+Syncing twydo/c14
+Doing conflict resolution for item u2...
+...same content on both sides.
+Copying (uploading) item u3 to twydo_local/c13
+Copying (uploading) item u4 to twydo_remote/c13

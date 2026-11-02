@@ -1,0 +1,42 @@
+Syncing twydo/c1
+Syncing twydo/c2
+Syncing twydo/c3
+Syncing twydo/c4
+Syncing twydo/c5
+Syncing twydo/c6
+Syncing twydo/c7
+Syncing twydo/c8
+Syncing twydo/c9
+Syncing twydo/c10
+Syncing twydo/c11
+Syncing twydo/c12
+Syncing twydo/c13
+Syncing twydo/c14
+error: Unknown error occurred for twydo/c1: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c5: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c10: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c2: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c4: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c3: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c6: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c9: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c7: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c8: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c11: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c12: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c13: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
+error: Unknown error occurred for twydo/c14: Cannot connect to host 127.0.0.1:9 ssl:default [Connect call failed ('127.0.0.1', 9)]
+error: Use `-vdebug` to see the full traceback.
