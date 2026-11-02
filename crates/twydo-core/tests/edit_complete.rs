@@ -662,3 +662,43 @@ fn start_on_day_31_is_refused() {
         "next start date after 2026-10-31 would not fall on day 31 of the month"
     );
 }
+
+const R: &str = "8f603cfaa41f4c229b9adcd6223e7393";
+const R_COPY: &str = "14b5a37a52224e8c959b5002e2275fc9";
+
+fn json_uid(cal: &Calendar) -> Option<String> {
+    let m = MetaJson::parse(&todo(cal).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    m.get_str("uid").map(str::to_string)
+}
+
+#[test]
+fn recurring_project_copy_rewrites_json_uid() {
+    check_copy_and_advance(
+        P6,
+        "04-reopen-child",
+        "05-complete-parent",
+        R,
+        R_COPY,
+        "20270115",
+        &["DTSTART", "DUE"],
+    );
+    let input = parse(&fixture(P6, "04-reopen-child", R)).unwrap();
+    assert_eq!(json_uid(&input).as_deref(), Some(R), "fixture carries uid");
+    let (live, copy) = complete_recurring(&input, now(), R_COPY).unwrap();
+    assert_eq!(json_uid(&live).as_deref(), Some(R));
+    assert_eq!(json_uid(&copy).as_deref(), Some(R_COPY));
+}
+
+#[test]
+fn foreign_json_uid_is_kept_in_the_copy() {
+    let mut cal = parse(&fixture(P6, "04-reopen-child", R)).unwrap();
+    {
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut m = MetaJson::parse(&p.value).unwrap();
+        m.set_str("uid", "someone-else");
+        p.set_value(&m.encode());
+    }
+    let (_, copy) = complete_recurring(&cal, now(), R_COPY).unwrap();
+    assert_eq!(json_uid(&copy).as_deref(), Some("someone-else"));
+}
