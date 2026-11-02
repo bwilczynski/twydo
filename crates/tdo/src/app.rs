@@ -7,6 +7,7 @@ use chrono::DateTime;
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::form::{EditForm, Field, FormAction};
 use crate::write::Request;
 use twydo_core::conflicts::Conflict;
 use twydo_core::dateinput::{DueShift, shift_due};
@@ -39,6 +40,8 @@ pub enum Mode {
     Normal,
     Search,
     Command,
+    /// The edit form is open.
+    Insert,
 }
 
 /// One sidebar line: a group heading, or a selectable view.
@@ -105,6 +108,8 @@ pub struct App {
     pub conflict_cursor: usize,
     /// The `m` list picker, open until its write finishes or Esc.
     pub picker: Option<ListPicker>,
+    /// The `i` edit form; open while `mode` is Insert.
+    pub form: Option<EditForm>,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
@@ -140,6 +145,7 @@ impl App {
             show_conflicts: false,
             conflict_cursor: 0,
             picker: None,
+            form: None,
             now,
             page: 10,
             pending: None,
@@ -391,6 +397,9 @@ impl App {
         if self.picker.is_some() {
             return self.picker_key(k);
         }
+        if self.form.is_some() {
+            return self.form_key(k);
+        }
         match self.mode {
             Mode::Normal => self.normal_key(k),
             Mode::Search => {
@@ -398,6 +407,7 @@ impl App {
                 Outcome::Continue
             }
             Mode::Command => self.command_key(k),
+            Mode::Insert => Outcome::Continue,
         }
     }
 
@@ -457,7 +467,7 @@ impl App {
     fn enter_on_task(&mut self) {
         let Some(i) = self.selected() else { return };
         if self.snapshot.children(i).is_empty() {
-            self.block("edit task");
+            self.open_form(Field::Title);
             return;
         }
         let uid = self.snapshot.tasks[i].uid.clone();
@@ -510,9 +520,9 @@ impl App {
             'u' => return Outcome::Write(Request::Undo),
             'o' => self.block("new task"),
             'O' => self.block("new item"),
-            'i' => self.block("edit task"),
+            'i' => self.open_form(Field::Title),
             'J' | 'K' => self.block("move task"),
-            'r' => self.block("edit repeat"),
+            'r' => self.open_form(Field::Repeat),
             'a' => self.block("edit alerts"),
             'm' => self.open_picker(),
             _ => {}
@@ -550,6 +560,53 @@ impl App {
             uid,
             changes: vec![Change::Due(Some(due))],
         })
+    }
+
+    /// Open the edit form on the selected task with `focus`; Repeat only when it repeats.
+    fn open_form(&mut self, focus: Field) {
+        if self.focus == Pane::Sidebar {
+            return;
+        }
+        let Some(i) = self.selected() else { return };
+        let mut form = EditForm::open(&self.snapshot.tasks[i], self.snapshot.tz());
+        if focus == Field::Repeat && form.repeat.is_none() {
+            self.message = Some("edit repeat: this task does not repeat".into());
+            return;
+        }
+        form.focus = focus;
+        self.form = Some(form);
+        self.mode = Mode::Insert;
+    }
+
+    fn close_form(&mut self) {
+        self.form = None;
+        self.mode = Mode::Normal;
+    }
+
+    fn form_key(&mut self, k: KeyEvent) -> Outcome {
+        let today = self.now.date_naive();
+        let Some(form) = self.form.as_mut() else {
+            return Outcome::Continue;
+        };
+        match form.key(k) {
+            FormAction::None | FormAction::EditNotes => {}
+            FormAction::Cancel => self.close_form(),
+            FormAction::Save => match form.changes(today) {
+                Err(e) => form.error = Some(e),
+                Ok(changes) if changes.is_empty() => {
+                    self.close_form();
+                    self.message = Some("no changes".into());
+                }
+                Ok(changes) => {
+                    form.error = None;
+                    return Outcome::Write(Request::Apply(Op::Edit {
+                        uid: form.uid.clone(),
+                        changes,
+                    }));
+                }
+            },
+        }
+        Outcome::Continue
     }
 
     fn open_picker(&mut self) {
@@ -602,6 +659,14 @@ impl App {
     /// A write requested by [`Outcome::Write`] ended: show its result.
     pub fn write_finished(&mut self, result: Result<String, String>) {
         self.picker = None;
+        // A refused edit keeps the form and its typing, with the reason in it.
+        if let (Some(form), Err(e)) = (self.form.as_mut(), &result) {
+            form.error = Some(e.clone());
+            return;
+        }
+        if self.form.is_some() {
+            self.close_form();
+        }
         self.message = Some(match result {
             Ok(m) | Err(m) => m,
         });

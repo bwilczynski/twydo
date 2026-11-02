@@ -790,3 +790,28 @@ fn picker_overlay_lists_names() {
         assert!(t.contains(&format!("▌ {n}")), "{n} missing:\n{t}");
     }
 }
+
+#[test]
+fn form_overlay_shows_fields_and_preview() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    let title = a.form.as_ref().unwrap().title.clone();
+    let buf = render(&mut a, 120, 30);
+    let t = text(&buf);
+    assert!(t.contains(" Edit task "), "{t}");
+    for label in ["Title", "Due", "Start", "Notes"] {
+        assert!(t.contains(label), "{label} missing:\n{t}");
+    }
+    assert!(t.contains(&title), "{t}");
+    assert!(t.contains("→ "), "preview missing:\n{t}");
+}
+
+#[test]
+fn status_shows_insert_mode() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    let buf = render(&mut a, 120, 30);
+    let last = line(&buf, 29);
+    assert!(last.contains(" INSERT "), "{last}");
+    assert!(last.contains("Esc cancel"), "{last}");
+}

@@ -4,6 +4,7 @@ use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tdo::app::{App, Mode, Outcome, Pane};
+use tdo::form::Field;
 use tdo::write::Request;
 use twydo_core::config::Config;
 use twydo_core::dateinput::{DueShift, shift_due};
@@ -115,6 +116,10 @@ fn enter_toggles_parent() {
     let uid = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
     a.handle_key(code(KeyCode::Enter));
     assert!(a.expanded.contains(&uid));
+    assert!(
+        a.form.is_none(),
+        "Enter on a parent toggles, it does not edit"
+    );
     assert_eq!(a.visible_rows().len(), before + 2);
     assert!(a.message.is_none());
     a.handle_key(code(KeyCode::Enter));
@@ -123,10 +128,12 @@ fn enter_toggles_parent() {
 }
 
 #[test]
-fn enter_on_leaf_is_blocked() {
+fn enter_on_leaf_opens_form() {
     let mut a = app();
+    let uid = selected_uid(&a);
     a.handle_key(code(KeyCode::Enter));
-    assert_eq!(a.message.as_deref(), Some("edit task: not available yet"));
+    assert_eq!(a.form.as_ref().map(|f| f.uid.clone()), Some(uid));
+    assert_eq!(a.mode, Mode::Insert);
 }
 
 #[test]
@@ -135,10 +142,8 @@ fn keys_without_support_are_blocked_with_reason() {
     for (k, name) in [
         (key('o'), "new task"),
         (key('O'), "new item"),
-        (key('i'), "edit task"),
         (key('J'), "move task"),
         (key('K'), "move task"),
-        (key('r'), "edit repeat"),
         (key('a'), "edit alerts"),
     ] {
         a.message = None;
@@ -684,4 +689,104 @@ fn m_with_single_list_shows_message() {
     a.handle_key(key('m'));
     assert!(a.picker.is_none());
     assert_eq!(a.message.as_deref(), Some("no other list to move to"));
+}
+
+fn select(a: &mut App, title: &str) {
+    a.cursor = titles(a).iter().position(|t| t == title).unwrap();
+}
+
+#[test]
+fn i_opens_form_in_insert_mode() {
+    let mut a = app();
+    let uid = selected_uid(&a);
+    assert_eq!(a.handle_key(key('i')), Outcome::Continue);
+    let f = a.form.as_ref().expect("form open");
+    assert_eq!(f.uid, uid);
+    assert_eq!(f.focus, Field::Title);
+    assert_eq!(a.mode, Mode::Insert);
+}
+
+#[test]
+fn r_focuses_repeat_or_explains() {
+    let mut a = app();
+    select(&mut a, "Water plants");
+    a.handle_key(key('r'));
+    assert_eq!(a.form.as_ref().unwrap().focus, Field::Repeat);
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('r'));
+    assert!(a.form.is_none());
+    assert_eq!(
+        a.message.as_deref(),
+        Some("edit repeat: this task does not repeat")
+    );
+}
+
+#[test]
+fn save_requests_edit_with_changes() {
+    let mut a = app();
+    let task = a.snapshot.tasks[a.selected().unwrap()].clone();
+    a.handle_key(key('i'));
+    a.handle_key(key('!'));
+    assert_eq!(
+        write_op(a.handle_key(code(KeyCode::Enter))),
+        Op::Edit {
+            uid: task.uid.clone(),
+            changes: vec![Change::Summary(format!("{}!", task.summary))],
+        }
+    );
+    assert!(a.form.is_some(), "open until the write finishes");
+    a.write_finished(Ok("saved".into()));
+    assert!(a.form.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert_eq!(a.message.as_deref(), Some("saved"));
+}
+
+#[test]
+fn save_without_changes_closes_with_message() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    assert!(a.form.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert_eq!(a.message.as_deref(), Some("no changes"));
+}
+
+#[test]
+fn invalid_form_shows_error_without_write() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    a.handle_key(ctrl('u'));
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    assert_eq!(
+        a.form.as_ref().unwrap().error.as_deref(),
+        Some("title must not be empty")
+    );
+}
+
+#[test]
+fn failed_write_keeps_form_open_with_error() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    a.handle_key(key('!'));
+    a.handle_key(code(KeyCode::Enter));
+    a.write_finished(Err("projects and checklists cannot be edited yet".into()));
+    let f = a.form.as_ref().expect("still open");
+    assert_eq!(
+        f.error.as_deref(),
+        Some("projects and checklists cannot be edited yet")
+    );
+    assert!(f.title.ends_with('!'), "typing kept");
+    assert_eq!(a.mode, Mode::Insert);
+}
+
+#[test]
+fn esc_cancels_without_write() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    a.handle_key(key('!'));
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(a.form.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert!(a.message.is_none());
 }
