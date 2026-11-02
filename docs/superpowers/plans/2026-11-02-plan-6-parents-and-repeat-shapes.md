@@ -14,7 +14,7 @@ Plan 6 session did not capture. The TUI asks before completing a parent with ope
 **Tech Stack:** Rust workspace (`twydo-core`, `tdo`), ratatui, clap, the existing journal.
 
 **Spec:** `docs/superpowers/specs/2026-10-31-terminal-tasks-design.md` (§6 data model and
-gate, §7 parent tasks, §11 contracts). Evidence: `docs/phase0/plan6-baseline.md` (H1–H13,
+gate, §7 parent tasks, §11 contracts). Evidence: `docs/reference/phase0/plan6-baseline.md` (H1–H13,
 Observations) and `fixtures/phase0/v1/plan6-list1/`, `plan6-list2/`.
 
 ## Global Constraints
@@ -450,7 +450,7 @@ git commit -m "feat(tui): confirm before completing a parent with open items"
 ### Task 7: Twydo ↔ iPhone verification session
 
 **Files:**
-- Modify: `docs/phase0/plan6-baseline.md` (new section "Twydo → iPhone verification (Plan 6
+- Modify: `docs/reference/phase0/plan6-baseline.md` (new section "Twydo → iPhone verification (Plan 6
   Task 7)"), `compat/matrix.toml`, `AGENTS.md` ("Done so far"), `README.md` (status)
 - Create: `fixtures/phase0/v1/plan6-twydo-list1/`, `plan6-twydo-list2/` (after the privacy scan)
 

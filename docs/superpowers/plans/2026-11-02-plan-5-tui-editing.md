@@ -397,7 +397,7 @@ style, `form.error` in red at the bottom. Status line: `INSERT` badge and hints
 
 **Files:**
 - Create: `docs/tui.md` (keys, what each write does, what stays blocked and why)
-- Modify: `docs/phase0/README.md` or a new `docs/phase0/plan5-tui.md` (session results),
+- Modify: `docs/reference/phase0/README.md` or a new `docs/reference/phase0/plan5-tui.md` (session results),
   `AGENTS.md` ("What to do next")
 
 Ask the user first; use the test setup from the memory notes (`XDG_CONFIG_HOME=~/twydo-phase0/xdg`
@@ -410,7 +410,7 @@ rounds of ≤6 phone actions).
   note from `$EDITOR`; `dd` then `u`. `:sync`, then the user checks each on the iPhone and
   edits the multi-line-note task there; sync back and confirm the TUI shows the phone's edit.
 - [ ] **Step 2:** Record the results (what was checked, pass/fail, anything new) in
-  `docs/phase0/plan5-tui.md`. A failure becomes a fix task here before merging; a new 2Do
+  `docs/reference/phase0/plan5-tui.md`. A failure becomes a fix task here before merging; a new 2Do
   behaviour goes to `compat/matrix.toml` only with captured evidence.
 - [ ] **Step 3:** Write `docs/tui.md`; update AGENTS.md "What to do next" to: next is the
   natural-language add plan, Plan 5b (manual order, list management) or Plan 2 (notifier).

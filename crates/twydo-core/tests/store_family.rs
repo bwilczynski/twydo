@@ -1,5 +1,5 @@
 //! The store on a checklist or project: completing, reopening, moving or deleting the parent
-//! writes the whole family in one journal entry, as 2Do does (`docs/phase0/plan6-baseline.md`
+//! writes the whole family in one journal entry, as 2Do does (`docs/reference/phase0/plan6-baseline.md`
 //! H5–H9), against a tempdir copy of the iPhone capture `plan6-list1/04-reopen-child`.
 
 mod common;

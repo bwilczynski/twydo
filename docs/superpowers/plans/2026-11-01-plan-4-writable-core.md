@@ -47,7 +47,7 @@ and journal pruning (Plan 3); list management (Plan 5).
   `tdo: test write mode: unverified operations are enabled` to stderr.
 - **No library defaults for unresolved 2Do behaviour.** If a case has not been captured, block it
   with a reason. Do not guess.
-- **Hypotheses H1–H12 (Task 2) drive Tasks 4–7 and 10.** Results are in `docs/phase0/plan4-baseline.md`;
+- **Hypotheses H1–H12 (Task 2) drive Tasks 4–7 and 10.** Results are in `docs/reference/phase0/plan4-baseline.md`;
   H4, H5, H8 and H10 did not hold as first written, and the tasks below are amended to what 2Do does.
 - Ask the user before any action that touches production 2Do data, the NAS or the iPhone. Task 2
   and Task 12 use the **test account only**, with synthetic titles.
@@ -92,7 +92,7 @@ crates/twydo-core/src/
   store/journal.rs     new: journal entries, recovery
 crates/tdo/src/cli/op.rs   new: `tdo op …`
 docs/journal.md            new: journal format
-docs/phase0/plan4-baseline.md  new: capture checklist + findings (Tasks 2, 12)
+docs/reference/phase0/plan4-baseline.md  new: capture checklist + findings (Tasks 2, 12)
 compat/matrix.toml         + iphone_baseline on every [[operation]]
 ```
 
@@ -137,14 +137,14 @@ compat/matrix.toml         + iphone_baseline on every [[operation]]
 ### Task 2: iPhone baseline captures (👤 user + 🤖, test account only)
 
 **Files:**
-- Create: `docs/phase0/plan4-baseline.md`, `fixtures/phase0/v1/<scenario>/<step>/…` (after scan)
+- Create: `docs/reference/phase0/plan4-baseline.md`, `fixtures/phase0/v1/<scenario>/<step>/…` (after scan)
 - Modify: `compat/matrix.toml`
 
 This task produces the evidence that Tasks 5–7 encode. **Stop and confirm with the user** before
 starting. They need the test 2Do on the iPhone, the test CalDAV account, and vdirsyncer set up
-as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
+as in `docs/reference/phase0/README.md` steps 3–4. Use synthetic titles only.
 
-- [ ] **Step 1:** Write `docs/phase0/plan4-baseline.md`: the steps below as a 👤/🤖 checklist, the capture command (from `docs/phase0/README.md` step 6, `--device iphone`), and the hypotheses table. A move is captured as `NN-move-source` (source folder) and `NN+1-move-dest` (destination folder). Every action happens on the iPhone; after each one: sync on the phone, run `vdirsyncer sync twydo`, then capture.
+- [ ] **Step 1:** Write `docs/reference/phase0/plan4-baseline.md`: the steps below as a 👤/🤖 checklist, the capture command (from `docs/reference/phase0/README.md` step 6, `--device iphone`), and the hypotheses table. A move is captured as `NN-move-source` (source folder) and `NN+1-move-dest` (destination folder). Every action happens on the iPhone; after each one: sync on the phone, run `vdirsyncer sync twydo`, then capture.
 
   | Scenario | Steps |
   |---|---|
@@ -555,7 +555,7 @@ as in `docs/phase0/README.md` steps 3–4. Use synthetic titles only.
 ### Task 12: Verify Twydo writes against the iPhone (👤 user + 🤖, test account only)
 
 **Files:**
-- Modify: `docs/phase0/plan4-baseline.md`, `compat/matrix.toml`, `docs/phase0/README.md` (short Result note), `fixtures/phase0/v1/…` (twydo steps)
+- Modify: `docs/reference/phase0/plan4-baseline.md`, `compat/matrix.toml`, `docs/reference/phase0/README.md` (short Result note), `fixtures/phase0/v1/…` (twydo steps)
 
 **Stop and confirm with the user** before starting: same test setup as Task 2, with a Twydo config
 whose `vdir` is the test vdir, `[writes] mode = "test"`, and its own `state_dir`.

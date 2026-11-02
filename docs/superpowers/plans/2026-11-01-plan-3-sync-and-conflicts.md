@@ -23,7 +23,7 @@ ratatui, notify). No new crates. Use `std::fs::File::try_lock` for the run lock,
 **Spec:** `docs/superpowers/specs/2026-10-31-terminal-tasks-design.md` §5 (storage and sync
 split; conflicts), §6 (recovery: "retain recovery information until sync is confirmed"), §8
 (`:sync`, `:conflicts`), §9 (failures/conflicts, setup), §10 step 5. Journal format:
-`docs/journal.md`. Session evidence: `docs/phase0/plan4-baseline.md` (Observations, Results).
+`docs/journal.md`. Session evidence: `docs/reference/phase0/plan4-baseline.md` (Observations, Results).
 
 ## Scope
 
@@ -102,7 +102,7 @@ crates/tdo/src/app.rs, term.rs, ui/{status,tasks,details}.rs, ui/conflicts.rs (n
 crates/tdo/tests/sync_e2e.rs      new: real vdirsyncer between two filesystem storages
 contrib/systemd/twydo-sync.{service,timer}, contrib/launchd/app.twydo.sync.plist   new
 contrib/vdirsyncer/config.example  + conflict hook line
-docs/sync.md new; docs/config.md, docs/journal.md updated; docs/phase0/plan3-sync.md new (Task 13)
+docs/sync.md new; docs/config.md, docs/journal.md updated; docs/reference/phase0/plan3-sync.md new (Task 13)
 ```
 
 State layout added under `<state>` (= `<state_dir>/vdirs/<id>/`, `docs/journal.md`):
@@ -596,7 +596,7 @@ conflicts/<id>/conflict.json, local.ics, remote.ics   (a missing .ics = that sid
 ### Task 13: Verify against Synology and the iPhone (👤 user + 🤖, test account only)
 
 **Files:**
-- Create: `docs/phase0/plan3-sync.md`; anonymised CalDAV stderr fixtures `crates/twydo-core/tests/data/vdirsyncer/caldav-*.txt`
+- Create: `docs/reference/phase0/plan3-sync.md`; anonymised CalDAV stderr fixtures `crates/twydo-core/tests/data/vdirsyncer/caldav-*.txt`
 - Modify: `crates/twydo-core/tests/sync_output.rs` (one test per new fixture), `AGENTS.md` ("What to do next"), the memory note
 
 **Stop and confirm with the user** before starting. This task changes `~/.config/vdirsyncer/config`

@@ -22,20 +22,20 @@ app replacing 2Do for one user, plan by plan.
    Write the next plan (if you use the superpowers workflow: `superpowers:writing-plans`) only when
    the current one is done.
 2. **Phase 0 gate: passed and approved (2026-11-01).** See the Result section of
-   [`docs/phase0/README.md`](docs/phase0/README.md). Only one 2Do device was available, so many matrix
+   [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md). Only one 2Do device was available, so many matrix
    rows are still `unverified` with a reason in `compat/matrix.toml`. Before writable work depends on
    one of them (cross-device operations, edge cases, conflicts, unused rule classes), verify it with
    the user's help first (spec §6, §10).
 3. Ask the user before any action that touches their production 2Do data, NAS or iPhone.
 4. **Done so far:** Plan 1 (read-only foundation), Plan 4 (writable core, `tdo op`), Plan 3
    (sync runner and conflicts, `tdo sync`; verified against the iPhone in
-   [`docs/phase0/plan3-sync.md`](docs/phase0/plan3-sync.md)) and Plan 5 (TUI editing: write
+   [`docs/reference/phase0/plan3-sync.md`](docs/reference/phase0/plan3-sync.md)) and Plan 5 (TUI editing: write
    keys, move, edit form, notes in `$EDITOR`; keys in [`docs/tui.md`](docs/tui.md), verified in
-   [`docs/phase0/plan5-tui.md`](docs/phase0/plan5-tui.md)) and Plan 6 (checklists, projects,
+   [`docs/reference/phase0/plan5-tui.md`](docs/reference/phase0/plan5-tui.md)) and Plan 6 (checklists, projects,
    recurring projects and the real repeat shapes, mirroring 2Do's family semantics; verified in
-   [`docs/phase0/plan6-baseline.md`](docs/phase0/plan6-baseline.md)), and the gap session
+   [`docs/reference/phase0/plan6-baseline.md`](docs/reference/phase0/plan6-baseline.md)), and the gap session
    that verified the real task shapes both ways
-   ([`docs/phase0/gap-session.md`](docs/phase0/gap-session.md); seed test data with
+   ([`docs/reference/phase0/gap-session.md`](docs/reference/phase0/gap-session.md); seed test data with
    `tools/seed_fixture.py` instead of typing on the phone). Next: natural-language add (`o`/`O`,
    reusing `twydo_core::dateinput`), Plan 5b (manual order `J`/`K`, list management) or Plan 2
    (notifier); write the plan first. Setup and limits of sync: [`docs/sync.md`](docs/sync.md).
@@ -56,7 +56,7 @@ app replacing 2Do for one user, plan by plan.
   - `compat/`: the phase-0 compatibility matrix (`matrix.toml`)
   - `contrib/`: example configuration for external tools (vdirsyncer)
   - `tools/`: helper scripts; `docs/`: spec, design, 2Do reference, plans, config, and the
-    phase-0 checklists (`docs/phase0/`)
+    phase-0 checklists (`docs/reference/phase0/`)
 - The spec's "decisions made by the user" (§4) are fixed; "decisions made by me" (§5) are proposals you
   may refine with justification, except where §11 says they cannot be overridden (compatibility gate,
   preservation, conflict, recovery and notification contracts).

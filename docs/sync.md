@@ -224,7 +224,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
 - **Deletes without an etag.** vdirsyncer sends deletes to Synology without an etag
   (`Deleting an item with no etag`), and the iPhone may show a one-off "Remote server returned an
   invalid task reference during incremental sync" on its next refresh; a retry succeeds and the data
-  is right (docs/phase0/plan4-baseline.md). Twydo cannot prevent this.
+  is right (docs/reference/phase0/plan4-baseline.md). Twydo cannot prevent this.
 - **Do not run vdirsyncer by hand while Twydo has pending edits.** The hook still records
   both-changed conflicts (it runs inside vdirsyncer), but nothing confirms journal entries or
   closes conflicts until the next `tdo sync`, and a delete-versus-edit that vdirsyncer settles
@@ -246,7 +246,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
   on the phone before the next clean sync, is re-uploaded without a conflict: Twydo cannot tell
   that upload from the create's first one.
 - **Phone behaviour is verified later.** What 2Do on the iPhone does with these flows is checked in
-  a later session (docs/phase0/plan3-sync.md, not yet written).
+  a later session (docs/reference/phase0/plan3-sync.md, not yet written).
 - **Repeating tasks completed on two devices.** If two devices complete the same repeating task
   before a sync, there are two history copies. Twydo records the conflict on the live task but does
   not merge the history (observation pending, Plan 3 Task 13).

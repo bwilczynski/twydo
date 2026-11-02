@@ -73,7 +73,7 @@ crates/tdo/
   src/term.rs                     terminal loop, watcher, minute tick
 compat/matrix.toml                compatibility matrix (template, filled during phase 0)
 docs/config.md                    config reference
-docs/phase0/README.md             gate checklist (user + agent steps)
+docs/reference/phase0/README.md             gate checklist (user + agent steps)
 contrib/vdirsyncer/config.example
 tools/capture_fixture.py, tools/reconcile.py, tools/tests/
 ```
@@ -438,13 +438,13 @@ tools/capture_fixture.py, tools/reconcile.py, tools/tests/
 ### Task 11: Phase-0 gate checklist and vdirsyncer template
 
 **Files:**
-- Create: `docs/phase0/README.md`, `contrib/vdirsyncer/config.example`
+- Create: `docs/reference/phase0/README.md`, `contrib/vdirsyncer/config.example`
 - Modify: `README.md` (link the phase-0 checklist)
 
 No code, so no test cycle. The checks are the review items in Step 3.
 
 - [ ] **Step 1:** Write `contrib/vdirsyncer/config.example`: one pair `twydo` with a `caldav` storage (`url = "https://NAS-HOST/…"` placeholder), `password.fetch = ["command", "…"]` (no literal password), `filesystem` storage with `fileext = ".ics"`, `collections = ["from a"]`, `metadata = ["displayname", "color"]`, and **no** `conflict_resolution` line. A comment explains why: spec §5 forbids `a wins`/`b wins`, and Plan 3 adds the conflict store.
-- [ ] **Step 2:** Write `docs/phase0/README.md`. Mark each step 👤 (user) or 🤖 (agent), list its outputs, and say "stop and ask" before anything touching production. In order:
+- [ ] **Step 2:** Write `docs/reference/phase0/README.md`. Mark each step 👤 (user) or 🤖 (agent), list its outputs, and say "stop and ask" before anything touching production. In order:
   1. 👤 Back up the 2Do database (2Do › Settings › Backups) and copy the Dropbox `Apps/2Do` folder **outside the repo**. 🤖 Run `decode_2do_dropbox.py` to make the inventory, outside the repo.
   2. 👤 On the NAS, create an **isolated** CalDAV test account/collection. Confirm Synology Calendar accepts `VTODO` (create a task from 2Do and see it arrive); otherwise run Radicale in a container. Record the server name and version.
   3. 👤 Set up 2Do on a **restorable test setup** (a separate macOS user or a restored backup, and an iPhone 2Do profile not connected to production data) so switching providers can't replace production data. Record the app, iOS and macOS versions.
@@ -454,7 +454,7 @@ No code, so no test cycle. The checks are the review items in Step 3.
   7. 🤖 `capture_fixture.py scan` the staging dir; 👤 confirm the SUMMARY list is synthetic; 🤖 copy into `fixtures/phase0/v1/` and commit.
   8. 🤖 Fill in the verdicts and evidence in `compat/matrix.toml` from the diffs; 👤 review. Unresolved cases stay `unverified` with a note.
   - **Gate outputs** (Plan 4 can't start without them): committed fixtures, a filled matrix with environment versions, a recorded vdirsyncer conflict behaviour (delete-vs-edit included), and the metadata precedence decision (spec §6).
-- [ ] **Step 3: Review:** `grep -rniE 'password *=|@[a-z0-9.-]+\.(com|net|pl)|https?://[^ ]*nas' contrib docs/phase0` → no matches except placeholders; every spec §6 fixture case (one-time, monthly, yearly, from-completion, recurring project, checklist, project with recurring child, completed history, date-only/timed, start dates, multiple/absolute/relative alarms, unknown properties) appears in the scenario list.
+- [ ] **Step 3: Review:** `grep -rniE 'password *=|@[a-z0-9.-]+\.(com|net|pl)|https?://[^ ]*nas' contrib docs/reference/phase0` → no matches except placeholders; every spec §6 fixture case (one-time, monthly, yearly, from-completion, recurring project, checklist, project with recurring child, completed history, date-only/timed, start dates, multiple/absolute/relative alarms, unknown properties) appears in the scenario list.
 - [ ] **Step 4:** Commit: `docs: phase-0 gate checklist and vdirsyncer template`.
 
 ### Task 12: TUI app state and keys (no terminal)

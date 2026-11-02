@@ -5,7 +5,7 @@ A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Lin
 2Do iPhone app keeps working against the same data. Command: `tdo`.
 
 Status: **implementation in progress** (plans in `docs/superpowers/plans/`). The phase-0 CalDAV
-compatibility gate has passed (see [`docs/phase0/README.md`](docs/phase0/README.md)). Done so far:
+compatibility gate has passed (see [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md)). Done so far:
 a read-only foundation (`export-json`, `check`, the TUI), the writable core (`tdo op`), the sync
 runner with conflict handling (`tdo sync`, [`docs/sync.md`](docs/sync.md)), editing in the TUI
 ([`docs/tui.md`](docs/tui.md)), and checklists, projects and recurring projects plus repeats with
@@ -21,7 +21,7 @@ notifier, manual order and list management. Writes the compatibility matrix has 
 | [`docs/superpowers/specs/2026-10-31-terminal-tasks-design.md`](docs/superpowers/specs/2026-10-31-terminal-tasks-design.md) | **The spec**: what to build, decisions, contracts, tests, phases |
 | [`docs/design/tui-layout.md`](docs/design/tui-layout.md) | The chosen screen layout |
 | [`docs/reference/2do/`](docs/reference/2do/README.md) | Reverse-engineered 2Do behaviour, formats and encodings (reference) |
-| [`docs/phase0/README.md`](docs/phase0/README.md) | Phase-0 compatibility gate checklist (user and agent steps) |
+| [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md) | Phase-0 compatibility gate checklist (user and agent steps) |
 | [`tools/decode_2do_dropbox.py`](tools/decode_2do_dropbox.py) | Read/write 2Do's Dropbox sync files (migration inventory) |
 
 ## Layout
