@@ -1,7 +1,7 @@
 # Reference material
 
 This folder keeps the raw material Twydo was built from. It is kept as it was written, so parts of
-it describe the state at the time. For how Twydo works today, read the pages in [`docs/`](../);
+it describe the state at the time. For how Twydo works today, read the pages in [`docs/`](../README.md);
 where they and this folder disagree, `docs/` wins.
 
 | Folder | What it holds |

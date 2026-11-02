@@ -1,43 +1,96 @@
-# Twydo: a terminal task app to replace 2Do
+# Twydo
 
-A personal, keyboard-driven (vim-style) terminal task manager for **Omarchy (Linux/Hyprland)** and
-**macOS**. Tasks are stored as standard iCalendar (`VTODO`) and synced through CalDAV, so the
-2Do iPhone app keeps working against the same data. Command: `tdo`.
+A keyboard-driven terminal task manager for Linux and macOS that works with **2Do on your
+iPhone**. Tasks stay in standard iCalendar on your own CalDAV server, so the 2Do app keeps
+syncing the same lists, projects, checklists and repeats while you work from the terminal.
+The command is `tdo`. Free and open source (MIT).
 
-Status: **implementation in progress** (plans in `docs/superpowers/plans/`). The phase-0 CalDAV
-compatibility gate has passed (see [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md)). Done so far:
-a read-only foundation (`export-json`, `check`, the TUI), the writable core (`tdo op`), the sync
-runner with conflict handling (`tdo sync`, [`docs/sync.md`](docs/sync.md)), editing in the TUI
-([`docs/tui.md`](docs/tui.md)), and checklists, projects and recurring projects plus repeats with
-a due time, start date or missed occurrence (Plan 6). Not yet: adding tasks in the TUI, the
-notifier, manual order and list management. Writes the compatibility matrix has not verified
-(`compat/matrix.toml`) are refused with a reason.
+![Twydo in a terminal: the Today and All views, completing a task, a checklist, editing a date, and the help](docs/demo/tui.gif)
 
-## Start here
+## Status
 
-| Read | Why |
+Twydo is young: it has been tested against one iPhone running 2Do. It is careful rather than
+complete: it only writes changes that have been checked against 2Do on the iPhone, and refuses
+the rest with a reason, so the phone never gets something it would misread.
+
+**Works today**
+
+- Views: Today, All, Scheduled, Done, Next 3 Days, your lists, grouped by date like 2Do
+  (Overdue, Today, Tomorrow, Next 7 Days, …)
+- Complete, reopen, delete, move to another list, undo and redo
+- Change dates with single keys (today, tomorrow, ±1 day, ±1 week) or type them (`fri 5pm`,
+  `3d`, `15th`); edit titles, notes (in your `$EDITOR`) and a repeat's interval
+- Checklists, projects and recurring projects, acting on the whole family as 2Do does
+- Monthly (day 1–28) and yearly repeats, including start dates, due times and missed
+  occurrences, completed the way 2Do completes them
+- Sync through vdirsyncer with conflict handling: when the phone and Twydo change the same task,
+  both versions are kept until you choose
+- Crash-safe writes: every change is journaled and recovered after an interruption
+- `tdo op` to script every change, `tdo export-json` to read everything
+
+**Not yet**
+
+- Adding tasks in the TUI (planned: `o` with natural-language input such as
+  `Pay rent fri every month list(Bills)`); `tdo op add` creates plain tasks meanwhile
+- Desktop notifications for alerts, and editing alerts
+- Manual ordering, and creating or renaming lists
+- Writing to repeats other than monthly and yearly (daily, weekly, set weekdays, last day of the
+  month, repeat from completion, …): shown, but read-only until verified
+- Prebuilt releases (build from source for now)
+- macOS is expected to work but is not tested yet
+
+Details: [what is verified](docs/compatibility.md#what-is-verified-today).
+
+## How it works with 2Do
+
+```
+ 2Do on iPhone ──CalDAV──▶ your CalDAV server ◀──CalDAV── vdirsyncer ──▶ local folder ◀── tdo
+```
+
+2Do on the iPhone syncs with a CalDAV server (its Dropbox sync is not supported).
+[vdirsyncer](https://vdirsyncer.pimutils.org/) mirrors the server into a local folder of `.ics`
+files, and `tdo` reads and writes those files, changing only what each operation is about and
+keeping everything else, including 2Do's own metadata, byte for byte.
+[More on living alongside 2Do](docs/compatibility.md).
+
+## Install and quick start
+
+```sh
+cargo install --git https://github.com/bwilczynski/twydo tdo
+
+# try it on made-up tasks (from a clone)
+python3 tools/demo_vdir.py /tmp/twydo-demo && tdo --vdir /tmp/twydo-demo
+```
+
+Then point it at your own tasks and set up sync: [install.md](docs/install.md),
+[sync.md](docs/sync.md). Press `?` in the TUI for every key.
+
+## Documentation
+
+| Page | |
 |---|---|
-| [`AGENTS.md`](AGENTS.md) | Handoff instructions for the implementing agent |
-| [`docs/superpowers/specs/2026-10-31-terminal-tasks-design.md`](docs/superpowers/specs/2026-10-31-terminal-tasks-design.md) | **The spec**: what to build, decisions, contracts, tests, phases |
-| [`docs/tui.md`](docs/tui.md) | The screen layout and keys |
-| [`docs/reference/2do/`](docs/reference/2do/README.md) | Reverse-engineered 2Do behaviour, formats and encodings (reference) |
-| [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md) | Phase-0 compatibility gate checklist (user and agent steps) |
-| [`tools/decode_2do_dropbox.py`](tools/decode_2do_dropbox.py) | Read/write 2Do's Dropbox sync files (migration inventory) |
+| [Install](docs/install.md) | build, first run, where things live |
+| [The TUI](docs/tui.md) | the screen and every key |
+| [How tasks behave](docs/tasks.md) | checklists vs projects, repeats, views and date groups |
+| [Sync](docs/sync.md) | vdirsyncer setup, `tdo sync`, conflicts |
+| [Living alongside 2Do](docs/compatibility.md) | moving from Dropbox, verified mode, what is verified |
+| [Configuration](docs/config.md) | every key |
+| [Architecture](docs/architecture.md) | the write path, journal and recovery, locking |
+| [Data model](docs/data-model.md) | what a task looks like on disk, 2Do's metadata |
+| [Reference](docs/reference/README.md) | 2Do's behaviour and formats as observed, test session logs |
 
-## Layout
+## Contributing
 
+```sh
+cargo test --workspace                          # Rust tests
+python3 -m unittest discover -s tools/tests -t . # tool tests
+python3 tools/check_links.py                    # documentation links
+mise run demo                                   # re-record the README demo (needs vhs, ttyd, ffmpeg)
 ```
-README.md, AGENTS.md, CLAUDE.md
-docs/
-  superpowers/specs/   design spec (source of truth)
-  design/              chosen UI layout
-  reference/2do/       2Do reverse-engineering reference (01–07)
-  phase0/              phase-0 compatibility gate checklist
-  config.md            tdo configuration reference
-crates/
-  twydo-core/          library: data model, storage, views
-  tdo/                 binary: CLI and TUI
-compat/                phase-0 compatibility matrix
-contrib/               example vdirsyncer configuration
-tools/                 helper scripts
-```
+
+Test data is synthetic. Never commit real tasks, list names or account details; fixtures come
+from a separate test account ([AGENTS.md](AGENTS.md) has the full rules).
+
+## License
+
+[MIT](LICENSE). Twydo is an independent project, not affiliated with 2Do or Beehive Innovations.
