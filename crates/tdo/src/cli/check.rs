@@ -9,16 +9,19 @@ use twydo_core::model::Status;
 
 use super::{CliError, load_snapshot, task_rule_class};
 
-pub fn run(vdir: Option<&Path>, matrix_path: &Path, verbose: bool) -> Result<(), CliError> {
+pub fn run(vdir: Option<&Path>, matrix_path: Option<&Path>, verbose: bool) -> Result<(), CliError> {
     let snap = load_snapshot(vdir)?;
     let errors = &snap.errors;
 
-    // A missing matrix behaves as an empty one: every row counts as unverified.
-    let matrix = if matrix_path.exists() {
-        Matrix::load(matrix_path)?
-    } else {
-        println!("matrix not found: {}", matrix_path.display());
-        Matrix::default()
+    // Without --matrix: the matrix built into tdo, as for `tdo op` and the TUI. A --matrix
+    // path that does not exist behaves as an empty matrix: every row counts as unverified.
+    let matrix = match matrix_path {
+        None => Matrix::embedded().clone(),
+        Some(p) if p.exists() => Matrix::load(p)?,
+        Some(p) => {
+            println!("matrix not found: {}", p.display());
+            Matrix::default()
+        }
     };
 
     // Active rule: an open task with an RRULE, archived lists included.

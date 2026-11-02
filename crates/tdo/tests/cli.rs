@@ -122,6 +122,26 @@ mod gate {
         assert!(out.contains("GATE: NOT PASSED"), "{out}");
     }
 
+    /// An installed `tdo` runs from anywhere: without `--matrix`, `check` uses the matrix built
+    /// into the binary, as `tdo op` and the TUI do, not a path relative to the working directory.
+    #[test]
+    fn check_without_matrix_flag_uses_embedded_matrix() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let cfg = tempfile::tempdir().unwrap();
+        let o = Command::new(env!("CARGO_BIN_EXE_tdo"))
+            .args(["--vdir", root().join(sample()).to_str().unwrap(), "check"])
+            .current_dir(elsewhere.path())
+            .env("XDG_CONFIG_HOME", cfg.path())
+            .output()
+            .expect("run tdo");
+        let out = stdout(&o);
+        assert!(!out.contains("matrix not found"), "{out}");
+        assert!(
+            out.lines().any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=pass")),
+            "{out}"
+        );
+    }
+
     #[test]
     fn check_exit_code() {
         let o = tdo(&["--vdir", "/nonexistent/twydo-vdir", "check"]);

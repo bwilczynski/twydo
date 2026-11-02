@@ -48,9 +48,9 @@ enum Command {
     Status,
     /// Report whether every active repeat rule class is verified
     Check {
-        /// Compatibility matrix file
-        #[arg(long, value_name = "PATH", default_value = "compat/matrix.toml")]
-        matrix: PathBuf,
+        /// Compatibility matrix file (default: the matrix built into tdo)
+        #[arg(long, value_name = "PATH")]
+        matrix: Option<PathBuf>,
         /// Include task titles and parse-error paths
         #[arg(long)]
         verbose: bool,
@@ -86,7 +86,7 @@ fn main() {
         Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),
         Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
         Command::Check { matrix, verbose } => {
-            cli::check::run(cli.vdir.as_deref(), &matrix, verbose)
+            cli::check::run(cli.vdir.as_deref(), matrix.as_deref(), verbose)
         }
     };
     if let Err(e) = result {
