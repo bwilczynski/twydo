@@ -293,3 +293,31 @@ fn sync_while_form_open_is_stale_not_overwritten() {
     let text = fs::read_to_string(env.task_file()).unwrap();
     assert!(text.contains("SUMMARY:From phone"), "{text}");
 }
+
+/// Review item 5: while a sync holds the vdir lock (shared, for its whole run), a TUI write
+/// must not block the UI; it is refused at once and nothing is written.
+#[test]
+fn write_during_sync_is_refused_without_waiting() {
+    let env = Env::new();
+    let cfg = env.config();
+    let (mut w, _) = writer(&cfg);
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &env.vdir()).unwrap();
+    let sync = twydo_core::store::fsio::VdirLock::shared(&state).unwrap();
+    let original = fs::read(env.task_file()).unwrap();
+    let started = std::time::Instant::now();
+    assert_eq!(
+        w.run(&env.snapshot(), &complete_a(), now()),
+        Err("a sync is running; try again in a moment".into())
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Undo, now()),
+        Err("nothing to undo".into())
+    );
+    drop(sync);
+    assert_eq!(
+        w.run(&env.snapshot(), &complete_a(), now()),
+        Ok("done".into())
+    );
+}

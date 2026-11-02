@@ -39,7 +39,10 @@ impl Writer {
     pub fn open_with(cfg: &Config, matrix: Matrix, after_write: SyncTrigger) -> Writer {
         Writer {
             store: Store::open_with(cfg, matrix)
-                .map(|(s, _)| s)
+                .map(|(mut s, _)| {
+                    s.set_no_wait(true);
+                    s
+                })
                 .map_err(|e| format!("cannot write: {e}")),
             config: cfg.clone(),
             after_write,
