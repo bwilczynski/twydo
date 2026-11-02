@@ -9,12 +9,15 @@
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
 //!    so each child must pass the same lookup, then have cases (rule 2), or the op is refused
 //!    with the child's reason; moving or deleting one item alone, or reopening an item of a
-//!    completed parent, is refused;
+//!    completed or cancelled parent, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
 //!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
-//!    none: a broken parent link, an unknown 2Do task type (JSON `TaskType` other than 0–2),
-//!    nested families, repeating checklists, a repeating child of a repeating project,
-//!    children of a plain task, or the repeat refusals of the own case;
+//!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
+//!    does not match the task's kind (0 task, 1 checklist, 2 project; a parent without
+//!    `@tasktype` counts as a task) refuses with "this 2Do task type is not verified yet";
+//!    then a broken parent link ("broken parent link"), nested families, repeating
+//!    checklists, a repeating child of a repeating project, children of a plain task, or the
+//!    repeat refusals of the own case;
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
 //!    attribute cases (with rule 6, the only rules the write mode changes);
 //! 4. the `[[rule]]` verdicts of a repeating task;
@@ -164,6 +167,9 @@ pub struct Cases {
 /// project, no repeating checklist or item, no repeating child of a repeating project.
 pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     let t = &snap.tasks[idx];
+    if !known_task_type(t) {
+        return blocked("this 2Do task type is not verified yet");
+    }
     let parent = snap.parent(idx);
     let children = snap.children(idx);
     if t.parent.is_some() && parent.is_none() {
@@ -177,12 +183,6 @@ pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
         return blocked(NESTED);
     }
     if parent.is_none() && t.kind == TaskKind::Task {
-        let typed = json_meta(t)
-            .and_then(|m| m.get_i64("TaskType"))
-            .is_some_and(|n| n != 0);
-        if typed {
-            return blocked("this 2Do task type is not verified yet");
-        }
         return Ok(Cases {
             own: own_case(snap, t)?,
             family: None,
@@ -191,8 +191,7 @@ pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     // The checklist or project: the task itself or its parent.
     let head = &snap.tasks[parent.unwrap_or(idx)];
     // `Snapshot::new` shows a parent without `@tasktype` as a project; it is still a plain task.
-    let untyped = head.kind == TaskKind::Task || head.warnings.iter().any(|w| w == UNTYPED_PARENT);
-    if untyped {
+    if declared_kind(head) == TaskKind::Task {
         return blocked(PLAIN_PARENT);
     }
     let (head_repeats, own_repeats) = (head.rrule.is_some(), t.rrule.is_some());
@@ -210,6 +209,31 @@ pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
         own: own_case(snap, t)?,
         family: Some(family),
     })
+}
+
+/// The kind the task's file declares: `Snapshot::new` shows a parent without `@tasktype` as
+/// a project, but it is still a plain task.
+fn declared_kind(t: &Task) -> TaskKind {
+    if t.warnings.iter().any(|w| w == UNTYPED_PARENT) {
+        TaskKind::Task
+    } else {
+        t.kind
+    }
+}
+
+/// A readable JSON `TaskType` must be 0, 1 or 2 and match the declared kind (0 task,
+/// 1 checklist, 2 project). Without one there is nothing to check.
+fn known_task_type(t: &Task) -> bool {
+    let Some(n) = json_meta(t).and_then(|m| m.get_i64("TaskType")) else {
+        return true;
+    };
+    let kind = match n {
+        0 => TaskKind::Task,
+        1 => TaskKind::Checklist,
+        2 => TaskKind::Project,
+        _ => return false,
+    };
+    kind == declared_kind(t)
 }
 
 /// A task's own case from its repeat rule: `one-time`, `monthly` or `yearly`.
@@ -230,8 +254,8 @@ fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
 }
 
 /// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`] and then
-/// have cases ([`task_cases`]); an item moved, deleted or reopened (under a completed parent)
-/// on its own is not verified.
+/// have cases ([`task_cases`]); an item moved, deleted, or reopened under a completed or
+/// cancelled parent, on its own is not verified.
 fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
         match op {
@@ -243,7 +267,7 @@ fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
             Op::Delete { .. } => {
                 return blocked("deleting one item of a project or checklist is not verified yet");
             }
-            Op::Reopen { .. } if snap.tasks[p].status == Status::Completed => {
+            Op::Reopen { .. } if snap.tasks[p].status != Status::Open => {
                 return blocked(
                     "reopening an item of a completed project or checklist is not verified yet",
                 );
@@ -255,6 +279,7 @@ fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
         op,
         Op::Complete { .. } | Op::Reopen { .. } | Op::Move { .. } | Op::Delete { .. }
     ) {
+        // Two passes: any child's lookup reason wins over any child's shape reason.
         for &c in snap.children(idx) {
             lookup(snap, &snap.tasks[c].uid)?;
         }
