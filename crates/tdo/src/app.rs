@@ -321,6 +321,8 @@ impl App {
         let uid = self.selected_uid();
         let side = self.sidebar_items().get(self.sidebar_cursor).cloned();
         self.snapshot = s;
+        // The row under a pending `d` or `g` may have changed: the second key starts afresh.
+        self.pending = None;
         if self
             .message
             .as_deref()
@@ -426,6 +428,13 @@ impl App {
         };
         let max = len.saturating_sub(1) as isize;
         *cursor = (*cursor as isize).saturating_add(delta).clamp(0, max) as usize;
+    }
+
+    /// [`App::handle_key`] with the clock brought up to `now` first, so a date key never
+    /// uses a day the minute tick has not caught up with.
+    pub fn key_at(&mut self, k: KeyEvent, now: DateTime<Tz>) -> Outcome {
+        self.tick(now);
+        self.handle_key(k)
     }
 
     pub fn handle_key(&mut self, k: KeyEvent) -> Outcome {
@@ -784,10 +793,18 @@ impl App {
         if self.form.is_some() {
             self.close_form();
         }
-        self.transient = result.as_ref().ok().map(|m| (m.clone(), None));
-        self.message = Some(match result {
+        // The loop reloads before reporting: a failed reload must stay visible, so it
+        // follows the result and the message does not clear itself.
+        let reload_error = self.message.take().filter(|m| m.starts_with(RELOAD_FAILED));
+        let clears = result.is_ok() && reload_error.is_none();
+        let mut text = match result {
             Ok(m) | Err(m) => m,
-        });
+        };
+        if let Some(e) = reload_error {
+            text = format!("{text} · {e}");
+        }
+        self.transient = clears.then(|| (text.clone(), None));
+        self.message = Some(text);
     }
 
     /// With the filter applied every visible row is a match, so n/N cycle through the rows.
