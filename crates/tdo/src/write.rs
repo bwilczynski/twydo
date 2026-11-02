@@ -146,9 +146,10 @@ fn family_size(snap: &Snapshot, op: &Op) -> usize {
 fn success(snap: &Snapshot, op: &Op) -> String {
     let n = family_size(snap, op);
     let title = op_title(snap, op);
+    let items = if n == 1 { "item" } else { "items" };
     let with = |verb: &str| {
         if n > 0 {
-            format!("{verb}: \"{title}\" and {n} items")
+            format!("{verb}: \"{title}\" and {n} {items}")
         } else {
             verb.to_string()
         }
@@ -156,7 +157,7 @@ fn success(snap: &Snapshot, op: &Op) -> String {
     match op {
         Op::Complete { .. } => with("done"),
         Op::Reopen { .. } => with("reopened"),
-        Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} items · u to undo"),
+        Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} {items} · u to undo"),
         Op::Delete { .. } => "deleted · u to undo".into(),
         Op::Edit { .. } => "saved".into(),
         Op::Create(_) => "added".into(),
@@ -168,7 +169,7 @@ fn success(snap: &Snapshot, op: &Op) -> String {
                 .and_then(|c| c.display_name.clone())
                 .unwrap_or_else(|| to.clone());
             if n > 0 {
-                format!("moved \"{title}\" and {n} items to {name}")
+                format!("moved \"{title}\" and {n} {items} to {name}")
             } else {
                 format!("moved to {name}")
             }

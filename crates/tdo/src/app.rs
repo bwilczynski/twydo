@@ -677,8 +677,9 @@ impl App {
                 let open = self.snapshot.open_items(idx);
                 if open > 0 && pending != Some('x') {
                     self.message = Some(format!(
-                        "complete \"{}\" and its {open} open items? x to confirm",
-                        task.summary
+                        "complete \"{}\" and its {open} open {}? x to confirm",
+                        task.summary,
+                        if open == 1 { "item" } else { "items" }
                     ));
                     self.pending = Some('x');
                     return None;

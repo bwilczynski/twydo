@@ -496,3 +496,28 @@ fn complete_parent_needs_all_flag() {
     let o = env.op(&["complete", "fam-p", "--all"]);
     assert!(o.status.success(), "{}", err(&o));
 }
+
+#[test]
+fn complete_parent_with_one_item_uses_the_singular() {
+    let env = Env::new("test");
+    let dir = env.vdir().join("list1");
+    let task = |uid: &str, extra: &str| {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+             UID:{uid}\r\nSUMMARY:Synthetic {uid}\r\n{extra}STATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+        )
+    };
+    fs::write(
+        dir.join("one-p.ics"),
+        task("one-p", "X-2DOAPP-METADATA:@tasktype:checklist\r\n"),
+    )
+    .unwrap();
+    fs::write(dir.join("one-1.ics"), task("one-1", "RELATED-TO:one-p\r\n")).unwrap();
+    let o = env.op(&["complete", "one-p"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains("has 1 open item; pass --all"),
+        "{}",
+        err(&o)
+    );
+}
