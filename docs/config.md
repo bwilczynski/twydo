@@ -21,8 +21,8 @@ names the key. Twydo only reads this file.
 |---|---|---|---|
 | `mode` | `"verified"` or `"test"` | `"verified"` | `verified` runs only operations the compatibility matrix marks as passing. `test` also runs unverified operations. |
 
-`test` must only be used with a config that points at the isolated test account, never at
-production data: unverified operations may write something 2Do on the iPhone cannot read. Every
+`test` must only be used with a config that points at a separate test account, never at your
+real data: unverified operations may write something 2Do on the iPhone cannot read. Every
 `tdo op` run in `test` mode prints `tdo: test write mode: unverified operations are enabled` to
 stderr.
 
@@ -66,10 +66,10 @@ and conflict handling are in [sync.md](sync.md).
 | `show_in_done` | bool | `true` | Include its tasks in the Done view. |
 | `sort` | `{ field, descending }` | `{ field = "due", descending = false }` | `field` is one of `due`, `start`, `creation`, `title`. |
 
-Hidden and archived lists do not notify (spec section 7; notifications arrive in Plan 2).
+Hidden and archived lists will not notify once notifications exist (not available yet).
 
 These preferences are a local fallback. They are not stored in CalDAV and do not sync between
-devices (spec section 5).
+devices.
 
 ## `[[groups]]`
 

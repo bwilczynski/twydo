@@ -1,9 +1,66 @@
-# The TUI: keys that change tasks
+# The TUI
 
-`tdo` (no arguments) opens the TUI. Navigation, views and `:` commands are in the help overlay
-(`?`). This page covers the keys that write. Spec: §7 (creation and editing) and §8 (keys).
+`tdo` (or `tdo tui`) opens the terminal UI on the vdir from your config, or the one given with
+`--vdir`. `?` shows every key.
+
+![The Twydo TUI: views, completing a task, a checklist, the edit form and a list](demo/tui.gif)
+
+## The screen
+
+```
+╭ Views ───────╮╭ Today · Monday 2 Nov ─────────────────╮╭ Details ──────────────╮
+│ ◷ Today  2│3 ││ OVERDUE                             1 ││ Renew library books   │
+│   All   2│10 ││ ▌○ Renew library books    Yesterday  ││                       │
+│   Scheduled 1││                                      ││ List    Inbox         │
+│   Done      2││ TODAY                               1 ││ Due     Yesterday     │
+│ ─ Lists ──── ││ ▌↻ Water plants    weekly   Today    ││                       │
+│ ▌ Bills     6││                                      ││                       │
+│ ▌ Inbox   1│2││                                      ││                       │
+│ ▌ Personal1│2││                                      ││                       │
+│ ─ Smart lists││                                      ││                       │
+│   Next 3 Days││                                      ││                       │
+╰──────────────╯╰──────────────────────────────────────╯╰───────────────────────╯
+ NORMAL Tasks · j/k move  x done  t today  ] +1d  o new  / search  : cmd  ? help   Today·1/2
+```
+
+- **Views** (left): the views, your lists with their colour bars, and smart lists. `2│3` is
+  "due today or overdue │ all"; see [tasks.md](tasks.md#views-and-date-groups) for what each view
+  shows. List groups come from `[[groups]]` in [config.md](config.md).
+- **Tasks** (middle): the current view under date-group headers. `○` a task, `↻` a repeating
+  task with its rule, `[3]` a checklist or project with 3 open items. The bar on the left is the
+  list's colour. Overdue rows are red.
+- **Details** (right): the selected task's list, dates, repeat, alerts, warnings, its items (on a
+  parent) and notes. It appears when the terminal is at least 110 columns wide.
+- **Status line**: the mode (`NORMAL`, `INSERT`, `COMMAND`), the focused pane, key hints or the
+  last message, and the position in the view. An indicator appears when files could not be read
+  (`:errors`).
+
+The focused pane has a bold blue border. The sidebar takes a fifth of the width (24 to 40
+columns), or a third below 60 columns.
+
+Colours come from your terminal's 16-colour palette, so the TUI follows your terminal theme and
+re-colours live when it changes. Only the list bars use the lists' own (true) colours.
+
+The TUI reloads when files in the vdir change, for example after a sync, and every minute, so
+"today" and the groups stay current.
 
 ## Keys
+
+### Moving around
+
+| Key | What it does |
+|---|---|
+| `j` / `k`, `gg` / `G`, `Ctrl-d` / `Ctrl-u` | move down / up, to the top / bottom, half a page. With Details focused they scroll it instead |
+| `h` / `l`, `Tab` | focus the previous / next pane |
+| `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
+| `Enter` in the sidebar | open the view or list |
+| `Enter` on a parent | expand or collapse its items (All and lists) |
+| `/`, then `n` / `N` | search the current view by title; `Enter` keeps the filter, `Esc` clears it |
+| `?` | help; `Esc` closes it |
+
+### Changing tasks
+
+These act when the Tasks or Details pane has focus.
 
 | Key | What it does |
 |---|---|
@@ -14,36 +71,35 @@
 | `dd` | delete |
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
 | `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
-| `i`, `Enter` on a task without children | edit form |
+| `i`, or `Enter` on a task without items | edit form |
 | `r` | edit form, on the Repeat field (repeating tasks only) |
 
-Write keys act when the Tasks or Details pane has focus. With Details focused, `j`/`k`,
-`gg`/`G` and `Ctrl-d`/`Ctrl-u` scroll the pane instead of moving between tasks; another task
-opens at the top. They do nothing while help, `:errors`
-or `:conflicts` is open.
+On a checklist or project, a write acts on the whole family; see
+[tasks.md](tasks.md#completing-reopening-moving-deleting).
 
-## Projects and checklists
+### Commands
 
-Like 2Do, a write on a checklist or project acts on the whole family. Completing the parent
-completes every open item; reopening it reopens the completed ones; moving it to another list
-and deleting it carry all items. Because completing writes many
-tasks, `x` on a parent with open items shows `complete "<title>" and its <n> open items? x to
-confirm` and waits; a parent whose items are all done completes at once. Cancelled items are
-left as they are. A repeating project asks the same way, as in 2Do. `tdo op complete <uid>`
-refuses such a parent (exit 1) unless `--all` is passed.
+| Command | What it does |
+|---|---|
+| `:list <name>` | open a list by name (or collection id), also a hidden one |
+| `:sync` | sync now (needs `[sync]` in the config; [sync.md](sync.md)) |
+| `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
+| `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
+| `:errors` | list files that could not be read |
+| `:q` | quit |
 
-Checklist items take their date from the checklist, so date keys and the form's Due and Start
-are refused on an item. Some items carry a copy of the checklist's date; when the checklist gets
-a new date, those copies are removed in the same write, as 2Do does. Removing such a
-checklist's date, or giving it a time or a start date, is refused until verified.
+## The edit form
 
-## Edit form
+Fields: Title, Due, Start, Repeat (only on repeating tasks) and Notes.
 
-Fields: Title, Due, Start, Repeat (`every N <unit>`, only for repeating tasks) and Notes.
-`Tab`/`Shift-Tab` (or `↓`/`↑`) move between fields, `Enter` saves, `Ctrl-s` saves from any
-field, `Esc` cancels. `Ctrl-u` clears a field, `Ctrl-w` deletes a word. On Notes, `Enter`
-opens `$VISUAL` / `$EDITOR` (else `vi`); save and quit to bring the text back. Pasted text goes
-into the focused field as one line. Only the fields you changed are written.
+- `Tab` / `Shift-Tab` (or `↓` / `↑`) move between fields; `Enter` saves, `Ctrl-s` saves from any
+  field, `Esc` cancels.
+- `Ctrl-u` clears a field, `Ctrl-w` deletes a word. Pasted text goes into the focused field as
+  one line.
+- On Notes, `Enter` opens `$VISUAL` or `$EDITOR` (else `vi`); save and quit to bring the text
+  back.
+- Repeat reads `every _ months`: type the interval.
+- Only the fields you changed are written.
 
 Due and Start take:
 
@@ -51,33 +107,35 @@ Due and Start take:
 |---|---|
 | empty | no date |
 | `today` `tod` `tomorrow` `tom` | that day |
-| `3d` `2w` `1m` `1y` | from today (`m` is months; month ends clamp, Jan 31 + 1m = Feb 28) |
+| `3d` `2w` `1m` `1y` | from today (`m` is months; month ends clamp: Jan 31 + 1m = Feb 28) |
 | `15th` | the next 15th after today |
 | `fri`, `friday` | the next Friday, never today |
 | `2026-11-20` | that date |
 | a time after any of these, or alone (today) | `5pm`, `930a`, `9:30 pm`, `14:30`, `noon`, `midnight` |
 
-A bare number such as `9` is rejected as ambiguous. Start dates take no time. The line under
-each date shows how it was read.
+A bare number such as `9` is rejected as ambiguous. Start dates take no time. The line under each
+date shows how it was read (`→ Fri 6 Nov 10:00`).
 
 ## When a write is refused
 
 The status line says why, and nothing is written:
 
-- **Not verified yet:** the compatibility gate's reason, for example
-  `deleting one item of a project or checklist is not verified yet`. See `compat/matrix.toml`.
-- **`… changed on disk; reload and try again`:** a sync changed the task after you started.
-  The view reloads; an open form switches to the synced version, so you see the new data
-  before saving again.
-- **`a sync is running; try again in a moment`:** a sync holds the vdir. The TUI does not
-  wait for it, so it never freezes; press the key again once the sync is done.
-- **`cannot write: …`:** the journal could not be opened (see [architecture.md](architecture.md#the-operation-journal)).
-  The TUI still shows your tasks.
+- **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone, for
+  example `weekdays-set repeats are not verified yet`. See
+  [compatibility.md](compatibility.md#verified-mode).
+- **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
+  view reloads; an open form switches to the synced version, so you see the new data before
+  saving again.
+- **`a sync is running; try again in a moment`**: a sync holds the vdir. The TUI does not wait,
+  so it never freezes; press the key again once the sync is done.
+- **`cannot write: …`**: the operation journal could not be opened
+  ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
 
-Success messages clear after five seconds. With `[sync] after_edit = true`, each write starts a
-background sync ([sync.md](sync.md)).
+Success messages clear after five seconds. With `[sync] after_edit = true` (the default when
+sync is on), each write starts a background sync.
 
 ## Not in the TUI yet
 
-`o` / `O` (new task or item, natural-language add), `J` / `K` (manual order), `a` (alerts),
-list management, and adding or removing a repeat. These keys show `not available yet`.
+`o` / `O` (add a task or item, with natural-language input), `J` / `K` (manual order), `a`
+(alerts), list management, and adding or removing a repeat. These keys show `not available yet`;
+the help marks them `(after gate)`.

@@ -24,14 +24,15 @@ in [config.md](config.md) (`[sync]`).
    [sync]
    # pair = "twydo"
    # local_storage = "twydo_local"
-   # vdirsyncer_config = "~/twydo-phase0/xdg/vdirsyncer/config"   # test setup, see below
+   # vdirsyncer_config = "~/.config/vdirsyncer/config"
    ```
 
    `local_storage` must be the name of the pair's vdir-side storage in the vdirsyncer config. The
    hook tells the local file from the remote one by that name.
 
-   In the test setup, `XDG_CONFIG_HOME` is set for `tdo` only. That hides vdirsyncer's own config,
-   so set `vdirsyncer_config`: Twydo passes it to vdirsyncer as `VDIRSYNCER_CONFIG`.
+   If `tdo` runs with a different `XDG_CONFIG_HOME` than vdirsyncer expects (for example a separate
+   test setup), vdirsyncer cannot find its own config: set `vdirsyncer_config`, which Twydo passes
+   to vdirsyncer as `VDIRSYNCER_CONFIG`.
 
 3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result.
 
@@ -45,8 +46,8 @@ in [config.md](config.md) (`[sync]`).
      systemctl --user enable --now twydo-sync.timer
      ```
 
-     Adjust `ExecStart` to where `tdo` lives. For the test setup, uncomment the `Environment=`
-     line. A run that skips (backoff, or another runner busy) exits 0. The unit sets
+     Adjust `ExecStart` to where `tdo` lives. For a separate test setup, uncomment the
+     `Environment=` line. A run that skips (backoff, or another runner busy) exits 0. The unit sets
      `SuccessExitStatus=1`: `tdo sync` exits 1 while a conflict or an emptied list waits for you,
      or after a failure, and the unit would otherwise show failed every minute; check
      `tdo status` instead. Exit 2 (configuration or IO error) still marks the unit failed.
@@ -224,7 +225,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
 - **Deletes without an etag.** vdirsyncer sends deletes to Synology without an etag
   (`Deleting an item with no etag`), and the iPhone may show a one-off "Remote server returned an
   invalid task reference during incremental sync" on its next refresh; a retry succeeds and the data
-  is right (docs/reference/phase0/plan4-baseline.md). Twydo cannot prevent this.
+  is right ([plan4-baseline.md](reference/phase0/plan4-baseline.md)). Twydo cannot prevent this.
 - **Do not run vdirsyncer by hand while Twydo has pending edits.** The hook still records
   both-changed conflicts (it runs inside vdirsyncer), but nothing confirms journal entries or
   closes conflicts until the next `tdo sync`, and a delete-versus-edit that vdirsyncer settles
@@ -233,7 +234,8 @@ Lock order is always run lock, vdir lock, conflicts lock.
   shows `pending: 0` when it is safe.
 - **Chosen versions are written back with LF line endings.** When the hook applies a choice,
   vdirsyncer reads the hook's temporary files in text mode and writes the chosen task back with LF
-  instead of CRLF. Whether 2Do on the iPhone accepts this is to be verified on the iPhone.
+  instead of CRLF. 2Do on the iPhone and Synology read such a task correctly, and 2Do can edit it
+  again.
 - **Ctrl-C does not stop vdirsyncer.** Pressing Ctrl-C (or closing the terminal) during an
   interactive `tdo sync` stops `tdo` but not vdirsyncer: it runs in its own process group so that
   a timeout can kill it together with its child processes. It finishes on its own, still holding
@@ -245,8 +247,15 @@ Lock order is always run lock, vdir lock, conflicts lock.
   server in a run that did not count (it failed or timed out), then edited in Twydo and deleted
   on the phone before the next clean sync, is re-uploaded without a conflict: Twydo cannot tell
   that upload from the create's first one.
-- **Phone behaviour is verified later.** What 2Do on the iPhone does with these flows is checked in
-  a later session (docs/reference/phase0/plan3-sync.md, not yet written).
-- **Repeating tasks completed on two devices.** If two devices complete the same repeating task
-  before a sync, there are two history copies. Twydo records the conflict on the live task but does
-  not merge the history (observation pending, Plan 3 Task 13).
+- **Repeating tasks completed on two devices.** If the phone and Twydo both complete the same
+  occurrence of a repeating task before a sync, both advance the live task the same way, so
+  vdirsyncer sees no conflict; but each adds its own completed copy, so the occurrence shows as
+  done twice. Nothing is lost; delete one copy if it bothers you.
+- **A locked password store stalls sync.** If vdirsyncer fetches the password with `pass` and the
+  gpg agent needs your passphrase, each vdirsyncer call waits for pinentry (a few minutes) while
+  holding the vdir lock, so writes in the TUI are refused with "a sync is running" meanwhile
+  ([issue #10](https://github.com/bwilczynski/twydo/issues/10)). Unlock gpg, or let the agent
+  cache the passphrase longer.
+
+All of these flows were checked against 2Do on an iPhone; the session log is
+[plan3-sync.md](reference/phase0/plan3-sync.md).

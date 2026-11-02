@@ -10,7 +10,7 @@ app replacing 2Do for one user, plan by plan.
    the spec. It is the source of truth: goals, non-goals, user decisions (§4), proposals (§5),
    data model and compatibility gate (§6), behaviour and notification contract (§7), screen and keys (§8),
    tests (§9), phases (§10), and what's left to you (§11).
-2. [`docs/design/tui-layout.md`](docs/design/tui-layout.md): the chosen layout.
+2. [`docs/tui.md`](docs/tui.md): the screen layout and keys.
 3. [`docs/reference/2do/`](docs/reference/2do/README.md): consult as needed. It holds exact 2Do encodings,
    e.g. the repeat-rule table (01 §6), date-group thresholds and sort codes (01 §12), and CalDAV/`X-2DOAPP-*`
    metadata (06 §1.7, §2.6). Markers: **[obs]** observed, **[inf]** inferred, **[?]** unresolved.
