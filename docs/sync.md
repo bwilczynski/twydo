@@ -176,8 +176,10 @@ The record of a list is only as good as the last sync that wrote it:
   emptied keeps its record: vdirsyncer transfers nothing in it.
 - An unreadable `sync/manifest.json` counts as no record: the run goes on, warns
   `tdo: warning: sync/manifest.json is unreadable (...); emptied lists will not be applied
-  automatically until the next sync rewrites it`, and rewrites the file at its end. If it cannot
-  be written, the runner removes it and warns.
+  automatically until the next sync rewrites it`, and rewrites the file at its end.
+- Each sync reads the record and removes the file before vdirsyncer runs, and writes it again
+  only at the end of its update. A sync that is killed, fails, or cannot write the file (it warns)
+  leaves no record, so the next one forces nothing.
 
 ## Backoff and timeout
 
