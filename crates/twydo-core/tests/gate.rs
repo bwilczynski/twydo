@@ -1073,3 +1073,37 @@ fn dated_checklist_takes_only_a_new_date() {
     let op = edit("gate-checklist", vec![Change::Due(None)]);
     assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }
+
+#[test]
+fn dated_checklist_date_change_needs_its_edge_case_when_verified() {
+    let s = snap();
+    let op = edit(
+        "gate-checklist-dated",
+        vec![Change::Due(Some(Due::Date(day(11))))],
+    );
+    let reason = "changing a checklist's date while its items have dates of their own is not \
+                  verified yet (checklist-item-dates)";
+    // fam() passes every row both ways, but has no edge case.
+    let m = fam();
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &op, today()),
+        blocked(reason)
+    );
+    let m = edge(fam(), "checklist-item-dates", "pass");
+    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
+    // Title edits of the same checklist are not affected.
+    let title = edit(
+        "gate-checklist-dated",
+        vec![Change::Summary("Renamed".into())],
+    );
+    assert_eq!(
+        check(&s, &fam(), WriteMode::Verified, &title, today()),
+        Ok(())
+    );
+    // The shipped matrix does not verify it yet.
+    assert_eq!(
+        check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
+        blocked(reason)
+    );
+}
