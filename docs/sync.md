@@ -161,14 +161,23 @@ vdirsyncer refuses to sync a list that became empty on either side until it is t
   the runner reruns that list with `--force-delete` itself. A foreground run prints
   `applied the emptied list "<name>" on the server`.
 - **Anything else** is never forced: emptied on the server, local files that vanished some other
-  way (even if Twydo deleted some of the others), or a list Twydo has not synced yet.
-  An unreadable `sync/manifest.json` counts as no record: the run goes on, warns
-  `tdo: warning: sync/manifest.json is unreadable (...); emptied lists will not be applied
-  automatically until the next sync rewrites it`, and rewrites the file at its end. `tdo sync` exits 1 with
+  way (even if Twydo deleted some of the others), or a list Twydo has not synced yet. `tdo sync`
+  exits 1 with
   `list "<name>" was emptied here; to apply that on the server run: tdo sync --force-delete "<name>"`
   (or `... emptied on the server; to apply that here ...`). After checking that this is what you
   want, run the command. `--force-delete` takes a list's directory name or its unique display
   name, and can be repeated. In the TUI use `:sync! <list>`.
+
+The record of a list is only as good as the last sync that wrote it:
+
+- A sync that fails for a list (an error in it, or a run that timed out or printed errors of its
+  own) drops the list's record, since it may have downloaded tasks the record lacks. The list is
+  not forced automatically until the next clean sync of it records it again. A list reported as
+  emptied keeps its record: vdirsyncer transfers nothing in it.
+- An unreadable `sync/manifest.json` counts as no record: the run goes on, warns
+  `tdo: warning: sync/manifest.json is unreadable (...); emptied lists will not be applied
+  automatically until the next sync rewrites it`, and rewrites the file at its end. If it cannot
+  be written, the runner removes it and warns.
 
 ## Backoff and timeout
 

@@ -133,8 +133,9 @@ fn skipped(s: Skip) -> RunReport {
 /// 4. Under the shared vdir lock: runs `<command> sync <pair>` (or `--force-delete` for the
 ///    forced collections), killed after `timeout_secs`, then `metasync` when configured.
 /// 5. Under the exclusive vdir lock: reconciles the result with the journal and the
-///    conflicts (see [`reconcile`]), then records the files of every counted collection in
-///    the manifest (see [`Manifest`]).
+///    conflicts (see [`reconcile`]), then updates the manifest: the files of every counted
+///    collection, no entry for one this run may have changed without counting (see
+///    [`Manifest::update`]).
 /// 6. Classifies each collection and saves `status.json`. A run whose command could not
 ///    run, timed out, exited non-zero without explanation, printed unattributed errors, or
 ///    left a collection in `Error`, is a transient failure and backs off.
@@ -281,22 +282,25 @@ fn one_pass(
         report.unexpected.extend(r.unexpected);
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
-        // What each counted collection holds now: the evidence a later auto-force needs. A
-        // failure here is a warning, so the status below is still saved.
-        if out.unattributed.is_empty() && !matches!(ran.outcome, Outcome::TimedOut) {
-            let counted = collections
-                .iter()
-                .filter(|(_, s)| matches!(s, CollState::Ok | CollState::Conflict))
-                .map(|(c, _)| c.as_str());
-            if let Err(e) = manifest
-                .refresh(&cfg.vdir, counted)
-                .and_then(|()| manifest.save(state))
-            {
-                report.warnings.push(format!(
-                    "sync/manifest.json could not be written ({e}); emptied lists will not be \
-                     applied automatically until a sync writes it"
-                ));
-            }
+        // The evidence a later auto-force needs (see [`Manifest::update`]). A failure here
+        // is a warning, so the status below is still saved; the file is then removed, so
+        // stale evidence cannot force anything.
+        let uncertain = !out.unattributed.is_empty() || matches!(ran.outcome, Outcome::TimedOut);
+        if let Err(e) = manifest
+            .update(&cfg.vdir, &collections, uncertain)
+            .and_then(|()| manifest.save(state))
+        {
+            let warning = match fs::remove_file(Manifest::path(state)) {
+                Err(r) if r.kind() != io::ErrorKind::NotFound => format!(
+                    "sync/manifest.json could not be written ({e}) or removed ({r}); remove it \
+                     by hand to be sure no emptied list is applied automatically from it"
+                ),
+                _ => format!(
+                    "sync/manifest.json could not be written ({e}) and was removed; emptied \
+                     lists will not be applied automatically until a sync writes it"
+                ),
+            };
+            report.warnings.push(warning);
         }
     }
 
