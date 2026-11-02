@@ -205,7 +205,7 @@ mod tests {
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
         assert_eq!(m.operation.len(), 72);
-        assert_eq!(m.edge_case.len(), 11);
+        assert_eq!(m.edge_case.len(), 12);
     }
 
     #[test]

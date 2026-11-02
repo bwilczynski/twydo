@@ -10,7 +10,8 @@
 //!    so each child must pass the same lookup, then have cases (rule 2) and, if it repeats,
 //!    its class's preserve verdict (rule 4), or the op is refused with the child's reason.
 //!    A checklist's date change whose items have dates of their own is such an op too
-//!    ([`checklist_date_change`]); it may only set a new date-only due. Moving or deleting
+//!    ([`checklist_date_change`]); it may only set a new date-only due, and in verified
+//!    mode needs the `checklist-item-dates` edge case. Moving or deleting
 //!    one item alone, reopening an item of a completed or cancelled parent, or giving a
 //!    checklist item a due or start date, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
@@ -92,6 +93,17 @@ pub fn check(
     // Rule 1b: family operations.
     if let Some(i) = target {
         family_op(snap, m, op, i)?;
+        // Twydo's version of 2Do's item-date removal is not checked on the phone yet.
+        if mode == WriteMode::Verified
+            && checklist_date_change(snap, i, op)
+            && m.edge_case(CHECKLIST_ITEM_DATES)
+                .is_none_or(|c| c.verdict != Verdict::Pass)
+        {
+            return blocked(format!(
+                "changing a checklist's date while its items have dates of their own is not \
+                 verified yet ({CHECKLIST_ITEM_DATES})"
+            ));
+        }
     }
 
     // Rule 2: the task's cases.
@@ -256,6 +268,8 @@ fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
     }
 }
 
+/// The edge case a checklist date change with dated items needs in verified mode.
+const CHECKLIST_ITEM_DATES: &str = "checklist-item-dates";
 const ITEM_DATES: &str = "checklist items take their date from the checklist";
 const DATED_ITEMS: &str = "removing a checklist's date, or giving it a time or a start date, \
                            is not verified yet while its items have dates of their own";
