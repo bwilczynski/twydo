@@ -32,7 +32,7 @@ const TYPE_YEARLY: i64 = 0x103;
 const FROM_DUE: i64 = 1;
 
 #[derive(Debug, PartialEq, Eq)]
-enum State {
+pub(super) enum State {
     Open,
     Completed,
     Cancelled,
@@ -40,7 +40,7 @@ enum State {
 
 /// The task's state, read the way the model reads it: an explicit `STATUS` wins, and
 /// `COMPLETED` alone means completed only without `STATUS`.
-fn state(todo: &Component) -> State {
+pub(super) fn state(todo: &Component) -> State {
     let status = todo
         .prop("STATUS")
         .map(|p| p.value.trim().to_ascii_uppercase());
@@ -74,7 +74,7 @@ fn set_status(todo: &mut Component, value: &str) {
 }
 
 /// `STATUS:COMPLETED`, `PERCENT-COMPLETE:100` and `COMPLETED:<now UTC>` after `STATUS`.
-fn mark_completed(todo: &mut Component, now: DateTime<Utc>) {
+pub(super) fn mark_completed(todo: &mut Component, now: DateTime<Utc>) {
     set_status(todo, "COMPLETED");
     set_plain(todo, "PERCENT-COMPLETE", "100", &["STATUS"]);
     let at = IcalDateTime::Utc(now);
@@ -88,7 +88,7 @@ fn mark_completed(todo: &mut Component, now: DateTime<Utc>) {
 }
 
 /// `STATUS:NEEDS-ACTION`, `COMPLETED` removed, `PERCENT-COMPLETE:0` (after `STATUS` if absent).
-fn mark_open(todo: &mut Component) {
+pub(super) fn mark_open(todo: &mut Component) {
     set_status(todo, "NEEDS-ACTION");
     todo.remove_props("COMPLETED");
     set_plain(todo, "PERCENT-COMPLETE", "0", &["STATUS"]);

@@ -15,9 +15,11 @@ use crate::model::repeat::parse_rrule;
 
 pub mod complete;
 pub mod create;
+pub mod family;
 
 pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
 pub use create::{file_name, new_task, new_uid};
+pub use family::{complete_member, member_copy, reopen_member};
 
 const META_PROP: &str = "X-2DOAPP-METADATA";
 const META_OPEN: &str = "<2Do Meta>";
@@ -118,12 +120,20 @@ pub fn touch(todo: &mut Component, now: DateTime<Utc>) {
 }
 
 /// The resource a move writes to the destination list (H5 as captured): `cal` with
-/// `UID` = `new_uid`, stamps touched, and a JSON `RUID` that names the old UID (a live
-/// task's self-reference) set to `new_uid`. Any other `RUID` (a history copy's link to its
-/// series) is kept. Every other line keeps its bytes; `cal` is not changed.
+/// `UID` = `new_uid`, stamps touched, and a JSON `uid` that names the old UID (a parent's
+/// self-reference) set to `new_uid`.
+///
+/// - `parent` = `None`: a JSON `RUID` that names the old UID (a live task's self-reference)
+///   is set to `new_uid`. Any other `RUID` (a history copy's link to its series) is kept.
+/// - `parent` = `Some(p)` (a member moved with its parent): `RELATED-TO` and JSON
+///   `parentuid` = `p`, and `RUID` is left alone (`plan6-list2/07-move`: a moved repeating
+///   member keeps its old UID there).
+///
+/// Every other line keeps its bytes; `cal` is not changed.
 pub fn moved_copy(
     cal: &Calendar,
     new_uid: &str,
+    parent: Option<&str>,
     now: DateTime<Utc>,
 ) -> Result<Calendar, EditError> {
     let mut work = cal.clone();
@@ -138,14 +148,28 @@ pub fn moved_copy(
     uid.set_value(new_uid);
     match meta_of(todo) {
         Meta::Json(orig) => {
-            if orig.get_str("RUID") == Some(old_uid.as_str()) {
-                let mut m = orig.clone();
-                m.set_str("RUID", new_uid);
-                write_meta(todo, Some(&orig), &m);
+            let mut m = orig.clone();
+            if m.get_str("uid") == Some(old_uid.as_str()) {
+                m.set_str("uid", new_uid);
             }
+            match parent {
+                None => {
+                    if m.get_str("RUID") == Some(old_uid.as_str()) {
+                        m.set_str("RUID", new_uid);
+                    }
+                }
+                Some(p) => m.set_str("parentuid", p),
+            }
+            write_meta(todo, Some(&orig), &m);
         }
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
+        Meta::Tokens if parent.is_some() => {
+            return Err(unsupported("this task's 2Do metadata format is read-only"));
+        }
         Meta::Absent | Meta::Tokens => {}
+    }
+    if let Some(p) = parent {
+        family::set_related_to(todo, p)?;
     }
     touch(todo, now);
     Ok(work)
