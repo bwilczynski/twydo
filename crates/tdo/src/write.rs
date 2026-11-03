@@ -236,6 +236,7 @@ fn op_title(snap: &Snapshot, op: &Op) -> String {
     let uid = match op {
         Op::Create(t) => return t.summary.trim().to_string(),
         Op::Edit { uid, .. }
+        | Op::Save { uid, .. }
         | Op::Complete { uid }
         | Op::Reopen { uid }
         | Op::Move { uid, .. }
@@ -292,7 +293,7 @@ fn success(snap: &Snapshot, op: &Op) -> String {
         Op::Reopen { .. } => with("reopened"),
         Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} {items} · u to undo"),
         Op::Delete { .. } => "deleted · u to undo".into(),
-        Op::Edit { .. } => "saved".into(),
+        Op::Edit { .. } | Op::Save { .. } => "saved".into(),
         Op::Create(_) => "added".into(),
         Op::Move { to, .. } => {
             let name = snap

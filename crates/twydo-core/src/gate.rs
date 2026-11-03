@@ -4,6 +4,8 @@
 //! The edit functions trust the gate to exclude the cases they were not built for, so the
 //! rules here are the only guard. Rules are applied in order and the first failure wins:
 //!
+//! 0. a save ([`Op::Save`]) is its edit, then its move, each checked by these rules as its
+//!    own op against the loaded tasks; the first refusal wins (an empty edit is skipped);
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
@@ -14,17 +16,33 @@
 //!    mode needs the `checklist-item-dates` edge case. Moving or deleting
 //!    one item alone, reopening an item of a completed or cancelled parent, or giving a
 //!    checklist item a due or start date, is refused;
-//! 2. [`task_cases`]: the task's own case (`one-time`, `monthly`, `yearly`) and family case
+//! 2. [`task_cases`]: the task's own case (`one-time`, `daily`, `weekly`, `monthly`,
+//!    `yearly`, or `from-completion` for any rule repeated from completion) and family case
 //!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
 //!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
 //!    does not match the task's kind (0 task, 1 checklist, 2 project; a parent without
 //!    `@tasktype` counts as a task) refuses with "this 2Do task type is not verified yet";
 //!    then a broken parent link ("broken parent link"), nested families, repeating
 //!    checklists, a repeating child of a repeating project, children of a plain task, or the
-//!    repeat refusals of the own case;
+//!    repeat refusals of the own case.
+//!
+//!    A create has the cases of the new task: its own case from its repeat, and the family
+//!    it starts (a checklist or project) or joins. An item's parent must exist, be a declared
+//!    checklist or project with cases of its own, not be an item, and be in the item's list;
+//!    the item is a task, and a checklist item takes no due, start or repeat.
+//!
+//!    An edit that changes the type ([`Change::Kind`]) or the repeat rule
+//!    ([`Change::Repeat`]) must also leave a task with cases (so a repeating task cannot
+//!    become a checklist, an item cannot become a parent, and a repeating project cannot
+//!    keep a repeating item);
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
-//!    attribute cases (with rule 6, the only rules the write mode changes);
-//! 4. the `[[rule]]` verdicts of a repeating task;
+//!    attribute cases (with rule 6, the only rules the write mode changes); for a type or
+//!    repeat change, the `edit` rows of the cases it leaves too, and for a type change the
+//!    `convert` row of its before and after types (none when the type stays). A row whose
+//!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
+//! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
+//!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
+//!    removing a rule needs the old class's edit verdict;
 //! 5. the verified shape of a repeating completion;
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
 //!    rule 3 (so the write mode applies).
@@ -35,11 +53,12 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, Op, next_due};
+use crate::edit::{Change, Due, NewTask, Op, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
-use crate::model::repeat::parse_rrule;
+use crate::model::repeat::{parse_rrule, rule_class};
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
+use crate::repeatinput::RepeatSpec;
 use crate::views::{Snapshot, UNTYPED_PARENT, task_rule_class};
 
 /// Why the gate refused an operation. `Display` is the reason.
@@ -74,12 +93,43 @@ pub fn check(
     op: &Op,
     today: NaiveDate,
 ) -> Result<(), Blocked> {
+    // Rule 0: a save is its edit, then its move, each checked against the loaded tasks.
+    if let Op::Save { uid, changes, to } = op {
+        if !changes.is_empty() || to.is_none() {
+            let changes = changes.clone();
+            check(
+                snap,
+                m,
+                mode,
+                &Op::Edit {
+                    uid: uid.clone(),
+                    changes,
+                },
+                today,
+            )?;
+        }
+        if let Some(to) = to {
+            check(
+                snap,
+                m,
+                mode,
+                &Op::Move {
+                    uid: uid.clone(),
+                    to: to.clone(),
+                },
+                today,
+            )?;
+        }
+        return Ok(());
+    }
+
     // Rule 1: target lookup.
     let target = match op {
         Op::Create(n) => {
             known_list(snap, &n.collection)?;
             None
         }
+        Op::Save { .. } => unreachable!("handled by rule 0"),
         Op::Edit { uid, .. } | Op::Complete { uid } | Op::Reopen { uid } | Op::Delete { uid } => {
             Some(lookup(snap, uid)?)
         }
@@ -106,37 +156,14 @@ pub fn check(
         }
     }
 
-    // Setting or removing a repeat rule is not verified yet (Plan 7 Task 7 grants it).
-    if let Op::Edit { changes, .. } = op
-        && changes.iter().any(|c| matches!(c, Change::Repeat(_)))
-    {
-        return blocked("changing the repeat rule is not verified yet");
-    }
-
-    // Changing a task's type is not verified yet (Plan 7 Task 7 grants it).
-    if let Op::Edit { changes, .. } = op
-        && changes.iter().any(|c| matches!(c, Change::Kind(_)))
-    {
-        return blocked("changing a task's type is not verified yet");
-    }
-
-    // Creating projects, checklists, items or repeating tasks is not verified yet (Plan 7
-    // Task 7 grants it).
-    if let Op::Create(n) = op
-        && (n.kind != TaskKind::Task || n.parent.is_some() || n.repeat.is_some())
-    {
-        return blocked(
-            "creating projects, checklists, items or repeating tasks is not verified yet",
-        );
-    }
-
-    // Rule 2: the task's cases.
-    let cases = match target {
-        Some(i) => task_cases(snap, i)?,
-        None => Cases {
-            own: "one-time",
-            family: None,
-        },
+    // Rule 2: the task's cases, and those an edit of its type or repeat rule leaves.
+    let (cases, after) = match (target, op) {
+        (Some(i), Op::Edit { changes, .. }) => {
+            (task_cases(snap, i)?, edited_cases(snap, i, changes)?)
+        }
+        (Some(i), _) => (task_cases(snap, i)?, None),
+        (None, Op::Create(n)) => (create_cases(snap, n)?, None),
+        (None, _) => unreachable!("only a create has no target"),
     };
 
     // Rule 3: matrix rows for every case the op touches.
@@ -144,6 +171,19 @@ pub fn check(
     for c in op_cases(snap, target, cases, op) {
         operation_row(m, mode, c, name)?;
     }
+    if let Some(a) = after {
+        for c in std::iter::once(a.own).chain(a.family) {
+            operation_row(m, mode, c, "edit")?;
+        }
+    }
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && let Some(case) = convert_case(snap, i, changes)
+    {
+        operation_row(m, mode, case, "convert")?;
+    }
+
+    // Rule 4: a repeat rule Twydo writes or changes.
+    written_rule(snap, m, target, op)?;
 
     let Some(i) = target else {
         return Ok(());
@@ -158,7 +198,8 @@ pub fn check(
             return not_verified();
         }
         if let Op::Edit { changes, .. } = op {
-            if changes.iter().any(|c| matches!(c, Change::Due(None))) {
+            let keeps_rule = !matches!(new_repeat(changes), Some(None));
+            if keeps_rule && changes.iter().any(|c| matches!(c, Change::Due(None))) {
                 return blocked("removing the due date of a repeating task is not verified yet");
             }
             if edit != Verdict::Pass
@@ -195,7 +236,7 @@ pub fn check(
 /// project, or one of their items), the family's case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cases {
-    /// `one-time`, `monthly` or `yearly`.
+    /// `one-time`, `daily`, `weekly`, `monthly`, `yearly` or `from-completion`.
     pub own: &'static str,
     /// `checklist`, `project`, `recurring-project` or `project-recurring-child`.
     pub family: Option<&'static str>,
@@ -205,49 +246,263 @@ pub struct Cases {
 /// iPhone session captured have cases: one level of children under a typed checklist or
 /// project, no repeating checklist or item, no repeating child of a repeating project.
 pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
-    let t = &snap.tasks[idx];
-    if !known_task_type(t) {
+    if !known_task_type(&snap.tasks[idx]) {
         return blocked("this 2Do task type is not verified yet");
     }
+    cases_as(snap, idx, &Shape::of(snap, idx))
+}
+
+/// What the cases of a task depend on: its kind as the snapshot shows it, the kind its file
+/// declares, and its repeat class.
+#[derive(Debug, Clone)]
+struct Shape {
+    kind: TaskKind,
+    declared: TaskKind,
+    class: Option<String>,
+}
+
+impl Shape {
+    fn of(snap: &Snapshot, idx: usize) -> Shape {
+        let t = &snap.tasks[idx];
+        Shape {
+            kind: t.kind,
+            declared: declared_kind(t),
+            class: task_rule_class(t, snap),
+        }
+    }
+}
+
+/// [`task_cases`] of the task at `idx` if it had the shape `me` (its parent and items as
+/// loaded).
+fn cases_as(snap: &Snapshot, idx: usize, me: &Shape) -> Result<Cases, Blocked> {
+    let t = &snap.tasks[idx];
     let parent = snap.parent(idx);
     let children = snap.children(idx);
     if t.parent.is_some() && parent.is_none() {
         return blocked("broken parent link");
     }
     let nested = match parent {
-        Some(p) => !children.is_empty() || snap.parent(p).is_some() || t.kind != TaskKind::Task,
+        Some(p) => !children.is_empty() || snap.parent(p).is_some() || me.kind != TaskKind::Task,
         None => children.iter().any(|&c| !snap.children(c).is_empty()),
     };
     if nested {
         return blocked(NESTED);
     }
-    if parent.is_none() && t.kind == TaskKind::Task {
+    if parent.is_none() && me.kind == TaskKind::Task {
         return Ok(Cases {
-            own: own_case(snap, t)?,
+            own: own_case(me.class.as_deref())?,
             family: None,
         });
     }
     // The checklist or project: the task itself or its parent.
-    let head = &snap.tasks[parent.unwrap_or(idx)];
+    let head = match parent {
+        Some(p) => Shape::of(snap, p),
+        None => me.clone(),
+    };
     // `Snapshot::new` shows a parent without `@tasktype` as a project; it is still a plain task.
-    if declared_kind(head) == TaskKind::Task {
+    if head.declared == TaskKind::Task {
         return blocked(PLAIN_PARENT);
     }
-    let (head_repeats, own_repeats) = (head.rrule.is_some(), t.rrule.is_some());
-    let family = match head.kind {
+    let family = family_case(
+        head.kind,
+        parent.is_some(),
+        head.class.is_some(),
+        me.class.is_some(),
+    )?;
+    Ok(Cases {
+        own: own_case(me.class.as_deref())?,
+        family: Some(family),
+    })
+}
+
+/// The family case of a checklist or project of kind `head` (an item of it when `item`),
+/// from whether the head and the task repeat.
+fn family_case(
+    head: TaskKind,
+    item: bool,
+    head_repeats: bool,
+    own_repeats: bool,
+) -> Result<&'static str, Blocked> {
+    Ok(match head {
         TaskKind::Checklist if head_repeats || own_repeats => return blocked(REPEATING_CHECKLIST),
         TaskKind::Checklist => "checklist",
-        _ if parent.is_none() && head_repeats => "recurring-project",
-        _ if parent.is_none() => "project",
+        _ if !item && head_repeats => "recurring-project",
+        _ if !item => "project",
         _ if head_repeats && own_repeats => return blocked(CHILD_RECURRENCE),
         _ if head_repeats => "recurring-project",
         _ if own_repeats => "project-recurring-child",
         _ => "project",
+    })
+}
+
+/// The cases of a new task: its own case from its repeat, and the family it starts (a new
+/// checklist or project) or joins (an item of `parent`, which must be a declared checklist
+/// or project in the same list, not an item, with cases of its own). A checklist item takes
+/// no due, start or repeat.
+fn create_cases(snap: &Snapshot, n: &NewTask) -> Result<Cases, Blocked> {
+    let class = n.repeat.as_ref().map(|r| new_class(r, n.due.as_ref()));
+    let own = own_case(class.as_deref())?;
+    let repeats = class.is_some();
+    let Some(parent) = &n.parent else {
+        let family = match n.kind {
+            TaskKind::Task => None,
+            k => Some(family_case(k, false, repeats, repeats)?),
+        };
+        return Ok(Cases { own, family });
     };
+    let p = lookup(snap, parent)?;
+    let head = &snap.tasks[p];
+    if n.kind != TaskKind::Task || snap.parent(p).is_some() {
+        return blocked(NESTED);
+    }
+    if declared_kind(head) == TaskKind::Task {
+        return blocked(PLAIN_PARENT);
+    }
+    task_cases(snap, p)?;
+    if head.collection != n.collection {
+        return blocked("an item must be in the list of its checklist or project");
+    }
+    if head.kind == TaskKind::Checklist && (n.due.is_some() || n.start.is_some() || repeats) {
+        return blocked(ITEM_DATES);
+    }
+    let family = family_case(head.kind, true, head.rrule.is_some(), repeats)?;
     Ok(Cases {
-        own: own_case(snap, t)?,
+        own,
         family: Some(family),
     })
+}
+
+/// The cases the task at `idx` has after `changes`, when they change its type or repeat rule
+/// (`None` otherwise). A repeating project cannot keep a repeating item.
+fn edited_cases(snap: &Snapshot, idx: usize, changes: &[Change]) -> Result<Option<Cases>, Blocked> {
+    let kind = changes.iter().rev().find_map(|c| match c {
+        Change::Kind(k) => Some(*k),
+        _ => None,
+    });
+    let repeat = new_repeat(changes);
+    if kind.is_none() && repeat.is_none() {
+        return Ok(None);
+    }
+    let mut me = Shape::of(snap, idx);
+    if let Some(k) = kind {
+        (me.kind, me.declared) = (k, k);
+    }
+    if let Some(r) = repeat {
+        me.class = r.map(|r| new_class(r, due_after(snap, idx, changes).as_ref()));
+    }
+    let cases = cases_as(snap, idx, &me)?;
+    if cases.family == Some("recurring-project")
+        && snap
+            .children(idx)
+            .iter()
+            .any(|&c| snap.tasks[c].rrule.is_some())
+    {
+        return blocked(CHILD_RECURRENCE);
+    }
+    Ok(Some(cases))
+}
+
+/// The last `Change::Repeat` in `changes`: `Some(None)` removes the rule.
+fn new_repeat(changes: &[Change]) -> Option<Option<&RepeatSpec>> {
+    changes.iter().rev().find_map(|c| match c {
+        Change::Repeat(r) => Some(r.as_ref()),
+        _ => None,
+    })
+}
+
+/// The task's due date after `changes`: the last `Change::Due`, else its own.
+fn due_after(snap: &Snapshot, idx: usize, changes: &[Change]) -> Option<Due> {
+    let changed = changes.iter().rev().find_map(|c| match c {
+        Change::Due(d) => Some(*d),
+        _ => None,
+    });
+    changed.unwrap_or_else(|| {
+        let d = snap.tasks[idx].due.as_ref()?;
+        Some(Due::Date(d.local_date(snap.tz())))
+    })
+}
+
+/// The matrix class of a rule Twydo writes, anchored on the due date it will have.
+fn new_class(r: &RepeatSpec, due: Option<&Due>) -> String {
+    let anchor = due.map(|d| match d {
+        Due::Date(d) => *d,
+        Due::Time(t) => t.date(),
+    });
+    rule_class(&r.rule, anchor, r.from_completion)
+}
+
+/// The `convert` case of an edit that changes the task's declared kind, if it does.
+fn convert_case(snap: &Snapshot, idx: usize, changes: &[Change]) -> Option<&'static str> {
+    use TaskKind::{Checklist, Project, Task};
+    let to = changes.iter().rev().find_map(|c| match c {
+        Change::Kind(k) => Some(*k),
+        _ => None,
+    })?;
+    let items = !snap.children(idx).is_empty();
+    Some(match (declared_kind(&snap.tasks[idx]), to) {
+        (Task, Task) | (Checklist, Checklist) | (Project, Project) => return None,
+        (Task, Checklist) => "task-to-checklist",
+        (Task, Project) => "task-to-project",
+        (Checklist, Project) => "checklist-to-project",
+        (Project, Checklist) if items => "project-to-checklist",
+        (Project, Checklist) => "empty-project-to-checklist",
+        (_, Task) if items => "parent-with-items-to-task",
+        (_, Task) => "empty-parent-to-task",
+    })
+}
+
+/// How a `convert` case reads in a refusal.
+fn convert_label(case: &str) -> &str {
+    match case {
+        "task-to-checklist" => "a task to a checklist",
+        "task-to-project" => "a task to a project",
+        "checklist-to-project" => "a checklist to a project",
+        "project-to-checklist" => "a project with items to a checklist",
+        "empty-project-to-checklist" => "an empty project to a checklist",
+        "parent-with-items-to-task" => "a checklist or project with items to a task",
+        "empty-parent-to-task" => "an empty checklist or project to a task",
+        other => other,
+    }
+}
+
+/// Rule 4 for a rule Twydo writes: a new rule's class needs its `preserve` and `edit`
+/// verdicts; changing or removing a rule needs the old class's `edit` verdict.
+fn written_rule(
+    snap: &Snapshot,
+    m: &Matrix,
+    target: Option<usize>,
+    op: &Op,
+) -> Result<(), Blocked> {
+    let (old, new) = match (target, op) {
+        (None, Op::Create(n)) => (
+            None,
+            n.repeat.as_ref().map(|r| new_class(r, n.due.as_ref())),
+        ),
+        (Some(i), Op::Edit { changes, .. }) => {
+            let Some(r) = new_repeat(changes) else {
+                return Ok(());
+            };
+            let due = due_after(snap, i, changes);
+            (
+                task_rule_class(&snap.tasks[i], snap),
+                r.map(|r| new_class(r, due.as_ref())),
+            )
+        }
+        _ => return Ok(()),
+    };
+    let not_verified = |class: &str| blocked(format!("{class} repeats are not verified yet"));
+    if let Some(c) = old
+        && combined_verdicts(m, &c).2 != Verdict::Pass
+    {
+        return not_verified(&c);
+    }
+    if let Some(c) = new {
+        let (preserve, _, edit) = combined_verdicts(m, &c);
+        if preserve != Verdict::Pass || edit != Verdict::Pass {
+            return not_verified(&c);
+        }
+    }
+    Ok(())
 }
 
 /// The kind the task's file declares: `Snapshot::new` shows a parent without `@tasktype` as
@@ -275,14 +530,19 @@ fn known_task_type(t: &Task) -> bool {
     kind == declared_kind(t)
 }
 
-/// A task's own case from its repeat rule: `one-time`, `monthly` or `yearly`.
-fn own_case(snap: &Snapshot, t: &Task) -> Result<&'static str, Blocked> {
-    let Some(class) = task_rule_class(t, snap) else {
+/// A task's own case from its repeat class: `one-time`, `daily`, `weekly`, `monthly`,
+/// `yearly`, or `from-completion` for any rule repeated from completion.
+fn own_case(class: Option<&str>) -> Result<&'static str, Blocked> {
+    let Some(class) = class else {
         return Ok("one-time");
     };
-    let base = class.split('+').next().unwrap_or(&class);
+    let base = class.split('+').next().unwrap_or(class);
     if class.split('+').any(|x| x == "from-completion") {
-        blocked("repeat from completion is not verified yet")
+        Ok("from-completion")
+    } else if base == "days" {
+        Ok("daily")
+    } else if base == "weeks" || base == "weekdays-set" {
+        Ok("weekly")
     } else if base.starts_with("months-") {
         Ok("monthly")
     } else if base.starts_with("years") {
@@ -410,6 +670,7 @@ fn op_name(op: &Op) -> &'static str {
         Op::Reopen { .. } => "reopen",
         Op::Move { .. } => "move",
         Op::Delete { .. } => "delete",
+        Op::Save { .. } => "save",
     }
 }
 
@@ -471,8 +732,15 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
         columns.push(("twydo_to_iphone", get(|e| e.twydo_to_iphone)));
         columns.push(("iphone_to_twydo", get(|e| e.iphone_to_twydo)));
     }
+    let what = match op {
+        "convert" => format!("converting {}", convert_label(case)),
+        _ => format!("{op} for {case} tasks"),
+    };
     match columns.into_iter().find(|(_, v)| *v != Verdict::Pass) {
-        Some((col, _)) => blocked(format!("{op} for {case} tasks is not verified yet ({col})")),
+        Some(("iphone_baseline", Verdict::Unsupported)) => {
+            blocked(format!("{what} is not supported by 2Do"))
+        }
+        Some((col, _)) => blocked(format!("{what} is not verified yet ({col})")),
         None => Ok(()),
     }
 }

@@ -1102,6 +1102,17 @@ evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items (P). Not offered, so Twydo refuses it. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
+case = "empty-project-to-checklist"
+op = "convert"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured: the phone was not asked to convert an empty project."
+
+[[operation]]
 case = "parent-with-items-to-task"
 op = "convert"
 iphone_baseline = "unsupported"

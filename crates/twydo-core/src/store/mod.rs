@@ -19,8 +19,8 @@ use chrono::{DateTime, Utc};
 use crate::compat::{Matrix, Verdict};
 use crate::config::{Config, WriteMode};
 use crate::edit::{
-    EditError, Op, apply_changes, complete_one_time, complete_recurring, file_name, moved_copy,
-    new_task, new_uid, reopen_one_time,
+    Change, EditError, Op, apply_changes, complete_one_time, complete_recurring, file_name,
+    moved_copy, new_task, new_uid, reopen_one_time,
 };
 use crate::gate::{self, Blocked};
 use crate::ical::{self, Calendar};
@@ -569,6 +569,71 @@ impl Store {
         })
     }
 
+    /// A save (kind "save"): the edit's writes, then the move's, planned on the edited files.
+    /// A path written twice keeps the first `before` and the last `after`, at its later place
+    /// (a move creates the copy before it removes the source). Either part may be empty.
+    fn plan_save(
+        &self,
+        snap: &Snapshot,
+        uid: &str,
+        changes: &[Change],
+        to: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        let mut plan = Plan {
+            kind: "save",
+            uids: Vec::new(),
+            writes: Vec::new(),
+            holds: Vec::new(),
+        };
+        let mut edited = snap.clone();
+        if !changes.is_empty() || to.is_none() {
+            let edit = Op::Edit {
+                uid: uid.to_string(),
+                changes: changes.to_vec(),
+            };
+            let part = self.plan(snap, &edit, now)?;
+            for w in &part.writes {
+                if let Some(after) = &w.after {
+                    edited.set_source(&self.vdir.join(&w.path), after.clone().into_bytes());
+                }
+            }
+            plan.uids = part.uids;
+            plan.writes = part.writes;
+            plan.holds = part.holds;
+        }
+        let Some(to) = to else {
+            return Ok(plan);
+        };
+        let mv = Op::Move {
+            uid: uid.to_string(),
+            to: to.to_string(),
+        };
+        let part = self.plan(&edited, &mv, now)?;
+        for w in part.writes {
+            match plan.writes.iter().position(|e| e.path == w.path) {
+                Some(k) => {
+                    let first = plan.writes.remove(k);
+                    plan.writes.push(Write {
+                        before: first.before,
+                        ..w
+                    });
+                }
+                None => plan.writes.push(w),
+            }
+        }
+        for u in part.uids {
+            if !plan.uids.contains(&u) {
+                plan.uids.push(u);
+            }
+        }
+        plan.holds.extend(part.holds);
+        let writes = &plan.writes;
+        plan.holds
+            .retain(|(rel, _)| writes.iter().all(|w| &w.path != rel));
+        Ok(plan)
+    }
+
     fn plan(&self, snap: &Snapshot, op: &Op, now: DateTime<Utc>) -> Result<Plan, WriteError> {
         let one = |kind, uid: &String, w| Plan {
             kind,
@@ -649,6 +714,9 @@ impl Store {
                     writes: vec![copy, t.remove()],
                     holds: Vec::new(),
                 }
+            }
+            Op::Save { uid, changes, to } => {
+                self.plan_save(snap, uid, changes, to.as_deref(), now)?
             }
             Op::Delete { uid } => {
                 let t = self.target(snap, uid)?;
