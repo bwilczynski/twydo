@@ -525,3 +525,256 @@ fn timed_due_without_json_meta_adds_no_alarm() {
     apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
     assert!(todo(&cal).children_named("VALARM").next().is_none());
 }
+
+// ---- Repeat rules (Plan 7 Task 4), against the iPhone's repeat picker ----
+
+const P7: &str = "plan7-list1";
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap());
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).unwrap()
+}
+
+/// The JSON keys and values in order, with the phone's own `RUID` id replaced by a marker
+/// (2Do writes its internal id there, which Twydo cannot know; Twydo writes the UID) and
+/// `TaskType` / `TaskDuration` in one order (the phone swapped them in R16 only).
+fn meta_pairs(value: &str) -> String {
+    let start = value.find("<2Do Meta>").unwrap() + "<2Do Meta>".len();
+    let end = value.find("</2Do Meta>").unwrap();
+    let serde_json::Value::Object(obj) =
+        serde_json::from_str(&percent_decode(&value[start..end])).unwrap()
+    else {
+        panic!("not an object");
+    };
+    let mut pairs: Vec<(String, serde_json::Value)> = obj.into_iter().collect();
+    for (k, v) in &mut pairs {
+        if k == "RUID" && v != "" {
+            *v = serde_json::Value::from("<own>");
+        }
+    }
+    let pos = |pairs: &[(String, serde_json::Value)], k: &str| {
+        pairs.iter().position(|(n, _)| n == k).unwrap()
+    };
+    let (t, d) = (pos(&pairs, "TaskType"), pos(&pairs, "TaskDuration"));
+    if t < d {
+        pairs.swap(t, d);
+    }
+    format!("{pairs:?}")
+}
+
+/// Every property as one sortable string. Left out, because they are not part of setting a
+/// repeat: `DTSTAMP`/`LAST-MODIFIED` (the stamps), and what the phone adds when it rewrites a
+/// Twydo-created file wholesale in its own layout: `PRODID`, `X-2DOAPP-SYNC-IMAGE`,
+/// `X-2DOAPP-SYNC-AUDIO` and `X-2DOAPP-AUDIO-DURATION`.
+fn repeat_lines(cal: &Calendar) -> Vec<String> {
+    const PHONE_LAYOUT: [&str; 4] = [
+        "PRODID",
+        "X-2DOAPP-SYNC-IMAGE",
+        "X-2DOAPP-SYNC-AUDIO",
+        "X-2DOAPP-AUDIO-DURATION",
+    ];
+    let mut out: Vec<String> = lines(cal)
+        .into_iter()
+        .filter(|l| !is_stamp(&l.1) && !PHONE_LAYOUT.contains(&l.1.as_str()))
+        .map(|(path, name, params, value)| {
+            let value = if name == "X-2DOAPP-METADATA" {
+                meta_pairs(&value)
+            } else {
+                value
+            };
+            format!("{path}|{name}|{params:?}|{value}")
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn work_days() -> Vec<chrono::Weekday> {
+    use chrono::Weekday::*;
+    vec![Mon, Tue, Wed, Thu, Fri]
+}
+
+fn spec(input: &str) -> twydo_core::repeatinput::RepeatSpec {
+    twydo_core::repeatinput::parse(input, date(2026, 11, 3), &work_days())
+        .unwrap()
+        .unwrap()
+}
+
+/// Apply `Change::Repeat(spec(input))` to the plain `00-seed` task `uid` and compare with the
+/// phone's `01-phone-repeat` file; `RRULE` must sit right after `DUE`.
+fn check_repeat(uid: &str, input: &str) {
+    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let want = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    apply_changes(&mut cal, &[Change::Repeat(Some(spec(input)))], now()).unwrap();
+    let got = parse(&serialize(&cal)).unwrap();
+    assert_eq!(repeat_lines(&got), repeat_lines(&want), "{input}");
+    let names: Vec<&str> = todo(&got).props.iter().map(|p| p.name.as_str()).collect();
+    let due = names.iter().position(|n| *n == "DUE").unwrap();
+    assert_eq!(names[due + 1], "RRULE", "{input}");
+    let meta = &todo(&got).prop("X-2DOAPP-METADATA").unwrap().value;
+    assert!(percent_decode(meta).contains(&format!("\"RUID\":\"{uid}\"")));
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_daily() {
+    check_repeat("a8d833aa427849239c35cb2d8cfef721", "daily"); // R01
+    check_repeat("5965cd6bfaa64fc2960f51449c63f5bd", "daily"); // R02
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_every_n_days() {
+    check_repeat("f7f92e74cc4746a5a9ae41eaae87a54e", "3d"); // R03
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_weekly() {
+    check_repeat("ce75b21d989147aab17422d262bf0acd", "weekly"); // R04
+    check_repeat("f07c68d24c4f476f81b81731141a3192", "2w"); // R05
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_weekday_set() {
+    check_repeat("391a95aa2b524602847685a7276aefab", "mon thu"); // R06
+    check_repeat("5864b3930d9f4959a451f8042f538244", "workdays"); // R07
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_monthly() {
+    check_repeat("992fea854c4d42baaa0ad2d20f3f65a5", "monthly"); // R08
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_nth_weekday() {
+    check_repeat("08aa0eefe10e484d8221dcda095a911b", "2nd tue"); // R10
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_yearly() {
+    check_repeat("55bab4f5add845729158a006077fa70d", "yearly"); // R13
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_from_completion() {
+    check_repeat("18669d33edad43c7a70152cd1b49fc0c", "monthly after done"); // R14
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_end_after_count() {
+    check_repeat("921f88b27e2d4563bb29a773cbfe4262", "monthly 3 times"); // R15
+}
+
+#[test]
+fn set_repeat_matches_phone_edit_end_on_date() {
+    check_repeat(
+        "7ca468eaff814c459baf0667fe9ba1b3",
+        "monthly until 2027-06-30",
+    ); // R16
+}
+
+#[test]
+fn repeat_without_due_matches_phone() {
+    // R17: the caller gives a due-less task today's date first (2Do's repeat picker does).
+    let uid = "cfd0a124f69a4f55a8180158fb118d6d";
+    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let want = parse(&fixture(P7, "02-phone-repeat-no-due", uid)).unwrap();
+    let changes = [
+        Change::Due(Some(Due::Date(date(2026, 11, 3)))),
+        Change::Repeat(Some(spec("weekly"))),
+    ];
+    apply_changes(&mut cal, &changes, now()).unwrap();
+    let got = parse(&serialize(&cal)).unwrap();
+    assert_eq!(repeat_lines(&got), repeat_lines(&want));
+
+    // Without a due date the repeat alone is refused, and nothing changes.
+    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let before = cal.clone();
+    let err = apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now());
+    assert!(matches!(err, Err(EditError::Unsupported(_))));
+    assert_eq!(cal, before);
+}
+
+#[test]
+fn remove_repeat_matches_phone() {
+    // R09 (the picker set back to none) shows what the phone leaves: no RRULE, `RecurrenceType`
+    // 0, and `RecurrenceValue`, `RecurrenceFrom` and `RUID` as the repeat had them.
+    let uid = "a8d833aa427849239c35cb2d8cfef721"; // R01, daily
+    let mut cal = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    let before = cal.clone();
+    apply_changes(&mut cal, &[Change::Repeat(None)], now()).unwrap();
+    assert!(todo(&cal).prop("RRULE").is_none());
+    let json = |c: &Calendar| meta_pairs(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value);
+    let want = json(&before).replace(
+        "(\"RecurrenceType\", Number(256))",
+        "(\"RecurrenceType\", Number(0))",
+    );
+    assert_ne!(want, json(&before));
+    assert_eq!(json(&cal), want);
+    // Every other line keeps its bytes.
+    let rest = |c: &Calendar| {
+        lines(c)
+            .into_iter()
+            .filter(|l| !is_stamp(&l.1) && l.1 != "RRULE" && l.1 != "X-2DOAPP-METADATA")
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rest(&cal), rest(&before));
+
+    // Removing a repeat that is not there changes nothing but the stamps.
+    let seed = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let mut plain = seed.clone();
+    apply_changes(&mut plain, &[Change::Repeat(None)], now()).unwrap();
+    assert_eq!(rest(&plain), rest(&seed));
+    assert_eq!(json(&plain), json(&seed));
+}
+
+#[test]
+fn codes_follow_the_2do_table() {
+    use twydo_core::edit::repeat::twodo_codes;
+    use twydo_core::model::repeat::parse_rrule;
+    let codes = |s: &str| twodo_codes(&parse_rrule(s).unwrap());
+    assert_eq!(codes("FREQ=DAILY"), (256, 1));
+    assert_eq!(codes("FREQ=DAILY;INTERVAL=3"), (256, 3));
+    assert_eq!(codes("FREQ=WEEKLY"), (257, 1));
+    assert_eq!(codes("FREQ=WEEKLY;INTERVAL=2"), (257, 2));
+    assert_eq!(codes("FREQ=MONTHLY"), (258, 1));
+    assert_eq!(codes("FREQ=MONTHLY;INTERVAL=3"), (258, 3));
+    assert_eq!(codes("FREQ=YEARLY"), (259, 1));
+    // Weekday bitmask: Sun 1, Sat 2, Fri 4, Thu 8, Wed 16, Tue 32, Mon 64.
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=SU"), (1, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=SA"), (2, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=FR"), (4, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=TH"), (8, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=WE"), (16, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=TU"), (32, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=MO"), (64, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=MO,TH"), (72, 1));
+    assert_eq!(codes("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"), (124, 1));
+    assert_eq!(codes("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"), (64, 2));
+    // Nth weekday of the month: 0x104 Monday .. 0x10A Sunday, value = the ordinal.
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=1MO"), (0x104, 1));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=2TU"), (0x105, 2));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=3WE"), (0x106, 3));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=4TH"), (0x107, 4));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=5FR"), (0x108, 5));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=-1SA"), (0x109, -1));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=1SU"), (0x10A, 1));
+    // Last day of the month, every N months.
+    assert_eq!(codes("FREQ=MONTHLY;BYMONTHDAY=-1"), (0x10B, 1));
+    assert_eq!(codes("FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=-1"), (0x10B, 2));
+    // Nth weekday (Mon-Fri) and Nth weekend day of the month.
+    assert_eq!(
+        codes("FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1"),
+        (0x10C, -1)
+    );
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=SA,SU;BYSETPOS=1"), (0x10D, 1));
+}

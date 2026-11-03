@@ -54,8 +54,9 @@ impl MetaJson {
         self.obj.get(key).and_then(Value::as_str)
     }
 
-    /// Replace in place. An absent `StartDate` goes right after `RecurrenceEndRepetitionsOrig`;
-    /// any other absent key goes last (as 2Do orders them).
+    /// Replace in place. An absent `StartDate` goes right after `RecurrenceEndRepetitionsOrig`
+    /// and an absent `RecurrenceEndDate` right after `RecurrenceEndType`; any other absent key
+    /// goes last (as 2Do orders them).
     pub fn set_i64(&mut self, key: &str, v: i64) {
         self.set(key, Value::from(v));
     }
@@ -73,11 +74,15 @@ impl MetaJson {
             *slot = v;
             return;
         }
-        if key != "StartDate" || !self.obj.contains_key("RecurrenceEndRepetitionsOrig") {
+        let after = match key {
+            "StartDate" => "RecurrenceEndRepetitionsOrig",
+            "RecurrenceEndDate" => "RecurrenceEndType",
+            _ => "",
+        };
+        if !self.obj.contains_key(after) {
             self.obj.insert(key.to_string(), v);
             return;
         }
-        let after = "RecurrenceEndRepetitionsOrig";
         // serde_json's Map has no positional insert: rebuild it with the new key in place.
         let mut rebuilt = Map::new();
         for (k, old) in std::mem::take(&mut self.obj) {
