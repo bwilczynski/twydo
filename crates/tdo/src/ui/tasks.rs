@@ -12,7 +12,7 @@ use twydo_core::model::{Status, Task, TaskKind};
 use twydo_core::views::{DateGroup, Row, View, build_view, date_group};
 use unicode_width::UnicodeWidthStr;
 
-use super::{bar_color, dim, pad, pane_block, theme, truncate, view_name};
+use super::{bar_color, card, dim, pad, pane_block, theme, truncate, view_name};
 use crate::app::{App, Pane};
 
 const MAX_HINT: usize = 12;
@@ -131,18 +131,37 @@ fn items(app: &App) -> Vec<Item> {
     out
 }
 
-pub fn render(f: &mut Frame, area: Rect, app: &App) {
+/// Draw the pane; with the edit card open, in place of its task's row when it fits.
+/// Returns whether the card was drawn here (else the caller draws it as an overlay).
+pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     let block = pane_block(pane_title(app), app, Pane::Tasks).padding(Padding::horizontal(1));
     let inner = block.inner(area);
     f.render_widget(block, area);
     if inner.width == 0 || inner.height == 0 {
-        return;
+        return false;
     }
+    let card = app.form.as_ref().and_then(|e| {
+        let h = card::height(app, e, inner.width);
+        (inner.width >= card::MIN_WIDTH && h <= inner.height).then_some((e, h as usize))
+    });
     let width = inner.width as usize;
     let items = items(app);
     if items.is_empty() {
+        // A new task's card in an empty view sits at the top.
+        if let Some((e, h)) = card.filter(|(e, _)| e.uid.is_none()) {
+            card::render(
+                f,
+                Rect {
+                    height: h as u16,
+                    ..inner
+                },
+                app,
+                e,
+            );
+            return true;
+        }
         f.render_widget(Paragraph::new(Line::styled("No tasks", dim())), inner);
-        return;
+        return false;
     }
 
     // Column widths are shared by every row so dates line up.
@@ -182,6 +201,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     }
 
     let mut lines: Vec<Line> = Vec::new();
+    let mut card_at: Option<usize> = None;
     let mut selected_line = 0;
     let mut row_no = 0;
     for item in &items {
@@ -208,25 +228,55 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
                 }
                 let selected = row_no == app.cursor;
                 row_no += 1;
-                lines.push(row_line(
-                    app,
-                    r,
-                    selected,
-                    width,
-                    (glyph_w, mark_w, hint_w, date_w),
-                ));
+                let uid = &app.snapshot.tasks[r.task].uid;
+                // The card takes its task's row; a new task's card opens below the cursor.
+                let card_here = card.filter(|(e, _)| e.uid.as_ref() == Some(uid));
+                if card_here.is_none() {
+                    lines.push(row_line(
+                        app,
+                        r,
+                        selected,
+                        width,
+                        (glyph_w, mark_w, hint_w, date_w),
+                    ));
+                }
+                let new_here = card.filter(|(e, _)| e.uid.is_none() && selected);
+                if let Some((_, h)) = card_here.or(new_here) {
+                    card_at = Some(lines.len());
+                    lines.extend(std::iter::repeat_n(Line::raw(""), h));
+                }
             }
         }
     }
 
     let h = inner.height as usize;
-    let mut offset = (selected_line + 1).saturating_sub(h);
+    // Scroll so the card is whole (it fits: `card` checked its height), else the cursor row.
+    let (last, first) = match (card, card_at) {
+        (Some((_, ch)), Some(at)) => (at + ch, at),
+        _ => (selected_line + 1, selected_line),
+    };
+    let mut offset = last.saturating_sub(h);
     // Keep the group header above the first row visible when it fits.
-    if offset > 0 && offset == selected_line && selected_line >= 1 {
+    if offset > 0 && offset == first && first >= 1 && last - first < h {
         offset -= 1;
     }
     let visible: Vec<Line> = lines.into_iter().skip(offset).take(h).collect();
     f.render_widget(Paragraph::new(visible), inner);
+    let (Some((e, ch)), Some(at)) = (card, card_at) else {
+        return false;
+    };
+    let y = inner.y + (at - offset) as u16;
+    card::render(
+        f,
+        Rect {
+            y,
+            height: ch as u16,
+            ..inner
+        },
+        app,
+        e,
+    );
+    true
 }
 
 fn row_line(

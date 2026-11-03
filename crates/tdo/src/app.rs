@@ -9,7 +9,7 @@ use chrono::DateTime;
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::form::{EditForm, Field, FormAction};
+use crate::form::{EditForm, Field, FormAction, NO_CHANGES};
 use crate::write::Request;
 use twydo_core::conflicts::Conflict;
 use twydo_core::dateinput::{DueShift, shift_due};
@@ -83,10 +83,11 @@ pub enum Outcome {
     StopSyncAndWrite(Request),
 }
 
-/// The `m` overlay: lists to move task `uid` to, in sidebar order.
+/// The list picker, in sidebar order: `m` moves task `uid` to the chosen list; from the
+/// card's List field (`uid` = `None`) the choice only sets that field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListPicker {
-    pub uid: String,
+    pub uid: Option<String>,
     pub lists: Vec<String>,
     pub cursor: usize,
 }
@@ -117,7 +118,7 @@ pub struct App {
     pub conflict_cursor: usize,
     /// The `m` list picker, open until its write finishes or Esc.
     pub picker: Option<ListPicker>,
-    /// The `i` edit form; open while `mode` is Insert.
+    /// The edit card; open while `mode` is Insert.
     pub form: Option<EditForm>,
     /// The snapshot the form opened on: its save is checked against these bytes, so a sync
     /// that lands meanwhile makes the save stale instead of being overwritten.
@@ -757,15 +758,22 @@ impl App {
         })
     }
 
-    /// Open the edit form on the selected task with `focus`; Repeat only when it repeats.
+    /// The card for task `idx` of the current snapshot.
+    fn card_for(&self, idx: usize) -> EditForm {
+        let s = &self.snapshot;
+        let item_of = s.parent(idx).map(|p| s.tasks[p].kind);
+        EditForm::open(&s.tasks[idx], item_of, s.tz())
+    }
+
+    /// Open the edit card on the selected task with `focus`.
     fn open_form(&mut self, focus: Field) {
         if self.focus == Pane::Sidebar {
             return;
         }
         let Some(i) = self.selected() else { return };
-        let mut form = EditForm::open(&self.snapshot.tasks[i], self.snapshot.tz());
-        if focus == Field::Repeat && form.repeat.is_none() {
-            self.message = Some("edit repeat: this task does not repeat".into());
+        let mut form = self.card_for(i);
+        if !form.fields().contains(&focus) {
+            self.message = Some("repeat: checklist items have no dates or repeats".into());
             return;
         }
         form.focus = focus;
@@ -799,8 +807,13 @@ impl App {
         let (Some(form), Some(base)) = (&self.form, &self.form_base) else {
             return;
         };
-        let old = base.find(&form.uid).map(|i| &base.tasks[i]);
-        let Some(now_idx) = self.snapshot.find(&form.uid) else {
+        // A new task has nothing on disk to change under it.
+        let Some(uid) = form.uid.clone() else {
+            self.form.as_mut().expect("form is open").error = Some(error);
+            return;
+        };
+        let old = base.find(&uid).map(|i| &base.tasks[i]);
+        let Some(now_idx) = self.snapshot.find(&uid) else {
             self.close_form();
             self.message = Some(error);
             return;
@@ -811,7 +824,7 @@ impl App {
         });
         let focus = form.focus;
         let mut form = if changed {
-            let mut f = EditForm::open(task, self.snapshot.tz());
+            let mut f = self.card_for(now_idx);
             if f.fields().contains(&focus) {
                 f.focus = focus;
             }
@@ -828,25 +841,27 @@ impl App {
 
     fn form_key(&mut self, k: KeyEvent) -> Outcome {
         let today = self.now.date_naive();
+        let work_days = self.snapshot.config.work_days.clone();
         let Some(form) = self.form.as_mut() else {
             return Outcome::Continue;
         };
         match form.key(k) {
             FormAction::None => {}
             FormAction::EditNotes => return Outcome::EditNotes(form.notes.clone()),
+            FormAction::PickList => {
+                let current = form.list.clone();
+                self.open_list_picker(None, &current);
+            }
             FormAction::Cancel => self.close_form(),
-            FormAction::Save => match form.changes(today) {
-                Err(e) => form.error = Some(e),
-                Ok(changes) if changes.is_empty() => {
+            FormAction::Save => match form.save(today, &work_days) {
+                Err(e) if e == NO_CHANGES => {
                     self.close_form();
-                    self.message = Some("no changes".into());
+                    self.message = Some(e);
                 }
-                Ok(changes) => {
+                Err(e) => form.error = Some(e),
+                Ok(op) => {
                     form.error = None;
-                    return Outcome::Write(Request::Apply(Op::Edit {
-                        uid: form.uid.clone(),
-                        changes,
-                    }));
+                    return Outcome::Write(Request::Apply(op));
                 }
             },
         }
@@ -864,11 +879,17 @@ impl App {
         }
         let Some(i) = self.selected() else { return };
         let task = &self.snapshot.tasks[i];
+        let (uid, current) = (task.uid.clone(), task.collection.clone());
+        self.open_list_picker(Some(uid), &current);
+    }
+
+    /// The picker over every sidebar list but `current`.
+    fn open_list_picker(&mut self, uid: Option<String>, current: &str) {
         let lists: Vec<String> = self
             .sidebar_items()
             .into_iter()
             .filter_map(|v| match v {
-                View::List(id) if id != task.collection => Some(id),
+                View::List(id) if id != current => Some(id),
                 _ => None,
             })
             .collect();
@@ -877,7 +898,7 @@ impl App {
             return;
         }
         self.picker = Some(ListPicker {
-            uid: task.uid.clone(),
+            uid,
             lists,
             cursor: 0,
         });
@@ -893,11 +914,17 @@ impl App {
             KeyCode::Char('j') | KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
             KeyCode::Char('k') | KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
             KeyCode::Enter => {
-                if let Some(to) = p.lists.get(p.cursor) {
-                    return Outcome::Write(Request::Apply(Op::Move {
-                        uid: p.uid.clone(),
-                        to: to.clone(),
-                    }));
+                let Some(to) = p.lists.get(p.cursor).cloned() else {
+                    return Outcome::Continue;
+                };
+                match p.uid.clone() {
+                    Some(uid) => return Outcome::Write(Request::Apply(Op::Move { uid, to })),
+                    None => {
+                        self.picker = None;
+                        if let Some(form) = self.form.as_mut() {
+                            form.set_list(to);
+                        }
+                    }
                 }
             }
             _ => {}

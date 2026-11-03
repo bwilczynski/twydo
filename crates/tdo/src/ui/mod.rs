@@ -1,9 +1,9 @@
 //! Rendering: three panes plus a status line, drawn from [`App`] state. Chrome uses only the
 //! 16 ANSI colours; true colour appears solely on the `▌` list bars.
 
+mod card;
 mod conflicts;
 mod details;
-mod form;
 mod picker;
 mod sidebar;
 mod status;
@@ -49,7 +49,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     .areas(main);
 
     sidebar::render(f, side, app);
-    tasks::render(f, mid, app);
+    let card_in_place = tasks::render(f, mid, app);
     if details_w > 0 {
         details::render(f, right, app);
     }
@@ -63,8 +63,10 @@ pub fn draw(f: &mut Frame, app: &App) {
     if app.show_conflicts {
         conflicts::render(f, area, app);
     }
-    if let Some(e) = &app.form {
-        form::render(f, area, app, e);
+    if let Some(e) = &app.form
+        && !card_in_place
+    {
+        card::render_overlay(f, area, app, e);
     }
     if let Some(p) = &app.picker {
         picker::render(f, area, app, p);
@@ -203,7 +205,7 @@ const HELP: &[(&str, &str, bool)] = &[
     ("Enter", "expand/collapse a parent (All, lists)", false),
     (
         "Enter on a leaf, i",
-        "edit task (Tab fields, Enter save)",
+        "edit task in a card (Tab fields, Enter save)",
         false,
     ),
     ("x  Space", "toggle done", false),
@@ -214,7 +216,7 @@ const HELP: &[(&str, &str, bool)] = &[
     ("t  T", "due today / tomorrow", false),
     ("]  [  }  {", "due +1/-1 day, +1/-1 week", false),
     ("m", "move to another list", false),
-    ("r", "edit repeat", false),
+    ("r", "card on the Repeat field", false),
     ("a", "edit alerts", true),
     ("/  n  N", "search in view", false),
     ("1-5", "Today All Scheduled Done Next 3 Days", false),

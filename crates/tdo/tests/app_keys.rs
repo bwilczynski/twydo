@@ -133,7 +133,7 @@ fn enter_on_leaf_opens_form() {
     let mut a = app();
     let uid = selected_uid(&a);
     a.handle_key(code(KeyCode::Enter));
-    assert_eq!(a.form.as_ref().map(|f| f.uid.clone()), Some(uid));
+    assert_eq!(a.form.as_ref().and_then(|f| f.uid.clone()), Some(uid));
     assert_eq!(a.mode, Mode::Insert);
 }
 
@@ -628,7 +628,7 @@ fn m_opens_picker_without_current_list() {
     let task = a.snapshot.tasks[a.selected().unwrap()].clone();
     assert_eq!(a.handle_key(key('m')), Outcome::Continue);
     let p = a.picker.as_ref().expect("picker open");
-    assert_eq!(p.uid, task.uid);
+    assert_eq!(p.uid.as_deref(), Some(task.uid.as_str()));
     let want: Vec<String> = list_ids_in_sidebar(&a)
         .into_iter()
         .filter(|id| *id != task.collection)
@@ -702,24 +702,148 @@ fn i_opens_form_in_insert_mode() {
     let uid = selected_uid(&a);
     assert_eq!(a.handle_key(key('i')), Outcome::Continue);
     let f = a.form.as_ref().expect("form open");
-    assert_eq!(f.uid, uid);
+    assert_eq!(f.uid, Some(uid));
     assert_eq!(f.focus, Field::Title);
     assert_eq!(a.mode, Mode::Insert);
 }
 
 #[test]
-fn r_focuses_repeat_or_explains() {
+fn r_opens_repeat_on_a_plain_task() {
     let mut a = app();
     select(&mut a, "Water plants");
     a.handle_key(key('r'));
-    assert_eq!(a.form.as_ref().unwrap().focus, Field::Repeat);
+    let f = a.form.as_ref().unwrap();
+    assert_eq!((f.focus, f.repeat.as_str()), (Field::Repeat, "wed"));
     let mut a = app();
     select(&mut a, "Call the dentist");
+    a.handle_key(key('r'));
+    let f = a
+        .form
+        .as_ref()
+        .expect("the card opens on a task that does not repeat");
+    assert_eq!((f.focus, f.repeat.as_str()), (Field::Repeat, ""));
+    assert_eq!(a.mode, Mode::Insert);
+
+    // A checklist item has no repeat: say so instead.
+    let mut a = app();
+    a.handle_key(key('2'));
+    select(&mut a, "Packing list");
+    a.handle_key(code(KeyCode::Enter));
+    select(&mut a, "Passport");
     a.handle_key(key('r'));
     assert!(a.form.is_none());
     assert_eq!(
         a.message.as_deref(),
-        Some("edit repeat: this task does not repeat")
+        Some("repeat: checklist items have no dates or repeats")
+    );
+}
+
+/// Open the card on the selected task and type `s` into the Repeat field.
+fn card_with_repeat(a: &mut App, s: &str) {
+    a.handle_key(key('r'));
+    a.handle_key(ctrl('u'));
+    type_str(a, s);
+}
+
+#[test]
+fn esc_in_card_writes_nothing() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('i'));
+    type_str(&mut a, " today");
+    a.handle_key(code(KeyCode::Tab));
+    a.handle_key(code(KeyCode::Enter)); // List: the picker
+    assert!(a.picker.is_some());
+    a.handle_key(code(KeyCode::Enter)); // choose the first other list
+    assert!(a.picker.is_none());
+    a.handle_key(code(KeyCode::Tab));
+    a.handle_key(key(' ')); // Type: project
+    a.handle_key(code(KeyCode::Tab));
+    a.handle_key(ctrl('u')); // Due cleared
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(a.form.is_none() && a.picker.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert!(a.message.is_none());
+}
+
+#[test]
+fn card_list_field_picks_without_writing() {
+    let mut a = app();
+    let task = a.snapshot.tasks[a.selected().unwrap()].clone();
+    a.handle_key(key('i'));
+    a.handle_key(code(KeyCode::Tab));
+    assert_eq!(a.form.as_ref().unwrap().focus, Field::List);
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    let p = a.picker.as_ref().expect("picker open");
+    assert_eq!(p.uid, None, "picking for the card");
+    assert!(!p.lists.contains(&task.collection));
+    a.handle_key(key('j'));
+    let to = a.picker.as_ref().unwrap().lists[1].clone();
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    assert!(a.picker.is_none());
+    assert_eq!(a.form.as_ref().unwrap().list, to);
+    // Esc in the picker leaves the card as it was.
+    a.handle_key(code(KeyCode::Enter));
+    a.handle_key(code(KeyCode::Esc));
+    assert!(a.picker.is_none() && a.form.is_some());
+    assert_eq!(
+        write_op(a.handle_key(ctrl('s'))),
+        Op::Save {
+            uid: task.uid,
+            changes: vec![],
+            to: Some(to),
+        }
+    );
+}
+
+/// Review Focus 3 through the card: the gate refuses an unverified repeat; the card stays
+/// open with the text and the reason.
+#[test]
+fn refused_save_keeps_card_and_text() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    card_with_repeat(&mut a, "2nd tue");
+    let op = write_op(a.handle_key(code(KeyCode::Enter)));
+    assert!(matches!(op, Op::Save { .. }), "{op:?}");
+    a.write_refused();
+    a.write_finished(Err("months-nth-weekday repeats are not verified yet".into()));
+    let f = a.form.as_ref().expect("card stays open");
+    assert_eq!(f.repeat, "2nd tue");
+    assert_eq!(f.focus, Field::Repeat);
+    assert_eq!(
+        f.error.as_deref(),
+        Some("months-nth-weekday repeats are not verified yet")
+    );
+    assert_eq!(a.mode, Mode::Insert);
+}
+
+/// Review Focus 2: a sync reload while the card is open keeps the typing, and the save goes
+/// against the snapshot the card opened on.
+#[test]
+fn sync_reload_keeps_card_text() {
+    let mut a = app();
+    on_rent(&mut a);
+    let uid = selected_uid(&a);
+    a.handle_key(key('i'));
+    type_str(&mut a, " now");
+    let base_due = a.snapshot.tasks[a.snapshot.find(&uid).unwrap()].due.clone();
+    a.reload(snapshot_of(rent_advanced()));
+    let f = a.form.as_ref().expect("card stays open");
+    assert_eq!(f.title, "Pay rent now");
+    assert_eq!(f.uid.as_deref(), Some(uid.as_str()));
+    let ws = a.write_snapshot();
+    assert_eq!(ws.tasks[ws.find(&uid).unwrap()].due, base_due, "the base");
+    assert_ne!(
+        a.snapshot.tasks[a.snapshot.find(&uid).unwrap()].due,
+        base_due
+    );
+    assert_eq!(
+        write_op(a.handle_key(code(KeyCode::Enter))),
+        Op::Save {
+            uid,
+            changes: vec![Change::Summary("Pay rent now".into())],
+            to: None,
+        }
     );
 }
 
@@ -731,9 +855,10 @@ fn save_requests_edit_with_changes() {
     a.handle_key(key('!'));
     assert_eq!(
         write_op(a.handle_key(code(KeyCode::Enter))),
-        Op::Edit {
+        Op::Save {
             uid: task.uid.clone(),
             changes: vec![Change::Summary(format!("{}!", task.summary))],
+            to: None,
         }
     );
     assert!(a.form.is_some(), "open until the write finishes");
@@ -796,9 +921,7 @@ fn esc_cancels_without_write() {
 fn enter_on_notes_requests_editor() {
     let mut a = app();
     a.handle_key(key('i'));
-    for _ in 0..3 {
-        a.handle_key(code(KeyCode::Tab));
-    }
+    a.handle_key(code(KeyCode::BackTab));
     assert_eq!(a.form.as_ref().unwrap().focus, Field::Notes);
     a.form.as_mut().unwrap().set_notes("old".into());
     assert_eq!(
@@ -1010,9 +1133,10 @@ fn form_input_survives_the_clock_moving_the_selection() {
     let op = write_op(a.key_at(code(KeyCode::Enter), after));
     assert_eq!(
         op,
-        Op::Edit {
+        Op::Save {
             uid,
             changes: vec![Change::Summary("10".into())],
+            to: None,
         }
     );
 }

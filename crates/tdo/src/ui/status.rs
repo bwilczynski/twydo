@@ -22,11 +22,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         Mode::Search => ("SEARCH", Some(format!("/{}▏", app.input))),
         Mode::Command => ("COMMAND", Some(format!(":{}▏", app.input))),
         Mode::Insert => {
-            let notes = app.form.as_ref().is_some_and(|f| f.focus == Field::Notes);
-            let hint = if notes {
-                "Enter edit in $EDITOR  Tab next field  Ctrl-s save  Esc cancel"
-            } else {
-                "Tab next field  Enter save  Esc cancel"
+            let hint = match app.form.as_ref().map(|f| f.focus) {
+                Some(Field::Notes) => {
+                    "Enter edit in $EDITOR  Tab next field  Ctrl-s save  Esc cancel"
+                }
+                Some(Field::List) => "Enter pick a list  Tab next field  Ctrl-s save  Esc cancel",
+                Some(Field::Type) => {
+                    "Space/h/l change type  Tab next field  Enter save  Esc cancel"
+                }
+                _ => "Tab next field  Enter save  Esc cancel",
             };
             ("INSERT", Some(hint.to_string()))
         }
