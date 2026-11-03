@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/bwilczynski/twydo/compare/v0.1.0...v0.1.1) - 2026-11-03
+
+### Fixed
+
+- *(tui)* wait for saves to pause before the after-edit sync
+- *(tui)* keep the selection when a repeat completion is refused
+- *(tui)* keep the cursor on its row when completing a repeating task
+
 ## [0.1.0](https://github.com/bwilczynski/twydo/releases/tag/v0.1.0) - 2026-11-03
 
 ### Added
