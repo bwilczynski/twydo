@@ -1075,7 +1075,11 @@ fn stop_question_shows_while_the_form_is_open() {
     else {
         panic!("expected a write");
     };
-    a.write_busy(req, Some(std::time::Duration::from_secs(14)));
+    a.write_busy(
+        req,
+        Some(std::time::Duration::from_secs(14)),
+        a.write_snapshot().clone(),
+    );
     let buf = render(&mut a, 120, 30);
     let last = line(&buf, 29);
     assert!(

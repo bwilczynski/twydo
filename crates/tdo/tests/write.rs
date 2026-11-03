@@ -12,7 +12,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::edit::{Change, Op};
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::sync::running::Running;
+use twydo_core::sync::running::{Running, process_start};
 use twydo_core::views::Snapshot;
 
 /// One-time task "A2".
@@ -361,7 +361,9 @@ fn write_during_a_long_sync_is_busy_after_the_wait() {
         &cfg,
         &Running {
             runner_pid: std::process::id(),
+            runner_start: process_start(std::process::id()),
             child_pgid: None,
+            child_start: None,
             started: Utc::now() - chrono::Duration::seconds(134),
         },
     );
@@ -435,7 +437,9 @@ fn stop_and_run_kills_an_orphaned_sync_and_saves() {
         &cfg,
         &Running {
             runner_pid: gone.id(),
+            runner_start: None,
             child_pgid: Some(orphan.id()),
+            child_start: process_start(orphan.id()),
             started: Utc::now(),
         },
     );
@@ -454,6 +458,12 @@ fn stop_and_run_kills_an_orphaned_sync_and_saves() {
         !sync_dir(&cfg).join("stop").exists(),
         "the stop request is cleared after the write"
     );
+    // PR review 4: nobody else records the killed orphan, so the stop does, with backoff,
+    // before the after-edit sync could start another stuck run.
+    let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
+    assert_eq!(st.failures, 1);
+    assert!(st.next_attempt.is_some());
+    assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
 }
 
 #[test]
@@ -467,7 +477,9 @@ fn stop_and_run_gives_up_when_the_lock_stays_held() {
         &cfg,
         &Running {
             runner_pid: std::process::id(),
+            runner_start: process_start(std::process::id()),
             child_pgid: None,
+            child_start: None,
             started: Utc::now(),
         },
     );
@@ -652,7 +664,11 @@ fn declining_after_the_task_changed_rebuilds_the_form() {
     else {
         panic!("expected a write");
     };
-    app.write_busy(req, Some(Duration::from_secs(5)));
+    app.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        app.write_snapshot().clone(),
+    );
 
     let synced = String::from_utf8(fs::read(env.task_file()).unwrap())
         .unwrap()
@@ -722,7 +738,9 @@ fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
         &cfg,
         &Running {
             runner_pid: std::process::id(),
+            runner_start: process_start(std::process::id()),
             child_pgid: None,
+            child_start: None,
             started: Utc::now(),
         },
     );
@@ -735,4 +753,44 @@ fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
         Some(false),
         "triggered while the stop was pending"
     );
+}
+
+/// PR review 1: `y` on a one-key action must apply against the snapshot the user decided on,
+/// not one reloaded while the question was open.
+#[test]
+fn stop_and_save_refuses_a_one_key_action_on_a_task_changed_meanwhile() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    let tz = chrono_tz::America::New_York;
+    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
+    let key = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+    app.handle_key(key('2'));
+    app.cursor = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
+        .unwrap();
+    app.handle_key(key('d'));
+    let Outcome::Write(req) = app.handle_key(key('d')) else {
+        panic!("expected delete");
+    };
+    // As term.rs does on Busy: keep the snapshot the write was made against, then reload.
+    let base = app.write_snapshot().clone();
+    let old = fs::read_to_string(env.task_file()).unwrap();
+    fs::write(
+        env.task_file(),
+        old.replace("SUMMARY:A2", "SUMMARY:Remote update"),
+    )
+    .unwrap();
+    app.reload(env.snapshot());
+    app.write_busy(req, Some(Duration::from_secs(5)), base);
+    let Outcome::StopSyncAndWrite(req) = app.handle_key(key('y')) else {
+        panic!("expected stop");
+    };
+    let result = w.stop_and_run(app.write_snapshot(), &req, now());
+    assert!(result.is_err(), "{result:?}");
+    assert!(env.task_file().exists(), "the remote update was deleted");
 }

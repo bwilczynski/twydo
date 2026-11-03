@@ -1178,7 +1178,11 @@ fn elapsed_formats() {
 fn busy_write_asks_to_stop_the_sync() {
     let mut a = app();
     let req = write_req(a.handle_key(key('x')));
-    a.write_busy(req.clone(), Some(Duration::from_secs(134)));
+    a.write_busy(
+        req.clone(),
+        Some(Duration::from_secs(134)),
+        a.write_snapshot().clone(),
+    );
     assert_eq!(
         a.message.as_deref(),
         Some("sync running for 2m 14s — stop it and save? (y/n)")
@@ -1191,7 +1195,11 @@ fn busy_write_asks_to_stop_the_sync() {
 fn the_question_does_not_expire() {
     let mut a = app();
     let req = write_req(a.handle_key(key('x')));
-    a.write_busy(req, Some(Duration::from_secs(5)));
+    a.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        a.write_snapshot().clone(),
+    );
     a.expire_message(now());
     a.expire_message(now() + chrono::Duration::seconds(600));
     assert!(a.message.as_deref().unwrap().ends_with("(y/n)"));
@@ -1204,7 +1212,11 @@ fn n_keeps_the_form_and_its_typing() {
     type_str(&mut a, "!");
     let typed = a.form.as_ref().unwrap().title.clone();
     let req = write_req(a.handle_key(code(KeyCode::Enter)));
-    a.write_busy(req, Some(Duration::from_secs(5)));
+    a.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        a.write_snapshot().clone(),
+    );
     assert_eq!(a.handle_key(key('n')), Outcome::Continue);
     let f = a.form.as_ref().expect("form stays open");
     assert_eq!(f.title, typed);
@@ -1218,7 +1230,11 @@ fn n_keeps_the_form_and_its_typing() {
 fn esc_declines_like_n() {
     let mut a = app();
     let req = write_req(a.handle_key(key('x')));
-    a.write_busy(req, Some(Duration::from_secs(5)));
+    a.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        a.write_snapshot().clone(),
+    );
     assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
     assert_eq!(
         a.message.as_deref(),
@@ -1232,7 +1248,11 @@ fn esc_declines_like_n() {
 fn other_keys_are_ignored_while_asking() {
     let mut a = app();
     let req = write_req(a.handle_key(key('x')));
-    a.write_busy(req, Some(Duration::from_secs(5)));
+    a.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        a.write_snapshot().clone(),
+    );
     let cursor = a.cursor;
     assert_eq!(a.handle_key(key('j')), Outcome::Continue);
     assert_eq!(a.handle_key(key('q')), Outcome::Continue);
@@ -1244,7 +1264,7 @@ fn other_keys_are_ignored_while_asking() {
 fn busy_without_a_duration_shows_the_plain_message() {
     let mut a = app();
     let req = write_req(a.handle_key(key('x')));
-    a.write_busy(req, None);
+    a.write_busy(req, None, a.write_snapshot().clone());
     assert_eq!(
         a.message.as_deref(),
         Some("a sync is running; try again in a moment")
