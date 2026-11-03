@@ -4,12 +4,13 @@ use std::time::Duration;
 use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tdo::app::{App, Mode, Outcome, Pane, fmt_elapsed};
-use tdo::form::Field;
+use tdo::app::{App, Mode, Outcome, Pane, default_list, fmt_elapsed};
+use tdo::form::{Field, NewTarget};
 use tdo::write::Request;
 use twydo_core::config::Config;
 use twydo_core::dateinput::{DueShift, shift_due};
-use twydo_core::edit::{Change, Op};
+use twydo_core::edit::{Change, Due, NewTask, Op};
+use twydo_core::model::TaskKind;
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Snapshot, View};
 
@@ -140,13 +141,7 @@ fn enter_on_leaf_opens_form() {
 #[test]
 fn keys_without_support_are_blocked_with_reason() {
     let mut a = app();
-    for (k, name) in [
-        (key('o'), "new task"),
-        (key('O'), "new item"),
-        (key('J'), "move task"),
-        (key('K'), "move task"),
-        (key('a'), "edit alerts"),
-    ] {
+    for (k, name) in [(key('J'), "move task"), (key('K'), "move task")] {
         a.message = None;
         assert_eq!(a.handle_key(k), Outcome::Continue);
         assert_eq!(a.message, Some(format!("{name}: not available yet")));
@@ -566,9 +561,9 @@ fn successful_reload_clears_reload_failed_message() {
     a.reload(snapshot_of(report()));
     assert_eq!(a.message, None);
     // Other messages survive a reload.
-    a.handle_key(key('a'));
+    a.handle_key(key('J'));
     a.reload(snapshot_of(report()));
-    assert!(a.message.as_deref().unwrap().starts_with("edit alerts:"));
+    assert!(a.message.as_deref().unwrap().starts_with("move task:"));
 }
 
 #[test]
@@ -1017,9 +1012,9 @@ fn newer_message_is_not_cleared_by_old_timer() {
     let mut a = app();
     a.sync_finished("sync done".into());
     a.expire_message(t0);
-    a.handle_key(key('a'));
+    a.handle_key(key('J'));
     a.expire_message(t0 + chrono::Duration::seconds(60));
-    assert_eq!(a.message.as_deref(), Some("edit alerts: not available yet"));
+    assert_eq!(a.message.as_deref(), Some("move task: not available yet"));
 }
 
 #[test]
@@ -1493,4 +1488,549 @@ fn a_refused_repeat_completion_keeps_the_selection() {
         rent,
         "rent is still open and still selected"
     );
+}
+
+// ---- The new row: `o`, `O`, `a` and the Enter chain ----
+
+fn create_op(o: Outcome) -> NewTask {
+    match write_op(o) {
+        Op::Create(t) => t,
+        other => panic!("expected a create, got {other:?}"),
+    }
+}
+
+fn target(collection: &str, parent: Option<(&str, TaskKind)>, due_today: bool) -> NewTarget {
+    NewTarget {
+        collection: collection.into(),
+        parent: parent.map(|(p, _)| p.to_string()),
+        parent_kind: parent.map(|(_, k)| k),
+        due_today,
+    }
+}
+
+/// `r` plus an undated task `title` (UID `uid`) in `collection`, an item of `parent`: what the
+/// vdir holds after the row's save, as the reload before `write_finished` sees it.
+fn with_task(
+    mut r: twydo_core::vdir::LoadReport,
+    uid: &str,
+    title: &str,
+    collection: &str,
+    parent: Option<&str>,
+) -> twydo_core::vdir::LoadReport {
+    let mut t = r
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Renew library books")
+        .unwrap()
+        .clone();
+    t.uid = uid.into();
+    t.summary = title.into();
+    t.collection = collection.into();
+    t.path = PathBuf::from(format!("{collection}/{uid}.ics"));
+    t.due = None;
+    t.parent = parent.map(str::to_string);
+    r.tasks.push(t);
+    r
+}
+
+/// The All view with the cursor on `title`.
+fn in_all(a: &mut App, title: &str) {
+    a.handle_key(key('2'));
+    select(a, title);
+}
+
+const PACKING: &str = "sv-personal-2";
+
+#[test]
+fn o_in_list_targets_that_list() {
+    let mut a = app();
+    on_rent(&mut a);
+    let rent = selected_uid(&a);
+    assert_eq!(a.handle_key(key('o')), Outcome::Continue);
+    assert_eq!(a.mode, Mode::Insert);
+    let r = a.new_row.as_ref().expect("row open");
+    assert_eq!(r.target, target("bills", None, false));
+    assert_eq!((r.below, r.anchor.as_deref()), (true, Some(rent.as_str())));
+    type_str(&mut a, "Pay gas");
+    assert_eq!(a.new_row.as_ref().unwrap().title, "Pay gas");
+    assert_eq!(
+        create_op(a.handle_key(code(KeyCode::Enter))),
+        NewTask::plain("bills", "Pay gas")
+    );
+    // The row stays until the write reports back; then the cursor follows the new task.
+    assert!(a.new_row.is_some());
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "Pay gas",
+        "bills",
+        None,
+    )));
+    a.write_finished(Ok("added".into()));
+    assert!(a.new_row.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert_eq!(selected_uid(&a), "new-1");
+    assert_eq!(a.message.as_deref(), Some("added"));
+}
+
+#[test]
+fn o_in_today_is_due_today_in_default_list() {
+    let mut a = app();
+    assert_eq!(a.view, View::Today);
+    a.handle_key(key('o'));
+    assert_eq!(
+        a.new_row.as_ref().unwrap().target,
+        target("inbox", None, true),
+        "no default_list in the config: the list named Inbox"
+    );
+    type_str(&mut a, "Stretch");
+    let today = now().date_naive();
+    assert_eq!(
+        create_op(a.handle_key(code(KeyCode::Enter))),
+        NewTask {
+            due: Some(Due::Date(today)),
+            ..NewTask::plain("inbox", "Stretch")
+        }
+    );
+
+    // The config's default_list wins; an unknown one falls back to Inbox, then the first list.
+    let mut s = snapshot_of(report());
+    s.config.default_list = Some("personal".into());
+    assert_eq!(default_list(&s), "personal");
+    let mut a = App::new(s.clone(), now());
+    a.handle_key(key('o'));
+    assert_eq!(
+        a.new_row.as_ref().unwrap().target,
+        target("personal", None, true)
+    );
+    s.config.default_list = Some("gone".into());
+    assert_eq!(default_list(&s), "inbox");
+    let mut r = report();
+    r.collections.retain(|c| c.id != "inbox");
+    r.tasks.retain(|t| t.collection != "inbox");
+    assert_eq!(default_list(&snapshot_of(r)), "bills");
+}
+
+/// Review Focus 1: a new undated task added in Scheduled goes to the default list, the
+/// status line says where, and the cursor stays.
+#[test]
+fn o_in_scheduled_adds_to_inbox_and_says_so() {
+    let mut a = app();
+    a.handle_key(key('3'));
+    a.handle_key(key('j'));
+    let (cursor, uid) = (a.cursor, selected_uid(&a));
+    a.handle_key(key('o'));
+    assert_eq!(
+        a.new_row.as_ref().unwrap().target,
+        target("inbox", None, false)
+    );
+    type_str(&mut a, "x");
+    assert_eq!(
+        create_op(a.handle_key(code(KeyCode::Enter))),
+        NewTask::plain("inbox", "x")
+    );
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "x",
+        "inbox",
+        None,
+    )));
+    a.write_finished(Ok("added".into()));
+    assert!(a.new_row.is_none());
+    assert_eq!(a.message.as_deref(), Some("Added \"x\" to Inbox"));
+    assert_eq!((a.cursor, selected_uid(&a)), (cursor, uid));
+}
+
+#[test]
+fn o_on_item_targets_parent() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(code(KeyCode::Enter));
+    select(&mut a, "Charger");
+    let charger = selected_uid(&a);
+    a.handle_key(key('o'));
+    let r = a.new_row.as_ref().unwrap();
+    assert_eq!(
+        r.target,
+        target("personal", Some((PACKING, TaskKind::Checklist)), false)
+    );
+    assert_eq!(r.anchor.as_deref(), Some(charger.as_str()));
+    type_str(&mut a, "Socks");
+    assert_eq!(
+        create_op(a.handle_key(code(KeyCode::Enter))),
+        NewTask {
+            parent: Some(PACKING.into()),
+            ..NewTask::plain("personal", "Socks")
+        }
+    );
+}
+
+#[test]
+#[allow(non_snake_case)]
+fn O_opens_above() {
+    let mut a = app();
+    on_rent(&mut a);
+    let rent = selected_uid(&a);
+    a.handle_key(key('O'));
+    let r = a.new_row.as_ref().unwrap();
+    assert_eq!((r.below, r.anchor.as_deref()), (false, Some(rent.as_str())));
+    assert_eq!(r.target, target("bills", None, false));
+}
+
+#[test]
+fn enter_in_parent_chains_next_item() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    type_str(&mut a, "Socks");
+    let item = NewTask {
+        parent: Some(PACKING.into()),
+        ..NewTask::plain("personal", "Socks")
+    };
+    assert_eq!(create_op(a.handle_key(code(KeyCode::Enter))), item);
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "Socks",
+        "personal",
+        Some(PACKING),
+    )));
+    a.write_finished(Ok("added".into()));
+    let r = a.new_row.as_ref().expect("the next item's row opens");
+    assert_eq!(r.title, "");
+    assert_eq!((r.below, r.anchor.as_deref()), (true, Some("new-1")));
+    assert_eq!(
+        r.target,
+        target("personal", Some((PACKING, TaskKind::Checklist)), false)
+    );
+    assert_eq!(a.mode, Mode::Insert);
+    assert_eq!(
+        selected_uid(&a),
+        "new-1",
+        "the cursor follows the saved item"
+    );
+    type_str(&mut a, "Hat");
+    assert_eq!(
+        create_op(a.handle_key(code(KeyCode::Enter))),
+        NewTask {
+            summary: "Hat".into(),
+            ..item
+        }
+    );
+}
+
+#[test]
+fn enter_on_empty_row_closes() {
+    let mut a = app();
+    for typed in ["", "   "] {
+        a.handle_key(key('o'));
+        type_str(&mut a, typed);
+        assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+        assert!(a.new_row.is_none());
+        assert_eq!(a.mode, Mode::Normal);
+    }
+}
+
+#[test]
+fn esc_discards_row_keeps_saved_items() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    type_str(&mut a, "Socks");
+    a.handle_key(code(KeyCode::Enter));
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "Socks",
+        "personal",
+        Some(PACKING),
+    )));
+    a.write_finished(Ok("added".into()));
+    type_str(&mut a, "Hat");
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(a.new_row.is_none() && a.form.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert!(a.snapshot.find("new-1").is_some(), "the saved item stays");
+    assert_eq!(selected_uid(&a), "new-1");
+    // Typed text never counts: Esc writes nothing.
+    a.handle_key(key('o'));
+    type_str(&mut a, "Something");
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(a.new_row.is_none());
+}
+
+#[test]
+fn a_on_parent_opens_row_at_end_and_expands() {
+    let mut a = app();
+    in_all(&mut a, "Prepare tax return");
+    let project = selected_uid(&a);
+    assert!(!a.expanded.contains(&project));
+    a.handle_key(key('a'));
+    assert!(a.expanded.contains(&project), "the parent expands");
+    let last_item = |a: &App| {
+        let p = a.snapshot.find(&project).unwrap();
+        a.visible_rows()
+            .iter()
+            .filter(|r| a.snapshot.parent(r.task) == Some(p))
+            .last()
+            .map(|r| a.snapshot.tasks[r.task].uid.clone())
+    };
+    let r = a.new_row.as_ref().unwrap();
+    assert_eq!(
+        r.target,
+        target("bills", Some(("sv-bills-4", TaskKind::Project)), false)
+    );
+    assert_eq!((r.below, r.anchor.clone()), (true, last_item(&a)));
+    a.handle_key(code(KeyCode::Esc));
+
+    // On an item: a sibling at the end of the same parent.
+    let first = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.parent(r.task).is_some())
+        .unwrap();
+    a.cursor = first;
+    a.handle_key(key('a'));
+    let r = a.new_row.as_ref().unwrap();
+    assert_eq!(r.target.parent.as_deref(), Some("sv-bills-4"));
+    assert_eq!(r.anchor, last_item(&a));
+
+    // A parent without items: the row goes under the parent itself.
+    let mut rep = report();
+    rep.tasks.retain(|t| t.parent.as_deref() != Some(PACKING));
+    let mut a = App::new(snapshot_of(rep), now());
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    let r = a.new_row.as_ref().unwrap();
+    assert_eq!((r.below, r.anchor.as_deref()), (true, Some(PACKING)));
+}
+
+#[test]
+fn a_on_plain_task_asks_p_or_c() {
+    const ASK: &str = "Add items: make it a (p)roject or (c)hecklist?";
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    let uid = selected_uid(&a);
+    assert_eq!(a.handle_key(key('a')), Outcome::Continue);
+    assert_eq!(a.message.as_deref(), Some(ASK));
+    assert!(a.new_row.is_none());
+    assert_eq!(
+        write_op(a.handle_key(key('c'))),
+        Op::Save {
+            uid: uid.clone(),
+            changes: vec![Change::Kind(TaskKind::Checklist)],
+            to: None,
+        }
+    );
+    assert!(a.new_row.is_none(), "the row waits for the conversion");
+    let mut r = report();
+    r.tasks.iter_mut().find(|t| t.uid == uid).unwrap().kind = TaskKind::Checklist;
+    a.reload(snapshot_of(r));
+    a.write_finished(Ok("saved".into()));
+    let row = a.new_row.as_ref().expect("the item row opens");
+    assert_eq!(
+        row.target,
+        target("inbox", Some((uid.as_str(), TaskKind::Checklist)), true)
+    );
+    assert_eq!(
+        (row.below, row.anchor.as_deref()),
+        (true, Some(uid.as_str()))
+    );
+    assert_eq!(a.mode, Mode::Insert);
+
+    // `p` converts to a project; a refused conversion says why and opens no row.
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('a'));
+    assert_eq!(
+        write_op(a.handle_key(key('p'))),
+        Op::Save {
+            uid: uid.clone(),
+            changes: vec![Change::Kind(TaskKind::Project)],
+            to: None,
+        }
+    );
+    a.write_refused();
+    a.reload(snapshot_of(report()));
+    a.write_finished(Err("task-to-project is not verified yet".into()));
+    assert!(a.new_row.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("task-to-project is not verified yet")
+    );
+
+    // Any other key cancels, and does nothing else.
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    let cursor = a.cursor;
+    a.handle_key(key('a'));
+    assert_eq!(a.handle_key(key('j')), Outcome::Continue);
+    assert!(a.message.is_none() && a.new_row.is_none());
+    assert_eq!(a.cursor, cursor);
+    assert_eq!(
+        a.handle_key(key('c')),
+        Outcome::Continue,
+        "the question is gone"
+    );
+}
+
+#[test]
+fn tab_moves_row_into_card_with_title() {
+    let mut a = app();
+    on_rent(&mut a);
+    a.handle_key(key('o'));
+    type_str(&mut a, "Pay gas");
+    assert_eq!(a.handle_key(code(KeyCode::Tab)), Outcome::Continue);
+    assert!(a.new_row.is_none());
+    assert_eq!(a.mode, Mode::Insert);
+    let f = a.form.as_ref().expect("the card opens");
+    assert_eq!((f.uid.as_deref(), f.title.as_str()), (None, "Pay gas"));
+    assert_eq!(f.list, "bills");
+    assert_eq!(
+        create_op(a.handle_key(ctrl('s'))),
+        NewTask::plain("bills", "Pay gas")
+    );
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "Pay gas",
+        "bills",
+        None,
+    )));
+    a.write_finished(Ok("added".into()));
+    assert!(a.form.is_none());
+    assert_eq!(selected_uid(&a), "new-1", "the cursor follows the new task");
+
+    // A checklist item's card has only Title and Notes, and writes no dates even in Today.
+    let mut r = report();
+    let packing = r.tasks.iter_mut().find(|t| t.uid == PACKING).unwrap();
+    packing.due = Some(twydo_core::ical::value::IcalDateTime::Date(
+        now().date_naive(),
+    ));
+    let mut a = App::new(snapshot_of(r), now());
+    select(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    assert!(a.new_row.as_ref().unwrap().target.due_today);
+    type_str(&mut a, "Socks");
+    a.handle_key(code(KeyCode::Tab));
+    let f = a.form.as_ref().unwrap();
+    assert_eq!(f.fields(), vec![Field::Title, Field::Notes]);
+    assert_eq!(
+        create_op(a.handle_key(ctrl('s'))),
+        NewTask {
+            parent: Some(PACKING.into()),
+            ..NewTask::plain("personal", "Socks")
+        }
+    );
+}
+
+/// Review Focus 5: the parent is deleted (on the phone) mid-chain. The row keeps its text
+/// through the reload; the next save is refused and the row closes. Earlier items stay.
+#[test]
+fn chain_after_parent_deleted_closes_row() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    type_str(&mut a, "Socks");
+    a.handle_key(code(KeyCode::Enter));
+    a.reload(snapshot_of(with_task(
+        report(),
+        "new-1",
+        "Socks",
+        "personal",
+        Some(PACKING),
+    )));
+    a.write_finished(Ok("added".into()));
+    type_str(&mut a, "Hat");
+    let mut gone = with_task(report(), "new-1", "Socks", "personal", Some(PACKING));
+    gone.tasks.retain(|t| t.uid != PACKING);
+    a.reload(snapshot_of(gone));
+    assert_eq!(
+        a.new_row.as_ref().unwrap().title,
+        "Hat",
+        "the text survives"
+    );
+    let t = create_op(a.handle_key(code(KeyCode::Enter)));
+    assert_eq!(t.parent.as_deref(), Some(PACKING));
+    assert!(
+        a.write_snapshot().find(PACKING).is_none(),
+        "a create is checked against the tasks as they are now"
+    );
+    a.write_refused();
+    a.write_finished(Err(format!("no task with UID {PACKING}")));
+    assert!(a.new_row.is_none());
+    assert_eq!(a.mode, Mode::Normal);
+    assert_eq!(
+        a.message.as_deref(),
+        Some(format!("no task with UID {PACKING}").as_str())
+    );
+    assert!(a.snapshot.find("new-1").is_some(), "the earlier item stays");
+}
+
+/// A refused row save (an unverified item, a sync that would not stop) keeps the row and its
+/// text, with the reason.
+#[test]
+fn refused_row_save_keeps_text() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    type_str(&mut a, "Socks");
+    a.handle_key(code(KeyCode::Enter));
+    a.write_refused();
+    a.reload(snapshot_of(report()));
+    a.write_finished(Err("checklist items are not verified yet".into()));
+    let r = a.new_row.as_ref().expect("the row stays");
+    assert_eq!(r.title, "Socks");
+    assert_eq!(
+        r.error.as_deref(),
+        Some("checklist items are not verified yet")
+    );
+    assert_eq!(a.mode, Mode::Insert);
+    // Typing clears the reason.
+    type_str(&mut a, "!");
+    assert_eq!(a.new_row.as_ref().unwrap().error, None);
+}
+
+#[test]
+fn status_line_names_target() {
+    use ratatui::{Terminal, backend::TestBackend};
+    fn status(a: &mut App) -> String {
+        a.resize(120, 30);
+        let mut term = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        term.draw(|f| tdo::ui::draw(f, a)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..120).map(|x| buf[(x, 29)].symbol()).collect()
+    }
+    let mut a = app();
+    a.handle_key(key('o'));
+    let s = status(&mut a);
+    assert!(s.contains(" INSERT "), "{s}");
+    assert!(
+        s.contains("New task in Inbox · Enter save  Tab more  Esc cancel"),
+        "{s}"
+    );
+    a.handle_key(code(KeyCode::Esc));
+    on_rent(&mut a);
+    a.handle_key(key('o'));
+    assert!(status(&mut a).contains("New task in Bills ·"));
+}
+
+#[test]
+fn row_editing_keys_and_paste() {
+    let mut a = app();
+    a.handle_key(key('o'));
+    type_str(&mut a, "Call the plumber");
+    a.handle_key(ctrl('w'));
+    assert_eq!(a.new_row.as_ref().unwrap().title, "Call the");
+    a.handle_key(code(KeyCode::Backspace));
+    assert_eq!(a.new_row.as_ref().unwrap().title, "Call th");
+    a.handle_key(ctrl('u'));
+    assert_eq!(a.new_row.as_ref().unwrap().title, "");
+    assert_eq!(a.paste("Buy\nmilk\n"), Outcome::Continue);
+    assert_eq!(a.new_row.as_ref().unwrap().title, "Buy milk");
+    // Normal-mode keys type into the row; they never act on the list.
+    type_str(&mut a, " x dd");
+    assert_eq!(a.new_row.as_ref().unwrap().title, "Buy milk x dd");
 }

@@ -13,7 +13,7 @@ names the key. Twydo only reads this file.
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. Reserved: accepted, not used yet. |
 | `work_days` | list of `"mon"`..`"sun"` | `["mon", "tue", "wed", "thu", "fri"]` | The days the repeat field's `workdays` stands for (2Do's "Work days" preset). Must not be empty. |
 | `morning_time` | `"HH:MM"` | `"09:00"` | Time for date-only tasks that need one, such as reminders. Reserved: accepted, not used yet (notifications are not available yet). |
-| `default_list` | list id | none | List new tasks will go to. Reserved: accepted, not used yet (`tdo op add` takes `--list`; adding in the TUI is not available yet). |
+| `default_list` | list id | none | List new tasks go to when added in the TUI outside a list (Today, All, Scheduled, …). Unset or unknown: the list named Inbox, else the first list. `tdo op add` takes `--list` instead. |
 | `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see [architecture.md](architecture.md#the-operation-journal)). A leading `~` expands to `$HOME`. |
 
 ## `[writes]`

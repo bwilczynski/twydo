@@ -1,6 +1,10 @@
 //! TUI application state and vim-style keys. No terminal here: the renderer reads the public
 //! fields and the terminal loop feeds `handle_key` / `tick`.
 
+mod newrow;
+
+pub use newrow::{NewRow, default_list};
+
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::time::Duration;
@@ -123,6 +127,12 @@ pub struct App {
     /// The snapshot the form opened on: its save is checked against these bytes, so a sync
     /// that lands meanwhile makes the save stale instead of being overwritten.
     form_base: Option<Snapshot>,
+    /// The new row (`o`, `O`, `a`); open while `mode` is Insert.
+    pub new_row: Option<NewRow>,
+    /// A create sent to the store, to follow the new task after the reload.
+    adding: Option<newrow::Adding>,
+    /// A task `a` is converting into a parent; its item row opens when that write succeeds.
+    converting: Option<String>,
     pub now: DateTime<Tz>,
     /// Half-page rows for Ctrl-d / Ctrl-u.
     pub page: usize,
@@ -196,6 +206,9 @@ impl App {
             picker: None,
             form: None,
             form_base: None,
+            new_row: None,
+            adding: None,
+            converting: None,
             now,
             page: 10,
             pending: None,
@@ -363,14 +376,14 @@ impl App {
         }
     }
 
-    /// Forget a pending `d`, `g` or `x`; the "… x to confirm" question goes with its `x`.
+    /// Forget a pending `d`, `g`, `x` or `a`; the question of an `x` or `a` goes with it.
     fn drop_pending(&mut self) {
-        if self.pending.take() == Some('x')
-            && self
-                .message
-                .as_deref()
-                .is_some_and(|m| m.ends_with(CONFIRM_X))
-        {
+        let asked = match self.pending.take() {
+            Some('x') => |m: &str| m.ends_with(CONFIRM_X),
+            Some('a') => |m: &str| m == newrow::ASK_ITEMS,
+            _ => return,
+        };
+        if self.message.as_deref().is_some_and(asked) {
             self.message = None;
         }
     }
@@ -504,6 +517,7 @@ impl App {
         let uses_task_cursor = self.mode == Mode::Normal
             && self.stop_prompt.is_none()
             && self.form.is_none()
+            && self.new_row.is_none()
             && self.picker.is_none()
             && !self.overlay_open()
             && self.focus != Pane::Sidebar;
@@ -552,6 +566,9 @@ impl App {
         if self.form.is_some() {
             return self.form_key(k);
         }
+        if self.new_row.is_some() {
+            return self.row_key(k);
+        }
         match self.mode {
             Mode::Normal => self.normal_key(k),
             Mode::Search => {
@@ -569,6 +586,9 @@ impl App {
 
     fn normal_key(&mut self, k: KeyEvent) -> Outcome {
         let pending = self.pending.take();
+        if pending == Some('a') {
+            return self.answer_items(k);
+        }
         if pending == Some('x') && !matches!(k.code, KeyCode::Char('x' | ' ')) {
             self.message = None;
         }
@@ -645,7 +665,7 @@ impl App {
             return Outcome::Continue;
         }
         // An overlay hides the task list: keys that write or edit must not reach it.
-        if self.overlay_open() && "xtT[]{}duimr ".contains(c) {
+        if self.overlay_open() && "xtT[]{}duimroOa ".contains(c) {
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
@@ -701,12 +721,11 @@ impl App {
             '?' => self.show_help = !self.show_help,
             'd' if pending != Some('d') => self.pending = Some('d'),
             'u' => return Outcome::Write(Request::Undo),
-            'o' => self.block("new task"),
-            'O' => self.block("new item"),
+            'o' | 'O' if self.focus != Pane::Sidebar => self.open_new_row(c == 'o'),
+            'a' if self.focus != Pane::Sidebar => self.add_items(),
             'i' => self.open_form(Field::Title),
             'J' | 'K' => self.block("move task"),
             'r' => self.open_form(Field::Repeat),
-            'a' => self.block("edit alerts"),
             'm' => self.open_picker(),
             _ => {}
         }
@@ -788,14 +807,16 @@ impl App {
         self.mode = Mode::Normal;
     }
 
-    /// The snapshot an [`Outcome::Write`] applies against: the one the open form was built
-    /// from, else the current one.
+    /// The snapshot an [`Outcome::Write`] applies against: the one the open card was built
+    /// from when it edits a task, else the current one. A new task (row or card) writes no
+    /// file that exists, so nothing can go stale under it; it is checked against the tasks as
+    /// they are now, so a parent deleted or closed meanwhile refuses the item.
     pub fn write_snapshot(&self) -> &Snapshot {
         if let Some(base) = &self.stop_base {
             return base;
         }
         match (&self.form, &self.form_base) {
-            (Some(_), Some(base)) => base,
+            (Some(f), Some(base)) if f.uid.is_some() => base,
             _ => &self.snapshot,
         }
     }
@@ -861,6 +882,7 @@ impl App {
                 Err(e) => form.error = Some(e),
                 Ok(op) => {
                     form.error = None;
+                    self.note_create(&op);
                     return Outcome::Write(Request::Apply(op));
                 }
             },
@@ -937,6 +959,8 @@ impl App {
     pub fn paste(&mut self, text: &str) -> Outcome {
         if let Some(form) = self.form.as_mut() {
             form.paste(text);
+        } else {
+            self.row_paste(text);
         }
         Outcome::Continue
     }
@@ -1026,15 +1050,31 @@ impl App {
     pub fn write_finished(&mut self, result: Result<String, String>) {
         self.picker = None;
         self.stop_base = None;
+        let adding = self.adding.take();
+        let converting = self.converting.take();
         // A refused edit keeps the form (and its typing, unless the task changed meanwhile),
-        // with the reason in it.
-        if let (Some(_), Err(e)) = (&self.form, &result) {
-            self.refresh_form(e.clone());
-            return;
+        // with the reason in it; a refused row keeps its text too.
+        if let Err(e) = &result {
+            if self.form.is_some() {
+                self.refresh_form(e.clone());
+                return;
+            }
+            if self.row_refused(e) {
+                return;
+            }
         }
         if self.form.is_some() {
             self.close_form();
         }
+        // Inside a parent, the saved row opens the next one (the `Enter` chain).
+        match self.new_row.as_mut() {
+            Some(row) if result.is_ok() && row.target.parent.is_some() => {
+                row.title.clear();
+                row.error = None;
+            }
+            _ => self.close_row(),
+        }
+        let ok = result.is_ok();
         // The loop reloads before reporting: a failed reload must stay visible, so it
         // follows the result and the message does not clear itself.
         let reload_error = self
@@ -1051,6 +1091,12 @@ impl App {
         }
         self.transient = clears.then(|| (text.clone(), None));
         self.message = Some(text);
+        if ok && let Some(added) = adding {
+            self.follow_created(added);
+        }
+        if ok && let Some(uid) = converting {
+            self.converted(&uid);
+        }
     }
 
     /// With the filter applied every visible row is a match, so n/N cycle through the rows.

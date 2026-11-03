@@ -13,7 +13,7 @@ use twydo_core::views::{DateGroup, Row, View, build_view, date_group};
 use unicode_width::UnicodeWidthStr;
 
 use super::{bar_color, card, dim, pad, pane_block, theme, truncate, view_name};
-use crate::app::{App, Pane};
+use crate::app::{App, NewRow, Pane};
 
 const MAX_HINT: usize = 12;
 const MAX_DATE: usize = 16;
@@ -131,7 +131,8 @@ fn items(app: &App) -> Vec<Item> {
     out
 }
 
-/// Draw the pane; with the edit card open, in place of its task's row when it fits.
+/// Draw the pane; with the edit card open, in place of its task's row when it fits, and with
+/// a new row open, that row next to its anchor (at the top when the anchor is not shown).
 /// Returns whether the card was drawn here (else the caller draws it as an overlay).
 pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     let block = pane_block(pane_title(app), app, Pane::Tasks).padding(Padding::horizontal(1));
@@ -146,6 +147,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     });
     let width = inner.width as usize;
     let items = items(app);
+    let new_row = app.new_row.as_ref();
+    if items.is_empty()
+        && let Some(row) = new_row
+    {
+        let line = new_row_line(app, row, 0, width, (1, 0));
+        f.render_widget(Paragraph::new(line), inner);
+        return false;
+    }
     if items.is_empty() {
         // A new task's card in an empty view sits at the top.
         if let Some((e, h)) = card.filter(|(e, _)| e.uid.is_none()) {
@@ -202,6 +211,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
 
     let mut lines: Vec<Line> = Vec::new();
     let mut card_at: Option<usize> = None;
+    let mut row_at: Option<usize> = None;
     let mut selected_line = 0;
     let mut row_no = 0;
     for item in &items {
@@ -223,12 +233,25 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
                 ]));
             }
             Item::Row(r) => {
-                if row_no == app.cursor {
+                // While a new row is open it is the selection, not the cursor's row.
+                let selected = row_no == app.cursor && new_row.is_none();
+                if selected {
                     selected_line = lines.len();
                 }
-                let selected = row_no == app.cursor;
                 row_no += 1;
                 let uid = &app.snapshot.tasks[r.task].uid;
+                let anchored = new_row.filter(|n| n.anchor.as_ref() == Some(uid));
+                let new_line = |below: bool| {
+                    anchored.filter(|n| n.below == below).map(|n| {
+                        let into = n.target.parent.as_ref() == Some(uid);
+                        let depth = r.depth as usize + usize::from(into);
+                        new_row_line(app, n, depth, width, (glyph_w, mark_w))
+                    })
+                };
+                if let Some(l) = new_line(false) {
+                    row_at = Some(lines.len());
+                    lines.push(l);
+                }
                 // The card takes its task's row; a new task's card opens below the cursor.
                 let card_here = card.filter(|(e, _)| e.uid.as_ref() == Some(uid));
                 if card_here.is_none() {
@@ -245,8 +268,19 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
                     card_at = Some(lines.len());
                     lines.extend(std::iter::repeat_n(Line::raw(""), h));
                 }
+                if let Some(l) = new_line(true) {
+                    row_at = Some(lines.len());
+                    lines.push(l);
+                }
             }
         }
+    }
+    // A row whose anchor the view does not show goes on top.
+    if let Some(n) = new_row {
+        selected_line = row_at.unwrap_or_else(|| {
+            lines.insert(0, new_row_line(app, n, 0, width, (glyph_w, mark_w)));
+            0
+        });
     }
 
     let h = inner.height as usize;
@@ -277,6 +311,50 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
         e,
     );
     true
+}
+
+/// The new row: the target list's bar, an open glyph, and the typed title with the cursor,
+/// lined up with the rows' titles. Highlighted as the selection.
+fn new_row_line(
+    app: &App,
+    row: &NewRow,
+    depth: usize,
+    width: usize,
+    (glyph_w, mark_w): (usize, usize),
+) -> Line<'static> {
+    let indent = depth * 2;
+    let glyph_w = glyph_w.max(1);
+    let title_w = width.saturating_sub(2 + indent + glyph_w + 1 + mark_w);
+    let title = tail(&format!("{}▏", row.title), title_w);
+    let filler = title_w.saturating_sub(title.width());
+    let spans = vec![
+        Span::styled("›", theme::accent()),
+        Span::styled(
+            "▌",
+            Style::new().fg(bar_color(&app.snapshot, &row.target.collection)),
+        ),
+        Span::raw(" ".repeat(indent)),
+        Span::raw(pad("○", glyph_w)),
+        Span::raw(" ".repeat(1 + mark_w)),
+        Span::raw(title),
+        Span::raw(" ".repeat(filler)),
+    ];
+    Line::from(spans).style(theme::selection())
+}
+
+/// The end of `s` that fits in `width` cells, so the typing cursor stays in view.
+fn tail(s: &str, width: usize) -> String {
+    let mut out: Vec<char> = Vec::new();
+    let mut used = 0;
+    for c in s.chars().rev() {
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if used + w > width {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.into_iter().rev().collect()
 }
 
 fn row_line(

@@ -1115,3 +1115,54 @@ fn stop_question_shows_while_the_form_is_open() {
         "{last}"
     );
 }
+
+#[test]
+fn new_row_draws_under_cursor() {
+    let k = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+    let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    let mut a = app();
+    let (first, second) = (row_title(&a, 0), row_title(&a, 1));
+    let buf = render(&mut a, 120, 30);
+    let ((title_x, y_first), (_, y_second)) =
+        (find_in_tasks(&buf, &first), find_in_tasks(&buf, &second));
+    let selected_bg = buf[(title_x, y_first)].style().bg;
+    a.handle_key(k('o'));
+    for c in "Plan the garden".chars() {
+        a.handle_key(k(c));
+    }
+    let buf = render(&mut a, 120, 30);
+    let t = text(&buf);
+    let (x, y) = find_in_tasks(&buf, "Plan the garden▏");
+    assert_eq!(y, y_first + 1, "below the cursor row:\n{t}");
+    assert_eq!(find_in_tasks(&buf, &first).1, y_first, "{t}");
+    assert_eq!(
+        find_in_tasks(&buf, &second).1,
+        y_second + 1,
+        "rows below shift:\n{t}"
+    );
+    assert_eq!(x, title_x, "the title lines up with the rows' titles:\n{t}");
+    // The row is the selection: highlighted, with the marker; the cursor row is not.
+    assert_eq!(buf[(x, y)].style().bg, selected_bg, "{t}");
+    assert_ne!(buf[(title_x, y_first)].style().bg, selected_bg, "{t}");
+    assert!(line(&buf, y).contains('›'), "{t}");
+    assert!(!line(&buf, y_first).contains('›'), "{t}");
+    assert!(t.contains("Details"), "{t}");
+
+    // `O`: above the cursor row.
+    a.handle_key(esc);
+    a.handle_key(KeyEvent::new(KeyCode::Char('O'), KeyModifiers::SHIFT));
+    a.handle_key(k('z'));
+    let buf = render(&mut a, 120, 30);
+    let t = text(&buf);
+    assert_eq!(find_in_tasks(&buf, "z▏").1, y_first, "{t}");
+    assert_eq!(find_in_tasks(&buf, &first).1, y_first + 1, "{t}");
+
+    // An empty view: the row is drawn at the top instead of "No tasks".
+    a.handle_key(esc);
+    a.view = View::Done;
+    a.search = Some("nothing matches this".into());
+    a.handle_key(k('o'));
+    let t = text(&render(&mut a, 120, 30));
+    assert!(t.contains("▏"), "{t}");
+    assert!(!t.contains("No tasks"), "{t}");
+}
