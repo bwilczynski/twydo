@@ -113,6 +113,16 @@ pub fn check(
         return blocked("changing the repeat rule is not verified yet");
     }
 
+    // Creating projects, checklists, items or repeating tasks is not verified yet (Plan 7
+    // Task 7 grants it).
+    if let Op::Create(n) = op
+        && (n.kind != TaskKind::Task || n.parent.is_some() || n.repeat.is_some())
+    {
+        return blocked(
+            "creating projects, checklists, items or repeating tasks is not verified yet",
+        );
+    }
+
     // Rule 2: the task's cases.
     let cases = match target {
         Some(i) => task_cases(snap, i)?,

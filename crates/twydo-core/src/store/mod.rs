@@ -239,6 +239,14 @@ fn no_entry(id: &str) -> WriteError {
     io_error(io::ErrorKind::NotFound, format!("no journal entry {id}"))
 }
 
+/// The JSON `uid` in the metadata of the task with iCalendar UID `parent`, if it has one.
+/// A new item's `parentuid` is this value, else the parent's UID.
+pub fn parent_json_uid(snap: &Snapshot, parent: &str) -> Option<String> {
+    let raw = snap.tasks[snap.find(parent)?].meta.raw.as_deref()?;
+    let meta = crate::model::meta_edit::MetaJson::parse(raw)?;
+    meta.get_str("uid").map(str::to_string)
+}
+
 impl Store {
     /// [`Store::open_with`] the embedded compatibility matrix.
     pub fn open(cfg: &Config) -> Result<(Store, RecoveryReport), WriteError> {
@@ -573,13 +581,7 @@ impl Store {
         Ok(match op {
             Op::Create(n) => {
                 let uid = new_uid();
-                let parent_json_uid = n
-                    .parent
-                    .as_deref()
-                    .and_then(|p| snap.find(p))
-                    .and_then(|i| snap.tasks[i].meta.raw.as_deref())
-                    .and_then(crate::model::meta_edit::MetaJson::parse)
-                    .and_then(|m| m.get_str("uid").map(str::to_string));
+                let parent_json_uid = n.parent.as_deref().and_then(|p| parent_json_uid(snap, p));
                 let cal = new_task(n, &uid, parent_json_uid.as_deref(), now)?;
                 let w = create(&n.collection, &uid, &cal)?;
                 one("create", &uid, w)

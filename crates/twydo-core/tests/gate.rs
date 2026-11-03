@@ -182,6 +182,41 @@ fn edit_due_adds_timed_case() {
 }
 
 #[test]
+fn creating_parents_items_and_repeats_is_not_verified_yet() {
+    let s = snap();
+    let m = matrix(&[("one-time", "create")], "pass", "pass", &[]);
+    let why = "creating projects, checklists, items or repeating tasks is not verified yet";
+    let spec = twydo_core::repeatinput::parse("daily", today(), &[])
+        .unwrap()
+        .unwrap();
+    let shapes = [
+        NewTask {
+            kind: twydo_core::model::TaskKind::Project,
+            ..NewTask::plain("inbox", "P")
+        },
+        NewTask {
+            parent: Some("nope".into()),
+            ..NewTask::plain("inbox", "I")
+        },
+        NewTask {
+            due: Some(Due::Date(date(2026, 11, 5))),
+            repeat: Some(spec),
+            ..NewTask::plain("inbox", "R")
+        },
+    ];
+    for n in shapes {
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            assert_eq!(
+                check(&s, &m, mode, &Op::Create(n.clone()), today()),
+                blocked(why)
+            );
+        }
+    }
+    let plain = Op::Create(NewTask::plain("inbox", "Plain"));
+    assert_eq!(check(&s, &m, WriteMode::Verified, &plain, today()), Ok(()));
+}
+
+#[test]
 fn create_checks_list_and_attribute_cases() {
     let s = snap();
     let m = matrix(&[("one-time", "create")], "pass", "pass", &[]);

@@ -15,7 +15,7 @@ use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::ical::{Component, parse};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
-use twydo_core::store::{Store, WriteError};
+use twydo_core::store::{self, Store, WriteError};
 
 use common::Env;
 
@@ -531,4 +531,36 @@ fn restore_writes_through_journal_and_refuses_stale() {
         store.restore(&rel, None, Some("x\n"), vec![A.into()], later()),
         Err(WriteError::Stale(_))
     ));
+}
+
+/// The parent-uid lookup `Op::Create` uses (the gate refuses item creates for now, so the
+/// store path is tested through this function).
+#[test]
+fn parent_json_uid_is_the_metadata_uid_when_it_differs() {
+    // `b783e95f…` is a project whose JSON `uid` is not its iCalendar UID.
+    let env = Env::new(
+        WriteMode::Test,
+        "plan7-list1/03b-phone-item-under-converted",
+    );
+    let snap = env.snap();
+    assert_eq!(
+        store::parent_json_uid(&snap, "b783e95fdb40450aa81cab922cb114f4").as_deref(),
+        Some("53dce1ea31e94a03aab3c6c7182bc306")
+    );
+    // A plain task (no JSON `uid`), and an unknown parent.
+    assert_eq!(
+        store::parent_json_uid(&snap, "08aa0eefe10e484d8221dcda095a911b"),
+        None
+    );
+    assert_eq!(store::parent_json_uid(&snap, "nope"), None);
+}
+
+#[test]
+fn parent_json_uid_is_none_for_tokens_metadata() {
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\nBEGIN:VTODO\r\n\
+UID:tokparent\r\nSUMMARY:T\r\nSTATUS:NEEDS-ACTION\r\n\
+X-2DOAPP-METADATA:@tasktype:project\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+    fs::write(env.vdir.join("list1/tokparent.ics"), ics).unwrap();
+    assert_eq!(store::parent_json_uid(&env.snap(), "tokparent"), None);
 }
