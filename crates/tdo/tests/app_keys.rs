@@ -1321,6 +1321,7 @@ fn completing_a_repeat_after_stopping_a_sync_keeps_the_cursor_on_its_row() {
     let row = on_rent(&mut a);
     let req = write_req(a.handle_key(key('x')));
     // The blocked write reloads before asking; nothing changed yet.
+    a.write_refused();
     a.reload(snapshot_of(report()));
     a.write_busy(
         req.clone(),
@@ -1344,4 +1345,28 @@ fn reload_after_a_repeat_completion_follows_the_selection_again() {
     r.tasks.retain(|t| t.summary != "Pay water bill");
     a.reload(snapshot_of(r));
     assert_eq!(selected_uid(&a), uid);
+}
+
+#[test]
+fn a_refused_repeat_completion_keeps_the_selection() {
+    let mut a = app();
+    on_rent(&mut a);
+    let rent = selected_uid(&a);
+    let req = write_req(a.handle_key(key('x')));
+    // The write waited on a sync that reordered the list, then was refused; the loop
+    // reloads after a refusal too.
+    a.write_refused();
+    let mut r = report();
+    r.tasks.retain(|t| t.summary != "Pay water bill");
+    a.reload(snapshot_of(r));
+    a.write_busy(
+        req,
+        Some(Duration::from_secs(5)),
+        a.write_snapshot().clone(),
+    );
+    assert_eq!(
+        selected_uid(&a),
+        rent,
+        "rent is still open and still selected"
+    );
 }

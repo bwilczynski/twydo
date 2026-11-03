@@ -142,6 +142,7 @@ pub struct App {
     stop_base: Option<Snapshot>,
     /// A repeating task being completed. Completing keeps its UID on the next occurrence, so
     /// the next reload keeps the cursor's row instead of following that UID to its new date.
+    /// Cleared by [`App::write_refused`]: after a refused write the task is still open.
     completing_repeat: Option<String>,
 }
 
@@ -942,6 +943,12 @@ impl App {
             }
             _ => None,
         };
+    }
+
+    /// The write just made was refused. Call it before the reload that follows, so that
+    /// reload keeps the cursor on the selected task, which nothing has changed.
+    pub fn write_refused(&mut self) {
+        self.completing_repeat = None;
     }
 
     /// A write found the vdir busy. With a duration: keep `req` with `base`, the snapshot it
