@@ -778,3 +778,26 @@ fn codes_follow_the_2do_table() {
     );
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=SA,SU;BYSETPOS=1"), (0x10D, 1));
 }
+
+#[test]
+fn set_repeat_keeps_a_foreign_ruid_and_fills_an_empty_one() {
+    let uid = "a8d833aa427849239c35cb2d8cfef721"; // R01
+    let ruid = |c: &Calendar| {
+        let v = &todo(c).prop("X-2DOAPP-METADATA").unwrap().value;
+        MetaJson::parse(v)
+            .unwrap()
+            .get_str("RUID")
+            .unwrap()
+            .to_string()
+    };
+    // Already repeating (phone-written series id): changing the rule keeps it.
+    let mut cal = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    let series = ruid(&cal);
+    assert!(!series.is_empty() && series != uid);
+    apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now()).unwrap();
+    assert_eq!(ruid(&cal), series);
+    // A plain task (empty RUID) gets its own UID.
+    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now()).unwrap();
+    assert_eq!(ruid(&cal), uid);
+}
