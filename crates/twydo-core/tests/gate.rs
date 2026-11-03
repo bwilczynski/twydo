@@ -1640,3 +1640,125 @@ fn dated_checklist_date_change_needs_its_edge_case_when_verified() {
         Ok(())
     );
 }
+
+#[test]
+fn a_new_repeat_needs_a_due_date() {
+    let s = snap();
+    let m = rule(
+        cases(&["one-time", "monthly", "date-only"], "pass", "pass", &[]),
+        "months-day-1-28",
+        "pass",
+        "pass",
+    );
+    let why = "a repeating task needs a due date";
+    // A daily rule has a class without a due date, so only this rule stops it.
+    let daily = rule(
+        with(m.clone(), cases(&["daily"], "pass", "pass", &[])),
+        "days",
+        "pass",
+        "pass",
+    );
+    let op = edit(
+        "gate-date",
+        vec![Change::Repeat(Some(repeat("daily"))), Change::Due(None)],
+    );
+    assert_eq!(
+        check(&s, &daily, WriteMode::Test, &op, today()),
+        blocked(why)
+    );
+    let op = edit(
+        "gate-date",
+        vec![Change::Repeat(Some(repeat("monthly"))), Change::Due(None)],
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), blocked(why));
+    let op = edit("gate-nodue", vec![Change::Repeat(Some(repeat("monthly")))]);
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), blocked(why));
+    let op = Op::Create(NewTask {
+        repeat: Some(repeat("monthly")),
+        ..NewTask::plain("inbox", "Synthetic repeat")
+    });
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), blocked(why));
+    // With a due date it passes.
+    let op = edit(
+        "gate-nodue",
+        vec![
+            Change::Due(Some(Due::Date(date(2026, 11, 10)))),
+            Change::Repeat(Some(repeat("monthly"))),
+        ],
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+}
+
+#[test]
+fn save_move_checks_the_cases_the_edit_leaves() {
+    use twydo_core::model::TaskKind::Checklist;
+    let s = snap();
+    let save = |uid: &str, changes: Vec<Change>| Op::Save {
+        uid: uid.into(),
+        changes,
+        to: Some("errands".into()),
+    };
+    // A repeat set and moved: the new own case's move row.
+    let due = Due::Date(date(2026, 11, 10));
+    let op = save(
+        "gate-nodue",
+        vec![
+            Change::Due(Some(due)),
+            Change::Repeat(Some(repeat("monthly"))),
+        ],
+    );
+    let base = rule(
+        cases(&["one-time", "date-only"], "pass", "pass", &[]),
+        "months-day-1-28",
+        "pass",
+        "pass",
+    );
+    let monthly_edit = matrix(&[("monthly", "edit")], "pass", "pass", &[]);
+    let m = with(base.clone(), monthly_edit);
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &op, today()),
+        blocked("move for monthly tasks is not verified yet (iphone_baseline)")
+    );
+    let m = with(base, cases(&["monthly"], "pass", "pass", &[]));
+    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
+    // A type change and moved: the new family's move row.
+    let op = save("gate-nodue", vec![Change::Kind(Checklist)]);
+    let m = with(
+        cases(&["one-time"], "pass", "pass", &[]),
+        matrix(
+            &[("checklist", "edit"), ("task-to-checklist", "convert")],
+            "pass",
+            "pass",
+            &[],
+        ),
+    );
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &op, today()),
+        blocked("move for checklist tasks is not verified yet (iphone_baseline)")
+    );
+    let m = with(m, matrix(&[("checklist", "move")], "pass", "pass", &[]));
+    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
+    // A plain edit and a move needs only the task's own rows.
+    let op = save("gate-date", vec![Change::Summary("Renamed".into())]);
+    let m = cases(&["one-time"], "pass", "pass", &[]);
+    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
+}
+
+#[test]
+fn no_new_item_under_a_closed_parent() {
+    let s = snap();
+    let why = "adding an item to a completed or cancelled project or checklist is not verified yet";
+    for parent in ["gate-done-project", "gate-cancelled-checklist"] {
+        assert_eq!(
+            check(
+                &s,
+                &fam(),
+                WriteMode::Test,
+                &Op::Create(item(parent)),
+                today()
+            ),
+            blocked(why),
+            "{parent}"
+        );
+    }
+}

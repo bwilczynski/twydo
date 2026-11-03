@@ -5,7 +5,9 @@
 //! rules here are the only guard. Rules are applied in order and the first failure wins:
 //!
 //! 0. a save ([`Op::Save`]) is its edit, then its move, each checked by these rules as its
-//!    own op against the loaded tasks; the first refusal wins (an empty edit is skipped);
+//!    own op against the loaded tasks; the first refusal wins (an empty edit is skipped).
+//!    When the edit changes the type or repeat rule, the move also needs the `move` rows of
+//!    the cases the edit leaves;
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
@@ -27,12 +29,14 @@
 //!    repeat refusals of the own case.
 //!
 //!    A create has the cases of the new task: its own case from its repeat, and the family
-//!    it starts (a checklist or project) or joins. An item's parent must exist, be a declared
-//!    checklist or project with cases of its own, not be an item, and be in the item's list;
-//!    the item is a task, and a checklist item takes no due, start or repeat.
+//!    it starts (a checklist or project) or joins. A repeating task needs a due date. An
+//!    item's parent must exist, be open, be a declared checklist or project with cases of its
+//!    own, not be an item, and be in the item's list; the item is a task, and a checklist
+//!    item takes no due, start or repeat.
 //!
 //!    An edit that changes the type ([`Change::Kind`]) or the repeat rule
-//!    ([`Change::Repeat`]) must also leave a task with cases (so a repeating task cannot
+//!    ([`Change::Repeat`]) must also leave a task with cases and a repeat with a due date
+//!    (so a repeating task cannot
 //!    become a checklist, an item cannot become a parent, and a repeating project cannot
 //!    keep a repeating item);
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
@@ -81,6 +85,7 @@ const NESTED: &str = "nested projects and checklists are not verified yet";
 const REPEATING_CHECKLIST: &str = "repeating checklists are not verified yet";
 const CHILD_RECURRENCE: &str = "a repeating task inside a repeating project is not verified yet \
                                 (project-child-own-recurrence)";
+const NO_DUE: &str = "a repeating task needs a due date";
 const PLAIN_PARENT: &str = "subtasks of a plain task are not verified yet";
 const START_OFFSETS: &str =
     "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
@@ -119,6 +124,12 @@ pub fn check(
                 },
                 today,
             )?;
+            // The move writes the edited task: the cases the edit leaves need `move` rows too.
+            if let Some(a) = edited_cases(snap, lookup(snap, uid)?, changes)? {
+                for c in std::iter::once(a.own).chain(a.family) {
+                    operation_row(m, mode, c, "move")?;
+                }
+            }
         }
         return Ok(());
     }
@@ -340,6 +351,9 @@ fn family_case(
 /// or project in the same list, not an item, with cases of its own). A checklist item takes
 /// no due, start or repeat.
 fn create_cases(snap: &Snapshot, n: &NewTask) -> Result<Cases, Blocked> {
+    if n.repeat.is_some() && n.due.is_none() {
+        return blocked(NO_DUE);
+    }
     let class = n.repeat.as_ref().map(|r| new_class(r, n.due.as_ref()));
     let own = own_case(class.as_deref())?;
     let repeats = class.is_some();
@@ -352,6 +366,11 @@ fn create_cases(snap: &Snapshot, n: &NewTask) -> Result<Cases, Blocked> {
     };
     let p = lookup(snap, parent)?;
     let head = &snap.tasks[p];
+    if head.status != Status::Open {
+        return blocked(
+            "adding an item to a completed or cancelled project or checklist is not verified yet",
+        );
+    }
     if n.kind != TaskKind::Task || snap.parent(p).is_some() {
         return blocked(NESTED);
     }
@@ -388,6 +407,9 @@ fn edited_cases(snap: &Snapshot, idx: usize, changes: &[Change]) -> Result<Optio
         (me.kind, me.declared) = (k, k);
     }
     if let Some(r) = repeat {
+        if r.is_some() && due_after(snap, idx, changes).is_none() {
+            return blocked(NO_DUE);
+        }
         me.class = r.map(|r| new_class(r, due_after(snap, idx, changes).as_ref()));
     }
     let cases = cases_as(snap, idx, &me)?;
