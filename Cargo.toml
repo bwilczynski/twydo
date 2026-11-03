@@ -7,3 +7,10 @@ edition = "2024"
 version = "0.1.0"
 rust-version = "1.99"
 license = "MIT"
+repository = "https://github.com/bwilczynski/twydo"
+description = "Terminal task app that shares its tasks with 2Do"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

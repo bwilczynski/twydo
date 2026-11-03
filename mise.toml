@@ -1,8 +1,18 @@
+# Toolchain for local development and CI. Rust crates are pinned in Cargo.toml/Cargo.lock.
 [tools]
-rust = "1.99.0"
+rust = { version = "1.99.0", profile = "minimal", components = ["clippy", "rustfmt"] }
+cargo-dist = "0.33.0"
+release-plz = "0.4.3"
 # README demo only (mise run demo); vhs also needs ffmpeg on PATH.
 vhs = "0.12.1"
 ttyd = { version = "1.7.7", os = ["linux", "windows"] }
 
 [tasks]
+build = "cargo build --release"
+test = [
+    "cargo test --workspace",
+    "python3 -m unittest discover -s tools/tests -t .",
+    "python3 tools/check_links.py",
+]
+lint = "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
 demo = "docs/demo/render.sh"
