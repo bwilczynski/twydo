@@ -215,8 +215,10 @@ waiting for a password prompt) blocks every write meanwhile. A save in the TUI c
   another runner asked for one.
 - If the runner itself is gone (for example `tdo sync` was ended with Ctrl-C and left vdirsyncer
   running, see Known limits), `tdo` kills the recorded process group itself.
-- A `sync/stop` left over from a request that came too late is removed when the next vdirsyncer
-  call starts, so it never stops a later run.
+- The request stays until the save that asked for it is done, and `tdo` then removes it. Meanwhile
+  any sync that starts (one that was waiting behind the stopped one, or the timer) stops before it
+  runs vdirsyncer, so it cannot take the vdir first. A request older than 30 seconds is left over
+  from a `tdo` that is gone: it is ignored and removed.
 
 ## State files
 
@@ -230,7 +232,7 @@ read; do not edit them while a sync runs.
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
 | `sync/running.json` | exists while vdirsyncer runs: `runner_pid`, `child_pgid` (vdirsyncer's process group, `null` between calls), `started` |
-| `sync/stop` | a request to stop the running sync; the runner removes it |
+| `sync/stop` | a request to stop the running sync, and to start none, until the save that asked is done (at most 30 s) |
 | `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
