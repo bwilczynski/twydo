@@ -18,7 +18,7 @@ use twydo_core::views::Snapshot;
 
 use crate::app::{App, Outcome};
 use crate::ui;
-use crate::write::Writer;
+use crate::write::{Refused, Writer};
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 const POLL: Duration = Duration::from_millis(250);
@@ -103,13 +103,25 @@ fn event_loop(
                             }
                         }
                         Outcome::Write(req) => {
-                            let result = writer
-                                .run(app.write_snapshot(), &req, Utc::now())
-                                .map_err(|e| e.message());
+                            // Waits up to write::LOCK_WAIT for a running sync.
+                            let result = writer.run(app.write_snapshot(), &req, Utc::now());
                             // Reload after failures too: a stale write means the vdir moved on.
                             reload(app, root);
                             refresh_sync(app);
-                            app.write_finished(result);
+                            match result {
+                                Err(Refused::Busy { running_for }) => {
+                                    app.write_busy(req, running_for)
+                                }
+                                other => app.write_finished(other.map_err(|e| e.message())),
+                            }
+                        }
+                        Outcome::StopSyncAndWrite(req) => {
+                            // Waits up to write::STOP_WAIT for the sync to let go.
+                            let result =
+                                writer.stop_and_run(app.write_snapshot(), &req, Utc::now());
+                            reload(app, root);
+                            refresh_sync(app);
+                            app.write_finished(result.map_err(|e| e.message()));
                         }
                         Outcome::EditNotes(notes) => {
                             restore_terminal();

@@ -625,3 +625,42 @@ fn family_success_message_uses_the_singular_for_one_item() {
         Ok("done: \"Synthetic parent\" and 1 item".into())
     );
 }
+
+/// Issue #10, review focus 5: declining to stop the sync after the task changed meanwhile
+/// rebuilds the form from the saved version, as any refused save does.
+#[test]
+fn declining_after_the_task_changed_rebuilds_the_form() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let env = Env::new();
+    let tz = chrono_tz::America::New_York;
+    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
+    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    let row = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
+        .unwrap();
+    app.cursor = row;
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected a write");
+    };
+    app.write_busy(req, Some(Duration::from_secs(5)));
+
+    let synced = String::from_utf8(fs::read(env.task_file()).unwrap())
+        .unwrap()
+        .replace("SUMMARY:A2", "SUMMARY:From phone");
+    fs::write(env.task_file(), &synced).unwrap();
+    app.reload(env.snapshot());
+
+    app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    let f = app.form.as_ref().expect("form stays open");
+    assert_eq!(f.title, "From phone");
+    assert_eq!(
+        f.error.as_deref(),
+        Some("not saved; the sync is still running; the form now shows the saved version")
+    );
+}

@@ -126,8 +126,19 @@ The status line says why, and nothing is written:
 - **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
   view reloads; an open form switches to the synced version, so you see the new data before
   saving again.
-- **`a sync is running; try again in a moment`**: a sync holds the vdir. The TUI does not wait,
-  so it never freezes; press the key again once the sync is done.
+- **A sync is running.** A sync holds the vdir while vdirsyncer runs. The save waits up to two
+  seconds, so an ordinary sync finishes unnoticed. If it is still running after that, the status
+  line asks `sync running for 2m 14s — stop it and save? (y/n)`:
+  - `y` stops the sync and saves (the message ends in `· sync stopped`). The stopped sync counts
+    as a failed one ([sync.md](sync.md#stopping-a-sync)): it backs off, and your edit stays
+    pending until the next sync that works sends it. Any sync can be stopped this way, whether the
+    TUI, the timer or a `tdo sync` started it. If it does not let go within ten seconds, nothing is
+    written: `not saved; the sync did not stop`.
+  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit form stays
+    open with what you typed; for a one-key action, press the key again later.
+
+  Other keys do nothing while the question is open. When the TUI cannot tell which sync holds the
+  vdir, it says `a sync is running; try again in a moment` instead.
 - **`cannot write: …`**: the operation journal could not be opened
   ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
 
