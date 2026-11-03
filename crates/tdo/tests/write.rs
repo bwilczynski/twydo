@@ -4,12 +4,15 @@ use std::cell::Cell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use chrono::{TimeZone, Utc};
-use tdo::write::{Request, Writer};
+use tdo::write::{Refused, Request, Writer};
 use twydo_core::compat::Matrix;
-use twydo_core::config::Config;
+use twydo_core::config::{Config, SyncConfig};
 use twydo_core::edit::{Change, Op};
+use twydo_core::store::fsio::VdirLock;
+use twydo_core::sync::running::Running;
 use twydo_core::views::Snapshot;
 
 /// One-time task "A2".
@@ -125,7 +128,7 @@ fn undo_with_empty_session() {
     let (mut w, _) = writer(&env.config());
     assert_eq!(
         w.run(&env.snapshot(), &Request::Undo, now()),
-        Err("nothing to undo".into())
+        Err(Refused::Other("nothing to undo".into()))
     );
 }
 
@@ -146,7 +149,10 @@ fn blocked_op_returns_gate_reason() {
     .to_string();
     let original = fs::read(env.task_file()).unwrap();
     let (mut w, calls) = writer_with(&env.config(), matrix);
-    assert_eq!(w.run(&snap, &Request::Apply(op), now()), Err(reason));
+    assert_eq!(
+        w.run(&snap, &Request::Apply(op), now()),
+        Err(Refused::Other(reason))
+    );
     assert_eq!(fs::read(env.task_file()).unwrap(), original);
     assert_eq!(calls.get(), 0);
 }
@@ -163,7 +169,7 @@ fn stale_snapshot_is_refused_and_untouched() {
         uid: TASK_A.into(),
         changes: vec![Change::Summary("A3".into())],
     });
-    let err = w.run(&snap, &edit, now()).unwrap_err();
+    let err = w.run(&snap, &edit, now()).unwrap_err().message();
     assert!(err.contains("changed on disk"), "{err}");
     assert_eq!(fs::read(env.task_file()).unwrap(), bytes);
 }
@@ -181,7 +187,7 @@ fn writer_without_store_reports_open_error() {
     .unwrap();
     let (mut w, _) = writer(&cfg);
     for req in [complete_a(), Request::Undo, Request::Redo] {
-        let err = w.run(&env.snapshot(), &req, now()).unwrap_err();
+        let err = w.run(&env.snapshot(), &req, now()).unwrap_err().message();
         assert!(err.starts_with("cannot write: "), "{err}");
     }
 }
@@ -268,12 +274,12 @@ fn sync_while_form_open_is_stale_not_overwritten() {
     assert!(
         result
             .as_ref()
-            .is_err_and(|e| e.contains("changed on disk")),
+            .is_err_and(|e| e.message().contains("changed on disk")),
         "{result:?}"
     );
     assert_eq!(fs::read_to_string(env.task_file()).unwrap(), synced);
 
-    app.write_finished(result);
+    app.write_finished(result.map_err(|e| e.message()));
     let f = app.form.as_ref().expect("form stays open");
     assert_eq!(
         f.title, "From phone",
@@ -294,31 +300,176 @@ fn sync_while_form_open_is_stale_not_overwritten() {
     assert!(text.contains("SUMMARY:From phone"), "{text}");
 }
 
-/// Review item 5: while a sync holds the vdir lock (shared, for its whole run), a TUI write
-/// must not block the UI; it is refused at once and nothing is written.
+/// The state directory the writer uses, with `sync/` created.
+fn sync_dir(cfg: &Config) -> PathBuf {
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let dir = state.join("sync");
+    fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Records a running sync as the runner would.
+fn record_running(cfg: &Config, rec: &Running) {
+    fs::write(
+        sync_dir(cfg).join("running.json"),
+        serde_json::to_vec(rec).unwrap(),
+    )
+    .unwrap();
+}
+
+fn shared_lock(cfg: &Config) -> VdirLock {
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    VdirLock::shared(&state).unwrap()
+}
+
+fn sync_config(env: &Env) -> Config {
+    let mut cfg = env.config();
+    cfg.sync = Some(SyncConfig::default());
+    cfg
+}
+
+/// Issue #10: a short sync is waited for, so the save just works.
 #[test]
-fn write_during_sync_is_refused_without_waiting() {
+fn write_waits_briefly_for_a_short_sync() {
     let env = Env::new();
     let cfg = env.config();
     let (mut w, _) = writer(&cfg);
-    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &env.vdir()).unwrap();
-    let sync = twydo_core::store::fsio::VdirLock::shared(&state).unwrap();
-    let original = fs::read(env.task_file()).unwrap();
-    let started = std::time::Instant::now();
-    assert_eq!(
-        w.run(&env.snapshot(), &complete_a(), now()),
-        Err("a sync is running; try again in a moment".into())
-    );
-    assert!(started.elapsed() < std::time::Duration::from_secs(2));
-    assert_eq!(fs::read(env.task_file()).unwrap(), original);
-    assert_eq!(
-        w.run(&env.snapshot(), &Request::Undo, now()),
-        Err("nothing to undo".into())
-    );
-    drop(sync);
+    let lock = shared_lock(&cfg);
+    let t = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(300));
+        drop(lock);
+    });
+    let started = Instant::now();
     assert_eq!(
         w.run(&env.snapshot(), &complete_a(), now()),
         Ok("done".into())
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+    t.join().unwrap();
+}
+
+/// While a long sync holds the vdir lock, a TUI write gives up after its short wait, says how
+/// long the sync has run, and writes nothing.
+#[test]
+fn write_during_a_long_sync_is_busy_after_the_wait() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    w.set_waits(Duration::from_millis(300), Duration::from_secs(1));
+    let _sync = shared_lock(&cfg);
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: std::process::id(),
+            child_pgid: None,
+            started: Utc::now() - chrono::Duration::seconds(134),
+        },
+    );
+    let original = fs::read(env.task_file()).unwrap();
+    let started = Instant::now();
+    let got = w.run(&env.snapshot(), &complete_a(), now());
+    let elapsed = started.elapsed();
+    match got {
+        Err(Refused::Busy {
+            running_for: Some(d),
+        }) => assert!((134..140).contains(&d.as_secs()), "running for {d:?}"),
+        other => panic!("expected busy, got {other:?}"),
+    }
+    assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Undo, now()),
+        Err(Refused::Other("nothing to undo".into()))
+    );
+}
+
+#[test]
+fn busy_without_a_recorded_sync_has_no_duration() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    w.set_waits(Duration::from_millis(100), Duration::from_secs(1));
+    let _sync = shared_lock(&cfg);
+    assert_eq!(
+        w.run(&env.snapshot(), &complete_a(), now()),
+        Err(Refused::Busy { running_for: None })
+    );
+    assert_eq!(
+        Refused::Busy { running_for: None }.message(),
+        "a sync is running; try again in a moment"
+    );
+}
+
+/// Review focus 1: the sync ended while the question was open; the save is plain.
+#[test]
+fn stop_and_run_when_the_sync_already_finished_saves_plainly() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    assert_eq!(
+        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
+        Ok("done".into())
+    );
+}
+
+/// A vdirsyncer left behind by a runner that is gone holds the lock; stopping kills it.
+#[test]
+fn stop_and_run_kills_an_orphaned_sync_and_saves() {
+    use std::os::unix::process::CommandExt;
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    w.set_waits(Duration::from_millis(300), Duration::from_secs(3));
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    sync_dir(&cfg);
+    let mut orphan = std::process::Command::new("sleep")
+        .arg("30")
+        .stdin(VdirLock::shared_for_child(&state).unwrap())
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    gone.wait().unwrap();
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: gone.id(),
+            child_pgid: Some(orphan.id()),
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(
+        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
+        Ok("done · sync stopped".into())
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while orphan.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "the orphaned sync survived");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let text = fs::read_to_string(env.task_file()).unwrap();
+    assert!(text.contains("STATUS:COMPLETED"), "{text}");
+}
+
+#[test]
+fn stop_and_run_gives_up_when_the_lock_stays_held() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    w.set_waits(Duration::from_millis(100), Duration::from_millis(300));
+    let _sync = shared_lock(&cfg);
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: std::process::id(),
+            child_pgid: None,
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(
+        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
+        Err(Refused::Other("not saved; the sync did not stop".into()))
     );
 }
 
@@ -363,7 +514,9 @@ fn stale_message_names_the_task_not_the_file() {
     });
     assert_eq!(
         w.run(&snap, &edit, now()),
-        Err("\"A2\" changed on disk; reload and try again".into())
+        Err(Refused::Other(
+            "\"A2\" changed on disk; reload and try again".into()
+        ))
     );
 }
 
