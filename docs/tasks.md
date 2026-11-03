@@ -34,6 +34,9 @@ selector does:
   finish the items first.
 - Converting to the type it already has does nothing.
 
+In verified mode most conversions are refused until Twydo's own writes are checked on the phone
+([compatibility.md](compatibility.md#verified-mode)).
+
 To fill a parent, `a` adds an item (on a plain task it asks first whether to make it a project
 or a checklist). A checklist's items have no dates, repeat or alerts of their own.
 

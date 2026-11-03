@@ -62,7 +62,7 @@ converting a project with items to a checklist is not supported by 2Do
 
 "Not verified yet" means Twydo has not checked the write against the iPhone. "Not supported by
 2Do" means the iPhone itself cannot do it (it greys out the type selector on a project with
-items), so there is nothing to verify and the write stays refused in every mode but `test`.
+items), so there is nothing to verify and the write stays refused in every mode, including `test`.
 
 The part in parentheses names the direction that is missing: `twydo_to_iphone` (the iPhone has
 not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked
