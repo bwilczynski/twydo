@@ -15,27 +15,27 @@ vdirsyncer = "0.21.0"
 
 [[rule]]
 class = "days"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "weeks"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "weekdays-set"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "months-day-1-28"
@@ -47,11 +47,11 @@ notes = "RRULE:FREQ=MONTHLY with no BYMONTHDAY (day from DUE); edit to every 2 m
 
 [[rule]]
 class = "months-day-29-31"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "months-last-day"
@@ -63,11 +63,11 @@ notes = "Not tested in phase 0: class not used by the current data, and only one
 
 [[rule]]
 class = "months-nth-weekday"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "months-nth-workday"
@@ -95,11 +95,11 @@ notes = "RRULE:FREQ=YEARLY; edit to every 2 years gives INTERVAL=2 and Recurrenc
 
 [[rule]]
 class = "years-feb-29"
-preserve = "unverified"
+preserve = "pass"
 execute = "unverified"
 edit = "unverified"
-evidence = []
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it."
+evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised."
 
 [[rule]]
 class = "unrecognized"
@@ -943,9 +943,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "daily"
@@ -1009,9 +1009,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "weekly"
