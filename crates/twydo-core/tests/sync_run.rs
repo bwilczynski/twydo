@@ -1162,3 +1162,42 @@ fn run_failing_after_vdirsyncer_leaves_no_manifest() {
         "a run that did not finish its update leaves no evidence"
     );
 }
+
+/// Issue #10: a sync that failed (e.g. no password) must not run metasync too, which would
+/// wait for the same credentials again while holding the vdir lock.
+#[test]
+fn metasync_is_skipped_when_sync_failed() {
+    let fx = Fx::new("");
+    let calls = fx.path("calls");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "echo \"$1\" >> '{}'\n\
+             [ \"$1\" = sync ] && {{ echo 'error: Connection refused' >&2; exit 1; }}\n\
+             exit 0",
+            calls.display()
+        ),
+    );
+    let mut fx = fx;
+    fx.sync_mut().metasync = true;
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(r.transient.as_deref(), Some("Connection refused"));
+    assert_eq!(fs::read_to_string(&calls).unwrap(), "sync\n");
+    assert_eq!(r.metasync_error, None);
+}
+
+#[test]
+fn metasync_still_runs_after_a_clean_sync() {
+    let fx = Fx::new("");
+    let calls = fx.path("calls");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo \"$1\" >> '{}'\nexit 0", calls.display()),
+    );
+    let mut fx = fx;
+    fx.sync_mut().metasync = true;
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(fs::read_to_string(&calls).unwrap(), "sync\nmetasync\n");
+}

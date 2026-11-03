@@ -84,7 +84,8 @@ One run, in order:
    the lock file), which lasts until it exits even if `tdo` does not. The runner sets
    `TWYDO_SYNC_VDIR` to the vdir, so the hook works on the same vdir as a
    `tdo --vdir <dir> sync`. It is killed after `timeout_secs`. Then `vdirsyncer metasync
-   <pair>` runs if `metasync` is on. A failed metasync is reported (`metasync failed: ...`) but is
+   <pair>` runs if `metasync` is on and the sync did not fail (a failure such as a missing
+   password would only repeat). A failed metasync is reported (`metasync failed: ...`) but is
    not a sync failure.
 5. **Reconcile**, under the exclusive vdir lock (never held while waiting on the network):
    - Journal entries whose result the server now holds are marked synced. An entry is kept until
@@ -252,7 +253,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
   vdirsyncer sees no conflict; but each adds its own completed copy, so the occurrence shows as
   done twice. Nothing is lost; delete one copy if it bothers you.
 - **A locked password store stalls sync.** If vdirsyncer fetches the password with `pass` and the
-  gpg agent needs your passphrase, each vdirsyncer call waits for pinentry (a few minutes) while
+  gpg agent needs your passphrase, vdirsyncer waits for pinentry (a few minutes) while
   holding the vdir lock, so writes in the TUI are refused with "a sync is running" meanwhile
   ([issue #10](https://github.com/bwilczynski/twydo/issues/10)). Unlock gpg, or let the agent
   cache the passphrase longer.
