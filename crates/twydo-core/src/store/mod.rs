@@ -12,6 +12,7 @@ pub mod journal;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 
@@ -31,6 +32,9 @@ use journal::{
 };
 
 pub use journal::RecoveryReport;
+
+/// How often a write with a lock wait retries the vdir lock.
+const LOCK_RETRY: Duration = Duration::from_millis(25);
 
 /// The edge case that must pass before a repeating completion can be undone in verified mode.
 const UNDO_REPEAT_EDGE: &str = "reopen-undo-before-after-sync";
@@ -167,7 +171,7 @@ pub struct Store {
     /// Undo entries of this session; `Ctrl-r` reverts the last. A new apply clears it.
     undone: Vec<String>,
     /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
-    no_wait: bool,
+    lock_wait: Option<Duration>,
 }
 
 /// The parts of a journal entry an operation produces.
@@ -257,22 +261,33 @@ impl Store {
             journal,
             done: Vec::new(),
             undone: Vec::new(),
-            no_wait: false,
+            lock_wait: None,
         };
         Ok((store, report))
     }
 
-    /// Do not wait for the vdir lock: while another process (a sync) holds it, writes return
-    /// [`WriteError::Busy`]. For the TUI, which must not freeze.
-    pub fn set_no_wait(&mut self, no_wait: bool) {
-        self.no_wait = no_wait;
+    /// How long a write waits for the vdir lock. `None` (the default) blocks until it is free
+    /// (the CLI). `Some(d)` retries every 25 ms for up to `d`, then returns
+    /// [`WriteError::Busy`] (`Some(ZERO)`: no wait). For the TUI, which must not freeze for
+    /// the length of a sync.
+    pub fn set_lock_wait(&mut self, wait: Option<Duration>) {
+        self.lock_wait = wait;
     }
 
     fn lock(&self) -> Result<VdirLock, WriteError> {
-        if self.no_wait {
-            VdirLock::try_exclusive(&self.state)?.ok_or(WriteError::Busy)
-        } else {
-            Ok(VdirLock::exclusive(&self.state)?)
+        let Some(wait) = self.lock_wait else {
+            return Ok(VdirLock::exclusive(&self.state)?);
+        };
+        let deadline = Instant::now() + wait;
+        loop {
+            if let Some(lock) = VdirLock::try_exclusive(&self.state)? {
+                return Ok(lock);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(WriteError::Busy);
+            }
+            std::thread::sleep(left.min(LOCK_RETRY));
         }
     }
 

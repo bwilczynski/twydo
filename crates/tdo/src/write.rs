@@ -1,11 +1,14 @@
 //! Runs the TUI's write requests through the store and turns the result into a message.
 
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::edit::Op;
 use twydo_core::model::Status;
 use twydo_core::store::{Store, WriteError};
+use twydo_core::sync::running::{StopResult, request_stop, running};
 use twydo_core::views::Snapshot;
 
 /// A write the TUI asks for.
@@ -14,6 +17,32 @@ pub enum Request {
     Apply(Op),
     Undo,
     Redo,
+}
+
+/// How long a TUI write waits for a running sync before it gives up (issue #10).
+pub const LOCK_WAIT: Duration = Duration::from_secs(2);
+/// How long a write waits for a sync it asked to stop.
+pub const STOP_WAIT: Duration = Duration::from_secs(10);
+
+/// Why a write did not happen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Refused {
+    /// The vdir lock stayed held for the whole wait. `running_for`: how long the recorded
+    /// sync has run (None: no `running.json`, nothing the TUI can stop).
+    Busy {
+        running_for: Option<Duration>,
+    },
+    Other(String),
+}
+
+impl Refused {
+    /// The message for the status line.
+    pub fn message(&self) -> String {
+        match self {
+            Refused::Busy { .. } => WriteError::Busy.to_string(),
+            Refused::Other(m) => m.clone(),
+        }
+    }
 }
 
 /// Called after each successful write when `[sync] after_edit` is on.
@@ -28,6 +57,8 @@ pub struct Writer {
     /// session stacks, so the messages can name the task.
     done: Vec<String>,
     undone: Vec<String>,
+    lock_wait: Duration,
+    stop_wait: Duration,
 }
 
 impl Writer {
@@ -44,32 +75,81 @@ impl Writer {
     pub fn open_with(cfg: &Config, matrix: Matrix, after_write: SyncTrigger) -> Writer {
         Writer {
             store: Store::open_with(cfg, matrix)
-                .map(|(mut s, _)| {
-                    s.set_no_wait(true);
-                    s
-                })
+                .map(|(s, _)| s)
                 .map_err(|e| format!("cannot write: {e}")),
             config: cfg.clone(),
             after_write,
             done: Vec::new(),
             undone: Vec::new(),
+            lock_wait: LOCK_WAIT,
+            stop_wait: STOP_WAIT,
         }
     }
 
-    /// Ok: the success message. Err: why nothing was written.
+    /// Replaces [`LOCK_WAIT`] and [`STOP_WAIT`] (tests).
+    pub fn set_waits(&mut self, lock: Duration, stop: Duration) {
+        self.lock_wait = lock;
+        self.stop_wait = stop;
+    }
+
+    /// Ok: the success message. Err: why nothing was written. Waits up to the lock wait for
+    /// a running sync.
     pub fn run(
         &mut self,
         snap: &Snapshot,
         req: &Request,
         now: DateTime<Utc>,
-    ) -> Result<String, String> {
-        let store = self.store.as_mut().map_err(|e| e.clone())?;
+    ) -> Result<String, Refused> {
+        let wait = self.lock_wait;
+        self.write(snap, req, now, wait)
+    }
+
+    /// Asks the running sync to stop, then writes, waiting up to the stop wait for it to let
+    /// go of the vdir. The message says so when a sync was stopped.
+    pub fn stop_and_run(
+        &mut self,
+        snap: &Snapshot,
+        req: &Request,
+        now: DateTime<Utc>,
+    ) -> Result<String, Refused> {
+        let stopped = match request_stop(&self.config) {
+            Ok(StopResult::NothingRunning) => false,
+            Ok(StopResult::Requested | StopResult::Killed) => true,
+            Err(e) => return Err(Refused::Other(format!("cannot stop the sync: {e}"))),
+        };
+        let wait = self.stop_wait;
+        match self.write(snap, req, now, wait) {
+            Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
+            Err(Refused::Busy { .. }) => {
+                Err(Refused::Other("not saved; the sync did not stop".into()))
+            }
+            other => other,
+        }
+    }
+
+    fn write(
+        &mut self,
+        snap: &Snapshot,
+        req: &Request,
+        now: DateTime<Utc>,
+        wait: Duration,
+    ) -> Result<String, Refused> {
+        let store = self.store.as_mut().map_err(|e| Refused::Other(e.clone()))?;
+        store.set_lock_wait(Some(wait));
         let done = match req {
             Request::Apply(op) => store.apply(snap, op, now),
             Request::Undo => store.undo_last(now),
             Request::Redo => store.redo_last(now),
         };
-        done.map_err(|e| failure(snap, e))?;
+        match done {
+            Ok(_) => {}
+            Err(WriteError::Busy) => {
+                return Err(Refused::Busy {
+                    running_for: running_for(&self.config),
+                });
+            }
+            Err(e) => return Err(Refused::Other(failure(snap, e))),
+        }
         let message = match req {
             Request::Apply(op) => {
                 self.done.push(op_title(snap, op));
@@ -84,6 +164,16 @@ impl Writer {
         }
         Ok(message)
     }
+}
+
+/// How long the recorded sync has run; None when none is recorded (or unreadable).
+fn running_for(cfg: &Config) -> Option<Duration> {
+    let rec = running(cfg).ok().flatten()?;
+    Some(
+        (Utc::now() - rec.started)
+            .to_std()
+            .unwrap_or(Duration::ZERO),
+    )
 }
 
 /// Move the top title from `from` to `to` and name it in the message.
