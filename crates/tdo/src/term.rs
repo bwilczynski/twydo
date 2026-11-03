@@ -56,6 +56,8 @@ pub fn run(mut app: App, root: PathBuf, tz: Tz) -> io::Result<()> {
     let mut terminal = init_terminal();
     let result = event_loop(&mut terminal, &mut app, &mut writer, &root, tz);
     restore_terminal();
+    // Saves made just before quitting still sync now, not on the next timer run.
+    writer.flush_sync();
     result
 }
 
@@ -151,8 +153,8 @@ fn event_loop(
                             let result = resolve(cfg, &id, keep, Utc::now());
                             // Same rule as `tdo conflicts resolve`: sync after a resolve
                             // that worked, when `[sync] after_edit` is on.
-                            if result.is_ok() && cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
-                                crate::cli::sync::spawn_background(cfg, Some(&cfg.vdir));
+                            if result.is_ok() {
+                                writer.sync_soon();
                             }
                             app.message = Some(match result {
                                 Ok(Resolution::Recorded) => "kept; applied on the next sync".into(),
@@ -192,6 +194,8 @@ fn event_loop(
             reload(app, root);
             refresh_sync(app);
         }
+        // The after-edit sync starts once saves pause (issue #19).
+        writer.sync_if_quiet(Instant::now());
         app.expire_message(now());
         if ticked || last_tick.elapsed() >= TICK_EVERY {
             app.tick(now());

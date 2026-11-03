@@ -216,8 +216,10 @@ fn after_edit_triggers_sync_only_on_success() {
     });
     let (mut w, calls) = writer(&cfg);
     assert!(w.run(&env.snapshot(), &Request::Undo, now()).is_err());
+    w.flush_sync();
     assert_eq!(calls.get(), 0);
     assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
+    w.flush_sync();
     assert_eq!(calls.get(), 1);
 }
 
@@ -231,7 +233,68 @@ fn no_sync_without_after_edit() {
     });
     let (mut w, calls) = writer(&cfg);
     assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
+    w.flush_sync();
     assert_eq!(calls.get(), 0);
+}
+
+/// Issue #19: a save does not start the sync at once, or the next quick save (closing
+/// checklist items one by one) waits on it. The sync starts once saves pause.
+#[test]
+fn after_edit_sync_waits_for_a_quiet_period() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, calls) = writer(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    let t = Instant::now();
+    w.sync_if_quiet(t);
+    assert_eq!(calls.get(), 0, "started right after the save");
+    w.sync_if_quiet(t + tdo::write::SYNC_DELAY);
+    assert_eq!(calls.get(), 1);
+    w.sync_if_quiet(t + 2 * tdo::write::SYNC_DELAY);
+    assert_eq!(calls.get(), 1, "started twice for one save");
+}
+
+#[test]
+fn each_save_pushes_the_after_edit_sync_back() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, calls) = writer(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    let first = Instant::now();
+    std::thread::sleep(Duration::from_millis(20));
+    w.run(&env.snapshot(), &Request::Undo, now()).unwrap();
+    // A quiet period after the first save, but not after the second.
+    w.sync_if_quiet(first + tdo::write::SYNC_DELAY);
+    assert_eq!(calls.get(), 0);
+    w.sync_if_quiet(Instant::now() + tdo::write::SYNC_DELAY);
+    assert_eq!(calls.get(), 1, "two saves in a row start one sync");
+}
+
+/// Quitting the TUI starts a pending sync at once, so a save never waits for the timer.
+#[test]
+fn flush_starts_a_pending_sync_once() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, calls) = writer(&cfg);
+    w.flush_sync();
+    assert_eq!(calls.get(), 0, "nothing was saved");
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    w.flush_sync();
+    w.flush_sync();
+    assert_eq!(calls.get(), 1);
+}
+
+/// A conflict resolved in the TUI schedules the same sync as a save.
+#[test]
+fn sync_soon_schedules_the_after_edit_sync() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, calls) = writer(&cfg);
+    w.sync_soon();
+    w.sync_if_quiet(Instant::now());
+    assert_eq!(calls.get(), 0);
+    w.sync_if_quiet(Instant::now() + tdo::write::SYNC_DELAY);
+    assert_eq!(calls.get(), 1);
 }
 
 /// Review Focus 1 through the form: a sync that lands while the form is open (here, a
@@ -748,6 +811,7 @@ fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
         w.stop_and_run(&env.snapshot(), &complete_a(), now()),
         Ok("done · sync stopped".into())
     );
+    w.flush_sync();
     assert_eq!(
         seen.get(),
         Some(false),
