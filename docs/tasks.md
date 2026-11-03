@@ -68,6 +68,9 @@ verified yet`. `tdo check` lists the repeat kinds in your data and whether each 
 1. a **completed copy** of this occurrence is added (it shows in Done);
 2. the task itself, with the same identity, **moves to the next occurrence**.
 
+In the TUI the cursor stays on the row where the task was, as after completing any other task;
+it does not follow the task to its next date.
+
 How the next occurrence is found:
 
 - **One interval per completion.** Missed occurrences are not skipped: a monthly task due
