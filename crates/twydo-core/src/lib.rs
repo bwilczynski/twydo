@@ -9,6 +9,7 @@ pub mod format;
 pub mod gate;
 pub mod ical;
 pub mod model;
+pub mod repeatinput;
 pub mod store;
 pub mod sync;
 pub mod vdir;

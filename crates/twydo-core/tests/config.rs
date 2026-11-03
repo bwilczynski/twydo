@@ -189,3 +189,14 @@ fn sync_unknown_key_is_error() {
         .to_string();
     assert!(e.contains("bogus_key"), "{e}");
 }
+
+#[test]
+fn work_days_default_and_custom() {
+    use Weekday::*;
+    let c = parse("vdir = \"/x\"").unwrap();
+    assert_eq!(c.work_days, vec![Mon, Tue, Wed, Thu, Fri]);
+    let c = parse("vdir = \"/x\"\nwork_days = [\"sun\", \"Monday\", \"tue\"]").unwrap();
+    assert_eq!(c.work_days, vec![Sun, Mon, Tue]);
+    assert!(parse("vdir = \"/x\"\nwork_days = []").is_err());
+    assert!(parse("vdir = \"/x\"\nwork_days = [\"funday\"]").is_err());
+}
