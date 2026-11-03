@@ -6,17 +6,37 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::gate;
+use twydo_core::model::TaskKind;
+use twydo_core::repeatinput::{self, RepeatSpec};
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::{Store, WriteError, existing_vdir_state};
 use twydo_core::views::Snapshot;
 
 use super::sync::spawn_background;
 use super::{CliError, EXIT_ERROR, resolve_config};
+
+/// A task type, as `--kind` spells it.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum KindArg {
+    Task,
+    Project,
+    Checklist,
+}
+
+impl From<KindArg> for TaskKind {
+    fn from(k: KindArg) -> Self {
+        match k {
+            KindArg::Task => TaskKind::Task,
+            KindArg::Project => TaskKind::Project,
+            KindArg::Checklist => TaskKind::Checklist,
+        }
+    }
+}
 
 /// Exit code for blocked, stale or stuck operations.
 pub const EXIT_BLOCKED: i32 = 1;
@@ -37,6 +57,15 @@ pub enum OpCommand {
         /// YYYY-MM-DD
         #[arg(long, value_name = "DATE")]
         start: Option<String>,
+        /// Type of the new task
+        #[arg(long, value_enum, default_value = "task")]
+        kind: KindArg,
+        /// UID of the checklist or project the new task belongs to
+        #[arg(long, value_name = "UID")]
+        parent: Option<String>,
+        /// Repeat rule in words, e.g. "weekly", "2w", "mon thu" (without --due: due today)
+        #[arg(long, value_name = "TEXT")]
+        repeat: Option<String>,
     },
     /// Change fields of a task
     Edit(EditArgs),
@@ -91,6 +120,15 @@ pub struct EditArgs {
     /// Repeat interval
     #[arg(long, value_name = "N")]
     every: Option<u32>,
+    /// Repeat rule in words, e.g. "weekly", "2w", "mon thu"
+    #[arg(long, value_name = "TEXT", conflicts_with = "no_repeat")]
+    repeat: Option<String>,
+    /// Remove the repeat rule
+    #[arg(long)]
+    no_repeat: bool,
+    /// Change the task's type
+    #[arg(long, value_enum)]
+    kind: Option<KindArg>,
 }
 
 /// A failure of an `op` command.
@@ -146,7 +184,23 @@ fn parse_due(s: &str) -> Result<Due, Failure> {
     }
 }
 
-fn edit_changes(a: &EditArgs) -> Result<Vec<Change>, Failure> {
+/// Parses `--repeat` text with the config's work days; a parse error is a usage error.
+fn parse_repeat(text: &str, today: NaiveDate, cfg: &Config) -> Result<RepeatSpec, Failure> {
+    match repeatinput::parse(text, today, &cfg.work_days) {
+        Ok(Some(spec)) => Ok(spec),
+        Ok(None) => usage(format!("{text:?} is not a repeat rule")),
+        Err(e) => usage(format!("invalid repeat {text:?}: {e}")),
+    }
+}
+
+/// `has_due` is whether the task will have a due date once the other changes apply. Core never
+/// reads the clock, so a repeat on an undated task gets today's date first (2Do does the same).
+fn edit_changes(
+    a: &EditArgs,
+    cfg: &Config,
+    today: NaiveDate,
+    has_due: bool,
+) -> Result<Vec<Change>, Failure> {
     let mut changes = Vec::new();
     if let Some(t) = &a.title {
         changes.push(Change::Summary(t.clone()));
@@ -168,6 +222,18 @@ fn edit_changes(a: &EditArgs) -> Result<Vec<Change>, Failure> {
     }
     if let Some(n) = a.every {
         changes.push(Change::RepeatInterval(n));
+    }
+    if let Some(k) = a.kind {
+        changes.push(Change::Kind(k.into()));
+    }
+    if let Some(text) = &a.repeat {
+        let spec = parse_repeat(text, today, cfg)?;
+        if !has_due && a.due.is_none() {
+            changes.push(Change::Due(Some(Due::Date(today))));
+        }
+        changes.push(Change::Repeat(Some(spec)));
+    } else if a.no_repeat {
+        changes.push(Change::Repeat(None));
     }
     if changes.is_empty() {
         return usage("nothing to change; pass at least one option");
@@ -268,6 +334,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         eprintln!("tdo: test write mode: unverified operations are enabled");
     }
     let now = Utc::now();
+    let today = now.with_timezone(&cfg.tz()).date_naive();
     let (mut store, report) = Store::open_with(&cfg, matrix.clone())?;
     let journal_dir = store.state_dir().join("journal");
     for (id, reason) in &report.stuck {
@@ -287,16 +354,42 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             notes,
             due,
             start,
-        } => Op::Create(NewTask {
-            description: notes,
-            due: due.as_deref().map(parse_due).transpose()?,
-            start: start.as_deref().map(parse_date).transpose()?,
-            ..NewTask::plain(&list, &title)
-        }),
-        OpCommand::Edit(a) => Op::Edit {
-            changes: edit_changes(&a)?,
-            uid: a.uid,
-        },
+            kind,
+            parent,
+            repeat,
+        } => {
+            let mut due = due.as_deref().map(parse_due).transpose()?;
+            let repeat = repeat
+                .as_deref()
+                .map(|t| parse_repeat(t, today, &cfg))
+                .transpose()?;
+            if repeat.is_some() && due.is_none() {
+                due = Some(Due::Date(today));
+            }
+            Op::Create(NewTask {
+                description: notes,
+                due,
+                start: start.as_deref().map(parse_date).transpose()?,
+                kind: kind.into(),
+                parent,
+                repeat,
+                ..NewTask::plain(&list, &title)
+            })
+        }
+        OpCommand::Edit(a) => {
+            let has_due = if a.repeat.is_some() {
+                let snap = snapshot(&cfg, store.state_dir())?;
+                snap.find(&a.uid)
+                    .is_some_and(|i| snap.tasks[i].due.is_some())
+                    && !a.clear_due
+            } else {
+                true
+            };
+            Op::Edit {
+                changes: edit_changes(&a, &cfg, today, has_due)?,
+                uid: a.uid,
+            }
+        }
         OpCommand::Complete { uid, all } => {
             if !all {
                 let snap = snapshot(&cfg, store.state_dir())?;
