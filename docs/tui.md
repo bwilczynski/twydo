@@ -73,6 +73,7 @@ These act when the Tasks or Details pane has focus.
 | `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
 | `o` / `O` | new task below / above the selected one ([Adding tasks](#adding-tasks)) |
 | `a` | new item at the end of the selected project or checklist; on a plain task, asks whether to make it one first |
+| `ct` / `cp` / `cc` | change the selected task's type to task / project / checklist; any other second key cancels. A project with items can't be converted, as on the iPhone: the write is refused with the reason |
 | `i`, or `Enter` on a task without items | edit card |
 | `r` | edit card, on the Repeat field |
 

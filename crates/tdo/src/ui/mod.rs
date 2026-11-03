@@ -222,6 +222,11 @@ const HELP: &[(&str, &str, bool)] = &[
     ("m", "move to another list", false),
     ("r", "card on the Repeat field", false),
     ("a", "add items to a project or checklist", false),
+    (
+        "ct  cp  cc",
+        "change type: task / project / checklist",
+        false,
+    ),
     ("/  n  N", "search in view", false),
     ("1-5", "Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),
