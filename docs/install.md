@@ -1,13 +1,25 @@
 # Install
 
 Twydo runs on Linux and macOS. It is developed and used on Linux; **macOS is not tested yet**.
-There are no prebuilt releases yet (they are planned, along with installing through mise), so
-for now you build it from source.
 
-## Build
+## Prebuilt binaries
+
+Every [GitHub release](https://github.com/bwilczynski/twydo/releases) has `tdo` for macOS (Apple
+Silicon and Intel) and Linux (x86_64 and arm64). Install it with [mise](https://mise.jdx.dev/);
+the command is the same everywhere:
+
+```sh
+mise use -g github:bwilczynski/twydo    # latest release
+tdo --version
+```
+
+mise picks the archive for your OS and CPU and puts `tdo` on your `PATH`; `mise up` moves to a
+newer release.
+
+## Build from source
 
 You need a Rust toolchain; the version is pinned in `rust-toolchain.toml` (and `mise.toml` if you
-use [mise](https://mise.jdx.dev/)).
+use mise).
 
 ```sh
 cargo install --git https://github.com/bwilczynski/twydo tdo

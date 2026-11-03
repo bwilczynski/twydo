@@ -41,9 +41,10 @@ app replacing 2Do for one user, plan by plan.
    `tools/seed_fixture.py` instead of typing on the phone), and the public-repository docs
    (`docs/superpowers/plans/2026-11-02-public-repo-docs.md`: README, `docs/` pages, MIT licence,
    VHS demo from `tools/demo_vdir.py`), and issue #10 (a save blocked by a stuck sync offers to
-   stop it; `docs/superpowers/plans/2026-11-03-issue-10-stop-stuck-sync.md`). Next on the
-   roadmap: a release pipeline so `tdo` installs through mise;
-   after that natural-language add (`o`/`O`, reusing `twydo_core::dateinput`), Plan 5b (manual
+   stop it; `docs/superpowers/plans/2026-11-03-issue-10-stop-stuck-sync.md`), and the release
+   pipeline (`docs/superpowers/plans/2026-11-03-release-pipeline.md`: CI on PRs, release-plz
+   release PRs from conventional commits, cargo-dist binaries, `mise use github:bwilczynski/twydo`).
+   Next on the roadmap: natural-language add (`o`/`O`, reusing `twydo_core::dateinput`), Plan 5b (manual
    order `J`/`K`, list management) or Plan 2 (notifier). Write the plan first.
 
 ## Ground rules
