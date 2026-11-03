@@ -799,6 +799,17 @@ fn stop_and_save_refuses_a_one_key_action_on_a_task_changed_meanwhile() {
 /// must not miss the stop and restart vdirsyncer once the save has withdrawn its request.
 #[test]
 fn queued_runner_cannot_miss_an_orphan_stop() {
+    check_queued_orphan_stop(false);
+}
+
+/// A stop also applies before recovery: the runner may own run.lock while its status read
+/// is delayed. A FIFO holds it there until the stopping save has withdrawn its request.
+#[test]
+fn queued_runner_delayed_reading_status_cannot_miss_an_orphan_stop() {
+    check_queued_orphan_stop(true);
+}
+
+fn check_queued_orphan_stop(delay_status: bool) {
     use std::os::unix::{fs::PermissionsExt, process::CommandExt};
     use std::process::{Command, Stdio};
     let env = Env::new();
@@ -829,6 +840,16 @@ fn queued_runner_cannot_miss_an_orphan_stop() {
     let (mut w, _) = writer(&cfg);
     let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
     let sync = sync_dir(&cfg);
+    let status_path = sync.join("status.json");
+    if delay_status {
+        assert!(
+            Command::new("mkfifo")
+                .arg(&status_path)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
     let mut orphan = Command::new("sleep")
         .arg("30")
         .stdin(VdirLock::shared_for_child(&state).unwrap())
@@ -870,23 +891,31 @@ fn queued_runner_cannot_miss_an_orphan_stop() {
         assert!(Instant::now() < deadline, "runner did not take run.lock");
         std::thread::sleep(Duration::from_millis(5));
     }
-    // It owns run.lock and waits for the orphan's vdir lock; pause it until after the save.
+    // Delay it before recovery (the FIFO status read) or during recovery (SIGSTOP),
+    // until the save has withdrawn its request.
     let pid = queued.id().to_string();
-    assert!(
-        Command::new("kill")
-            .args(["-STOP", &pid])
-            .status()
-            .unwrap()
-            .success()
-    );
+    if !delay_status {
+        assert!(
+            Command::new("kill")
+                .args(["-STOP", &pid])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
     let result = w.stop_and_run(&env.snapshot(), &complete_a(), Utc::now());
-    assert!(
-        Command::new("kill")
-            .args(["-CONT", &pid])
-            .status()
-            .unwrap()
-            .success()
-    );
+    if delay_status {
+        let status = twydo_core::sync::status::SyncStatus::default();
+        fs::write(&status_path, serde_json::to_vec(&status).unwrap()).unwrap();
+    } else {
+        assert!(
+            Command::new("kill")
+                .args(["-CONT", &pid])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
     queued.wait().unwrap();
     orphan.wait().unwrap();
     assert_eq!(result, Ok("done · sync stopped".into()));

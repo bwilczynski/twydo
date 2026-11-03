@@ -12,8 +12,8 @@
 //! older than [`STOP_FRESH`] is stale (its requester is gone) and is ignored and removed.
 //!
 //! Every request also records when it was made, in `<state>/sync/last_stop`, which nobody
-//! withdraws: a pass begun before that time (one that was waiting for the vdir behind the
-//! stopped sync) stops too, however late it gets there.
+//! withdraws: a run begun before that time (even one delayed before recovery) stops too,
+//! however late it gets to vdirsyncer.
 
 use std::fs;
 use std::io;
@@ -40,7 +40,7 @@ pub struct Running {
     /// When that child started (see `runner_start`).
     #[serde(default)]
     pub child_start: Option<String>,
-    /// When the runner started vdirsyncer (wall clock).
+    /// When this runner invocation began (wall clock, before taking the run lock).
     pub started: DateTime<Utc>,
 }
 
