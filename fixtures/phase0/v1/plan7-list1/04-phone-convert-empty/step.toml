@@ -1,0 +1,5 @@
+scenario = "plan7-list1"
+step = "04-phone-convert-empty"
+device = "iphone"
+action = "K1 (empty checklist) -> task"
+captured_at = "2026-11-03T22:03:41Z"

@@ -925,6 +925,204 @@ iphone_to_twydo = "unverified"
 evidence = []
 notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
 
+[[operation]]
+case = "daily"
+op = "create"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "complete"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "reopen"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "move"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "delete"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "create"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "complete"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "reopen"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "move"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "delete"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "task-to-checklist"
+op = "convert"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "task-to-project"
+op = "convert"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/03b-phone-item-under-converted"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "checklist-to-project"
+op = "convert"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "project-to-checklist"
+op = "convert"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items (P). Not offered, so Twydo refuses it. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "parent-with-items-to-task"
+op = "convert"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items to a task (Q). Not offered, so Twydo refuses it. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "empty-parent-to-task"
+op = "convert"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/04-phone-convert-empty"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
 [[edge_case]]
 id = "monthly-15th-three-months-late"
 observed = "Plan 6 iPhone session: a monthly task due 2026-08-15 completed on 2026-11-02 advanced one interval to 2026-09-15 (still past), then to 2026-10-15; each completion added a history copy. 2Do never skips missed occurrences."

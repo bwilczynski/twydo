@@ -16,6 +16,9 @@ Legend: **[obs]** observed · **[inf]** inferred · **[?]** unresolved.
 - Convert between types: ⇧⌥⌘1 Task, ⇧⌥⌘2 Project, ⇧⌥⌘3 Checklist. [obs]
 - Converting a project → checklist warns: "All its sub-tasks will lose their dates and alarms". [obs]
 - Converting a project/checklist with children → task asks for confirmation. [obs]
+- **On the iPhone** (2Do 3.91), a project with items cannot be converted at all: the type
+  selector is greyed out. A checklist with items → project only changes the parent's
+  `TaskType`; the items keep their bytes. [obs, `plan7-capture.md` 03]
 - Completing a project/checklist with unfinished children asks "still contains unfinished tasks. Are you sure?" [obs]
 - In the quick entry window a **Task / Project / Checklist** selector sits bottom-left. [obs]
 - Hitting ↩ while editing a sub-task title creates the next sub-task. [obs]
@@ -78,6 +81,10 @@ Selected tasks can also be dragged onto calendar dates or a drag bar to defer. [
 
 Observed options [obs] (UI strings):
 - Presets: **Every Day, Every Week, Every 2 Weeks, Every Month, Every Year**, and **Work days** (uses the work days from settings).
+- On the iPhone, **Every Day writes `FREQ=DAILY`** (type `256`, value 1), the same as a custom
+  "every 1 day"; Work days writes the weekday bitmask `124`. The iPhone picker does **not**
+  offer last day of the month, last weekday or Nth weekend day (it offers "last Monday … Sunday").
+  Setting a repeat on a task without a due date makes it due today. [obs, `plan7-capture.md` 01, 02]
 - Custom: **Every N Days / Weeks / Months / Years**, specific weekdays ("Every Monday & Thursday").
 - Monthly: on day N; **on the 1st…5th <weekday> of each month**; **last day of the month**; **last weekday**; **last weekend day**; "On the Last Day of Every N Months".
 - **Repeat from completion date** (next occurrence is calculated from when you complete it, not from the due date).
@@ -94,7 +101,7 @@ A rule is three integers: `recurrenceType` (sync key `repeattype`), `recurrenceV
 | `recurrenceType` | Meaning | `recurrenceValue` | 2Do's own label |
 |---|---|---|---|
 | `0` | no repeat | — | — |
-| `1`–`127` | **specific weekdays**, bitmask: Sun `1`, Sat `2`, Fri `4`, Thu `8`, Wed `16`, Tue `32`, Mon `64` (bit order Sun/Mon/Wed/Thu/Sat [obs], Tue/Fri by position [inf]) | — | "Every Mon, Thu"; `127` = "Every Day"; work days Mon–Fri = `124` |
+| `1`–`127` | **specific weekdays**, bitmask: Sun `1`, Sat `2`, Fri `4`, Thu `8`, Wed `16`, Tue `32`, Mon `64` (bit order Sun/Mon/Wed/Thu/Sat [obs], Tue/Fri by position [inf]) | — | "Every Mon, Thu" (`72`, `BYDAY=MO,TH` [obs]); `127` = "Every Day" [inf, the iPhone's preset writes `256` instead]; work days Mon–Fri = `124` [obs] |
 | `0x100` (256) | every N **days** | N | 1 → "Daily", else "Every N Days" |
 | `0x101` (257) | every N **weeks** | N | 1 "Weekly", 2 "Bi-weekly", else "Every N Weeks" |
 | `0x102` (258) | every N **months** | N | 1 "Monthly", 2 "Bi-monthly", 3 "Every 3 Months", 6 "Semi-yearly" |

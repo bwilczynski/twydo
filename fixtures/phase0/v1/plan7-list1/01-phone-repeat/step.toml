@@ -1,0 +1,5 @@
+scenario = "plan7-list1"
+step = "01-phone-repeat"
+device = "iphone"
+action = "repeat picker on R01-R16 (R09, R11, R12 not offered)"
+captured_at = "2026-11-03T21:55:51Z"
