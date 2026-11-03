@@ -5,11 +5,17 @@
 //! file, kills its child's process group and records the run as stopped. A runner that is
 //! gone (killed, Ctrl-C) cannot do that, so [`request_stop`] then kills the recorded group
 //! itself. No lock is taken: the requester is usually a writer waiting for the vdir lock.
+//!
+//! The request belongs to the requester, who withdraws it with [`clear_stop`] after its
+//! write. Until then, any runner that reaches vdirsyncer stops before starting it, so a
+//! runner that was waiting behind the stopped sync cannot take the vdir first. A request
+//! older than [`STOP_FRESH`] is stale (its requester is gone) and is ignored and removed.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -27,13 +33,17 @@ pub struct Running {
     pub started: DateTime<Utc>,
 }
 
+/// How long a stop request holds off new syncs; older ones are stale.
+pub const STOP_FRESH: Duration = Duration::from_secs(30);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopResult {
     /// No `running.json`: nothing to stop.
     NothingRunning,
     /// `sync/stop` created; the live runner kills its child and records `sync stopped`.
     Requested,
-    /// The runner is gone; its recorded group was killed and `running.json` removed.
+    /// The runner is gone; its recorded group was killed and `running.json` removed. The
+    /// request is left too, for any runner waiting behind the killed one.
     Killed,
 }
 
@@ -78,8 +88,8 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     let Some(rec) = load(&state)? else {
         return Ok(StopResult::NothingRunning);
     };
+    fs::write(stop_path(&state), b"")?;
     if alive(rec.runner_pid) {
-        fs::write(stop_path(&state), b"")?;
         return Ok(StopResult::Requested);
     }
     if let Some(pgid) = rec.child_pgid {
@@ -90,6 +100,27 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
         _ => {}
     }
     Ok(StopResult::Killed)
+}
+
+/// Whether a fresh stop request is pending in `state`. A stale one is removed.
+pub(crate) fn stop_requested(state: &Path) -> io::Result<bool> {
+    let path = stop_path(state);
+    let modified = match fs::metadata(&path) {
+        Ok(m) => m.modified()?,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    // A request from the future (clock change) counts as fresh.
+    let age = SystemTime::now()
+        .duration_since(modified)
+        .unwrap_or_default();
+    if age < STOP_FRESH {
+        return Ok(true);
+    }
+    match fs::remove_file(&path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(false),
+    }
 }
 
 /// Runs `kill <args>` through kill(1); true if one succeeded.
@@ -113,4 +144,15 @@ pub(crate) fn kill_group(pgid: u32) -> bool {
 /// `kill -0 <pid>` through kill(1).
 pub(crate) fn alive(pid: u32) -> bool {
     kill(&["-0", &pid.to_string()])
+}
+
+/// Withdraws a stop request once the requester has written (or given up).
+pub fn clear_stop(cfg: &Config) -> io::Result<()> {
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+        return Ok(());
+    };
+    match fs::remove_file(stop_path(&state)) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }

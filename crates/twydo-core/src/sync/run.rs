@@ -22,7 +22,7 @@ use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
 use super::manifest::Manifest;
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
-use super::running::{self, Running, running_path, stop_path};
+use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
@@ -608,10 +608,8 @@ struct RunningGuard {
 }
 
 impl RunningGuard {
-    /// Removes a stale `sync/stop` (a request that came after the last run's child was
-    /// gone) and records the pass with no child yet.
+    /// Records the pass with no child yet.
     fn start(state: &Path) -> io::Result<RunningGuard> {
-        remove_if_exists(&stop_path(state))?;
         let g = RunningGuard {
             state: state.to_path_buf(),
             rec: Running {
@@ -645,7 +643,6 @@ impl RunningGuard {
 impl Drop for RunningGuard {
     fn drop(&mut self) {
         let _ = remove_if_exists(&running_path(&self.state));
-        let _ = remove_if_exists(&stop_path(&self.state));
     }
 }
 
@@ -661,9 +658,17 @@ fn remove_if_exists(p: &Path) -> io::Result<()> {
 /// is empty, so it reads EOF as from null): the kernel keeps that lock until the child and
 /// whatever inherited it exit, so a child orphaned by a killed runner (Ctrl-C) still keeps
 /// writers and the next run's recovery waiting. stdout is drained and dropped; stderr is
-/// returned. The child is killed after `timeout_secs`, or when `sync/stop` appears.
+/// returned. The child is killed after `timeout_secs`, or when a stop is requested (see
+/// [`running`]); with a stop already pending it is not started.
 fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
     let sync = env.sync;
+    if stop_requested(env.state)? {
+        env.running.borrow_mut().stopped = true;
+        return Ok(Ran {
+            stderr: String::new(),
+            outcome: Outcome::Stopped,
+        });
+    }
     let lock = VdirLock::shared_for_child(env.state)?;
     let mut cmd = Command::new(&sync.command);
     cmd.args(args)
@@ -710,10 +715,9 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         if let Some(st) = child.try_wait()? {
             break Outcome::Exited(st);
         }
-        if stop_path(env.state).exists() {
+        if stop_requested(env.state)? {
             kill_tree(&mut child);
             child.wait()?;
-            remove_if_exists(&stop_path(env.state))?;
             env.running.borrow_mut().stopped = true;
             break Outcome::Stopped;
         }

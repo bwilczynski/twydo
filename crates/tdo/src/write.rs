@@ -8,7 +8,7 @@ use twydo_core::config::Config;
 use twydo_core::edit::Op;
 use twydo_core::model::Status;
 use twydo_core::store::{Store, WriteError};
-use twydo_core::sync::running::{StopResult, request_stop, running};
+use twydo_core::sync::running::{StopResult, clear_stop, request_stop, running};
 use twydo_core::views::Snapshot;
 
 /// A write the TUI asks for.
@@ -118,7 +118,10 @@ impl Writer {
             Err(e) => return Err(Refused::Other(format!("cannot stop the sync: {e}"))),
         };
         let wait = self.stop_wait;
-        match self.write(snap, req, now, wait) {
+        let written = self.write(snap, req, now, wait);
+        // The request held off other syncs until this write; withdraw it either way.
+        let _ = clear_stop(&self.config);
+        match written {
             Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
             Err(Refused::Busy { .. }) => {
                 Err(Refused::Other("not saved; the sync did not stop".into()))

@@ -450,6 +450,10 @@ fn stop_and_run_kills_an_orphaned_sync_and_saves() {
     }
     let text = fs::read_to_string(env.task_file()).unwrap();
     assert!(text.contains("STATUS:COMPLETED"), "{text}");
+    assert!(
+        !sync_dir(&cfg).join("stop").exists(),
+        "the stop request is cleared after the write"
+    );
 }
 
 #[test]

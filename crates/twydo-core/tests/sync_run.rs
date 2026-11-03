@@ -16,7 +16,7 @@ use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
-use twydo_core::sync::running::{Running, StopResult, request_stop, running};
+use twydo_core::sync::running::{Running, StopResult, clear_stop, request_stop, running};
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
 
 fn now() -> DateTime<Utc> {
@@ -1285,8 +1285,11 @@ fn stop_request_kills_the_run_and_backs_off() {
     assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
     let pid = fs::read_to_string(&pidfile).unwrap();
     assert!(wait_dead(pid.trim()), "grandchild survived the stop");
-    assert!(!fx.state().join("sync").join("stop").exists());
     assert!(!running_file(&fx).exists());
+    // The request stays until the requester has written, then it clears it.
+    assert!(fx.state().join("sync").join("stop").exists());
+    clear_stop(&fx.cfg).unwrap();
+    assert!(!fx.state().join("sync").join("stop").exists());
 }
 
 #[test]
@@ -1331,7 +1334,10 @@ fn stale_stop_file_does_not_stop_the_next_run() {
     let fx = Fx::new("sleep 0.3\nexit 0");
     let sync_dir = fx.state().join("sync");
     fs::create_dir_all(&sync_dir).unwrap();
-    fs::write(sync_dir.join("stop"), b"").unwrap();
+    let stop = fs::File::create(sync_dir.join("stop")).unwrap();
+    stop.set_modified(std::time::SystemTime::now() - Duration::from_secs(60))
+        .unwrap();
+    drop(stop);
     let r = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(!r.stopped);
     assert_eq!(r.transient, None);
@@ -1365,7 +1371,8 @@ fn stop_with_a_dead_runner_kills_the_recorded_group() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(!running_file(&fx).exists());
-    assert!(!sync_dir.join("stop").exists());
+    // A runner queued behind the orphan must not take the vdir before the write either.
+    assert!(sync_dir.join("stop").exists());
 }
 
 #[test]
@@ -1373,4 +1380,25 @@ fn stop_with_nothing_running() {
     let fx = Fx::new("");
     assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::NothingRunning);
     assert!(!fx.state().join("sync").join("stop").exists());
+}
+
+/// A runner that starts while a stop request is pending (it was waiting behind the stopped
+/// sync) stops before vdirsyncer, so the writer that asked gets the vdir.
+#[test]
+fn fresh_stop_request_stops_a_new_run_before_vdirsyncer() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    let sync_dir = fx.state().join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    fs::write(sync_dir.join("stop"), b"").unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.stopped);
+    assert_eq!(r.transient.as_deref(), Some("sync stopped"));
+    assert!(!count.exists(), "vdirsyncer ran");
+    assert!(sync_dir.join("stop").exists(), "the requester clears it");
 }
