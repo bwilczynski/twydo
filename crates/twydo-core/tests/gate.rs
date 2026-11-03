@@ -187,11 +187,8 @@ fn create_checks_list_and_attribute_cases() {
     let m = matrix(&[("one-time", "create")], "pass", "pass", &[]);
     let new = |collection: &str, due: Option<Due>| {
         Op::Create(NewTask {
-            collection: collection.to_string(),
-            summary: "Synthetic new".into(),
-            description: None,
             due,
-            start: None,
+            ..NewTask::plain(collection, "Synthetic new")
         })
     };
     assert_eq!(

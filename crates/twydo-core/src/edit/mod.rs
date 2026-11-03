@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::ical::value::{IcalDateTime, escape_text, format_date_time};
 use crate::ical::{Calendar, Component, Param, Property};
+use crate::model::TaskKind;
 use crate::model::meta_edit::{MetaJson, default_task_meta};
 use crate::model::repeat::{End, parse_rrule};
 use crate::repeatinput::RepeatSpec;
@@ -58,9 +59,32 @@ pub struct NewTask {
     pub description: Option<String>,
     pub due: Option<Due>,
     pub start: Option<NaiveDate>,
+    pub kind: TaskKind,
+    /// iCalendar UID of the checklist or project this task is an item of.
+    pub parent: Option<String>,
+    /// Needs a due date (checked when the task is built).
+    pub repeat: Option<RepeatSpec>,
+}
+
+impl NewTask {
+    /// A plain task without dates, notes, parent or repeat.
+    pub fn plain(collection: &str, summary: &str) -> NewTask {
+        NewTask {
+            collection: collection.to_string(),
+            summary: summary.to_string(),
+            description: None,
+            due: None,
+            start: None,
+            kind: TaskKind::Task,
+            parent: None,
+            repeat: None,
+        }
+    }
 }
 
 /// A write operation on the task store.
+// `Create` carries a whole `RepeatSpec`; ops are built one at a time, never in bulk.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
     Create(NewTask),

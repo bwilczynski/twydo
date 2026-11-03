@@ -98,21 +98,48 @@ impl MetaJson {
 
 /// 2Do's plain-task key set and order (hypothesis H10, as captured), zero values, `RUID` empty.
 pub fn default_task_meta() -> MetaJson {
+    new_task_meta(0, None, None)
+}
+
+/// The key set of a new task as the phone writes it. `task_type` is 0 task, 1 checklist,
+/// 2 project. A checklist or project gets `uid` (its own id) after
+/// `RecurrenceEndRepetitionsOrig` and `TaskType` before `TaskDuration`; an item gets
+/// `parentuid` before `RUID` (`plan6-list1/01-create`).
+pub fn new_task_meta(task_type: i64, uid: Option<&str>, parent_uid: Option<&str>) -> MetaJson {
     let mut obj = Map::new();
-    for key in [
-        "RecurrenceValue",
-        "RecurrenceEndRepetitionsOrig",
-        "RecurrenceEndRepetitions",
-        "TaskDuration",
-        "TaskType",
-        "RecurrenceType",
-        "StartDayDelay",
-        "isExpandedToShowChildProjects",
-        "RecurrenceFrom",
-        "RecurrenceEndType",
-        "IsStarred",
-    ] {
-        obj.insert(key.to_string(), Value::from(0));
+    let zero = |obj: &mut Map<String, Value>, keys: &[&str]| {
+        for key in keys {
+            obj.insert((*key).to_string(), Value::from(0));
+        }
+    };
+    zero(
+        &mut obj,
+        &["RecurrenceValue", "RecurrenceEndRepetitionsOrig"],
+    );
+    if let Some(uid) = uid {
+        obj.insert("uid".to_string(), Value::from(uid));
+    }
+    zero(&mut obj, &["RecurrenceEndRepetitions"]);
+    if uid.is_some() {
+        obj.insert("TaskType".to_string(), Value::from(task_type));
+        zero(&mut obj, &["TaskDuration"]);
+    } else {
+        zero(&mut obj, &["TaskDuration"]);
+        obj.insert("TaskType".to_string(), Value::from(task_type));
+    }
+    zero(
+        &mut obj,
+        &[
+            "RecurrenceType",
+            "StartDayDelay",
+            "isExpandedToShowChildProjects",
+            "RecurrenceFrom",
+            "RecurrenceEndType",
+            "IsStarred",
+        ],
+    );
+    if let Some(p) = parent_uid {
+        obj.insert("parentuid".to_string(), Value::from(p));
     }
     obj.insert("RUID".to_string(), Value::from(""));
     obj.insert("DisplayOrder".to_string(), Value::from(0));

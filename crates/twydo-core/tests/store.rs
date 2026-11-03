@@ -298,13 +298,7 @@ fn delete_then_undo_restores_file() {
 fn create_writes_new_uid_file() {
     let (env, mut store) = test_env();
     let before = env.files();
-    let op = Op::Create(NewTask {
-        collection: "list2".into(),
-        summary: "Synthetic".into(),
-        description: None,
-        due: None,
-        start: None,
-    });
+    let op = Op::Create(NewTask::plain("list2", "Synthetic"));
     store.apply(&env.snap(), &op, now()).unwrap();
     let after = env.files();
     assert_eq!(after.len(), before.len() + 1);
@@ -457,11 +451,8 @@ fn created_timed_task_has_auto_alarm_and_completes() {
         .and_hms_opt(17, 30, 0)
         .unwrap();
     let op = Op::Create(NewTask {
-        collection: "list2".into(),
-        summary: "Synthetic".into(),
-        description: None,
         due: Some(twydo_core::edit::Due::Time(due)),
-        start: None,
+        ..NewTask::plain("list2", "Synthetic")
     });
     store.apply(&env.snap(), &op, now()).unwrap();
     let after = env.files();

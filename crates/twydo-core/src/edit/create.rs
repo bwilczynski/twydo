@@ -5,9 +5,12 @@
 
 use chrono::{DateTime, Utc};
 
-use super::{EditError, NewTask, set_description, set_due, set_start, set_summary, write_meta};
+use super::{
+    EditError, NewTask, set_description, set_due, set_repeat, set_start, set_summary, write_meta,
+};
 use crate::ical::{Calendar, Component, Property, new_calendar};
-use crate::model::meta_edit::default_task_meta;
+use crate::model::TaskKind;
+use crate::model::meta_edit::new_task_meta;
 
 /// A fresh UID: UUID v4, 32 lowercase hex digits, no dashes (as 2Do).
 pub fn new_uid() -> String {
@@ -24,11 +27,23 @@ fn prop(name: &str, value: &str) -> Property {
 }
 
 /// Build the resource for `t` with UID `uid`. `CREATED`, `DTSTAMP` and `LAST-MODIFIED` are `now`.
-pub fn new_task(t: &NewTask, uid: &str, now: DateTime<Utc>) -> Result<Calendar, EditError> {
+///
+/// `parent_json_uid` is the JSON `uid` of the parent's metadata, when it has one; the item's
+/// `parentuid` is that, else `t.parent` (the parent's iCalendar UID). `RELATED-TO` is always
+/// `t.parent`. A project or checklist gets its own `uid` in its metadata.
+pub fn new_task(
+    t: &NewTask,
+    uid: &str,
+    parent_json_uid: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<Calendar, EditError> {
     let stamp = now.format("%Y%m%dT%H%M%SZ").to_string();
     let mut todo = Component::new("VTODO");
+    todo.insert_prop(prop("UID", uid), None);
+    if let Some(parent) = &t.parent {
+        todo.insert_prop(prop("RELATED-TO", parent), None);
+    }
     for (n, v) in [
-        ("UID", uid),
         ("SEQUENCE", "0"),
         ("SUMMARY", "x"),
         ("DESCRIPTION", ""),
@@ -39,13 +54,22 @@ pub fn new_task(t: &NewTask, uid: &str, now: DateTime<Utc>) -> Result<Calendar, 
     }
     set_summary(&mut todo, &t.summary)?;
     set_description(&mut todo, t.description.as_deref());
-    let meta = default_task_meta();
+    let (task_type, own_uid) = match t.kind {
+        TaskKind::Task => (0, None),
+        TaskKind::Checklist => (1, Some(uid)),
+        TaskKind::Project => (2, Some(uid)),
+    };
+    let parent_uid = t.parent.as_deref().map(|p| parent_json_uid.unwrap_or(p));
+    let meta = new_task_meta(task_type, own_uid, parent_uid);
     write_meta(&mut todo, None, &meta);
     if t.start.is_some() {
         set_start(&mut todo, t.start)?;
     }
     if t.due.is_some() {
         set_due(&mut todo, t.due)?;
+    }
+    if t.repeat.is_some() {
+        set_repeat(&mut todo, t.repeat.as_ref())?;
     }
 
     // DTSTAMP and LAST-MODIFIED come first in 2Do's layout.
