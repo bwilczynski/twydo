@@ -715,7 +715,9 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         if let Some(st) = child.try_wait()? {
             break Outcome::Exited(st);
         }
-        if stop_requested(env.state)? {
+        // An unreadable request counts as none: returning here would leave the child
+        // running with no record of it.
+        if stop_requested(env.state).unwrap_or(false) {
             kill_tree(&mut child);
             child.wait()?;
             env.running.borrow_mut().stopped = true;
