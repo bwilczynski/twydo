@@ -520,7 +520,7 @@ fn end_date_stamp(u: &IcalDateTime) -> i64 {
 ///
 /// - Set: `RRULE` goes right after `DUE`; JSON `RecurrenceType`/`RecurrenceValue` per
 ///   [`repeat::twodo_codes`], `RecurrenceFrom` 1 (2 from completion), the end keys, and `RUID`
-///   = the task's UID. The phone writes its own internal id into `RUID` for tasks Twydo
+///   = the task's UID when empty (a non-empty one is the series id that links history copies, so it stays). The phone writes its own internal id into `RUID` for tasks Twydo
 ///   created; the UID is the nearest value Twydo knows.
 /// - Remove (`None`): `RRULE` goes and `RecurrenceType` becomes 0; `RecurrenceValue`,
 ///   `RecurrenceFrom` and `RUID` stay, as 2Do leaves them (R09).
@@ -561,7 +561,9 @@ fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), Edi
         m.set_i64("RecurrenceValue", val);
         m.set_i64("RecurrenceType", kind);
         m.set_i64("RecurrenceFrom", if spec.from_completion { 2 } else { 1 });
-        m.set_str("RUID", &uid);
+        if m.get_str("RUID").is_none_or(str::is_empty) {
+            m.set_str("RUID", &uid);
+        }
         match &spec.rule.end {
             End::Never => {
                 m.set_i64("RecurrenceEndType", 0);
