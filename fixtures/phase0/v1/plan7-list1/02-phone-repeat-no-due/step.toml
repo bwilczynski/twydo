@@ -1,0 +1,5 @@
+scenario = "plan7-list1"
+step = "02-phone-repeat-no-due"
+device = "iphone"
+action = "R17 (no due): Weekly"
+captured_at = "2026-11-03T21:57:43Z"

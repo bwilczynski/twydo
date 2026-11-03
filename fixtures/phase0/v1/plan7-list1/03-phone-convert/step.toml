@@ -1,0 +1,5 @@
+scenario = "plan7-list1"
+step = "03-phone-convert"
+device = "iphone"
+action = "K1->checklist, K2->project, C->project; P->checklist and Q->task greyed out on the iPhone"
+captured_at = "2026-11-03T22:01:18Z"
