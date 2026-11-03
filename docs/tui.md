@@ -143,7 +143,9 @@ The status line says why, and nothing is written:
   ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
 
 Success messages clear after five seconds. With `[sync] after_edit = true` (the default when
-sync is on), each write starts a background sync.
+sync is on), a background sync starts once writes pause for three seconds, so quick writes in a
+row (closing checklist items one by one) do not wait on a sync started by the one before.
+Quitting starts a pending sync at once.
 
 ## Not in the TUI yet
 

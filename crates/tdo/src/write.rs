@@ -1,6 +1,6 @@
 //! Runs the TUI's write requests through the store and turns the result into a message.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
@@ -24,6 +24,11 @@ pub const LOCK_WAIT: Duration = Duration::from_secs(2);
 /// How long a write waits for a sync it asked to stop.
 pub const STOP_WAIT: Duration = Duration::from_secs(10);
 
+/// How long saves must pause before the after-edit sync starts (issue #19). A sync started
+/// at once holds the vdir, so the next quick save (closing checklist items one by one)
+/// would wait on it.
+pub const SYNC_DELAY: Duration = Duration::from_secs(3);
+
 /// Why a write did not happen.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refused {
@@ -45,7 +50,7 @@ impl Refused {
     }
 }
 
-/// Called after each successful write when `[sync] after_edit` is on.
+/// Starts the after-edit sync; called once saves pause, when `[sync] after_edit` is on.
 pub type SyncTrigger = Box<dyn FnMut(&Config)>;
 
 /// The TUI's store for the session, holding its undo/redo stack.
@@ -59,6 +64,8 @@ pub struct Writer {
     undone: Vec<String>,
     lock_wait: Duration,
     stop_wait: Duration,
+    /// When the last write that wants an after-edit sync happened; None: no sync is due.
+    sync_due: Option<Instant>,
 }
 
 impl Writer {
@@ -83,6 +90,7 @@ impl Writer {
             undone: Vec::new(),
             lock_wait: LOCK_WAIT,
             stop_wait: STOP_WAIT,
+            sync_due: None,
         }
     }
 
@@ -103,7 +111,7 @@ impl Writer {
         let wait = self.lock_wait;
         let written = self.write(snap, req, now, wait);
         if written.is_ok() {
-            self.after_write();
+            self.sync_soon();
         }
         written
     }
@@ -127,7 +135,7 @@ impl Writer {
         // before the after-edit sync starts, which would otherwise stop itself.
         let _ = clear_stop(&self.config);
         if written.is_ok() {
-            self.after_write();
+            self.sync_soon();
         }
         match written {
             Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
@@ -173,9 +181,27 @@ impl Writer {
         Ok(message)
     }
 
-    /// Starts the after-edit sync when `[sync] after_edit` is on.
-    fn after_write(&mut self) {
+    /// Schedules the after-edit sync when `[sync] after_edit` is on: it starts once nothing
+    /// was written for [`SYNC_DELAY`] (see [`Writer::sync_if_quiet`]). Each call pushes it back.
+    pub fn sync_soon(&mut self) {
         if self.config.sync.as_ref().is_some_and(|s| s.after_edit) {
+            self.sync_due = Some(Instant::now());
+        }
+    }
+
+    /// Starts the scheduled sync if [`SYNC_DELAY`] has passed since the last write by `now`.
+    pub fn sync_if_quiet(&mut self, now: Instant) {
+        if self
+            .sync_due
+            .is_some_and(|t| now.saturating_duration_since(t) >= SYNC_DELAY)
+        {
+            self.flush_sync();
+        }
+    }
+
+    /// Starts the scheduled sync now, if one is due (on quit).
+    pub fn flush_sync(&mut self) {
+        if self.sync_due.take().is_some() {
             (self.after_write)(&self.config);
         }
     }

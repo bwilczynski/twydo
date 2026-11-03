@@ -48,7 +48,7 @@ and conflict handling are in [sync.md](sync.md).
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
 | `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
-| `after_edit` | bool | `true` | Start a sync after a local edit. |
+| `after_edit` | bool | `true` | Start a sync after a local edit (in the TUI, once edits pause for three seconds). |
 | `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
 | `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |

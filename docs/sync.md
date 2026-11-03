@@ -59,7 +59,7 @@ in [config.md](config.md) (`[sync]`).
 
    Both run `tdo sync --background` every minute. Independently of the timer, `tdo op` writes and
    `tdo conflicts resolve` start a detached `tdo sync --background` when `[sync] after_edit` is on
-   (the default).
+   (the default). The TUI starts it once edits pause for three seconds, and at once on quit.
 
 ## What `tdo sync` does
 
