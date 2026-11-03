@@ -12,9 +12,11 @@ release_always = false
 # Only user-facing changes open a release PR.
 release_commits = "^(feat|fix)"
 
-# One version and one tag for the workspace: tdo carries the release and the
-# changelog (at the repository root, including twydo-core's changes);
-# twydo-core is never tagged or released on its own.
+# One version and one tag for the workspace. tdo carries the tag and the
+# changelog (at the repository root). twydo-core is still released, untagged
+# and without a changelog of its own, so that a change touching only the core
+# bumps the version and lands in tdo's changelog (`changelog_include` skips
+# packages with `release = false`).
 [[package]]
 name = "tdo"
 changelog_path = "./CHANGELOG.md"
@@ -22,7 +24,8 @@ changelog_include = ["twydo-core"]
 
 [[package]]
 name = "twydo-core"
-release = false
+git_tag_enable = false
+changelog_update = false
 
 [changelog]
 commit_parsers = [
