@@ -21,6 +21,14 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         Mode::Normal => ("NORMAL", None),
         Mode::Search => ("SEARCH", Some(format!("/{}▏", app.input))),
         Mode::Command => ("COMMAND", Some(format!(":{}▏", app.input))),
+        Mode::Insert if let Some(row) = &app.new_row => {
+            let list = list_name(&app.snapshot, &row.target.collection);
+            let hint = match &row.error {
+                Some(e) => format!("{e} · Enter save  Esc cancel"),
+                None => format!("New task in {list} · Enter save  Tab more  Esc cancel"),
+            };
+            ("INSERT", Some(hint))
+        }
         Mode::Insert => {
             let hint = match app.form.as_ref().map(|f| f.focus) {
                 Some(Field::Notes) => {
@@ -67,6 +75,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             app.stop_question().unwrap_or_default().to_string(),
             theme::warning(),
         ),
+        // A refused new row's reason.
+        (Some(p), _) if app.new_row.as_ref().is_some_and(|r| r.error.is_some()) => {
+            Span::styled(p, theme::warning())
+        }
         (Some(p), _) => Span::raw(p),
         (None, Some(m)) => Span::styled(m.clone(), theme::warning()),
         (None, None) => Span::styled(HINTS, dim()),

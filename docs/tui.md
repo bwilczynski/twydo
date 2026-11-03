@@ -71,6 +71,8 @@ These act when the Tasks or Details pane has focus.
 | `dd` | delete |
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
 | `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
+| `o` / `O` | new task below / above the selected one ([Adding tasks](#adding-tasks)) |
+| `a` | new item at the end of the selected project or checklist; on a plain task, asks whether to make it one first |
 | `i`, or `Enter` on a task without items | edit card |
 | `r` | edit card, on the Repeat field |
 
@@ -87,6 +89,44 @@ On a checklist or project, a write acts on the whole family; see
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | list files that could not be read |
 | `:q` | quit |
+
+## Adding tasks
+
+`o` opens an empty row below the selected task, `O` above it. Type the title straight into the
+list; the status line shows where the task will go:
+`New task in Inbox · Enter save  Tab more  Esc cancel`.
+
+| Where the cursor is | The new task |
+|---|---|
+| a list | goes into that list |
+| Today | goes to the default list, due today |
+| All, Scheduled, Done, Next 3 Days | goes to the default list, with no dates |
+| an item of a project or checklist (any view) | becomes another item of the same parent; in Today a project item is due today, a checklist item has no dates |
+
+The default list is `default_list` from the config ([config.md](config.md)), else the list named
+Inbox, else the first list.
+
+On the row:
+
+- `Enter` saves. The cursor goes to the new task; when the view does not show it (a task
+  without dates added in Scheduled, say), the status line says `Added "…" to Inbox` and the
+  cursor stays. `Enter` on an empty row closes it.
+- Inside a project or checklist, `Enter` saves and opens the next item's row below it, so you
+  can type a whole checklist in one go. Each saved item is its own write and undo step.
+- `Tab` opens the [edit card](#the-edit-card) for the new task, keeping the title.
+- `Esc` closes the row and writes nothing. Items already saved by `Enter` stay.
+- `Backspace`, `Ctrl-u` (clear) and `Ctrl-w` (delete a word) edit the title; a paste goes in as
+  one line.
+
+`a` on a project or checklist opens an item row at the end of its items, expanding it. On an
+item it adds another item at the end of the same parent. On a plain task it asks first:
+`Add items: make it a (p)roject or (c)hecklist?`. `p` or `c` converts the task (one write) and
+then opens the item row; any other key cancels. If the conversion is refused, the status line
+says why and no row opens.
+
+If a save is refused, the row stays with your text and the status line shows why. When the
+parent was deleted meanwhile (on the phone, say), the row closes instead: there is nothing left
+to add items to.
 
 ## The edit card
 
@@ -193,8 +233,8 @@ The status line says why, and nothing is written:
     pending until the next sync that works sends it. Any sync can be stopped this way, whether the
     TUI, the timer or a `tdo sync` started it. If it does not let go within ten seconds, nothing is
     written: `not saved; the sync did not stop`.
-  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit card stays
-    open with what you typed; for a one-key action, press the key again later.
+  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit card or
+    new row stays open with what you typed; for a one-key action, press the key again later.
 
   Other keys do nothing while the question is open. When the TUI cannot tell which sync holds the
   vdir, it says `a sync is running; try again in a moment` instead.
@@ -208,6 +248,6 @@ Quitting starts a pending sync at once.
 
 ## Not in the TUI yet
 
-`o` / `O` (add a task or item, with natural-language input), `J` / `K` (manual order), `a`
-(alerts) and list management. These keys show `not available yet`;
-the help marks them `(after gate)`.
+Natural-language input on the new row (dates typed with the title), `J` / `K` (manual order;
+until then `o` and `O` differ only while typing), alerts and list management. `J` and `K` show
+`not available yet`; the help marks them `(after gate)`.

@@ -43,6 +43,8 @@ pub struct NewTarget {
     pub collection: String,
     /// UID of the checklist or project the task becomes an item of.
     pub parent: Option<String>,
+    /// That parent's kind: it decides the card's fields (see [`EditForm::fields`]).
+    pub parent_kind: Option<TaskKind>,
     /// Start with Due = today (a new task in Today).
     pub due_today: bool,
 }
@@ -73,8 +75,7 @@ pub struct EditForm {
     pub repeat: String,
     pub notes: String,
     /// The kind of the parent this task is an item of, which decides the fields: a checklist
-    /// item has only Title and Notes, and no item has List. [`EditForm::open`] sets it; for a
-    /// new item the caller sets it after [`EditForm::new_task`].
+    /// item has only Title and Notes, and no item has List.
     pub item_of: Option<TaskKind>,
     /// Why the last save was refused.
     pub error: Option<String>,
@@ -120,7 +121,8 @@ impl EditForm {
         f
     }
 
-    /// The card for a task not written yet, starting with `title`.
+    /// The card for a task not written yet, starting with `title`. Due starts as `today` when
+    /// the target asks for it; a checklist item has no Due, so it is never written.
     pub fn new_task(target: NewTarget, title: String, _tz: Tz) -> EditForm {
         let values = Values {
             title,
@@ -135,7 +137,9 @@ impl EditForm {
             repeat: String::new(),
             notes: String::new(),
         };
-        EditForm::with(None, target.parent, values, None)
+        let mut f = EditForm::with(None, target.parent, values, None);
+        f.item_of = target.parent_kind;
+        f
     }
 
     fn with(
@@ -233,29 +237,11 @@ impl EditForm {
             (KeyCode::Char('h') | KeyCode::Left, false) if self.focus == Field::Type => {
                 self.cycle_kind(-1)
             }
-            (KeyCode::Char('u'), true) => {
+            _ => {
                 if let Some(t) = self.text_mut() {
-                    t.clear();
+                    edit_line(t, k);
                 }
             }
-            (KeyCode::Char('w'), true) => {
-                if let Some(t) = self.text_mut() {
-                    let kept = t.trim_end().trim_end_matches(|c: char| !c.is_whitespace());
-                    let kept = kept.trim_end().len();
-                    t.truncate(kept);
-                }
-            }
-            (KeyCode::Backspace, _) => {
-                if let Some(t) = self.text_mut() {
-                    t.pop();
-                }
-            }
-            (KeyCode::Char(c), false) => {
-                if let Some(t) = self.text_mut() {
-                    t.push(c);
-                }
-            }
-            _ => {}
         }
         FormAction::None
     }
@@ -400,22 +386,38 @@ impl EditForm {
         })
     }
 
+    /// The new task from the fields the card shows; a hidden field is never written (a
+    /// checklist item gets no dates or repeat, whatever its Due started as).
     fn create(&self, today: NaiveDate, work_days: &[Weekday]) -> Result<NewTask, String> {
         let summary = self.checked_title()?.to_string();
-        let mut due = self.parsed_due(today)?;
-        let start = self.parsed_start(today)?;
-        let repeat = repeatinput::parse(&self.repeat, today, work_days)
-            .map_err(|e| format!("repeat: {e}"))?;
+        let shown = self.fields();
+        let mut due = match shown.contains(&Field::Due) {
+            true => self.parsed_due(today)?,
+            false => None,
+        };
+        let start = match shown.contains(&Field::Start) {
+            true => self.parsed_start(today)?,
+            false => None,
+        };
+        let repeat = match shown.contains(&Field::Repeat) {
+            true => repeatinput::parse(&self.repeat, today, work_days)
+                .map_err(|e| format!("repeat: {e}"))?,
+            false => None,
+        };
         if repeat.is_some() && due.is_none() {
             due = Some(Due::Date(today));
         }
+        let kind = match shown.contains(&Field::Type) {
+            true => self.kind,
+            false => TaskKind::Task,
+        };
         Ok(NewTask {
             collection: self.list.clone(),
             summary,
             description: (!self.notes.is_empty()).then(|| self.notes.clone()),
             due,
             start,
-            kind: self.kind,
+            kind,
             parent: self.parent.clone(),
             repeat,
         })
@@ -424,16 +426,8 @@ impl EditForm {
     /// Insert pasted text into the focused text field as one line: line breaks become
     /// spaces, a trailing one is dropped. Notes take no paste (they are edited in `$EDITOR`).
     pub fn paste(&mut self, text: &str) {
-        let line: String = text
-            .split('\n')
-            .map(|l| l.trim_end_matches('\r'))
-            .collect::<Vec<_>>()
-            .join(" ")
-            .chars()
-            .map(|c| if c.is_control() { ' ' } else { c })
-            .collect();
         if let Some(t) = self.text_mut() {
-            t.push_str(line.trim_end());
+            t.push_str(&one_line(text));
         }
     }
 
@@ -445,4 +439,38 @@ impl EditForm {
     pub fn set_list(&mut self, list: String) {
         self.list = list;
     }
+}
+
+/// The line-editing keys shared by the card's text fields and the new row: typing,
+/// `Backspace`, `Ctrl-u` clears, `Ctrl-w` deletes the last word. Returns whether `k` was one.
+pub(crate) fn edit_line(t: &mut String, k: KeyEvent) -> bool {
+    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+    match (k.code, ctrl) {
+        (KeyCode::Char('u'), true) => t.clear(),
+        (KeyCode::Char('w'), true) => {
+            let kept = t.trim_end().trim_end_matches(|c: char| !c.is_whitespace());
+            let kept = kept.trim_end().len();
+            t.truncate(kept);
+        }
+        (KeyCode::Backspace, _) => {
+            t.pop();
+        }
+        (KeyCode::Char(c), false) => t.push(c),
+        _ => return false,
+    }
+    true
+}
+
+/// Pasted text as one line: line breaks become spaces, a trailing one is dropped, other
+/// control characters become spaces.
+pub(crate) fn one_line(text: &str) -> String {
+    let line: String = text
+        .split('\n')
+        .map(|l| l.trim_end_matches('\r'))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    line.trim_end().to_string()
 }

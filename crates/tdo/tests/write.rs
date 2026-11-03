@@ -992,3 +992,60 @@ fn check_queued_orphan_stop(delay_status: bool) {
     assert!(st.failures > 0, "the stop was not recorded");
     assert!(st.next_attempt.is_some());
 }
+
+/// The `Enter` chain against a real store (test mode): each row writes one item under the
+/// parent; once the parent is deleted elsewhere, the next save is refused, the row closes,
+/// and the items already saved stay (Review Focus 5).
+#[test]
+fn enter_chain_writes_items_until_the_parent_is_gone() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let key = |c: KeyCode| KeyEvent::new(c, KeyModifiers::NONE);
+    let env = Env::new();
+    add_family(&env);
+    let mut cfg = env.config();
+    cfg.writes.mode = twydo_core::config::WriteMode::Test;
+    let (mut w, _) = writer(&cfg);
+    let tz = chrono_tz::America::New_York;
+    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
+    app.handle_key(key(KeyCode::Char('2')));
+    app.cursor = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == "fam-p")
+        .unwrap();
+    app.handle_key(key(KeyCode::Char('a')));
+    let mut save = |app: &mut App, title: &str| {
+        for c in title.chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        let Outcome::Write(req) = app.handle_key(key(KeyCode::Enter)) else {
+            panic!("expected a write");
+        };
+        let result = w.run(app.write_snapshot(), &req, now());
+        if result.is_err() {
+            app.write_refused();
+        }
+        app.reload(env.snapshot());
+        app.write_finished(result.map_err(|e| e.message()));
+    };
+    save(&mut app, "Socks");
+    let socks = app
+        .snapshot
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Socks")
+        .unwrap();
+    assert_eq!(socks.parent.as_deref(), Some("fam-p"));
+    let socks = socks.uid.clone();
+    let row = app.new_row.as_ref().expect("the next row opens");
+    assert_eq!(row.anchor.as_deref(), Some(socks.as_str()));
+
+    fs::remove_file(env.vdir().join("list1/fam-p.ics")).unwrap();
+    app.reload(env.snapshot());
+    save(&mut app, "Hat");
+    assert!(app.new_row.is_none(), "the row closes");
+    assert_eq!(app.message.as_deref(), Some("no task with UID fam-p"));
+    assert!(app.snapshot.find(&socks).is_some(), "the saved item stays");
+    assert!(!app.snapshot.tasks.iter().any(|t| t.summary == "Hat"));
+}

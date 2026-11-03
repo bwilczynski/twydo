@@ -501,6 +501,7 @@ fn new_task_saves_as_create() {
     let target = NewTarget {
         collection: "inbox".into(),
         parent: None,
+        parent_kind: None,
         due_today: true,
     };
     let mut f = EditForm::new_task(target, "Plan the garden".into(), NY);
@@ -523,10 +524,10 @@ fn new_task_saves_as_create() {
     let target = NewTarget {
         collection: "personal".into(),
         parent: Some("sv-personal-2".into()),
+        parent_kind: Some(TaskKind::Checklist),
         due_today: false,
     };
-    let mut f = EditForm::new_task(target, "Socks".into(), NY);
-    f.item_of = Some(TaskKind::Checklist);
+    let f = EditForm::new_task(target, "Socks".into(), NY);
     assert_eq!(f.fields(), vec![Field::Title, Field::Notes]);
     assert_eq!(
         f.save(today(), &WD),
@@ -538,6 +539,7 @@ fn new_task_saves_as_create() {
     let target = NewTarget {
         collection: "inbox".into(),
         parent: None,
+        parent_kind: None,
         due_today: false,
     };
     let mut f = EditForm::new_task(target, "Stretch".into(), NY);
@@ -551,6 +553,7 @@ fn new_task_saves_as_create() {
         NewTarget {
             collection: "inbox".into(),
             parent: None,
+            parent_kind: None,
             due_today: false,
         },
         " ".into(),
@@ -559,5 +562,36 @@ fn new_task_saves_as_create() {
     assert_eq!(
         f.save(today(), &WD),
         Err("title must not be empty".to_string())
+    );
+}
+
+/// A new item's card shows only what its parent allows, and saves only that: a checklist item
+/// added in Today gets no due date, a project item does.
+#[test]
+fn new_item_saves_only_the_fields_it_shows() {
+    let item = |kind| NewTarget {
+        collection: "personal".into(),
+        parent: Some("sv-personal-2".into()),
+        parent_kind: Some(kind),
+        due_today: true,
+    };
+    let f = EditForm::new_task(item(TaskKind::Checklist), "Socks".into(), NY);
+    assert_eq!(f.item_of, Some(TaskKind::Checklist));
+    assert_eq!(f.fields(), vec![Field::Title, Field::Notes]);
+    assert_eq!(
+        f.save(today(), &WD),
+        Ok(Op::Create(NewTask {
+            parent: Some("sv-personal-2".into()),
+            ..NewTask::plain("personal", "Socks")
+        }))
+    );
+    let f = EditForm::new_task(item(TaskKind::Project), "Book flights".into(), NY);
+    assert_eq!(
+        f.save(today(), &WD),
+        Ok(Op::Create(NewTask {
+            parent: Some("sv-personal-2".into()),
+            due: Some(Due::Date(today())),
+            ..NewTask::plain("personal", "Book flights")
+        }))
     );
 }
