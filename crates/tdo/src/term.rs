@@ -109,6 +109,9 @@ fn event_loop(
                             // not against the reload below.
                             let base = matches!(result, Err(Refused::Busy { .. }))
                                 .then(|| app.write_snapshot().clone());
+                            if result.is_err() {
+                                app.write_refused();
+                            }
                             // Reload after failures too: a stale write means the vdir moved on.
                             reload(app, root);
                             refresh_sync(app);
@@ -123,6 +126,9 @@ fn event_loop(
                             // Waits up to write::STOP_WAIT for the sync to let go.
                             let result =
                                 writer.stop_and_run(app.write_snapshot(), &req, Utc::now());
+                            if result.is_err() {
+                                app.write_refused();
+                            }
                             reload(app, root);
                             refresh_sync(app);
                             app.write_finished(result.map_err(|e| e.message()));
