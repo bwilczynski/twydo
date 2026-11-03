@@ -664,3 +664,38 @@ fn declining_after_the_task_changed_rebuilds_the_form() {
         Some("not saved; the sync is still running; the form now shows the saved version")
     );
 }
+
+/// Runs `f` in a thread; true if it finished within `limit`.
+fn finishes_within(limit: Duration, f: impl FnOnce() + Send + 'static) -> bool {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        f();
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(limit).is_ok()
+}
+
+/// Issue #10: opening the TUI during a long sync must not wait for it. The runner recovers
+/// the journal before vdirsyncer starts, and every write recovers under the lock again.
+#[test]
+fn tui_opens_while_a_sync_holds_the_vdir() {
+    let env = Env::new();
+    let cfg = env.config();
+    let (mut w, _) = writer(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap(); // the journal exists now
+    let _sync = shared_lock(&cfg);
+    let c = cfg.clone();
+    assert!(
+        finishes_within(Duration::from_secs(2), move || {
+            tdo::cli::recover_at_startup(&c);
+        }),
+        "startup recovery waited for the sync"
+    );
+    let c = cfg.clone();
+    assert!(
+        finishes_within(Duration::from_secs(2), move || {
+            let _ = Writer::open_with(&c, Matrix::embedded().clone(), Box::new(|_| {}));
+        }),
+        "opening the writer waited for the sync"
+    );
+}

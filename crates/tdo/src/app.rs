@@ -928,6 +928,11 @@ impl App {
         self.stop_prompt = Some((req, question));
     }
 
+    /// The open stop question, if any; the status line shows it over any mode's hints.
+    pub fn stop_question(&self) -> Option<&str> {
+        self.stop_prompt.as_ref().map(|(_, q)| q.as_str())
+    }
+
     /// `y` stops the sync and writes; `n` or Esc gives up the write; other keys do nothing.
     fn stop_prompt_key(&mut self, k: KeyEvent) -> Outcome {
         match k.code {

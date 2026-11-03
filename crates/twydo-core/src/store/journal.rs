@@ -279,6 +279,20 @@ pub fn recover(vdir: &Path, state_dir: &Path) -> io::Result<RecoveryReport> {
     recover_locked(vdir, &journal)
 }
 
+/// [`recover`], unless another process holds the vdir lock: then `None`, without waiting.
+/// For opening `tdo` during a sync: the runner recovers before vdirsyncer starts, and every
+/// write recovers again under the lock, so nothing is skipped for good.
+pub fn try_recover(vdir: &Path, state_dir: &Path) -> io::Result<Option<RecoveryReport>> {
+    if !state_dir.join("journal").is_dir() {
+        return Ok(Some(RecoveryReport::default()));
+    }
+    let Some(_lock) = VdirLock::try_exclusive(state_dir)? else {
+        return Ok(None);
+    };
+    let journal = Journal::open(state_dir)?;
+    recover_locked(vdir, &journal).map(Some)
+}
+
 /// Like [`recover`], for callers that already hold the exclusive lock.
 ///
 /// Prepared entries are applied in id order; each that applies is marked

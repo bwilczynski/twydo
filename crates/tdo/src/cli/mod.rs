@@ -52,8 +52,9 @@ pub fn resolve_config(vdir: Option<&Path>) -> Result<Config, CliError> {
     }
 }
 
-/// Roll forward unfinished journal entries before reading. Problems are reported on stderr
-/// and reading continues, read-only as far as the journal is concerned.
+/// Roll forward unfinished journal entries before reading, unless a sync holds the vdir.
+/// Problems are reported on stderr and reading continues, read-only as far as the journal is
+/// concerned.
 pub fn recover_at_startup(config: &Config) {
     let state = match existing_vdir_state(&config.state_dir(), &config.vdir) {
         Ok(Some(state)) => state,
@@ -61,9 +62,11 @@ pub fn recover_at_startup(config: &Config) {
         Ok(None) => return,
         Err(e) => return eprintln!("tdo: journal recovery failed: {e}"),
     };
-    match twydo_core::store::journal::recover(&config.vdir, &state) {
-        Ok(report) if report.stuck.is_empty() => {}
-        Ok(_) => eprintln!("tdo: journal has unfinished operations; run 'tdo op journal'"),
+    // A running sync holds the vdir: it recovered before it started, so do not wait for it.
+    match twydo_core::store::journal::try_recover(&config.vdir, &state) {
+        Ok(None) => {}
+        Ok(Some(report)) if report.stuck.is_empty() => {}
+        Ok(Some(_)) => eprintln!("tdo: journal has unfinished operations; run 'tdo op journal'"),
         Err(e) => eprintln!("tdo: journal recovery failed: {e}"),
     }
 }

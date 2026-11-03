@@ -1063,3 +1063,23 @@ fn another_task_opens_details_at_the_top() {
     press(&mut a, 'k');
     assert!(details_text(&mut a).contains("Long notes task"));
 }
+
+/// Issue #10: the stop question must be visible over the form's key hints.
+#[test]
+fn stop_question_shows_while_the_form_is_open() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    a.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+    let tdo::app::Outcome::Write(req) =
+        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected a write");
+    };
+    a.write_busy(req, Some(std::time::Duration::from_secs(14)));
+    let buf = render(&mut a, 120, 30);
+    let last = line(&buf, 29);
+    assert!(
+        last.contains("sync running for 14s — stop it and save? (y/n)"),
+        "{last}"
+    );
+}
