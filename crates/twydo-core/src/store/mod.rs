@@ -27,8 +27,8 @@ use crate::ical::{self, Calendar};
 use crate::views::Snapshot;
 use fsio::VdirLock;
 use journal::{
-    ApplyError, Entry, FORMAT, Journal, Stage, Write, apply_entry, new_op_id, recover,
-    recover_locked,
+    ApplyError, Entry, FORMAT, Journal, Stage, Write, apply_entry, new_op_id, recover_locked,
+    try_recover,
 };
 
 pub use journal::RecoveryReport;
@@ -250,8 +250,9 @@ impl Store {
     pub fn open_with(cfg: &Config, matrix: Matrix) -> Result<(Store, RecoveryReport), WriteError> {
         let vdir = cfg.vdir.clone();
         let state = bind_vdir_state(&cfg.state_dir(), &vdir)?;
-        // Recovery takes the lock itself; the store holds none between operations (R2).
-        let report = recover(&vdir, &state)?;
+        // Recovery takes the lock itself; the store holds none between operations (R2). A sync
+        // holding the vdir defers it to the first write, which recovers under the lock anyway.
+        let report = try_recover(&vdir, &state)?.unwrap_or_default();
         let journal = Journal::open(&state)?;
         let store = Store {
             vdir,

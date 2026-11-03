@@ -171,7 +171,7 @@ applied writes are skipped, applying an entry twice has the same effect as apply
 ### Recovery
 
 Recovery runs at the start of every command that reads the vdir (`tdo` / `tdo tui`,
-`export-json`, `check`, `op`) and before every sync:
+`export-json`, `check`, `op`), before every sync, and before every write:
 
 - with no journal directory, it does nothing and creates nothing;
 - otherwise, under the exclusive lock, every `prepared` entry is rolled forward and marked
@@ -183,6 +183,10 @@ Recovery runs at the start of every command that reads the vdir (`tdo` / `tdo tu
 - an I/O error stops recovery; the entry stays `prepared` and is retried next time.
 
 Recovery is idempotent: a second run finds nothing to apply and changes nothing.
+
+At the start of a command, recovery does not wait for a running sync: when a sync holds the vdir
+lock, it is skipped, so `tdo` opens at once. Nothing is lost by that. The sync recovered before
+vdirsyncer started, and the next write recovers under the lock before it changes anything.
 
 ### Undo, redo and retention
 

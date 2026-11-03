@@ -58,6 +58,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         rest.push(Span::raw("  "));
     }
     rest.push(match (prompt, &app.message) {
+        // The stop question waits for y/n whatever the mode, so it must be seen.
+        _ if app.stop_question().is_some() => Span::styled(
+            app.stop_question().unwrap_or_default().to_string(),
+            theme::warning(),
+        ),
         (Some(p), _) => Span::raw(p),
         (None, Some(m)) => Span::styled(m.clone(), theme::warning()),
         (None, None) => Span::styled(HINTS, dim()),
