@@ -83,7 +83,9 @@ One run, in order:
    reads) continue and writers wait. vdirsyncer holds a shared lock of its own too (its stdin is
    the lock file), which lasts until it exits even if `tdo` does not. The runner sets
    `TWYDO_SYNC_VDIR` to the vdir, so the hook works on the same vdir as a
-   `tdo --vdir <dir> sync`. It is killed after `timeout_secs`. Then `vdirsyncer metasync
+   `tdo --vdir <dir> sync`. While it runs, the runner records itself in `sync/running.json`. It
+   is killed after `timeout_secs`, or earlier when a save in the TUI asks to stop it (see
+   [Stopping a sync](#stopping-a-sync)). Then `vdirsyncer metasync
    <pair>` runs if `metasync` is on and the sync did not fail (a failure such as a missing
    password would only repeat). A failed metasync is reported (`metasync failed: ...`) but is
    not a sync failure.
@@ -187,7 +189,8 @@ The record of a list is only as good as the last sync that wrote it:
 
 vdirsyncer is killed (with its child processes) after `timeout_secs` (default 300); the run counts
 as a failure, and every list it reported (conflicted ones too) is marked `error`, so a timed-out
-run confirms no edit. A run fails transiently when the command cannot be started, times out, prints
+run confirms no edit. A stopped run (below) is handled the same way, with the error
+`sync stopped`. A run fails transiently when the command cannot be started, times out, is stopped, prints
 errors that belong to no conflict or emptied-list report, leaves a list in `error`, or exits
 non-zero for no stated reason. Conflicts and emptied lists are not failures.
 
@@ -196,6 +199,24 @@ After `n` failures in a row a background run waits `60 s * 2^(n-1)` before tryin
 count. `tdo status` shows `failures: n (next attempt ...)` and the last error. A failed sync never
 blocks local use or notifications: the runner holds no exclusive lock while it waits on the
 network.
+
+## Stopping a sync
+
+A sync holds the vdir for as long as vdirsyncer runs, and a slow one (for example vdirsyncer
+waiting for a password prompt) blocks every write meanwhile. A save in the TUI can stop it
+([tui.md](tui.md#when-a-write-is-refused)):
+
+- While vdirsyncer runs, the runner keeps `sync/running.json`: its own process id, vdirsyncer's
+  process group, and when it started.
+- To stop it, `tdo` creates `sync/stop`. The runner checks for that file while it waits for
+  vdirsyncer, kills vdirsyncer and its child processes, and records the run as failed with
+  `sync stopped`: it backs off, its lists show `error`, and no edit is confirmed. The edits stay
+  pending and go to the server with the next sync that works. A stopped run is not rerun even if
+  another runner asked for one.
+- If the runner itself is gone (for example `tdo sync` was ended with Ctrl-C and left vdirsyncer
+  running, see Known limits), `tdo` kills the recorded process group itself.
+- A `sync/stop` left over from a request that came too late is removed when the next vdirsyncer
+  call starts, so it never stops a later run.
 
 ## State files
 
@@ -208,6 +229,8 @@ read; do not edit them while a sync runs.
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
+| `sync/running.json` | exists while vdirsyncer runs: `runner_pid`, `child_pgid` (vdirsyncer's process group, `null` between calls), `started` |
+| `sync/stop` | a request to stop the running sync; the runner removes it |
 | `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
@@ -241,7 +264,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
   interactive `tdo sync` stops `tdo` but not vdirsyncer: it runs in its own process group so that
   a timeout can kill it together with its child processes. It finishes on its own, still holding
   its shared vdir lock, so writers (`tdo op`, the TUI) and the next `tdo sync` wait until it
-  exits. Its result is not reconciled by the killed run: the next `tdo sync` checks the journal
+  exits, unless you stop it from the TUI. Its result is not reconciled by the killed run: the next `tdo sync` checks the journal
   again, but a delete-versus-edit it settled leaves no trace (as for vdirsyncer run by hand), and
   the `timeout_secs` limit no longer applies to it.
 - **A create edited before it was confirmed.** A task created in Twydo whose create reached the
@@ -253,10 +276,9 @@ Lock order is always run lock, vdir lock, conflicts lock.
   vdirsyncer sees no conflict; but each adds its own completed copy, so the occurrence shows as
   done twice. Nothing is lost; delete one copy if it bothers you.
 - **A locked password store stalls sync.** If vdirsyncer fetches the password with `pass` and the
-  gpg agent needs your passphrase, vdirsyncer waits for pinentry (a few minutes) while
-  holding the vdir lock, so writes in the TUI are refused with "a sync is running" meanwhile
-  ([issue #10](https://github.com/bwilczynski/twydo/issues/10)). Unlock gpg, or let the agent
-  cache the passphrase longer.
+  gpg agent needs your passphrase, vdirsyncer waits for pinentry (a few minutes) while holding the
+  vdir lock. A save in the TUI then asks whether to stop the sync ([Stopping a sync](#stopping-a-sync)).
+  To avoid it, unlock gpg, or let the agent cache the passphrase longer.
 
 All of these flows were checked against 2Do on an iPhone; the session log is
 [plan3-sync.md](reference/phase0/plan3-sync.md).
