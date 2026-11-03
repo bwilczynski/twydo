@@ -794,3 +794,107 @@ fn stop_and_save_refuses_a_one_key_action_on_a_task_changed_meanwhile() {
     assert!(result.is_err(), "{result:?}");
     assert!(env.task_file().exists(), "the remote update was deleted");
 }
+
+/// PR re-review: a runner queued behind an orphan (it holds run.lock and waits for the vdir)
+/// must not miss the stop and restart vdirsyncer once the save has withdrawn its request.
+#[test]
+fn queued_runner_cannot_miss_an_orphan_stop() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+    use std::process::{Command, Stdio};
+    let env = Env::new();
+    let mut cfg = sync_config(&env);
+    cfg.sync.as_mut().unwrap().after_edit = false;
+    cfg.sync.as_mut().unwrap().metasync = false;
+    let marker = env.dir.path().join("started-again");
+    let fake = env.dir.path().join("fake.sh");
+    fs::write(
+        &fake,
+        format!("#!/bin/sh\necho ran > '{}'\nsleep 0.2\n", marker.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    cfg.sync.as_mut().unwrap().command = fake.display().to_string();
+    let config_root = env.dir.path().join("config");
+    fs::create_dir_all(config_root.join("twydo")).unwrap();
+    fs::write(
+        config_root.join("twydo/config.toml"),
+        format!(
+            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\nafter_edit = false\n",
+            cfg.vdir.display(),
+            cfg.state_dir().display(),
+            fake.display()
+        ),
+    )
+    .unwrap();
+    let (mut w, _) = writer(&cfg);
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let sync = sync_dir(&cfg);
+    let mut orphan = Command::new("sleep")
+        .arg("30")
+        .stdin(VdirLock::shared_for_child(&state).unwrap())
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: 0,
+            runner_start: None,
+            child_pgid: Some(orphan.id()),
+            child_start: process_start(orphan.id()),
+            started: Utc::now(),
+        },
+    );
+    let run_lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(sync.join("run.lock"))
+        .unwrap();
+    let mut queued = Command::new(env!("CARGO_BIN_EXE_tdo"))
+        .args(["sync", "--background"])
+        .env("XDG_CONFIG_HOME", &config_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        match run_lock.try_lock() {
+            Ok(()) => run_lock.unlock().unwrap(),
+            Err(std::fs::TryLockError::WouldBlock) => break,
+            Err(e) => panic!("{e:?}"),
+        }
+        assert!(Instant::now() < deadline, "runner did not take run.lock");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // It owns run.lock and waits for the orphan's vdir lock; pause it until after the save.
+    let pid = queued.id().to_string();
+    assert!(
+        Command::new("kill")
+            .args(["-STOP", &pid])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let result = w.stop_and_run(&env.snapshot(), &complete_a(), Utc::now());
+    assert!(
+        Command::new("kill")
+            .args(["-CONT", &pid])
+            .status()
+            .unwrap()
+            .success()
+    );
+    queued.wait().unwrap();
+    orphan.wait().unwrap();
+    assert_eq!(result, Ok("done · sync stopped".into()));
+    assert!(
+        !marker.exists(),
+        "queued runner missed the stop and restarted vdirsyncer"
+    );
+    let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
+    assert!(st.failures > 0, "the stop was not recorded");
+    assert!(st.next_attempt.is_some());
+}

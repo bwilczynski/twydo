@@ -193,6 +193,8 @@ fn one_pass(
     status: &mut SyncStatus,
     report: &mut RunReport,
 ) -> Result<(), SyncError> {
+    // A stop asked for from here on applies to this pass (see `running`).
+    let pass_start = Utc::now();
     // Step 3: recovery under the exclusive lock.
     report
         .new_conflicts
@@ -201,7 +203,7 @@ fn one_pass(
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
     let shared = VdirLock::shared(state)?;
-    let guard = RefCell::new(RunningGuard::start(state)?);
+    let guard = RefCell::new(RunningGuard::start(state, pass_start)?);
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
     // The evidence is consumed before vdirsyncer runs: read into memory (past that point an
@@ -368,7 +370,8 @@ fn record_failure(status: &mut SyncStatus, sync: &SyncConfig, msg: &str, now: Da
 /// Records a sync whose runner was gone and whose vdirsyncer [`super::running::request_stop`]
 /// killed: nobody else will, and without a backoff the after-edit sync could start another
 /// stuck run at once. Under the run lock, like every status write; when another runner holds
-/// it, that runner meets the stop request and records the stop itself.
+/// it, its pass began before the stop, so it stops before vdirsyncer (`sync/last_stop`) and
+/// records the stop itself.
 pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
     let Some(sync) = &cfg.sync else {
         return Ok(());
@@ -635,8 +638,8 @@ struct RunningGuard {
 }
 
 impl RunningGuard {
-    /// Records the pass with no child yet.
-    fn start(state: &Path) -> io::Result<RunningGuard> {
+    /// Records the pass, begun at `started`, with no child yet.
+    fn start(state: &Path, started: DateTime<Utc>) -> io::Result<RunningGuard> {
         let g = RunningGuard {
             state: state.to_path_buf(),
             rec: Running {
@@ -644,7 +647,7 @@ impl RunningGuard {
                 runner_start: running::process_start(std::process::id()),
                 child_pgid: None,
                 child_start: None,
-                started: Utc::now(),
+                started,
             },
             stopped: false,
         };
@@ -692,7 +695,8 @@ fn remove_if_exists(p: &Path) -> io::Result<()> {
 /// [`running`]); with a stop already pending it is not started.
 fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
     let sync = env.sync;
-    if stop_requested(env.state)? {
+    let since = env.running.borrow().rec.started;
+    if stop_requested(env.state, since)? {
         env.running.borrow_mut().stopped = true;
         return Ok(Ran {
             stderr: String::new(),
@@ -747,7 +751,7 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         }
         // An unreadable request counts as none: returning here would leave the child
         // running with no record of it.
-        if stop_requested(env.state).unwrap_or(false) {
+        if stop_requested(env.state, since).unwrap_or(false) {
             kill_tree(&mut child);
             child.wait()?;
             env.running.borrow_mut().stopped = true;
