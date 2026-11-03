@@ -1,7 +1,11 @@
+mod common;
+
 use chrono::{NaiveDate, Weekday};
+use twydo_core::config::WriteMode;
 use twydo_core::model::repeat::{
     End, Freq, RULE_CLASSES, describe, parse_rrule, rule_class, short_hint,
 };
+use twydo_core::model::task::Task;
 
 fn d(s: &str) -> Option<NaiveDate> {
     if s == "-" {
@@ -251,4 +255,76 @@ fn until_date_time_and_anchorless_defaults() {
     let m = parse_rrule("FREQ=MONTHLY").unwrap();
     assert_eq!(rule_class(&m, None, false), "unrecognized");
     assert_eq!(describe(&m, None, false), "Monthly");
+}
+
+/// What the iPhone's 2Do wrote for each repeat kind (fixtures `plan7-list1`), read back as
+/// 2Do labels it (01-features §6). Monthly and yearly labels name the day (deliberate: see
+/// `describe_and_classify`), so "Monthly" reads "Monthly on the 31st".
+#[test]
+fn plan7_captures_read_as_2do_shows_them() {
+    // (summary, describe, class)
+    let rows: &[(&str, &str, &str)] = &[
+        ("R01", "Daily", "days"),
+        ("R02", "Daily", "days"),
+        ("R03", "Every 3 Days", "days"),
+        ("R04", "Weekly", "weeks"),
+        ("R05", "Bi-weekly", "weeks"),
+        ("R06", "Every Mon, Thu", "weekdays-set"),
+        ("R07", "Every Mon, Tue, Wed, Thu, Fri", "weekdays-set"),
+        ("R08", "Monthly on the 31st", "months-day-29-31"),
+        ("R10", "The second Tue of each month", "months-nth-weekday"),
+        ("R13", "Yearly on 29 Feb", "years-feb-29"),
+        (
+            "R14",
+            "Monthly on the 7th, from completion",
+            "months-day-1-28+from-completion",
+        ),
+        (
+            "R15",
+            "Monthly on the 7th, 3 times",
+            "months-day-1-28+count",
+        ),
+        (
+            "R16",
+            "Monthly on the 7th, until 30 Jun 2027",
+            "months-day-1-28+until",
+        ),
+    ];
+    let phone = [
+        ("plan7-list1/01-phone-repeat", rows),
+        (
+            "plan7-list1/02-phone-repeat-no-due",
+            &[("R17", "Weekly", "weeks")][..],
+        ),
+    ];
+    for (fixture, rows) in phone {
+        let env = common::Env::new(WriteMode::Test, fixture);
+        let snap = env.snap();
+        for (summary, desc, class) in rows {
+            let t: &Task = snap
+                .tasks
+                .iter()
+                .find(|t| t.summary == *summary)
+                .unwrap_or_else(|| panic!("{summary} missing in {fixture}"));
+            let r = parse_rrule(t.rrule.as_deref().unwrap()).unwrap();
+            let anchor = t.due.as_ref().map(|d| d.local_date(snap.tz()));
+            assert_eq!(
+                describe(&r, anchor, t.from_completion),
+                *desc,
+                "describe {summary}"
+            );
+            assert_eq!(
+                twydo_core::views::task_rule_class(t, &snap).as_deref(),
+                Some(*class),
+                "class {summary}"
+            );
+        }
+    }
+    // The picker offered no repeat for these (R09, R11, R12): they stay plain tasks.
+    let env = common::Env::new(WriteMode::Test, "plan7-list1/01-phone-repeat");
+    let snap = env.snap();
+    for s in ["R09", "R11", "R12"] {
+        let t = snap.tasks.iter().find(|t| t.summary == s).unwrap();
+        assert!(t.rrule.is_none(), "{s}");
+    }
 }

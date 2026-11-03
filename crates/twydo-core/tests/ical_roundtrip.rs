@@ -126,3 +126,24 @@ fn malformed_inputs_are_errors() {
         assert!(parse(bad).is_err(), "{:?}", String::from_utf8_lossy(bad));
     }
 }
+
+/// Every `.ics` the iPhone's 2Do wrote in the plan 7 session (repeat kinds, conversions)
+/// parses and serialises back byte-for-byte.
+#[test]
+fn roundtrip_plan7_phone_captures() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan7-list1");
+    let mut n = 0;
+    for step in std::fs::read_dir(&root).unwrap() {
+        for f in std::fs::read_dir(step.unwrap().path()).unwrap() {
+            let p = f.unwrap().path();
+            if p.extension().is_some_and(|x| x == "ics") {
+                let b = std::fs::read(&p).unwrap();
+                let cal = parse(&b).unwrap();
+                assert_eq!(serialize(&cal), b, "{} must round-trip", p.display());
+                n += 1;
+            }
+        }
+    }
+    assert!(n > 100, "expected the plan 7 captures, found {n}");
+}
