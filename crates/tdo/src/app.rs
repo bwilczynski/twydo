@@ -140,6 +140,9 @@ pub struct App {
     /// The snapshot that blocked write was made against, kept until its retry finishes, so
     /// the retry is checked against what the user decided on rather than a later reload.
     stop_base: Option<Snapshot>,
+    /// A repeating task being completed. Completing keeps its UID on the next occurrence, so
+    /// the next reload keeps the cursor's row instead of following that UID to its new date.
+    completing_repeat: Option<String>,
 }
 
 /// How long something has run: `45s`, `2m 14s`, `1h 3m`.
@@ -198,6 +201,7 @@ impl App {
             details_visible: true,
             details_scroll: 0,
             details_uid: None,
+            completing_repeat: None,
             stop_prompt: None,
             stop_base: None,
             details_max: Cell::new(0),
@@ -371,7 +375,10 @@ impl App {
 
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
     pub fn reload(&mut self, s: Snapshot) {
-        let uid = self.selected_uid();
+        let completing = self.completing_repeat.take();
+        let uid = self
+            .selected_uid()
+            .filter(|u| completing.as_ref() != Some(u));
         let side = self.sidebar_items().get(self.sidebar_cursor).cloned();
         self.snapshot = s;
         // The row under a pending `d`, `g` or `x` may have changed: the second key starts afresh.
@@ -640,7 +647,9 @@ impl App {
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
-            return Outcome::Write(Request::Apply(op));
+            let req = Request::Apply(op);
+            self.note_repeat_completion(&req);
+            return Outcome::Write(req);
         }
         // Details is a page, not a list: movement keys scroll it.
         if self.focus == Pane::Details {
@@ -919,6 +928,22 @@ impl App {
         }
     }
 
+    /// Remember a write that completes a repeating task, for the reload that follows it.
+    fn note_repeat_completion(&mut self, req: &Request) {
+        self.completing_repeat = match req {
+            Request::Apply(Op::Complete { uid })
+                if self
+                    .snapshot
+                    .tasks
+                    .iter()
+                    .any(|t| &t.uid == uid && t.rrule.is_some()) =>
+            {
+                Some(uid.clone())
+            }
+            _ => None,
+        };
+    }
+
     /// A write found the vdir busy. With a duration: keep `req` with `base`, the snapshot it
     /// was made against (taken before any reload), and ask the stop question. Without (nothing
     /// the TUI can stop): the plain busy message, as a refused write.
@@ -947,6 +972,7 @@ impl App {
         match k.code {
             KeyCode::Char('y') => {
                 let (req, _) = self.stop_prompt.take().expect("asking");
+                self.note_repeat_completion(&req);
                 Outcome::StopSyncAndWrite(req)
             }
             KeyCode::Char('n') | KeyCode::Esc => {

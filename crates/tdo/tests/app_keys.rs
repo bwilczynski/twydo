@@ -1271,3 +1271,77 @@ fn busy_without_a_duration_shows_the_plain_message() {
     );
     assert!(matches!(a.handle_key(key('x')), Outcome::Write(_)));
 }
+
+/// The report after "Pay rent" (repeating) was completed: 2Do's live task keeps its UID and
+/// moves to its next due date.
+fn rent_advanced() -> twydo_core::vdir::LoadReport {
+    let mut r = report();
+    let rent = r
+        .tasks
+        .iter_mut()
+        .find(|t| t.summary == "Pay rent")
+        .unwrap();
+    rent.due = Some(twydo_core::ical::value::IcalDateTime::Date(
+        chrono::NaiveDate::from_ymd_opt(2026, 12, 7).unwrap(),
+    ));
+    r
+}
+
+/// Open the bills list with the cursor on "Pay rent"; returns its row.
+fn on_rent(a: &mut App) -> usize {
+    type_str(a, ":list bills");
+    a.handle_key(code(KeyCode::Enter));
+    let row = titles(a).iter().position(|t| t == "Pay rent").unwrap();
+    a.cursor = row;
+    row
+}
+
+#[test]
+fn completing_a_repeat_keeps_the_cursor_on_its_row() {
+    let mut a = app();
+    let row = on_rent(&mut a);
+    let rent = selected_uid(&a);
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Complete { uid: rent.clone() }
+    );
+    a.reload(snapshot_of(rent_advanced()));
+    assert_ne!(
+        titles(&a).iter().position(|t| t == "Pay rent"),
+        Some(row),
+        "the next occurrence sorts elsewhere"
+    );
+    assert_eq!(a.cursor, row, "the cursor stays where it was");
+    assert_ne!(selected_uid(&a), rent);
+}
+
+#[test]
+fn completing_a_repeat_after_stopping_a_sync_keeps_the_cursor_on_its_row() {
+    let mut a = app();
+    let row = on_rent(&mut a);
+    let req = write_req(a.handle_key(key('x')));
+    // The blocked write reloads before asking; nothing changed yet.
+    a.reload(snapshot_of(report()));
+    a.write_busy(
+        req.clone(),
+        Some(Duration::from_secs(134)),
+        a.write_snapshot().clone(),
+    );
+    assert_eq!(a.handle_key(key('y')), Outcome::StopSyncAndWrite(req));
+    a.reload(snapshot_of(rent_advanced()));
+    assert_eq!(a.cursor, row);
+}
+
+#[test]
+fn reload_after_a_repeat_completion_follows_the_selection_again() {
+    let mut a = app();
+    on_rent(&mut a);
+    a.handle_key(key('x'));
+    a.reload(snapshot_of(rent_advanced()));
+    let uid = selected_uid(&a);
+    // A later reload (the file watcher, a sync) keeps the cursor on the selected task.
+    let mut r = rent_advanced();
+    r.tasks.retain(|t| t.summary != "Pay water bill");
+    a.reload(snapshot_of(r));
+    assert_eq!(selected_uid(&a), uid);
+}
