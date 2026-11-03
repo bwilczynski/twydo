@@ -564,3 +564,61 @@ X-2DOAPP-METADATA:@tasktype:project\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
     fs::write(env.vdir.join("list1/tokparent.ics"), ics).unwrap();
     assert_eq!(store::parent_json_uid(&env.snap(), "tokparent"), None);
 }
+
+#[test]
+fn save_with_one_refused_part_writes_nothing() {
+    let (env, mut store) = test_env();
+    let before = env.files();
+    let op = Op::Save {
+        uid: E.into(),
+        changes: vec![
+            Change::Summary("Synthetic renamed".into()),
+            Change::Kind(twydo_core::model::TaskKind::Checklist),
+        ],
+        to: None,
+    };
+    let err = store.apply(&env.snap(), &op, now()).unwrap_err();
+    assert!(matches!(err, WriteError::Blocked(_)), "{err}");
+    assert_eq!(env.files(), before);
+    assert!(env.journal().is_empty());
+}
+
+#[test]
+fn save_with_move_is_one_undo_step() {
+    let (env, mut store) = test_env();
+    let before = env.files();
+    let source = fs::read_to_string(env.file(E)).unwrap();
+    let op = Op::Save {
+        uid: E.into(),
+        changes: vec![Change::Summary("Synthetic renamed".into())],
+        to: Some("list2".into()),
+    };
+    store.apply(&env.snap(), &op, now()).unwrap();
+
+    assert!(!env.file(E).exists());
+    let moved: Vec<PathBuf> = fs::read_dir(env.vdir.join("list2"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(moved.len(), 1);
+    let dst = todo_of(&fs::read(&moved[0]).unwrap());
+    assert_eq!(value(&dst, "SUMMARY"), "Synthetic renamed");
+
+    let journal = env.journal();
+    assert_eq!(journal.len(), 1);
+    let e = &journal[0];
+    assert_eq!(e.kind, "save");
+    // The source was edited, then removed: one write, the first before and the last after.
+    let src: Vec<&Write> = e
+        .writes
+        .iter()
+        .filter(|w| w.path == format!("list1/{E}.ics"))
+        .collect();
+    assert_eq!(src.len(), 1);
+    assert_eq!(src[0].before.as_deref(), Some(source.as_str()));
+    assert!(src[0].after.is_none());
+    assert_eq!(e.writes.len(), 2);
+
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+}

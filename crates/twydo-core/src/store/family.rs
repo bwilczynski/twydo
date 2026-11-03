@@ -55,6 +55,20 @@ impl Store {
             | Op::Delete { uid } => uid,
             Op::Edit { uid, .. } => uid,
             Op::Create(_) => return Ok(None),
+            // A save's move rescans the family; without one, its edit may.
+            Op::Save { uid, changes, to } => {
+                let part = match to {
+                    Some(to) => Op::Move {
+                        uid: uid.clone(),
+                        to: to.clone(),
+                    },
+                    None => Op::Edit {
+                        uid: uid.clone(),
+                        changes: changes.clone(),
+                    },
+                };
+                return self.family_of(snap, &part);
+            }
         };
         let Some(idx) = snap.find(uid) else {
             return Ok(None);

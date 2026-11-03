@@ -127,6 +127,12 @@ impl Snapshot {
         self.sources.get(path).map(Vec::as_slice)
     }
 
+    /// Replace the loaded bytes of the file at `path`: a grouped write plans its later part
+    /// on what its earlier part wrote. The parsed tasks are left as they are.
+    pub(crate) fn set_source(&mut self, path: &Path, bytes: Vec<u8>) {
+        self.sources.insert(path.to_path_buf(), bytes);
+    }
+
     /// Index of the first task with `uid`.
     pub fn find(&self, uid: &str) -> Option<usize> {
         self.tasks.iter().position(|t| t.uid == uid)

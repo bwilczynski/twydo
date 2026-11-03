@@ -91,11 +91,30 @@ impl NewTask {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
     Create(NewTask),
-    Edit { uid: String, changes: Vec<Change> },
-    Complete { uid: String },
-    Reopen { uid: String },
-    Move { uid: String, to: String },
-    Delete { uid: String },
+    Edit {
+        uid: String,
+        changes: Vec<Change>,
+    },
+    Complete {
+        uid: String,
+    },
+    Reopen {
+        uid: String,
+    },
+    Move {
+        uid: String,
+        to: String,
+    },
+    Delete {
+        uid: String,
+    },
+    /// The edit form's save: `changes` to the task, then a move to list `to`, as one journal
+    /// entry and one undo step. Either part may be empty (no changes, `to` = `None`).
+    Save {
+        uid: String,
+        changes: Vec<Change>,
+        to: Option<String>,
+    },
 }
 
 #[derive(Error, Debug)]

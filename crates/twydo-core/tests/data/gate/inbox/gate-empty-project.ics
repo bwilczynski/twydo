@@ -1,0 +1,10 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//synthetic//EN
+BEGIN:VTODO
+UID:gate-empty-project
+SUMMARY:Synthetic empty project
+STATUS:NEEDS-ACTION
+X-2DOAPP-METADATA:@tasktype:project
+END:VTODO
+END:VCALENDAR
