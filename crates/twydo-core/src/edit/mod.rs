@@ -11,11 +11,13 @@ use thiserror::Error;
 use crate::ical::value::{IcalDateTime, escape_text, format_date_time};
 use crate::ical::{Calendar, Component, Param, Property};
 use crate::model::meta_edit::{MetaJson, default_task_meta};
-use crate::model::repeat::parse_rrule;
+use crate::model::repeat::{End, parse_rrule};
+use crate::repeatinput::RepeatSpec;
 
 pub mod complete;
 pub mod create;
 pub mod family;
+pub mod repeat;
 
 pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
 pub use create::{file_name, new_task, new_uid};
@@ -43,6 +45,9 @@ pub enum Change {
     /// `None` removes the start date.
     Start(Option<NaiveDate>),
     RepeatInterval(u32),
+    /// Set the repeat rule, or `None` to remove it. A task without a due date must get one
+    /// first (a `Change::Due` earlier in the same list): 2Do makes the due date today.
+    Repeat(Option<RepeatSpec>),
 }
 
 /// A task to create in `collection`.
@@ -205,6 +210,7 @@ fn apply_one(todo: &mut Component, change: &Change) -> Result<(), EditError> {
         Change::Due(d) => set_due(todo, *d),
         Change::Start(d) => set_start(todo, *d),
         Change::RepeatInterval(n) => set_interval(todo, *n),
+        Change::Repeat(spec) => set_repeat(todo, spec.as_ref()),
     }
 }
 
@@ -490,6 +496,92 @@ fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
     if let Some(orig) = json {
         let mut m = orig.clone();
         m.set_i64("RecurrenceValue", i64::from(n));
+        write_meta(todo, Some(&orig), &m);
+    }
+    Ok(())
+}
+
+/// The date `RecurrenceEndDate` stores: the end date at 12:00 UTC, as epoch seconds (`plan7-list1`
+/// R16: 2027-06-30 is 1814356800).
+fn end_date_stamp(u: &IcalDateTime) -> i64 {
+    let d = match u {
+        IcalDateTime::Date(d) => *d,
+        IcalDateTime::Floating(n) => n.date(),
+        IcalDateTime::Utc(t) => t.date_naive(),
+        IcalDateTime::Zoned { local, .. } => local.date(),
+    };
+    d.and_hms_opt(12, 0, 0)
+        .unwrap_or_default()
+        .and_utc()
+        .timestamp()
+}
+
+/// Set or remove the repeat rule as 2Do's repeat picker does (`plan7-list1/01-phone-repeat`).
+///
+/// - Set: `RRULE` goes right after `DUE`; JSON `RecurrenceType`/`RecurrenceValue` per
+///   [`repeat::twodo_codes`], `RecurrenceFrom` 1 (2 from completion), the end keys, and `RUID`
+///   = the task's UID. The phone writes its own internal id into `RUID` for tasks Twydo
+///   created; the UID is the nearest value Twydo knows.
+/// - Remove (`None`): `RRULE` goes and `RecurrenceType` becomes 0; `RecurrenceValue`,
+///   `RecurrenceFrom` and `RUID` stay, as 2Do leaves them (R09).
+fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), EditError> {
+    let json = match meta_of(todo) {
+        Meta::Json(m) => Some(m),
+        Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
+        Meta::Absent | Meta::Tokens => None,
+    };
+    let Some(spec) = spec else {
+        todo.remove_props("RRULE");
+        if let Some(orig) = json {
+            let mut m = orig.clone();
+            m.set_i64("RecurrenceType", 0);
+            write_meta(todo, Some(&orig), &m);
+        }
+        return Ok(());
+    };
+    if todo.prop("DUE").is_none() {
+        return Err(unsupported("a repeating task needs a due date"));
+    }
+    let value = complete::rule_text(&spec.rule);
+    match todo.prop_mut("RRULE") {
+        Some(p) => {
+            if p.value != value {
+                p.set_value(&value);
+            }
+        }
+        None => todo.insert_prop(Property::new("RRULE", Vec::new(), &value), Some("DUE")),
+    }
+    if let Some(orig) = json {
+        let uid = todo
+            .prop("UID")
+            .map(|p| p.value.clone())
+            .unwrap_or_default();
+        let (kind, val) = repeat::twodo_codes(&spec.rule);
+        let mut m = orig.clone();
+        m.set_i64("RecurrenceValue", val);
+        m.set_i64("RecurrenceType", kind);
+        m.set_i64("RecurrenceFrom", if spec.from_completion { 2 } else { 1 });
+        m.set_str("RUID", &uid);
+        match &spec.rule.end {
+            End::Never => {
+                m.set_i64("RecurrenceEndType", 0);
+                m.set_i64("RecurrenceEndRepetitions", 0);
+                m.set_i64("RecurrenceEndRepetitionsOrig", 0);
+                m.remove("RecurrenceEndDate");
+            }
+            End::Count(n) => {
+                m.set_i64("RecurrenceEndType", 2);
+                m.set_i64("RecurrenceEndRepetitions", i64::from(*n));
+                m.set_i64("RecurrenceEndRepetitionsOrig", i64::from(*n));
+                m.remove("RecurrenceEndDate");
+            }
+            End::Until(u) => {
+                m.set_i64("RecurrenceEndType", 1);
+                m.set_i64("RecurrenceEndRepetitions", 0);
+                m.set_i64("RecurrenceEndRepetitionsOrig", 0);
+                m.set_i64("RecurrenceEndDate", end_date_stamp(u));
+            }
+        }
         write_meta(todo, Some(&orig), &m);
     }
     Ok(())

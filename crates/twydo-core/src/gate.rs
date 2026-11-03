@@ -106,6 +106,13 @@ pub fn check(
         }
     }
 
+    // Setting or removing a repeat rule is not verified yet (Plan 7 Task 7 grants it).
+    if let Op::Edit { changes, .. } = op
+        && changes.iter().any(|c| matches!(c, Change::Repeat(_)))
+    {
+        return blocked("changing the repeat rule is not verified yet");
+    }
+
     // Rule 2: the task's cases.
     let cases = match target {
         Some(i) => task_cases(snap, i)?,
@@ -424,7 +431,10 @@ fn op_cases(snap: &Snapshot, target: Option<usize>, cases: Cases, op: &Op) -> Ve
                         }
                     }
                     Change::Start(_) => add("start-date"),
-                    Change::Summary(_) | Change::Description(_) | Change::RepeatInterval(_) => {}
+                    Change::Summary(_)
+                    | Change::Description(_)
+                    | Change::RepeatInterval(_)
+                    | Change::Repeat(_) => {}
                 }
             }
         }
