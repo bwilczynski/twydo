@@ -18,7 +18,7 @@ use crate::write::Request;
 use twydo_core::conflicts::Conflict;
 use twydo_core::dateinput::{DueShift, shift_due};
 use twydo_core::edit::{Change, Op};
-use twydo_core::model::Status;
+use twydo_core::model::{Status, TaskKind};
 use twydo_core::sync::SyncSummary;
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Row, Snapshot, View, build_view};
@@ -366,7 +366,7 @@ impl App {
     }
 
     /// Store `now`; keep the selection on the same task as the view rebuilds around it.
-    /// A pending `d`, `g` or `x` is dropped when the selected task leaves the view.
+    /// A pending `d`, `g`, `x` or `c` is dropped when the selected task leaves the view.
     pub fn tick(&mut self, now: DateTime<Tz>) {
         let uid = self.selected_uid();
         self.now = now;
@@ -665,7 +665,7 @@ impl App {
             return Outcome::Continue;
         }
         // An overlay hides the task list: keys that write or edit must not reach it.
-        if self.overlay_open() && "xtT[]{}duimroOa ".contains(c) {
+        if self.overlay_open() && "xtT[]{}duimroOac ".contains(c) {
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
@@ -757,6 +757,26 @@ impl App {
                 return Some(Op::Complete { uid });
             }
             'd' if pending == Some('d') => return Some(Op::Delete { uid }),
+            'c' if pending != Some('c') => {
+                self.pending = Some('c');
+                return None;
+            }
+            't' | 'p' | 'c' if pending == Some('c') => {
+                let (kind, name) = match c {
+                    't' => (TaskKind::Task, "task"),
+                    'p' => (TaskKind::Project, "project"),
+                    _ => (TaskKind::Checklist, "checklist"),
+                };
+                if task.kind == kind {
+                    self.message = Some(format!("\"{}\" is already a {name}", task.summary));
+                    return None;
+                }
+                return Some(Op::Save {
+                    uid,
+                    changes: vec![Change::Kind(kind)],
+                    to: None,
+                });
+            }
             't' => DueShift::Today,
             'T' => DueShift::Tomorrow,
             ']' => DueShift::Days(1),

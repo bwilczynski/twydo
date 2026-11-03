@@ -2034,3 +2034,102 @@ fn row_editing_keys_and_paste() {
     type_str(&mut a, " x dd");
     assert_eq!(a.new_row.as_ref().unwrap().title, "Buy milk x dd");
 }
+
+fn kind_save(uid: &str, kind: TaskKind) -> Op {
+    Op::Save {
+        uid: uid.into(),
+        changes: vec![Change::Kind(kind)],
+        to: None,
+    }
+}
+
+#[test]
+fn ct_cp_cc_emit_kind_change() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    let uid = selected_uid(&a);
+    for (keys, kind) in [("cp", TaskKind::Project), ("cc", TaskKind::Checklist)] {
+        let mut a = app();
+        select(&mut a, "Call the dentist");
+        assert_eq!(a.handle_key(key('c')), Outcome::Continue);
+        assert_eq!(
+            write_op(a.handle_key(key(keys.chars().nth(1).unwrap()))),
+            kind_save(&uid, kind)
+        );
+    }
+    // `ct` on a checklist turns it back into a task; the Details pane acts too.
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('c'));
+    assert_eq!(
+        write_op(a.handle_key(key('t'))),
+        kind_save(PACKING, TaskKind::Task)
+    );
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.focus = Pane::Details;
+    a.handle_key(key('c'));
+    assert_eq!(
+        write_op(a.handle_key(key('p'))),
+        kind_save(&uid, TaskKind::Project)
+    );
+}
+
+#[test]
+fn same_kind_writes_nothing_and_says_so() {
+    let mut rep = report();
+    rep.tasks
+        .retain(|t| t.parent.as_deref() != Some("sv-bills-4"));
+    let mut a = App::new(snapshot_of(rep), now());
+    in_all(&mut a, "Prepare tax return");
+    a.handle_key(key('c'));
+    assert_eq!(a.handle_key(key('p')), Outcome::Continue);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("\"Prepare tax return\" is already a project")
+    );
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('c'));
+    assert_eq!(a.handle_key(key('t')), Outcome::Continue);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("\"Call the dentist\" is already a task")
+    );
+}
+
+#[test]
+fn cc_on_project_with_items_shows_the_refusal() {
+    let mut a = app();
+    in_all(&mut a, "Prepare tax return");
+    let uid = selected_uid(&a);
+    a.handle_key(key('c'));
+    assert_eq!(
+        write_op(a.handle_key(key('c'))),
+        kind_save(&uid, TaskKind::Checklist)
+    );
+    a.write_finished(Err("project-to-checklist is not supported".into()));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("project-to-checklist is not supported")
+    );
+}
+
+#[test]
+fn c_then_other_key_cancels() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('c'));
+    assert_eq!(a.handle_key(key('j')), Outcome::Continue);
+    // The pending `c` is gone: a lone `p` does nothing.
+    assert_eq!(a.handle_key(key('p')), Outcome::Continue);
+}
+
+#[test]
+fn c_is_ignored_under_overlay() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('?'));
+    a.handle_key(key('c'));
+    assert_eq!(a.handle_key(key('p')), Outcome::Continue);
+}
