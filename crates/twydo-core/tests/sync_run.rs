@@ -1382,6 +1382,58 @@ fn stop_with_nothing_running() {
     assert!(!fx.state().join("sync").join("stop").exists());
 }
 
+/// Review minor 1: `y` between two passes finds no record, but the next pass must still not
+/// take the vdir before the write.
+#[test]
+fn stop_with_nothing_recorded_still_holds_off_the_next_sync() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    fs::create_dir_all(fx.state().join("sync")).unwrap();
+    assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::NothingRunning);
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.stopped);
+    assert!(!count.exists(), "vdirsyncer ran");
+    clear_stop(&fx.cfg).unwrap();
+    assert!(!fx.state().join("sync").join("stop").exists());
+}
+
+/// Review minor 4: if checking for a stop request fails, the runner must not return and
+/// leave vdirsyncer running with no record of it.
+#[test]
+fn failed_stop_check_does_not_leave_vdirsyncer_running() {
+    use std::os::unix::fs::PermissionsExt;
+    let fx = Fx::new("");
+    let pidfile = fx.path("child.pid");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "echo $$ > '{}'
+sleep 1",
+            pidfile.display()
+        ),
+    );
+    let sync_dir = fx.state().join("sync");
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).is_ok());
+    assert!(wait_for(&pidfile));
+    // No search permission: stat of sync/stop fails with EACCES.
+    fs::set_permissions(&sync_dir, fs::Permissions::from_mode(0o600)).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    let _ = t.join();
+    fs::set_permissions(&sync_dir, fs::Permissions::from_mode(0o755)).unwrap();
+    let pid = fs::read_to_string(&pidfile).unwrap();
+    assert!(
+        !pid_alive(pid.trim()),
+        "the runner returned while vdirsyncer was still running"
+    );
+}
+
 /// A runner that starts while a stop request is pending (it was waiting behind the stopped
 /// sync) stops before vdirsyncer, so the writer that asked gets the vdir.
 #[test]

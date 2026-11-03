@@ -703,3 +703,36 @@ fn tui_opens_while_a_sync_holds_the_vdir() {
         "opening the writer waited for the sync"
     );
 }
+
+/// Review minor 2: the after-edit sync must start only once the stop request is withdrawn,
+/// or it stops itself and backs off.
+#[test]
+fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let stop = sync_dir(&cfg).join("stop");
+    let seen = Rc::new(Cell::new(None));
+    let s = seen.clone();
+    let mut w = Writer::open_with(
+        &cfg,
+        Matrix::embedded().clone(),
+        Box::new(move |_| s.set(Some(stop.exists()))),
+    );
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: std::process::id(),
+            child_pgid: None,
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(
+        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
+        Ok("done · sync stopped".into())
+    );
+    assert_eq!(
+        seen.get(),
+        Some(false),
+        "triggered while the stop was pending"
+    );
+}

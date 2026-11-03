@@ -38,7 +38,8 @@ pub const STOP_FRESH: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopResult {
-    /// No `running.json`: nothing to stop.
+    /// No `running.json`: nothing to stop (the request is still left, to hold off a pass
+    /// that is about to start).
     NothingRunning,
     /// `sync/stop` created; the live runner kills its child and records `sync stopped`.
     Requested,
@@ -85,10 +86,13 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
         return Ok(StopResult::NothingRunning);
     };
+    // Written even with nothing recorded: a pass may be between vdirsyncer calls, or about
+    // to start, and must not take the vdir before the requester's write.
+    fs::create_dir_all(state.join("sync"))?;
+    fs::write(stop_path(&state), b"")?;
     let Some(rec) = load(&state)? else {
         return Ok(StopResult::NothingRunning);
     };
-    fs::write(stop_path(&state), b"")?;
     if alive(rec.runner_pid) {
         return Ok(StopResult::Requested);
     }

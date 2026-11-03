@@ -215,7 +215,8 @@ waiting for a password prompt) blocks every write meanwhile. A save in the TUI c
   another runner asked for one.
 - If the runner itself is gone (for example `tdo sync` was ended with Ctrl-C and left vdirsyncer
   running, see Known limits), `tdo` kills the recorded process group itself.
-- The request stays until the save that asked for it is done, and `tdo` then removes it. Meanwhile
+- The request stays until the save that asked for it is done, and `tdo` then removes it (it is
+  written even when no sync is recorded at that moment, for a pass about to start). Meanwhile
   any sync that starts (one that was waiting behind the stopped one, or the timer) stops before it
   runs vdirsyncer, so it cannot take the vdir first. A request older than 30 seconds is left over
   from a `tdo` that is gone: it is ignored and removed.

@@ -101,7 +101,11 @@ impl Writer {
         now: DateTime<Utc>,
     ) -> Result<String, Refused> {
         let wait = self.lock_wait;
-        self.write(snap, req, now, wait)
+        let written = self.write(snap, req, now, wait);
+        if written.is_ok() {
+            self.after_write();
+        }
+        written
     }
 
     /// Asks the running sync to stop, then writes, waiting up to the stop wait for it to let
@@ -119,8 +123,12 @@ impl Writer {
         };
         let wait = self.stop_wait;
         let written = self.write(snap, req, now, wait);
-        // The request held off other syncs until this write; withdraw it either way.
+        // The request held off other syncs until this write; withdraw it either way, and
+        // before the after-edit sync starts, which would otherwise stop itself.
         let _ = clear_stop(&self.config);
+        if written.is_ok() {
+            self.after_write();
+        }
         match written {
             Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
             Err(Refused::Busy { .. }) => {
@@ -162,10 +170,14 @@ impl Writer {
             Request::Undo => step("undone", &mut self.done, &mut self.undone),
             Request::Redo => step("redone", &mut self.undone, &mut self.done),
         };
+        Ok(message)
+    }
+
+    /// Starts the after-edit sync when `[sync] after_edit` is on.
+    fn after_write(&mut self) {
         if self.config.sync.as_ref().is_some_and(|s| s.after_edit) {
             (self.after_write)(&self.config);
         }
-        Ok(message)
     }
 }
 
