@@ -137,7 +137,8 @@ mod gate {
         let out = stdout(&o);
         assert!(!out.contains("matrix not found"), "{out}");
         assert!(
-            out.lines().any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=pass")),
+            out.lines()
+                .any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=pass")),
             "{out}"
         );
     }
