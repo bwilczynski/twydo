@@ -27,8 +27,15 @@ use crate::store::existing_vdir_state;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Running {
     pub runner_pid: u32,
+    /// When the runner process started, as `ps -o lstart=` prints it: with the pid, its
+    /// identity (a pid alone may belong to another process by now). None: unknown.
+    #[serde(default)]
+    pub runner_start: Option<String>,
     /// The current vdirsyncer child (it leads its own process group); None between calls.
     pub child_pgid: Option<u32>,
+    /// When that child started (see `runner_start`).
+    #[serde(default)]
+    pub child_start: Option<String>,
     /// When the runner started vdirsyncer (wall clock).
     pub started: DateTime<Utc>,
 }
@@ -67,15 +74,46 @@ pub(crate) fn load(state: &Path) -> io::Result<Option<Running>> {
     }
 }
 
-/// The running sync of `cfg`'s vdir, if any. Creates nothing; `None` without `[sync]` or state.
+/// The running sync of `cfg`'s vdir, if any: a record whose runner or child is still the
+/// process it names. Creates nothing; `None` without `[sync]` or state.
 pub fn running(cfg: &Config) -> io::Result<Option<Running>> {
     if cfg.sync.is_none() {
         return Ok(None);
     }
-    match existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? {
-        Some(state) => load(&state),
-        None => Ok(None),
-    }
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+        return Ok(None);
+    };
+    Ok(load(&state)?.filter(|r| runner_is_live(r) || child_is_live(r).is_some()))
+}
+
+/// Whether the recorded runner is still that process.
+fn runner_is_live(r: &Running) -> bool {
+    is_process(r.runner_pid, r.runner_start.as_deref())
+}
+
+/// The recorded child's group, if the child is still that process.
+fn child_is_live(r: &Running) -> Option<u32> {
+    r.child_pgid
+        .filter(|&pgid| is_process(pgid, r.child_start.as_deref()))
+}
+
+/// Whether `pid` is the process that started at `start`. An unknown start never matches:
+/// nothing is signalled on a guess.
+fn is_process(pid: u32, start: Option<&str>) -> bool {
+    start.is_some() && process_start(pid).as_deref() == start
+}
+
+/// When process `pid` started, as `ps -o lstart= -p <pid>` prints it (Linux and macOS);
+/// None when there is no such process or ps cannot tell.
+pub fn process_start(pid: u32) -> Option<String> {
+    let out = Command::new("ps")
+        .args(["-o", "lstart=", "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let start = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !start.is_empty()).then_some(start)
 }
 
 /// Asks the running sync to stop (see [`StopResult`]). Never waits for it.
@@ -93,16 +131,20 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     let Some(rec) = load(&state)? else {
         return Ok(StopResult::NothingRunning);
     };
-    if alive(rec.runner_pid) {
+    if runner_is_live(&rec) {
         return Ok(StopResult::Requested);
     }
-    if let Some(pgid) = rec.child_pgid {
-        kill_group(pgid);
-    }
+    // The runner is gone. Its child is killed only while it is still the recorded process;
+    // otherwise the record is stale (its ids may belong to other processes by now).
+    let killed = child_is_live(&rec).map(kill_group).is_some();
     match fs::remove_file(running_path(&state)) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
         _ => {}
     }
+    if !killed {
+        return Ok(StopResult::NothingRunning);
+    }
+    super::run::record_orphan_stop(cfg, &state)?;
     Ok(StopResult::Killed)
 }
 
@@ -143,11 +185,6 @@ fn kill(args: &[&str]) -> bool {
 /// `kill -KILL -- -<pgid>` through kill(1); false if no kill(1) succeeded.
 pub(crate) fn kill_group(pgid: u32) -> bool {
     kill(&["-KILL", "--", &format!("-{pgid}")])
-}
-
-/// `kill -0 <pid>` through kill(1).
-pub(crate) fn alive(pid: u32) -> bool {
-    kill(&["-0", &pid.to_string()])
 }
 
 /// Withdraws a stop request once the requester has written (or given up).

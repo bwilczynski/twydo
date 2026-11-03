@@ -137,6 +137,9 @@ pub struct App {
     pub(crate) details_max: Cell<u16>,
     /// A write a running sync blocked, and the question asking whether to stop the sync.
     stop_prompt: Option<(Request, String)>,
+    /// The snapshot that blocked write was made against, kept until its retry finishes, so
+    /// the retry is checked against what the user decided on rather than a later reload.
+    stop_base: Option<Snapshot>,
 }
 
 /// How long something has run: `45s`, `2m 14s`, `1h 3m`.
@@ -196,6 +199,7 @@ impl App {
             details_scroll: 0,
             details_uid: None,
             stop_prompt: None,
+            stop_base: None,
             details_max: Cell::new(0),
         }
     }
@@ -769,6 +773,9 @@ impl App {
     /// The snapshot an [`Outcome::Write`] applies against: the one the open form was built
     /// from, else the current one.
     pub fn write_snapshot(&self) -> &Snapshot {
+        if let Some(base) = &self.stop_base {
+            return base;
+        }
         match (&self.form, &self.form_base) {
             (Some(_), Some(base)) => base,
             _ => &self.snapshot,
@@ -912,9 +919,10 @@ impl App {
         }
     }
 
-    /// A write found the vdir busy. With a duration: keep `req` and ask the stop question.
-    /// Without (nothing the TUI can stop): the plain busy message, as a refused write.
-    pub fn write_busy(&mut self, req: Request, running_for: Option<Duration>) {
+    /// A write found the vdir busy. With a duration: keep `req` with `base`, the snapshot it
+    /// was made against (taken before any reload), and ask the stop question. Without (nothing
+    /// the TUI can stop): the plain busy message, as a refused write.
+    pub fn write_busy(&mut self, req: Request, running_for: Option<Duration>, base: Snapshot) {
         let Some(d) = running_for else {
             self.write_finished(Err(twydo_core::store::WriteError::Busy.to_string()));
             return;
@@ -926,6 +934,7 @@ impl App {
         self.transient = None;
         self.message = Some(question.clone());
         self.stop_prompt = Some((req, question));
+        self.stop_base = Some(base);
     }
 
     /// The open stop question, if any; the status line shows it over any mode's hints.
@@ -956,6 +965,7 @@ impl App {
     /// A write requested by [`Outcome::Write`] ended: show its result.
     pub fn write_finished(&mut self, result: Result<String, String>) {
         self.picker = None;
+        self.stop_base = None;
         // A refused edit keeps the form (and its typing, unless the task changed meanwhile),
         // with the reason in it.
         if let (Some(_), Err(e)) = (&self.form, &result) {

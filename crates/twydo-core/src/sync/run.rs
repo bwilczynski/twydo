@@ -275,7 +275,8 @@ fn one_pass(
         _ => None,
     };
     let hook = read_hook_log(&hook_log)?;
-    report.stopped |= guard.borrow().stopped;
+    let pass_stopped = guard.borrow().stopped;
+    report.stopped |= pass_stopped;
     drop(guard);
     drop(shared);
 
@@ -333,18 +334,15 @@ fn one_pass(
     }
 
     // Step 6: status.
-    let transient = transient(sync, &ran, &out, &collections);
+    // A pass stopped on request backs off even when only metasync was stopped: the next
+    // attempt would most likely get stuck the same way.
+    let transient = transient(sync, &ran, &out, &collections)
+        .or_else(|| pass_stopped.then(|| "sync stopped".to_string()));
     status.last_attempt = Some(now);
     status.collections = collections.clone();
     status.metasync_error = report.metasync_error.clone();
     match &transient {
-        Some(msg) => {
-            status.failures = status.failures.saturating_add(1);
-            let delay = backoff(status.failures, Duration::from_secs(sync.max_backoff_secs));
-            let delay = chrono::Duration::from_std(delay).unwrap_or(chrono::Duration::MAX);
-            status.next_attempt = now.checked_add_signed(delay);
-            status.last_error = Some(msg.lines().next().unwrap_or_default().to_string());
-        }
+        Some(msg) => record_failure(status, sync, msg, now),
         None => {
             status.last_success = Some(now);
             status.failures = 0;
@@ -356,6 +354,35 @@ fn one_pass(
     report.collections = collections;
     report.transient = transient;
     Ok(())
+}
+
+/// Counts a transient failure in `status` and sets its backoff.
+fn record_failure(status: &mut SyncStatus, sync: &SyncConfig, msg: &str, now: DateTime<Utc>) {
+    status.failures = status.failures.saturating_add(1);
+    let delay = backoff(status.failures, Duration::from_secs(sync.max_backoff_secs));
+    let delay = chrono::Duration::from_std(delay).unwrap_or(chrono::Duration::MAX);
+    status.next_attempt = now.checked_add_signed(delay);
+    status.last_error = Some(msg.lines().next().unwrap_or_default().to_string());
+}
+
+/// Records a sync whose runner was gone and whose vdirsyncer [`super::running::request_stop`]
+/// killed: nobody else will, and without a backoff the after-edit sync could start another
+/// stuck run at once. Under the run lock, like every status write; when another runner holds
+/// it, that runner meets the stop request and records the stop itself.
+pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
+    let Some(sync) = &cfg.sync else {
+        return Ok(());
+    };
+    let sync_dir = state.join("sync");
+    fs::create_dir_all(&sync_dir)?;
+    let Some(_run_lock) = RunLock::take(&sync_dir, true)? else {
+        return Ok(());
+    };
+    let mut status = SyncStatus::load(state)?;
+    let now = Utc::now();
+    status.last_attempt = Some(now);
+    record_failure(&mut status, sync, "sync stopped", now);
+    status.save(state)
 }
 
 /// Collections to force-delete automatically: emptied on the local side, not forced
@@ -614,7 +641,9 @@ impl RunningGuard {
             state: state.to_path_buf(),
             rec: Running {
                 runner_pid: std::process::id(),
+                runner_start: running::process_start(std::process::id()),
                 child_pgid: None,
+                child_start: None,
                 started: Utc::now(),
             },
             stopped: false,
@@ -625,6 +654,7 @@ impl RunningGuard {
 
     fn set_child(&mut self, pgid: Option<u32>) -> io::Result<()> {
         self.rec.child_pgid = pgid;
+        self.rec.child_start = pgid.and_then(running::process_start);
         self.save()
     }
 

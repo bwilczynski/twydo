@@ -88,7 +88,7 @@ One run, in order:
    [Stopping a sync](#stopping-a-sync)). Then `vdirsyncer metasync
    <pair>` runs if `metasync` is on and the sync did not fail (a failure such as a missing
    password would only repeat). A failed metasync is reported (`metasync failed: ...`) but is
-   not a sync failure.
+   not a sync failure; a stopped one is (see [Stopping a sync](#stopping-a-sync)).
 5. **Reconcile**, under the exclusive vdir lock (never held while waiting on the network):
    - Journal entries whose result the server now holds are marked synced. An entry is kept until
      then.
@@ -207,14 +207,20 @@ waiting for a password prompt) blocks every write meanwhile. A save in the TUI c
 ([tui.md](tui.md#when-a-write-is-refused)):
 
 - While vdirsyncer runs, the runner keeps `sync/running.json`: its own process id, vdirsyncer's
-  process group, and when it started.
+  process group, when each of those processes started, and when the sync started. A runner
+  ended with Ctrl-C leaves the file behind until the next sync replaces it.
+- A record counts only while its runner or vdirsyncer is still the process it names: same id
+  and same start time (`ps -o lstart=`). A record whose ids now belong to other processes is
+  stale: `tdo` removes it and signals nothing.
 - To stop it, `tdo` creates `sync/stop`. The runner checks for that file while it waits for
-  vdirsyncer, kills vdirsyncer and its child processes, and records the run as failed with
-  `sync stopped`: it backs off, its lists show `error`, and no edit is confirmed. The edits stay
+  vdirsyncer (or metasync), kills vdirsyncer and its child processes, and records the run as
+  failed with `sync stopped`: it backs off, its lists show `error`, and no edit is confirmed. The edits stay
   pending and go to the server with the next sync that works. A stopped run is not rerun even if
   another runner asked for one.
 - If the runner itself is gone (for example `tdo sync` was ended with Ctrl-C and left vdirsyncer
-  running, see Known limits), `tdo` kills the recorded process group itself.
+  running, see Known limits), `tdo` kills the recorded process group itself and records the
+  stopped sync, with its backoff, so the sync started after the save does not get stuck again
+  at once.
 - The request stays until the save that asked for it is done, and `tdo` then removes it (it is
   written even when no sync is recorded at that moment, for a pass about to start). Meanwhile
   any sync that starts (one that was waiting behind the stopped one, or the timer) stops before it
@@ -232,7 +238,7 @@ read; do not edit them while a sync runs.
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
-| `sync/running.json` | exists while vdirsyncer runs: `runner_pid`, `child_pgid` (vdirsyncer's process group, `null` between calls), `started` |
+| `sync/running.json` | exists while vdirsyncer runs (and after a runner ended with Ctrl-C, until the next sync): `runner_pid`, `runner_start`, `child_pgid` (vdirsyncer's process group, `null` between calls), `child_start`, `started` |
 | `sync/stop` | a request to stop the running sync, and to start none, until the save that asked is done (at most 30 s) |
 | `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |

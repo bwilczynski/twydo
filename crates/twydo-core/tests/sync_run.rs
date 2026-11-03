@@ -16,7 +16,9 @@ use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
-use twydo_core::sync::running::{Running, StopResult, clear_stop, request_stop, running};
+use twydo_core::sync::running::{
+    Running, StopResult, clear_stop, process_start, request_stop, running,
+};
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
 
 fn now() -> DateTime<Utc> {
@@ -1359,7 +1361,9 @@ fn stop_with_a_dead_runner_kills_the_recorded_group() {
     fs::create_dir_all(&sync_dir).unwrap();
     let rec = Running {
         runner_pid: gone.id(),
+        runner_start: None,
         child_pgid: Some(orphan.id()),
+        child_start: process_start(orphan.id()),
         started: Utc::now(),
     };
     fs::write(running_file(&fx), serde_json::to_vec(&rec).unwrap()).unwrap();
@@ -1373,6 +1377,67 @@ fn stop_with_a_dead_runner_kills_the_recorded_group() {
     assert!(!running_file(&fx).exists());
     // A runner queued behind the orphan must not take the vdir before the write either.
     assert!(sync_dir.join("stop").exists());
+    // PR review 4: no runner is left to record the stop, so the stop records it.
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.failures, 1);
+    assert!(st.next_attempt.is_some());
+    assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
+}
+
+/// PR review 2: a record whose process ids now belong to other processes (a runner killed
+/// long ago, pids reused) must not lead to signalling them.
+#[test]
+fn stale_record_with_reused_pids_kills_nothing() {
+    use std::os::unix::process::CommandExt;
+    let fx = Fx::new("");
+    let mut unrelated = std::process::Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let sync_dir = fx.state().join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    let rec = Running {
+        // Both ids are live, but neither started when the record says.
+        runner_pid: unrelated.id(),
+        runner_start: Some("Thu Jan  1 00:00:00 1970".into()),
+        child_pgid: Some(unrelated.id()),
+        child_start: Some("Thu Jan  1 00:00:00 1970".into()),
+        started: Utc::now(),
+    };
+    fs::write(running_file(&fx), serde_json::to_vec(&rec).unwrap()).unwrap();
+    assert_eq!(
+        running(&fx.cfg).unwrap(),
+        None,
+        "a stale record is no running sync"
+    );
+    assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::NothingRunning);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        unrelated.try_wait().unwrap().is_none(),
+        "an unrelated process group was killed"
+    );
+    assert!(!running_file(&fx).exists(), "the stale record is removed");
+    unrelated.kill().unwrap();
+    unrelated.wait().unwrap();
+}
+
+#[test]
+fn process_start_identifies_a_live_process_only() {
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .unwrap();
+    let start = process_start(child.id());
+    assert!(start.is_some());
+    assert_eq!(
+        process_start(child.id()),
+        start,
+        "stable for the same process"
+    );
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(process_start(child.id()), None);
 }
 
 #[test]
@@ -1453,4 +1518,30 @@ fn fresh_stop_request_stops_a_new_run_before_vdirsyncer() {
     assert_eq!(r.transient.as_deref(), Some("sync stopped"));
     assert!(!count.exists(), "vdirsyncer ran");
     assert!(sync_dir.join("stop").exists(), "the requester clears it");
+}
+
+/// PR review 3: a stopped metasync is a stopped run, so it backs off too.
+#[test]
+fn stopped_metasync_backs_off() {
+    let mut fx = Fx::new("");
+    fx.sync_mut().metasync = true;
+    let marker = fx.path("metasync.started");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "if [ \"$1\" = sync ]; then echo 'Syncing twydo/c1' >&2; exit 0; fi\ntouch '{}'\nsleep 30",
+            marker.display()
+        ),
+    );
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    assert!(wait_for(&marker));
+    request_stop(&fx.cfg).unwrap();
+    let r = t.join().unwrap();
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert!(r.stopped);
+    assert_eq!(r.transient.as_deref(), Some("sync stopped"));
+    assert_eq!(st.failures, 1);
+    assert!(st.next_attempt.is_some());
 }

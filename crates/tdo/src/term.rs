@@ -105,14 +105,18 @@ fn event_loop(
                         Outcome::Write(req) => {
                             // Waits up to write::LOCK_WAIT for a running sync.
                             let result = writer.run(app.write_snapshot(), &req, Utc::now());
+                            // A retry after `y` must be checked against what this write saw,
+                            // not against the reload below.
+                            let base = matches!(result, Err(Refused::Busy { .. }))
+                                .then(|| app.write_snapshot().clone());
                             // Reload after failures too: a stale write means the vdir moved on.
                             reload(app, root);
                             refresh_sync(app);
-                            match result {
-                                Err(Refused::Busy { running_for }) => {
-                                    app.write_busy(req, running_for)
+                            match (result, base) {
+                                (Err(Refused::Busy { running_for }), Some(base)) => {
+                                    app.write_busy(req, running_for, base)
                                 }
-                                other => app.write_finished(other.map_err(|e| e.message())),
+                                (other, _) => app.write_finished(other.map_err(|e| e.message())),
                             }
                         }
                         Outcome::StopSyncAndWrite(req) => {
