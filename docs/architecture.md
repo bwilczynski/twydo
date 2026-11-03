@@ -37,6 +37,7 @@ The repository is a Cargo workspace with two crates.
 | `vdir` | Loading a vdir into a snapshot (read only) |
 | `views` | Today, All, Scheduled, Done, lists and smart lists: membership, date groups, sorting and counts. Pure functions of a snapshot and "now" |
 | `dateinput` | The date grammar of the edit form (`fri 5pm`, `3d`, `15th`, …) |
+| `repeatinput` | The typed repeat grammar (`daily`, `2w`, `mon thu`, `last day`, `2nd tue`, `after done`) and its preview line |
 | `edit` | Each operation as a change to one file, the way the 2Do iPhone app makes it |
 | `gate` | Whether an operation may run, and the exact reason when not ("verified mode") |
 | `compat` | The compatibility matrix, `compat/matrix.toml`, built into the binary |

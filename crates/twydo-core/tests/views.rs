@@ -116,6 +116,13 @@ fn config(lists: &[(&str, ListPrefs)]) -> Config {
     Config {
         vdir: PathBuf::from("/nonexistent"),
         timezone: Some("America/New_York".to_string()),
+        work_days: vec![
+            Weekday::Mon,
+            Weekday::Tue,
+            Weekday::Wed,
+            Weekday::Thu,
+            Weekday::Fri,
+        ],
         week_start: Weekday::Mon,
         morning_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
         default_list: None,

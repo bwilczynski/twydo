@@ -140,6 +140,8 @@ pub struct Config {
     pub timezone: Option<String>,
     #[serde(default = "default_week_start", deserialize_with = "de_weekday")]
     pub week_start: Weekday,
+    #[serde(default = "default_work_days", deserialize_with = "de_weekdays")]
+    pub work_days: Vec<Weekday>,
     #[serde(default = "default_morning", deserialize_with = "de_time")]
     pub morning_time: NaiveTime,
     #[serde(default)]
@@ -160,6 +162,16 @@ fn default_week_start() -> Weekday {
     Weekday::Mon
 }
 
+fn default_work_days() -> Vec<Weekday> {
+    vec![
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+    ]
+}
+
 fn default_morning() -> NaiveTime {
     NaiveTime::from_hms_opt(9, 0, 0).expect("valid time")
 }
@@ -168,6 +180,22 @@ fn de_weekday<'de, D: Deserializer<'de>>(d: D) -> Result<Weekday, D::Error> {
     let s = String::deserialize(d)?;
     Weekday::from_str(s.trim())
         .map_err(|_| serde::de::Error::custom(format!("invalid week_start {s:?} (use mon..sun)")))
+}
+
+fn de_weekdays<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Weekday>, D::Error> {
+    let names = Vec::<String>::deserialize(d)?;
+    let days = names
+        .iter()
+        .map(|s| {
+            Weekday::from_str(s.trim()).map_err(|_| {
+                serde::de::Error::custom(format!("invalid work_days entry {s:?} (use mon..sun)"))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if days.is_empty() {
+        return Err(serde::de::Error::custom("work_days must not be empty"));
+    }
+    Ok(days)
 }
 
 fn de_time<'de, D: Deserializer<'de>>(d: D) -> Result<NaiveTime, D::Error> {
@@ -221,6 +249,7 @@ impl Config {
             vdir,
             timezone: None,
             week_start: default_week_start(),
+            work_days: default_work_days(),
             morning_time: default_morning(),
             default_list: None,
             lists: BTreeMap::new(),
