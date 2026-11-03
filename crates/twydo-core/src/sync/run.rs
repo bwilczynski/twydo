@@ -256,8 +256,14 @@ fn one_pass(
         report.forced.extend(auto.iter().cloned());
         report.auto_forced.extend(auto);
     }
+    // Not after a failed sync: a failure that repeats (no password, no network) would make
+    // metasync wait the same way while writers still wait for the lock.
+    let sync_failed = || {
+        let states = coll_states(&out, &[], &sync.local_storage);
+        transient(sync, &ran, &out, &states).is_some()
+    };
     report.metasync_error = match ran.outcome {
-        Outcome::Exited(_) if sync.metasync => metasync(&child_env)?,
+        Outcome::Exited(_) if sync.metasync && !sync_failed() => metasync(&child_env)?,
         _ => None,
     };
     let hook = read_hook_log(&hook_log)?;
