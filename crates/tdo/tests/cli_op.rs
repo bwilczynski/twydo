@@ -36,17 +36,35 @@ impl Env {
             ),
         )
         .unwrap();
-        let matrix = "matrix_version = 1\n\
-            [[operation]]\ncase = \"checklist\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
-            mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-            twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
-            [[operation]]\ncase = \"one-time\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
-            mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-            twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
-            [[operation]]\ncase = \"monthly\"\nop = \"complete\"\niphone_baseline = \"pass\"\n\
-            mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-            twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n\
-            [[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n";
+        let mut matrix = String::from("matrix_version = 1\n");
+        // every case the tests touch passes the iPhone baseline; the other columns stay
+        // unverified, which test mode accepts
+        for (case, op) in [
+            ("checklist", "complete"),
+            ("one-time", "complete"),
+            ("monthly", "complete"),
+            ("one-time", "create"),
+            ("one-time", "edit"),
+            ("monthly", "create"),
+            ("monthly", "edit"),
+            ("date-only", "create"),
+            ("date-only", "edit"),
+            ("checklist", "create"),
+            ("checklist", "edit"),
+            ("project", "edit"),
+            ("recurring-project", "edit"),
+            ("daily", "create"),
+            ("task-to-project", "convert"),
+        ] {
+            matrix.push_str(&format!(
+                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
+                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
+                 twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"
+            ));
+        }
+        matrix.push_str(
+            "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
+        );
         fs::write(root.join("matrix.toml"), matrix).unwrap();
         Env { dir }
     }
@@ -520,4 +538,95 @@ fn complete_parent_with_one_item_uses_the_singular() {
         "{}",
         err(&o)
     );
+}
+
+/// The text of the one vdir file whose summary is `title`.
+fn file_titled(env: &Env, title: &str) -> String {
+    for e in fs::read_dir(env.vdir().join("list1")).unwrap() {
+        let s = fs::read_to_string(e.unwrap().path()).unwrap();
+        if s.contains(&format!("SUMMARY:{title}\r\n")) || s.contains(&format!("SUMMARY:{title}\n"))
+        {
+            return s;
+        }
+    }
+    panic!("no file titled {title}");
+}
+
+fn write_checklist(env: &Env) {
+    fs::write(
+        env.vdir().join("list1/cl-p.ics"),
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+         UID:cl-p\r\nSUMMARY:Synthetic list\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n\
+         STATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+    )
+    .unwrap();
+}
+
+#[test]
+fn add_item_under_checklist() {
+    let env = Env::new("test");
+    write_checklist(&env);
+    let o = env.op(&[
+        "add",
+        "--list",
+        "list1",
+        "--title",
+        "Synthetic item",
+        "--parent",
+        "cl-p",
+    ]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(file_titled(&env, "Synthetic item").contains("RELATED-TO:cl-p"));
+}
+
+#[test]
+fn add_with_repeat() {
+    let env = Env::new("test");
+    let o = env.op(&[
+        "add",
+        "--list",
+        "list1",
+        "--title",
+        "Synthetic rep",
+        "--due",
+        "2026-12-05",
+        "--repeat",
+        "monthly",
+    ]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(file_titled(&env, "Synthetic rep").contains("RRULE:FREQ=MONTHLY"));
+    // without a due date the task becomes due today, as 2Do does
+    let o = env.op(&[
+        "add",
+        "--list",
+        "list1",
+        "--title",
+        "Synthetic undated",
+        "--repeat",
+        "monthly",
+    ]);
+    assert!(o.status.success(), "{}", err(&o));
+    let f = file_titled(&env, "Synthetic undated");
+    assert!(f.contains("RRULE:FREQ=MONTHLY") && f.contains("DUE"), "{f}");
+}
+
+#[test]
+fn edit_kind() {
+    let env = Env::new("test");
+    let o = env.op(&["edit", TASK_E, "--kind", "project"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let f = fs::read_to_string(env.vdir().join(format!("list1/{TASK_E}.ics")))
+        .unwrap()
+        .replace("\r\n ", "")
+        .replace("\n ", "");
+    assert!(f.contains("TaskType%22%3A2"), "{f}");
+}
+
+#[test]
+fn edit_repeat_bad_text_exits_2() {
+    let env = Env::new("test");
+    let o = env.op(&["edit", TASK_E, "--repeat", "every blue moon"]);
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(err(&o).starts_with("tdo: "), "{}", err(&o));
+    assert!(err(&o).len() > 10, "{}", err(&o));
 }

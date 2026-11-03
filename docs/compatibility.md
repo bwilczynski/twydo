@@ -82,9 +82,12 @@ on the iPhone reads differently. See [config.md](config.md).
 | Recurring project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
 
-"—" means not verified yet. Creating is limited anyway: the TUI cannot add tasks yet, and
-`tdo op add` creates plain tasks only. Within these, dates with and without a time, start dates, and 2Do's automatic alert
-are handled as described in [tasks.md](tasks.md).
+"—" means not verified yet. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
+`--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
+`mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
+`tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task. The gate still decides: a
+combination whose matrix row is not verified is refused (exit 1), and repeat text that does not parse exits 2.
+Dates with and without a time, start dates, and 2Do's automatic alert are handled as described in [tasks.md](tasks.md).
 
 Verified behaviour that is easy to get wrong, each checked on the iPhone:
 
