@@ -1,9 +1,10 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tdo::app::{App, Mode, Outcome, Pane};
+use tdo::app::{App, Mode, Outcome, Pane, fmt_elapsed};
 use tdo::form::Field;
 use tdo::write::Request;
 use twydo_core::config::Config;
@@ -1154,4 +1155,99 @@ fn x_on_parent_with_one_open_item_uses_the_singular() {
         a.message.as_deref(),
         Some("complete \"Prepare tax return\" and its 1 open item? x to confirm")
     );
+}
+
+// Issue #10: a save blocked by a running sync asks whether to stop it.
+
+fn write_req(o: Outcome) -> Request {
+    match o {
+        Outcome::Write(req) => req,
+        other => panic!("expected a write, got {other:?}"),
+    }
+}
+
+#[test]
+fn elapsed_formats() {
+    assert_eq!(fmt_elapsed(Duration::from_secs(0)), "0s");
+    assert_eq!(fmt_elapsed(Duration::from_secs(45)), "45s");
+    assert_eq!(fmt_elapsed(Duration::from_secs(134)), "2m 14s");
+    assert_eq!(fmt_elapsed(Duration::from_secs(3780)), "1h 3m");
+}
+
+#[test]
+fn busy_write_asks_to_stop_the_sync() {
+    let mut a = app();
+    let req = write_req(a.handle_key(key('x')));
+    a.write_busy(req.clone(), Some(Duration::from_secs(134)));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("sync running for 2m 14s — stop it and save? (y/n)")
+    );
+    assert_eq!(a.handle_key(key('y')), Outcome::StopSyncAndWrite(req));
+    assert_eq!(a.handle_key(key('y')), Outcome::Continue, "asked once");
+}
+
+#[test]
+fn the_question_does_not_expire() {
+    let mut a = app();
+    let req = write_req(a.handle_key(key('x')));
+    a.write_busy(req, Some(Duration::from_secs(5)));
+    a.expire_message(now());
+    a.expire_message(now() + chrono::Duration::seconds(600));
+    assert!(a.message.as_deref().unwrap().ends_with("(y/n)"));
+}
+
+#[test]
+fn n_keeps_the_form_and_its_typing() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    type_str(&mut a, "!");
+    let typed = a.form.as_ref().unwrap().title.clone();
+    let req = write_req(a.handle_key(code(KeyCode::Enter)));
+    a.write_busy(req, Some(Duration::from_secs(5)));
+    assert_eq!(a.handle_key(key('n')), Outcome::Continue);
+    let f = a.form.as_ref().expect("form stays open");
+    assert_eq!(f.title, typed);
+    assert_eq!(
+        f.error.as_deref(),
+        Some("not saved; the sync is still running")
+    );
+}
+
+#[test]
+fn esc_declines_like_n() {
+    let mut a = app();
+    let req = write_req(a.handle_key(key('x')));
+    a.write_busy(req, Some(Duration::from_secs(5)));
+    assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("not saved; the sync is still running")
+    );
+    // The next x asks to write again.
+    assert!(matches!(a.handle_key(key('x')), Outcome::Write(_)));
+}
+
+#[test]
+fn other_keys_are_ignored_while_asking() {
+    let mut a = app();
+    let req = write_req(a.handle_key(key('x')));
+    a.write_busy(req, Some(Duration::from_secs(5)));
+    let cursor = a.cursor;
+    assert_eq!(a.handle_key(key('j')), Outcome::Continue);
+    assert_eq!(a.handle_key(key('q')), Outcome::Continue);
+    assert_eq!(a.cursor, cursor);
+    assert!(a.message.as_deref().unwrap().ends_with("(y/n)"));
+}
+
+#[test]
+fn busy_without_a_duration_shows_the_plain_message() {
+    let mut a = app();
+    let req = write_req(a.handle_key(key('x')));
+    a.write_busy(req, None);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("a sync is running; try again in a moment")
+    );
+    assert!(matches!(a.handle_key(key('x')), Outcome::Write(_)));
 }
