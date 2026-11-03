@@ -19,6 +19,24 @@ items. Today, Scheduled and Next 3 Days show a checklist's items under it.
 
 Twydo reads nested projects and checklists (a parent inside a parent) but does not write to them.
 
+### Changing a task's type
+
+`ct`, `cp` and `cc` (or the card's Type field) convert the selected task, as the iPhone's type
+selector does:
+
+- **Task to checklist or project**: the task keeps its title, dates, repeat and notes, and has no
+  items yet. Converting a repeating task to a checklist is refused (repeating checklists are not
+  verified).
+- **Checklist with items to project**: the items stay, with their dates as they were.
+- **Empty project or checklist to task**: allowed.
+- **A project with items cannot be converted**, neither to a checklist nor to a task. The iPhone
+  greys the selector out for it, so Twydo refuses with `… is not supported by 2Do`. Move or
+  finish the items first.
+- Converting to the type it already has does nothing.
+
+To fill a parent, `a` adds an item (on a plain task it asks first whether to make it a project
+or a checklist). A checklist's items have no dates, repeat or alerts of their own.
+
 ## Dates
 
 - **Due date**: date-only (`Fri`) or with a time (`Fri 10:00`). A date-only task becomes overdue
@@ -56,12 +74,12 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 ## Repeats
 
 A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
-(`Every Mon`). 2Do can express many rules; Twydo reads all of them but, by default, **changes only
-monthly tasks on a day from 1 to 28 and yearly tasks**, which have been checked against the
-iPhone. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the last day of the month,
-"the second Tuesday", February 29, repeat from completion, repeats with an end) are shown and can
-be read, and a write to them is refused with the reason, for example `weekdays-set repeats are not
-verified yet`. `tdo check` lists the repeat kinds in your data and whether each is verified.
+(`Every Mon`). 2Do can express many rules; Twydo reads all of them and can write all of them, but in the default verified mode
+it **changes only monthly tasks on a day from 1 to 28 and yearly tasks** until the others are
+checked against the iPhone. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the
+last day of the month, "the second Tuesday", February 29, repeat from completion, repeats with an
+end) are shown, and a write to them, including setting one, is refused with the reason, for
+example `weekdays-set repeats are not verified yet`. `tdo check` lists the repeat kinds in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
 
@@ -90,9 +108,33 @@ moves the project to its next occurrence, adds a completed copy of the project w
 copy of every item under it (items that were already done keep their own completion time), and
 reopens all the live items. The **items' dates do not move** with the project, as in 2Do.
 
-The edit card (`r`, or `i` then the Repeat field) sets, changes or removes a repeat: you type
-the rule, such as `monthly`, `2nd tue` or `mon thu after done`
-([tui.md](tui.md#the-edit-card)).
+The edit card (`r` on any task, or `i` then the Repeat field) sets, changes or removes a repeat:
+you type the rule, such as `monthly`, `2nd tue` or `mon thu after done`
+([tui.md](tui.md#the-edit-card)). `tdo op add` and `tdo op edit` take the same text with
+`--repeat`.
+
+| Typed | Repeats |
+|---|---|
+| `none` or empty | never (removes a repeat) |
+| `daily`, `3d`, `every 3 days` | every N days (2Do's "Every Day" is the same rule) |
+| `weekly`, `biweekly`, `2w`, `every 2 weeks` | every N weeks |
+| `monthly`, `3m`, `every 3 months` | every N months, on the due date's day |
+| `yearly`, `2y`, `every 2 years` | every N years, on the due date |
+| `mon thu`, `every mon and thu` | those weekdays |
+| `workdays` | the `work_days` of the config, default Monday to Friday ([config.md](config.md)) |
+| `last day`, `last day every 2m` | the last day of the month |
+| `2nd tue`, `last fri` | that weekday of each month |
+| `1st weekday`, `last weekend day` | that workday (Monday to Friday) or weekend day of each month |
+
+Modifiers, after any rule: `after done` (count from the completion date), `until 2027-06-01`
+(or any due-style date) and `10 times` (stop after that many).
+
+- A repeat needs a due date. Set one on a task without it and the task becomes due today, as on
+  the iPhone.
+- The field never names a day of the month: monthly and yearly repeats follow the due date, so
+  set the day there.
+- `last day`, `last weekday` and `1st weekend day` can be typed, but the iPhone cannot create
+  them (it offers "last Monday" and so on instead), so they stay unverified.
 
 ## Views and date groups
 

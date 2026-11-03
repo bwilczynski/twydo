@@ -70,8 +70,10 @@ be used occasionally against the same data.
 2. **CalDAV on the Synology NAS** as the single sync method and source of truth.
 3. **Feature scope** as in §2 (confirmed: "looks right").
 4. **Parent tasks need a manual final tick**, like 2Do. No auto-close for now.
-5. **Adding tasks:** `o` in the app opens a one-line natural-language input with a preview.
-   A global hotkey for quick entry is a later addition.
+5. **Adding tasks:** `o` opens an inline row in the list for the title, and a card holds the other
+   fields; natural-language input comes later on that same row (replaced 2026-11-03, see
+   [the add-and-reshape design](2026-11-03-tui-add-and-structure-design.md)). A global hotkey for
+   quick entry is a later addition.
 6. **2Do on the Mac is retired** once Twydo is working. Until then it supplies compatibility
    fixtures and performs the migration (§10). After that, the only writers are Twydo (Linux and macOS) and, occasionally,
    the 2Do iPhone app.
@@ -295,7 +297,7 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
 | `h`/`l` | focus left / right pane |
 | `Tab` | next pane |
 | `x` / `Space` | toggle done |
-| `o` / `O` | new task / new item under the selected parent |
+| `o` / `O` | new task row below / above the cursor (an item, inside a parent) |
 | `Enter` | on a parent, expand/collapse; on a leaf, edit |
 | `i` | edit selected task, including a parent |
 | `J` / `K` | move task down/up when manually sorted |
@@ -303,8 +305,11 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
 | `u` / `Ctrl-r` | undo / redo |
 | `t`, `T` | due today / due tomorrow |
 | `]` / `[`, `}` / `{` | due +1 / −1 day, +1 / −1 week |
-| `r` | edit repeat |
-| `a` | edit alerts |
+| `r` | edit card, on the Repeat field (any task) |
+| `a` | add an item inside the selected parent (alerts move into the card later) |
+| `c` + `t`/`p`/`c` | change type to task / project / checklist |
+| `yy`, `p` / `P` | reserved: yank, paste below / above |
+| `>>` / `<<` | reserved: indent into / outdent out of a parent |
 | `m` | move to another list |
 | `/`, `n`/`N` | search in view |
 | `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
@@ -351,7 +356,10 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
    recoverable completion/undo, project/checklist semantics, Today and date grouping. Tests from §9.
 2. **TUI shell:** three-pane layout, views, list colours, ANSI theming, navigation keys.
 3. **Editing:** toggle done (incl. parents), date shortcuts, edit form, delete and undo, move.
-4. **Natural-language add** (`o`) with preview.
+4. **Adding and reshaping tasks** (design: `2026-11-03-tui-add-and-structure-design.md`): phase 1
+   inline add, the in-place card, type changes and all repeat kinds; then the later features
+   (indent, yank and paste, list management, Project View); then natural-language input with
+   preview.
 5. **Sync/conflicts and notifier:** background runner, metasync, conflict preservation/resolution,
    delivery state and catch-up contract, systemd and launchd setup. Prove failure recovery.
 6. **Interop and production migration:** pass §9 with the iPhone on the test setup; take fresh

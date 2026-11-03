@@ -43,9 +43,18 @@ app replacing 2Do for one user, plan by plan.
    VHS demo from `tools/demo_vdir.py`), and issue #10 (a save blocked by a stuck sync offers to
    stop it; `docs/superpowers/plans/2026-11-03-issue-10-stop-stuck-sync.md`), and the release
    pipeline (`docs/superpowers/plans/2026-11-03-release-pipeline.md`: CI on PRs, release-plz
-   release PRs from conventional commits, cargo-dist binaries, `mise use github:bwilczynski/twydo`).
-   Next on the roadmap: natural-language add (`o`/`O`, reusing `twydo_core::dateinput`), Plan 5b (manual
-   order `J`/`K`, list management) or Plan 2 (notifier). Write the plan first.
+   release PRs from conventional commits, cargo-dist binaries, `mise use github:bwilczynski/twydo`),
+   and Plan 7 phase 1 (adding and reshaping tasks: inline add with `o`/`O`/`a`, the in-place edit
+   card, type changes `ct`/`cp`/`cc`, all repeat kinds; plan
+   `docs/superpowers/plans/2026-11-03-plan-7-add-and-reshape.md`, design
+   `docs/superpowers/specs/2026-11-03-tui-add-and-structure-design.md`, iPhone capture in
+   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)). **Still pending:**
+   the phone verification of Twydo's own writes (Plan 7 Task 13), so verified mode refuses most of
+   the new writes until it is done.
+   Next on the roadmap: that phone verification, then the design's later features (indent and
+   outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
+   natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
+   parser), manual order `J`/`K`, or Plan 2 (notifier). Write the plan first.
 
 ## Ground rules
 

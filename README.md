@@ -30,12 +30,12 @@ the rest with a reason, so the phone never gets something it would misread.
 
 **Not yet**
 
-- Adding tasks in the TUI (planned: `o` with natural-language input such as
-  `Pay rent fri every month list(Bills)`); `tdo op add` creates plain tasks meanwhile
+- Natural-language input on the new row (planned: `Pay rent fri every month @Bills`, typed
+  with the title); today the title goes in the row and dates and repeats in the card
 - Desktop notifications for alerts, and editing alerts
 - Manual ordering, and creating or renaming lists
-- Writing to repeats other than monthly and yearly (daily, weekly, set weekdays, last day of the
-  month, repeat from completion, …): shown, but read-only until verified
+- Writing to repeats other than monthly and yearly, and adding projects, checklists and items,
+  in verified mode: Twydo can write them, but refuses until its writes are checked on the phone
 - Prebuilt releases (build from source for now)
 - macOS is expected to work but is not tested yet
 
