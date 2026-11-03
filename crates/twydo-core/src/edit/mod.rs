@@ -49,6 +49,9 @@ pub enum Change {
     /// Set the repeat rule, or `None` to remove it. A task without a due date must get one
     /// first (a `Change::Due` earlier in the same list): 2Do makes the due date today.
     Repeat(Option<RepeatSpec>),
+    /// Turn the task into a task, checklist or project. A single-resource edit of the task's
+    /// own metadata: whether its items allow it is the gate's call.
+    Kind(TaskKind),
 }
 
 /// A task to create in `collection`.
@@ -235,6 +238,7 @@ fn apply_one(todo: &mut Component, change: &Change) -> Result<(), EditError> {
         Change::Start(d) => set_start(todo, *d),
         Change::RepeatInterval(n) => set_interval(todo, *n),
         Change::Repeat(spec) => set_repeat(todo, spec.as_ref()),
+        Change::Kind(kind) => set_kind(todo, *kind),
     }
 }
 
@@ -610,5 +614,34 @@ fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), Edi
         }
         write_meta(todo, Some(&orig), &m);
     }
+    Ok(())
+}
+
+/// Turn the task into a task, checklist or project: `TaskType` in the JSON metadata, plus the
+/// JSON `uid` a checklist or project carries (`plan7-list1/03-phone-convert`). Twydo writes
+/// the task's own UID there; the phone writes its internal id, which Twydo cannot know. The
+/// task's items are not touched: whether they allow the change is the gate's call.
+fn set_kind(todo: &mut Component, kind: TaskKind) -> Result<(), EditError> {
+    let orig = match meta_of(todo) {
+        Meta::Json(m) => m,
+        Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
+        Meta::Absent | Meta::Tokens => {
+            return Err(unsupported(
+                "changing the type of this task is not supported",
+            ));
+        }
+    };
+    let uid = todo
+        .prop("UID")
+        .map(|p| p.value.clone())
+        .unwrap_or_default();
+    let code = match kind {
+        TaskKind::Task => 0,
+        TaskKind::Checklist => 1,
+        TaskKind::Project => 2,
+    };
+    let mut m = orig.clone();
+    m.set_task_type(code, &uid);
+    write_meta(todo, Some(&orig), &m);
     Ok(())
 }

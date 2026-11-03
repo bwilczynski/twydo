@@ -69,6 +69,60 @@ impl MetaJson {
         self.obj.shift_remove(key);
     }
 
+    /// The `TaskType` code (0 task, 1 checklist, 2 project); an absent key counts as a task.
+    pub fn task_type(&self) -> i64 {
+        self.get_i64("TaskType").unwrap_or(0)
+    }
+
+    /// Change `TaskType` the way the phone's type selector does (`plan7-list1/03-phone-convert`,
+    /// `04-phone-convert-empty`). Between checklist and project only the code changes. A
+    /// task becoming a checklist or project gets `uid` = `own_uid` right after
+    /// `RecurrenceEndRepetitionsOrig` and `TaskType` before `TaskDuration`; the reverse drops
+    /// `uid` and puts `TaskType` after `TaskDuration`. A missing anchor key appends.
+    pub fn set_task_type(&mut self, task_type: i64, own_uid: &str) {
+        let was_parent = self.task_type() != 0;
+        let is_parent = task_type != 0;
+        if was_parent == is_parent {
+            self.set_i64("TaskType", task_type);
+            return;
+        }
+        let mut pairs: Vec<(String, Value)> = std::mem::take(&mut self.obj)
+            .into_iter()
+            .filter(|(k, _)| k != "uid" && k != "TaskType")
+            .collect();
+        let insert =
+            |pairs: &mut Vec<(String, Value)>, key: &str, v: Value, anchor: &str, before: bool| {
+                let at = pairs.iter().position(|(k, _)| k == anchor);
+                let at = at.map_or(pairs.len(), |i| if before { i } else { i + 1 });
+                pairs.insert(at, (key.to_string(), v));
+            };
+        if is_parent {
+            insert(
+                &mut pairs,
+                "uid",
+                Value::from(own_uid),
+                "RecurrenceEndRepetitionsOrig",
+                false,
+            );
+            insert(
+                &mut pairs,
+                "TaskType",
+                Value::from(task_type),
+                "TaskDuration",
+                true,
+            );
+        } else {
+            insert(
+                &mut pairs,
+                "TaskType",
+                Value::from(task_type),
+                "TaskDuration",
+                false,
+            );
+        }
+        self.obj = pairs.into_iter().collect();
+    }
+
     fn set(&mut self, key: &str, v: Value) {
         if let Some(slot) = self.obj.get_mut(key) {
             *slot = v;

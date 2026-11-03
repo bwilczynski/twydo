@@ -7,6 +7,7 @@ use std::path::Path;
 use chrono::{DateTime, NaiveDate, Utc};
 use twydo_core::edit::{Change, Due, EditError, apply_changes, touch};
 use twydo_core::ical::{Calendar, Component, Param, parse, serialize};
+use twydo_core::model::TaskKind;
 use twydo_core::model::meta_edit::MetaJson;
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
@@ -800,4 +801,145 @@ fn set_repeat_keeps_a_foreign_ruid_and_fills_an_empty_one() {
     let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
     apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now()).unwrap();
     assert_eq!(ruid(&cal), uid);
+}
+
+// ---- Change type (Plan 7 Task 6), against the iPhone's type selector ----
+
+const K1: &str = "962ea2a85f75455aafa1102e68e1b92a";
+const K2: &str = "b783e95fdb40450aa81cab922cb114f4";
+const CHECKLIST_C: &str = "f45f2dab11144ad095882c25578a2958";
+
+/// The JSON keys and values in order. The phone's own `uid` (2Do's internal id for a
+/// Twydo-created parent) is replaced by a marker, since Twydo writes the task's UID there.
+fn kind_pairs(cal: &Calendar) -> Vec<(String, serde_json::Value)> {
+    let value = &todo(cal).prop("X-2DOAPP-METADATA").unwrap().value;
+    let start = value.find("<2Do Meta>").unwrap() + "<2Do Meta>".len();
+    let end = value.find("</2Do Meta>").unwrap();
+    let serde_json::Value::Object(obj) =
+        serde_json::from_str(&percent_decode(&value[start..end])).unwrap()
+    else {
+        panic!("not an object");
+    };
+    obj.into_iter()
+        .map(|(k, v)| {
+            let v = if k == "uid" { "<own>".into() } else { v };
+            (k, v)
+        })
+        .collect()
+}
+
+/// Apply `Change::Kind(kind)` to `from`'s file and compare with the phone's `to` file: same
+/// lines (leaving out the stamps and the phone's own layout), the JSON in the phone's key
+/// order, and JSON `uid` = the task's UID when there is one.
+fn check_kind(from: &str, to: &str, uid: &str, kind: twydo_core::model::TaskKind) {
+    let mut cal = parse(&fixture(P7, from, uid)).unwrap();
+    let want = parse(&fixture(P7, to, uid)).unwrap();
+    apply_changes(&mut cal, &[Change::Kind(kind)], now()).unwrap();
+    let got = parse(&serialize(&cal)).unwrap();
+    let ctx = format!("{from}->{to} {uid}");
+    let strip = |c: &Calendar| -> Vec<String> {
+        let mut l = repeat_lines(c);
+        l.retain(|x| !x.contains("|X-2DOAPP-METADATA|"));
+        l
+    };
+    assert_eq!(strip(&got), strip(&want), "{ctx}: lines");
+    assert_eq!(kind_pairs(&got), kind_pairs(&want), "{ctx}: JSON");
+    let json = percent_decode(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value);
+    let own = format!("\"uid\":\"{uid}\"");
+    assert_eq!(
+        json.contains(&own),
+        kind_pairs(&want).iter().any(|(k, _)| k == "uid")
+    );
+}
+
+#[test]
+fn task_to_checklist() {
+    check_kind(
+        "02-phone-repeat-no-due",
+        "03-phone-convert",
+        K1,
+        TaskKind::Checklist,
+    );
+}
+
+#[test]
+fn task_to_project() {
+    check_kind(
+        "02-phone-repeat-no-due",
+        "03-phone-convert",
+        K2,
+        TaskKind::Project,
+    );
+}
+
+#[test]
+fn checklist_to_project() {
+    check(
+        P7,
+        "02-phone-repeat-no-due",
+        "03-phone-convert",
+        CHECKLIST_C,
+        &[Change::Kind(TaskKind::Project)],
+        &["X-2DOAPP-METADATA"],
+    );
+}
+
+#[test]
+fn empty_parent_to_task() {
+    check_kind(
+        "03-phone-convert",
+        "04-phone-convert-empty",
+        K1,
+        TaskKind::Task,
+    );
+}
+
+#[test]
+fn empty_project_to_checklist() {
+    // No capture: the mirror of checklist -> project. Only `TaskType` changes, `uid` and the
+    // parent key order stay.
+    let mut cal = parse(&fixture(P7, "03-phone-convert", K2)).unwrap();
+    let before = kind_pairs(&cal);
+    apply_changes(&mut cal, &[Change::Kind(TaskKind::Checklist)], now()).unwrap();
+    let after = kind_pairs(&cal);
+    assert_eq!(after.len(), before.len());
+    for ((bk, bv), (ak, av)) in before.iter().zip(&after) {
+        assert_eq!(bk, ak);
+        if bk == "TaskType" {
+            assert_eq!((bv, av), (&2.into(), &1.into()));
+        } else {
+            assert_eq!(bv, av, "{bk}");
+        }
+    }
+}
+
+#[test]
+fn same_kind_changes_only_the_stamps() {
+    let input = fixture(P7, "03-phone-convert", K1);
+    let mut cal = parse(&input).unwrap();
+    let before = cal.clone();
+    apply_changes(&mut cal, &[Change::Kind(TaskKind::Checklist)], now()).unwrap();
+    let rest = |c: &Calendar| {
+        lines(c)
+            .into_iter()
+            .filter(|l| !is_stamp(&l.1))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rest(&cal), rest(&before));
+}
+
+#[test]
+fn tokens_metadata_refused() {
+    let mut cal = parse(&fixture(P7, "02-phone-repeat-no-due", K1)).unwrap();
+    let meta = cal.root.children_named_mut("VTODO").next().unwrap();
+    meta.prop_mut("X-2DOAPP-METADATA")
+        .unwrap()
+        .set_value("@tasktype=0");
+    let before = cal.clone();
+    let err = apply_changes(&mut cal, &[Change::Kind(TaskKind::Project)], now()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "changing the type of this task is not supported"
+    );
+    assert_eq!(cal, before);
 }

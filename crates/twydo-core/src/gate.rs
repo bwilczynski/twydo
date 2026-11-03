@@ -113,6 +113,13 @@ pub fn check(
         return blocked("changing the repeat rule is not verified yet");
     }
 
+    // Changing a task's type is not verified yet (Plan 7 Task 7 grants it).
+    if let Op::Edit { changes, .. } = op
+        && changes.iter().any(|c| matches!(c, Change::Kind(_)))
+    {
+        return blocked("changing a task's type is not verified yet");
+    }
+
     // Creating projects, checklists, items or repeating tasks is not verified yet (Plan 7
     // Task 7 grants it).
     if let Op::Create(n) = op
@@ -444,7 +451,8 @@ fn op_cases(snap: &Snapshot, target: Option<usize>, cases: Cases, op: &Op) -> Ve
                     Change::Summary(_)
                     | Change::Description(_)
                     | Change::RepeatInterval(_)
-                    | Change::Repeat(_) => {}
+                    | Change::Repeat(_)
+                    | Change::Kind(_) => {}
                 }
             }
         }

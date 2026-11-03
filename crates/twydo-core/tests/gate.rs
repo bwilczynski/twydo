@@ -217,6 +217,22 @@ fn creating_parents_items_and_repeats_is_not_verified_yet() {
 }
 
 #[test]
+fn changing_type_is_not_verified_yet() {
+    let s = snap();
+    let m = matrix(&[("one-time", "edit")], "pass", "pass", &[]);
+    let op = edit(
+        "gate-nodue",
+        vec![Change::Kind(twydo_core::model::TaskKind::Checklist)],
+    );
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        assert_eq!(
+            check(&s, &m, mode, &op, today()),
+            blocked("changing a task's type is not verified yet")
+        );
+    }
+}
+
+#[test]
 fn create_checks_list_and_attribute_cases() {
     let s = snap();
     let m = matrix(&[("one-time", "create")], "pass", "pass", &[]);
