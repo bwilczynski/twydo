@@ -44,7 +44,7 @@ Twydo does not understand. Details: [data-model.md](data-model.md#what-twydo-pre
 
 ## Verified mode
 
-Every write Twydo makes was first made on the iPhone, captured, and reproduced: Twydo writes the
+Every write Twydo makes is first made on the iPhone, captured, and reproduced: Twydo writes the
 same change the iPhone writes, then the iPhone was checked to read it back correctly, and to edit
 it again. The results are recorded in [`compat/matrix.toml`](../compat/matrix.toml), which is
 built into `tdo`.
@@ -57,7 +57,12 @@ on the status line (or on stderr from `tdo op`, which exits 1):
 weekdays-set repeats are not verified yet
 reopen for yearly tasks is not verified yet (twydo_to_iphone)
 nested projects and checklists are not verified yet
+converting a project with items to a checklist is not supported by 2Do
 ```
+
+"Not verified yet" means Twydo has not checked the write against the iPhone. "Not supported by
+2Do" means the iPhone itself cannot do it (it greys out the type selector on a project with
+items), so there is nothing to verify and the write stays refused in every mode but `test`.
 
 The part in parentheses names the direction that is missing: `twydo_to_iphone` (the iPhone has
 not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked
@@ -82,7 +87,12 @@ on the iPhone reads differently. See [config.md](config.md).
 | Recurring project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
 
-"—" means not verified yet. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
+"—" means not verified yet. The gate also covers creating items, projects, checklists and
+repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
+checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
+repeat classes). The iPhone baselines for these were captured (see
+[`plan7-capture.md`](reference/phase0/plan7-capture.md)), but Twydo's own writes are not checked
+on the phone yet, so in verified mode most of them are refused until they are. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
 `tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task. The gate still decides: a
@@ -97,11 +107,14 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
 - changing a checklist's date removes its items' copies of the old date;
 - undoing a completion before and after it was synced.
 
-Not verified yet, so refused for writing: repeats daily, weekly, on set weekdays, on the
-29th–31st or the last day of the month, on the nth weekday, on February 29, repeating from the
-completion date, and repeats with an end; repeating checklists; a repeating item inside a
+Not verified yet, so refused for writing in verified mode: setting or changing repeats daily,
+weekly, on set weekdays, on the 29th–31st or the last day of the month, on the nth weekday, on
+February 29, repeating from the completion date, and repeats with an end; creating projects,
+checklists and items; converting a task's type; repeating checklists; a repeating item inside a
 repeating project; nested projects and checklists; moving, deleting or reopening a single item on
-its own; editing alerts.
+its own; editing alerts. Last day, last weekday and the Nth weekend day of the month can be typed, but the
+iPhone cannot create them, so they have no baseline to compare with and stay unverified. Converting a
+project that has items is not supported by 2Do at all.
 
 ## How far this has been tested
 

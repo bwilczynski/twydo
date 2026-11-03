@@ -224,6 +224,19 @@ fn modes_help_and_messages_render() {
 }
 
 #[test]
+fn help_lists_new_keys() {
+    let mut a = app();
+    a.show_help = true;
+    let t = text(&render(&mut a, 120, 40));
+    for key in ["o  O", "a ", "ct  cp  cc", "r "] {
+        assert!(t.contains(key), "help lacks {key:?}: {t}");
+    }
+    assert!(t.contains("new task below / above"), "{t}");
+    assert!(t.contains("add items to a project or checklist"), "{t}");
+    assert!(t.contains("change type"), "{t}");
+}
+
+#[test]
 fn tiny_terminal_does_not_panic() {
     let mut a = app();
     for (w, h) in [(20, 5), (1, 1), (10, 3), (0, 0), (3, 40), (200, 2), (60, 8)] {
