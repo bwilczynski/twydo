@@ -16,6 +16,7 @@ use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
+use twydo_core::sync::running::{Running, StopResult, request_stop, running};
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
 
 fn now() -> DateTime<Utc> {
@@ -1200,4 +1201,176 @@ fn metasync_still_runs_after_a_clean_sync() {
     fx.sync_mut().metasync = true;
     run(&fx.cfg, &manual(), now()).unwrap();
     assert_eq!(fs::read_to_string(&calls).unwrap(), "sync\nmetasync\n");
+}
+
+// Issue #10: a running sync is recorded in `sync/running.json` and stops on request.
+
+fn running_file(fx: &Fx) -> PathBuf {
+    fx.state().join("sync").join("running.json")
+}
+
+/// Waits up to 5 s until the recorded sync has a child.
+fn wait_for_child(fx: &Fx) -> Running {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(r) = running(&fx.cfg).unwrap()
+            && r.child_pgid.is_some()
+        {
+            return r;
+        }
+        assert!(Instant::now() < deadline, "no running sync recorded");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn pid_alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+fn wait_dead(pid: &str) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while pid_alive(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    !pid_alive(pid)
+}
+
+#[test]
+fn running_is_reported_while_vdirsyncer_runs() {
+    let fx = Fx::new("sleep 1");
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    let r = wait_for_child(&fx);
+    assert_eq!(r.runner_pid, std::process::id());
+    let age = Utc::now() - r.started;
+    assert!(
+        age >= chrono::Duration::zero() && age < chrono::Duration::seconds(5),
+        "{r:?}"
+    );
+    t.join().unwrap();
+    assert_eq!(running(&fx.cfg).unwrap(), None);
+    assert!(!running_file(&fx).exists());
+}
+
+#[test]
+fn stop_request_kills_the_run_and_backs_off() {
+    let fx = Fx::new("");
+    let pidfile = fx.path("grandchild.pid");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("sleep 30 &\necho $! > '{}'\nwait", pidfile.display()),
+    );
+    let cfg = fx.cfg.clone();
+    let start = Instant::now();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    wait_for_child(&fx);
+    assert!(wait_for(&pidfile));
+    assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::Requested);
+    let r = t.join().unwrap();
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(r.stopped);
+    assert_eq!(r.transient.as_deref(), Some("sync stopped"));
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.failures, 1);
+    assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
+    let pid = fs::read_to_string(&pidfile).unwrap();
+    assert!(wait_dead(pid.trim()), "grandchild survived the stop");
+    assert!(!fx.state().join("sync").join("stop").exists());
+    assert!(!running_file(&fx).exists());
+}
+
+#[test]
+fn stopped_run_lists_are_errors() {
+    let fx = Fx::new("echo 'Syncing twydo/c1' >&2\nsleep 30");
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    wait_for_child(&fx);
+    // Let the fake print its line before the stop.
+    std::thread::sleep(Duration::from_millis(200));
+    request_stop(&fx.cfg).unwrap();
+    let r = t.join().unwrap();
+    assert_eq!(
+        r.collections.get("c1"),
+        Some(&CollState::Error {
+            message: "sync stopped".into()
+        })
+    );
+}
+
+#[test]
+fn stopped_run_does_not_rerun() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'\nsleep 30", count.display()),
+    );
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    wait_for_child(&fx);
+    fs::write(fx.state().join("sync").join("requested"), b"").unwrap();
+    request_stop(&fx.cfg).unwrap();
+    let r = t.join().unwrap();
+    assert!(r.stopped);
+    assert_eq!(fs::read_to_string(&count).unwrap().lines().count(), 1);
+}
+
+#[test]
+fn stale_stop_file_does_not_stop_the_next_run() {
+    let fx = Fx::new("sleep 0.3\nexit 0");
+    let sync_dir = fx.state().join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    fs::write(sync_dir.join("stop"), b"").unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!r.stopped);
+    assert_eq!(r.transient, None);
+    assert!(!sync_dir.join("stop").exists());
+}
+
+#[test]
+fn stop_with_a_dead_runner_kills_the_recorded_group() {
+    use std::os::unix::process::CommandExt;
+    let fx = Fx::new("");
+    let mut orphan = std::process::Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    gone.wait().unwrap();
+    let sync_dir = fx.state().join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    let rec = Running {
+        runner_pid: gone.id(),
+        child_pgid: Some(orphan.id()),
+        started: Utc::now(),
+    };
+    fs::write(running_file(&fx), serde_json::to_vec(&rec).unwrap()).unwrap();
+    assert_eq!(running(&fx.cfg).unwrap(), Some(rec));
+    assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::Killed);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while orphan.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "orphan survived the stop");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!running_file(&fx).exists());
+    assert!(!sync_dir.join("stop").exists());
+}
+
+#[test]
+fn stop_with_nothing_running() {
+    let fx = Fx::new("");
+    assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::NothingRunning);
+    assert!(!fx.state().join("sync").join("stop").exists());
 }

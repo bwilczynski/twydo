@@ -82,7 +82,7 @@ or recoverable to the complete result of the operation, exactly once.
       journal/
         20261101T120000Z-3fa9c2d1.json   one file per operation, named <id>.json
       conflicts/              sync conflicts (see sync.md)
-      sync/                   sync status, manifest and run lock
+      sync/                   sync status, manifest, run lock and the running sync
 ```
 
 Journal paths are relative to the vdir, so each vdir has its own state directory. `<id>` is the

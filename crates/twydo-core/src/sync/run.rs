@@ -6,6 +6,7 @@
 //! wait), and never while this process holds the conflicts lock, because the conflict hook
 //! takes that lock itself.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Read};
@@ -21,6 +22,7 @@ use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
 use super::manifest::Manifest;
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
+use super::running::{self, Running, running_path, stop_path};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
@@ -72,6 +74,9 @@ pub struct RunReport {
     /// The part of `forced` that the runner chose itself (a list Twydo emptied).
     pub auto_forced: Vec<String>,
     pub metasync_error: Option<String>,
+    /// A pass was stopped on request (see [`super::running::request_stop`]); no rerun
+    /// followed it.
+    pub stopped: bool,
     /// Problems that did not stop the run (an unreadable or unwritable manifest).
     pub warnings: Vec<String>,
 }
@@ -169,7 +174,8 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         one_pass(cfg, sync, &state, &force, now, &mut status, &mut report)?;
         force.clear();
         // Step 7.
-        if pass == MAX_RERUNS || !requested.exists() {
+        // A stopped pass is not rerun: the user stopped the sync so that they can write.
+        if report.stopped || pass == MAX_RERUNS || !requested.exists() {
             break;
         }
         fs::remove_file(&requested)?;
@@ -195,6 +201,7 @@ fn one_pass(
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
     let shared = VdirLock::shared(state)?;
+    let guard = RefCell::new(RunningGuard::start(state)?);
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
     // The evidence is consumed before vdirsyncer runs: read into memory (past that point an
@@ -234,6 +241,7 @@ fn one_pass(
         hook_log: &hook_log,
         vdir: &cfg.vdir,
         state,
+        running: &guard,
     };
     let mut ran = run_command(&child_env, &args)?;
     let mut out = parse(&sync.pair, &ran.stderr);
@@ -267,16 +275,23 @@ fn one_pass(
         _ => None,
     };
     let hook = read_hook_log(&hook_log)?;
+    report.stopped |= guard.borrow().stopped;
+    drop(guard);
     drop(shared);
 
     let mut collections = coll_states(&out, &hook, &sync.local_storage);
-    if matches!(ran.outcome, Outcome::TimedOut) {
+    let killed = match ran.outcome {
+        Outcome::TimedOut => Some("sync timed out"),
+        Outcome::Stopped => Some("sync stopped"),
+        _ => None,
+    };
+    if let Some(message) = killed {
         // A killed run may have stopped in the middle of any collection it reported,
         // conflicted ones included (reconciliation counts those too).
         for s in collections.values_mut() {
             if matches!(s, CollState::Ok | CollState::Conflict) {
                 *s = CollState::Error {
-                    message: "sync timed out".into(),
+                    message: message.into(),
                 };
             }
         }
@@ -305,7 +320,7 @@ fn one_pass(
         // The evidence a later auto-force needs (see [`Manifest::update`]). A failure here
         // is a warning, so the status below is still saved; the file was removed before
         // vdirsyncer ran, so no stale evidence is left behind.
-        let uncertain = !out.unattributed.is_empty() || matches!(ran.outcome, Outcome::TimedOut);
+        let uncertain = !out.unattributed.is_empty() || killed.is_some();
         if let Err(e) = manifest
             .update(&cfg.vdir, &collections, uncertain)
             .and_then(|()| manifest.save(state))
@@ -399,6 +414,7 @@ fn transient(
 ) -> Option<String> {
     match &ran.outcome {
         Outcome::SpawnFailed(msg) => return Some(msg.clone()),
+        Outcome::Stopped => return Some("sync stopped".into()),
         Outcome::TimedOut => {
             return Some(format!(
                 "{} sync timed out after {} s",
@@ -532,6 +548,7 @@ fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
             Some(message().unwrap_or_else(|| format!("metasync exited with {st}")))
         }
         Outcome::TimedOut => Some(format!("metasync timed out after {} s", sync.timeout_secs)),
+        Outcome::Stopped => Some("metasync stopped".into()),
         Outcome::SpawnFailed(msg) => Some(msg.clone()),
     })
 }
@@ -539,6 +556,8 @@ fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
 enum Outcome {
     Exited(ExitStatus),
     TimedOut,
+    /// Killed on request (`sync/stop`).
+    Stopped,
     SpawnFailed(String),
 }
 
@@ -563,25 +582,11 @@ fn reader<R: Read + Send + 'static>(mut r: R) -> Result<mpsc::Receiver<String>, 
 
 /// Kills `child` and, on Unix, its whole process group (it leads one: see
 /// [`run_command`]), so a wrapper's vdirsyncer cannot keep writing the vdir after the
-/// runner gives up its shared lock. No libc here: the group goes through `kill(1)`; the
-/// direct kill is the fallback.
+/// runner gives up its shared lock. No libc here: the group goes through `kill(1)` (see
+/// [`running::kill_group`]); the direct kill is the fallback.
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
-    {
-        let group = format!("-{}", child.id());
-        for kill in ["/bin/kill", "kill"] {
-            let done = Command::new(kill)
-                .args(["-KILL", "--", &group])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success());
-            if done {
-                break;
-            }
-        }
-    }
+    running::kill_group(child.id());
     let _ = child.kill();
 }
 
@@ -591,6 +596,64 @@ struct ChildEnv<'a> {
     hook_log: &'a Path,
     vdir: &'a Path,
     state: &'a Path,
+    running: &'a RefCell<RunningGuard>,
+}
+
+/// Keeps `sync/running.json` for the pass that created it, and removes it on drop.
+struct RunningGuard {
+    state: PathBuf,
+    rec: Running,
+    /// A child of this pass was killed on request.
+    stopped: bool,
+}
+
+impl RunningGuard {
+    /// Removes a stale `sync/stop` (a request that came after the last run's child was
+    /// gone) and records the pass with no child yet.
+    fn start(state: &Path) -> io::Result<RunningGuard> {
+        remove_if_exists(&stop_path(state))?;
+        let g = RunningGuard {
+            state: state.to_path_buf(),
+            rec: Running {
+                runner_pid: std::process::id(),
+                child_pgid: None,
+                started: Utc::now(),
+            },
+            stopped: false,
+        };
+        g.save()?;
+        Ok(g)
+    }
+
+    fn set_child(&mut self, pgid: Option<u32>) -> io::Result<()> {
+        self.rec.child_pgid = pgid;
+        self.save()
+    }
+
+    /// Written whole through a rename, so a reader never sees half a record.
+    fn save(&self) -> io::Result<()> {
+        let path = running_path(&self.state);
+        let tmp = path.with_extension("json.tmp");
+        fs::write(
+            &tmp,
+            serde_json::to_vec_pretty(&self.rec).map_err(io::Error::other)?,
+        )?;
+        fs::rename(&tmp, &path)
+    }
+}
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        let _ = remove_if_exists(&running_path(&self.state));
+        let _ = remove_if_exists(&stop_path(&self.state));
+    }
+}
+
+fn remove_if_exists(p: &Path) -> io::Result<()> {
+    match fs::remove_file(p) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
 }
 
 /// Runs `<command> args…` with `VDIRSYNCER_CONFIG` (when configured), the hook log and the
@@ -598,7 +661,7 @@ struct ChildEnv<'a> {
 /// is empty, so it reads EOF as from null): the kernel keeps that lock until the child and
 /// whatever inherited it exit, so a child orphaned by a killed runner (Ctrl-C) still keeps
 /// writers and the next run's recovery waiting. stdout is drained and dropped; stderr is
-/// returned. The child is killed after `timeout_secs`.
+/// returned. The child is killed after `timeout_secs`, or when `sync/stop` appears.
 fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
     let sync = env.sync;
     let lock = VdirLock::shared_for_child(env.state)?;
@@ -625,6 +688,8 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
             });
         }
     };
+    // Best effort: without the record the sync cannot be stopped from elsewhere, but it runs.
+    let _ = env.running.borrow_mut().set_child(Some(child.id()));
     let readers = (
         child.stdout.take().map(reader).transpose(),
         child.stderr.take().map(reader).transpose(),
@@ -645,6 +710,13 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         if let Some(st) = child.try_wait()? {
             break Outcome::Exited(st);
         }
+        if stop_path(env.state).exists() {
+            kill_tree(&mut child);
+            child.wait()?;
+            remove_if_exists(&stop_path(env.state))?;
+            env.running.borrow_mut().stopped = true;
+            break Outcome::Stopped;
+        }
         if Instant::now() >= deadline {
             kill_tree(&mut child);
             child.wait()?;
@@ -652,6 +724,7 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         }
         std::thread::sleep(POLL);
     };
+    let _ = env.running.borrow_mut().set_child(None);
     // After a normal exit, wait for the rest of stderr until the deadline: a run whose
     // output is incomplete must not look clean. After a kill, give it a short grace only.
     let wait = match outcome {
