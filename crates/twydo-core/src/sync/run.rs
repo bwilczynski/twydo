@@ -146,6 +146,9 @@ fn skipped(s: Skip) -> RunReport {
 ///    left a collection in `Error`, is a transient failure and backs off.
 /// 7. Repeats from 3, at most twice, while `sync/requested` exists.
 pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunReport, SyncError> {
+    // Capture before taking run.lock: an orphan stop cannot record backoff while we hold
+    // that lock, even if we have not reached recovery yet. Every pass must honor that stop.
+    let started = Utc::now();
     let Some(sync) = &cfg.sync else {
         return Ok(skipped(Skip::NotConfigured));
     };
@@ -171,7 +174,16 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     let mut report = RunReport::default();
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
-        one_pass(cfg, sync, &state, &force, now, &mut status, &mut report)?;
+        one_pass(
+            cfg,
+            sync,
+            &state,
+            &force,
+            now,
+            started,
+            &mut status,
+            &mut report,
+        )?;
         force.clear();
         // Step 7.
         // A stopped pass is not rerun: the user stopped the sync so that they can write.
@@ -184,17 +196,17 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
 }
 
 /// Steps 3 to 6.
+#[allow(clippy::too_many_arguments)]
 fn one_pass(
     cfg: &Config,
     sync: &SyncConfig,
     state: &Path,
     force: &[String],
     now: DateTime<Utc>,
+    started: DateTime<Utc>,
     status: &mut SyncStatus,
     report: &mut RunReport,
 ) -> Result<(), SyncError> {
-    // A stop asked for from here on applies to this pass (see `running`).
-    let pass_start = Utc::now();
     // Step 3: recovery under the exclusive lock.
     report
         .new_conflicts
@@ -203,7 +215,7 @@ fn one_pass(
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
     let shared = VdirLock::shared(state)?;
-    let guard = RefCell::new(RunningGuard::start(state, pass_start)?);
+    let guard = RefCell::new(RunningGuard::start(state, started)?);
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
     // The evidence is consumed before vdirsyncer runs: read into memory (past that point an
@@ -370,7 +382,7 @@ fn record_failure(status: &mut SyncStatus, sync: &SyncConfig, msg: &str, now: Da
 /// Records a sync whose runner was gone and whose vdirsyncer [`super::running::request_stop`]
 /// killed: nobody else will, and without a backoff the after-edit sync could start another
 /// stuck run at once. Under the run lock, like every status write; when another runner holds
-/// it, its pass began before the stop, so it stops before vdirsyncer (`sync/last_stop`) and
+/// it, its run began before the stop, so it stops before vdirsyncer (`sync/last_stop`) and
 /// records the stop itself.
 pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
     let Some(sync) = &cfg.sync else {
@@ -638,7 +650,7 @@ struct RunningGuard {
 }
 
 impl RunningGuard {
-    /// Records the pass, begun at `started`, with no child yet.
+    /// Records the pass of the run begun at `started`, with no child yet.
     fn start(state: &Path, started: DateTime<Utc>) -> io::Result<RunningGuard> {
         let g = RunningGuard {
             state: state.to_path_buf(),
