@@ -573,7 +573,14 @@ impl Store {
         Ok(match op {
             Op::Create(n) => {
                 let uid = new_uid();
-                let cal = new_task(n, &uid, now)?;
+                let parent_json_uid = n
+                    .parent
+                    .as_deref()
+                    .and_then(|p| snap.find(p))
+                    .and_then(|i| snap.tasks[i].meta.raw.as_deref())
+                    .and_then(crate::model::meta_edit::MetaJson::parse)
+                    .and_then(|m| m.get_str("uid").map(str::to_string));
+                let cal = new_task(n, &uid, parent_json_uid.as_deref(), now)?;
                 let w = create(&n.collection, &uid, &cal)?;
                 one("create", &uid, w)
             }

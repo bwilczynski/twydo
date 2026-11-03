@@ -210,13 +210,7 @@ fn check_lines(
     let mut out = Vec::new();
     for kind in CHECK_KINDS {
         let op = match kind {
-            "create" => Op::Create(NewTask {
-                collection: task.collection.clone(),
-                summary: "x".to_string(),
-                description: None,
-                due: None,
-                start: None,
-            }),
+            "create" => Op::Create(NewTask::plain(&task.collection, "x")),
             "edit" => Op::Edit {
                 uid: uid.to_string(),
                 changes: vec![Change::Summary(task.summary.clone())],
@@ -294,11 +288,10 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             due,
             start,
         } => Op::Create(NewTask {
-            collection: list,
-            summary: title,
             description: notes,
             due: due.as_deref().map(parse_due).transpose()?,
             start: start.as_deref().map(parse_date).transpose()?,
+            ..NewTask::plain(&list, &title)
         }),
         OpCommand::Edit(a) => Op::Edit {
             changes: edit_changes(&a)?,

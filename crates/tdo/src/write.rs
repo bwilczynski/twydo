@@ -12,6 +12,8 @@ use twydo_core::sync::running::{StopResult, clear_stop, request_stop, running};
 use twydo_core::views::Snapshot;
 
 /// A write the TUI asks for.
+// `Op::Create` carries a whole `RepeatSpec`; requests are sent one at a time.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Apply(Op),
