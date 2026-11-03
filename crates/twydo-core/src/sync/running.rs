@@ -10,6 +10,10 @@
 //! write. Until then, any runner that reaches vdirsyncer stops before starting it, so a
 //! runner that was waiting behind the stopped sync cannot take the vdir first. A request
 //! older than [`STOP_FRESH`] is stale (its requester is gone) and is ignored and removed.
+//!
+//! Every request also records when it was made, in `<state>/sync/last_stop`, which nobody
+//! withdraws: a pass begun before that time (one that was waiting for the vdir behind the
+//! stopped sync) stops too, however late it gets there.
 
 use std::fs;
 use std::io;
@@ -57,6 +61,10 @@ pub enum StopResult {
 
 pub(crate) fn running_path(state: &Path) -> PathBuf {
     state.join("sync").join("running.json")
+}
+
+fn last_stop_path(state: &Path) -> PathBuf {
+    state.join("sync").join("last_stop")
 }
 
 pub(crate) fn stop_path(state: &Path) -> PathBuf {
@@ -128,6 +136,10 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     // to start, and must not take the vdir before the requester's write.
     fs::create_dir_all(state.join("sync"))?;
     fs::write(stop_path(&state), b"")?;
+    let last = last_stop_path(&state);
+    let tmp = last.with_extension("tmp");
+    fs::write(&tmp, Utc::now().to_rfc3339())?;
+    fs::rename(&tmp, &last)?;
     let Some(rec) = load(&state)? else {
         return Ok(StopResult::NothingRunning);
     };
@@ -148,8 +160,22 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     Ok(StopResult::Killed)
 }
 
-/// Whether a fresh stop request is pending in `state`. A stale one is removed.
-pub(crate) fn stop_requested(state: &Path) -> io::Result<bool> {
+/// Whether a pass begun at `since` must stop: a fresh request is pending, or a stop was
+/// asked for after the pass began. A stale request file is removed.
+pub(crate) fn stop_requested(state: &Path, since: DateTime<Utc>) -> io::Result<bool> {
+    if stop_pending(state)? {
+        return Ok(true);
+    }
+    let asked = match fs::read_to_string(last_stop_path(state)) {
+        Ok(t) => DateTime::parse_from_rfc3339(t.trim()).ok(),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    Ok(asked.is_some_and(|t| t >= since))
+}
+
+/// Whether a fresh stop request file is pending in `state`. A stale one is removed.
+fn stop_pending(state: &Path) -> io::Result<bool> {
     let path = stop_path(state);
     let modified = match fs::metadata(&path) {
         Ok(m) => m.modified()?,

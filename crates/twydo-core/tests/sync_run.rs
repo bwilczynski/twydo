@@ -1545,3 +1545,53 @@ fn stopped_metasync_backs_off() {
     assert_eq!(st.failures, 1);
     assert!(st.next_attempt.is_some());
 }
+
+/// PR re-review: a pass that was already under way when a stop was asked for (here waiting
+/// for the vdir in recovery) must not start vdirsyncer later, even after the requester has
+/// withdrawn its request; it records the stop with backoff.
+#[test]
+fn pass_begun_before_a_stop_does_not_start_vdirsyncer() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    // Recovery needs the exclusive lock; hold it so the pass waits there.
+    fs::create_dir_all(state.join("journal")).unwrap();
+    let held = VdirLock::exclusive(&state).unwrap();
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    std::thread::sleep(Duration::from_millis(300));
+    request_stop(&fx.cfg).unwrap();
+    clear_stop(&fx.cfg).unwrap();
+    drop(held);
+    let r = t.join().unwrap();
+    assert!(r.stopped);
+    assert!(!count.exists(), "vdirsyncer ran after the stop");
+    let st = SyncStatus::load(&state).unwrap();
+    assert_eq!(st.failures, 1);
+    assert!(st.next_attempt.is_some());
+}
+
+/// A stop applies to passes begun before it, not to later ones.
+#[test]
+fn pass_begun_after_a_stop_runs() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    fs::create_dir_all(fx.state().join("sync")).unwrap();
+    request_stop(&fx.cfg).unwrap();
+    clear_stop(&fx.cfg).unwrap();
+    std::thread::sleep(Duration::from_millis(20));
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!r.stopped);
+    assert!(count.exists());
+}
