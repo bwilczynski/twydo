@@ -791,19 +791,47 @@ fn picker_overlay_lists_names() {
     }
 }
 
+fn row_title(a: &App, row: usize) -> String {
+    a.snapshot.tasks[a.visible_rows()[row].task].summary.clone()
+}
+
 #[test]
-fn form_overlay_shows_fields_and_preview() {
+fn card_renders_in_place_below_row() {
     let mut a = app();
+    let (first, second) = (row_title(&a, 0), row_title(&a, 1));
+    let (_, below_before) = find_in_tasks(&render(&mut a, 120, 30), &second);
     a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-    let title = a.form.as_ref().unwrap().title.clone();
     let buf = render(&mut a, 120, 30);
     let t = text(&buf);
+    assert!(t.contains("Details"), "Details still drawn:\n{t}");
+    assert!(!t.contains(" Edit task "), "no overlay:\n{t}");
+    let (_, title) = find_in_tasks(&buf, &format!("{first}▏"));
+    let mut ys = vec![title];
+    for label in ["Due", "Start", "Repeat", "Notes", "Ctrl-s save"] {
+        ys.push(find_in_tasks(&buf, label).1);
+    }
+    let (_, below) = find_in_tasks(&buf, &second);
+    ys.push(below);
+    assert!(ys.windows(2).all(|w| w[0] < w[1]), "{ys:?}\n{t}");
+    assert!(below >= below_before + 6, "rows below shift down:\n{t}");
+    assert!(find_in_tasks(&buf, "→ ").1 > title, "preview:\n{t}");
+}
+
+#[test]
+fn card_falls_back_to_overlay_under_60_cols() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    let t = text(&render(&mut a, 59, 30));
     assert!(t.contains(" Edit task "), "{t}");
-    for label in ["Title", "Due", "Start", "Notes"] {
+    for label in ["Due", "Start", "Repeat", "Notes", "Ctrl-s save"] {
         assert!(t.contains(label), "{label} missing:\n{t}");
     }
-    assert!(t.contains(&title), "{t}");
-    assert!(t.contains("→ "), "preview missing:\n{t}");
+    // A pane too short for the card falls back too; tiny terminals never panic.
+    let t = text(&render(&mut a, 120, 8));
+    assert!(t.contains(" Edit task "), "{t}");
+    for (w, h) in [(20, 5), (1, 1), (0, 0), (3, 40), (200, 2), (60, 8)] {
+        render(&mut a, w, h);
+    }
 }
 
 #[test]

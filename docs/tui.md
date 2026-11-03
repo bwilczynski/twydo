@@ -71,8 +71,8 @@ These act when the Tasks or Details pane has focus.
 | `dd` | delete |
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
 | `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
-| `i`, or `Enter` on a task without items | edit form |
-| `r` | edit form, on the Repeat field (repeating tasks only) |
+| `i`, or `Enter` on a task without items | edit card |
+| `r` | edit card, on the Repeat field |
 
 On a checklist or project, a write acts on the whole family; see
 [tasks.md](tasks.md#completing-reopening-moving-deleting).
@@ -88,18 +88,50 @@ On a checklist or project, a write acts on the whole family; see
 | `:errors` | list files that could not be read |
 | `:q` | quit |
 
-## The edit form
+## The edit card
 
-Fields: Title, Due, Start, Repeat (only on repeating tasks) and Notes.
+The task's row opens in place into a card; the rows below move down, and the list and the
+Details pane stay in view. The view scrolls so the whole card shows.
 
-- `Tab` / `Shift-Tab` (or `↓` / `↑`) move between fields; `Enter` saves, `Ctrl-s` saves from any
-  field, `Esc` cancels.
+```
+│ LATER TODAY                                     1 │
+│ ╭───────────────────────────────────────────────╮ │
+│ │ Call the dentist▏                             │ │
+│ │ ▌Inbox ▸   Task                               │ │
+│ │ Due     2026-11-04 15:00  → Wed 4 Nov 15:00   │ │
+│ │ Start   —                                     │ │
+│ │ Repeat  none                                  │ │
+│ │ Notes   —                                     │ │
+│ ╰ Ctrl-s save · Tab next · Esc cancel ──────────╯ │
+│ TODAY                                           1 │
+```
+
+Fields, in `Tab` order:
+
+| Field | Input |
+|---|---|
+| Title | text; must not be empty |
+| List | the list, in its colour. `Enter` opens the list picker (as `m`); the choice is saved with the rest, as a move |
+| Type | Task, Project or Checklist: `Space` or `l` next, `h` previous. Saving converts the task ([tasks.md](tasks.md)) |
+| Due, Start | a date (below) |
+| Repeat | a typed rule (below); `none` when the task does not repeat |
+| Notes | `Enter` opens `$VISUAL` or `$EDITOR` (else `vi`); save and quit to bring the text back |
+
+An item of a project has no List (it lives in its parent's list). An item of a checklist shows
+only Title and Notes: checklist items have no dates or repeat of their own, and `r` on one says
+so.
+
+- `Tab` / `Shift-Tab` (or `↓` / `↑`) move between fields; `Enter` saves (on List and Notes it
+  opens the picker or the editor), `Ctrl-s` saves from any field.
+- `Esc` cancels: nothing is written, whatever you changed (the list too).
 - `Ctrl-u` clears a field, `Ctrl-w` deletes a word. Pasted text goes into the focused field as
   one line.
-- On Notes, `Enter` opens `$VISUAL` or `$EDITOR` (else `vi`); save and quit to bring the text
-  back.
-- Repeat reads `every _ months`: type the interval.
-- Only the fields you changed are written.
+- Only the fields you changed are written, as one save: the changes and the move are written
+  together or not at all, and `u` undoes them in one step. If any part is refused, nothing is
+  written, and the card stays open with what you typed and the reason.
+
+When the Tasks pane is narrower than 40 columns or too short for the card, the same card opens
+centred over the screen instead, titled `Edit task`.
 
 Due and Start take:
 
@@ -113,8 +145,35 @@ Due and Start take:
 | `2026-11-20` | that date |
 | a time after any of these, or alone (today) | `5pm`, `930a`, `9:30 pm`, `14:30`, `noon`, `midnight` |
 
-A bare number such as `9` is rejected as ambiguous. Start dates take no time. The line under each
-date shows how it was read (`→ Fri 6 Nov 10:00`).
+A bare number such as `9` is rejected as ambiguous. Start dates take no time. The text beside
+each date shows how it was read (`→ Fri 6 Nov 10:00`).
+
+Repeat takes a rule, then any modifiers:
+
+| Input | Repeats |
+|---|---|
+| empty, `none` | never (on a repeating task: removes the repeat) |
+| `daily`, `3d`, `every 3 days` | every N days |
+| `weekly`, `biweekly`, `2w`, `every 2 weeks` | every N weeks |
+| `monthly`, `3m`, `every 3 months` | every N months, on the due date's day |
+| `yearly`, `2y`, `every 2 years` | every N years, on the due date |
+| `mon thu`, `mon,thu`, `every mon and thu`, `workdays` | on those weekdays (`workdays` is the config's `work_days`, default Monday to Friday) |
+| `last day`, `last day every 2m` | on the last day of the month |
+| `2nd tue`, `last fri` | on that weekday of each month |
+| `1st weekday`, `last weekend day` | on that workday (Monday to Friday) or weekend day of each month |
+| modifiers: `after done`, `until 2027-06-01`, `10 times` | from the completion date; until a date; that many times |
+
+The field takes no day of the month: monthly and yearly repeats follow the due date, so set the
+day in Due. While the field is empty, the text beside it lists examples; otherwise it shows the
+rule in 2Do's words (`→ The second Tue of each month · from due date`). A task that repeats
+starts with its rule in this syntax, so changing it is editing text. A repeat needs a due date:
+set one on a task without a due date and it becomes due today (the preview ends in
+`· due today`).
+
+A few rules 2Do can store cannot be typed here (monthly on a fixed day of the month other than
+the due date's, for example). On such a task the field starts empty, the text beside it names
+the rule and ends in `(kept)`, and saving leaves the rule alone unless you type a new one, or
+`none` to remove it.
 
 ## When a write is refused
 
@@ -124,7 +183,7 @@ The status line says why, and nothing is written:
   example `weekdays-set repeats are not verified yet`. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
-  view reloads; an open form switches to the synced version, so you see the new data before
+  view reloads; an open card switches to the synced version, so you see the new data before
   saving again.
 - **A sync is running.** A sync holds the vdir while vdirsyncer runs. The save waits up to two
   seconds, so an ordinary sync finishes unnoticed. If it is still running after that, the status
@@ -134,7 +193,7 @@ The status line says why, and nothing is written:
     pending until the next sync that works sends it. Any sync can be stopped this way, whether the
     TUI, the timer or a `tdo sync` started it. If it does not let go within ten seconds, nothing is
     written: `not saved; the sync did not stop`.
-  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit form stays
+  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit card stays
     open with what you typed; for a one-key action, press the key again later.
 
   Other keys do nothing while the question is open. When the TUI cannot tell which sync holds the
@@ -150,5 +209,5 @@ Quitting starts a pending sync at once.
 ## Not in the TUI yet
 
 `o` / `O` (add a task or item, with natural-language input), `J` / `K` (manual order), `a`
-(alerts), list management, and adding or removing a repeat. These keys show `not available yet`;
+(alerts) and list management. These keys show `not available yet`;
 the help marks them `(after gate)`.

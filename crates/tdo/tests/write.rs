@@ -314,7 +314,8 @@ fn sync_while_form_open_is_stale_not_overwritten() {
         .unwrap();
     app.cursor = row;
     app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-    for _ in 0..2 {
+    // Title, List, Type, Due, then Start.
+    for _ in 0..4 {
         app.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     }
     // Start = "3d".

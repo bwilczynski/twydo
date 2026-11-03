@@ -36,7 +36,7 @@ The repository is a Cargo workspace with two crates.
 | `model` | Reading a `VTODO` into a `Task`: dates, status, parent links, repeat rules and their class, 2Do's `X-2DOAPP-METADATA` in both encodings |
 | `vdir` | Loading a vdir into a snapshot (read only) |
 | `views` | Today, All, Scheduled, Done, lists and smart lists: membership, date groups, sorting and counts. Pure functions of a snapshot and "now" |
-| `dateinput` | The date grammar of the edit form (`fri 5pm`, `3d`, `15th`, …) |
+| `dateinput` | The date grammar of the edit card (`fri 5pm`, `3d`, `15th`, …) |
 | `repeatinput` | The typed repeat grammar (`daily`, `2w`, `mon thu`, `last day`, `2nd tue`, `after done`) and its preview line |
 | `edit` | Each operation as a change to one file, the way the 2Do iPhone app makes it |
 | `gate` | Whether an operation may run, and the exact reason when not ("verified mode") |
@@ -46,7 +46,7 @@ The repository is a Cargo workspace with two crates.
 | `config` | `config.toml` |
 
 **`tdo`**, the binary: the CLI subcommands (`cli/`), the TUI's state and keys (`app.rs`), the
-edit form (`form.rs`), the terminal loop with live reload (`term.rs`), and rendering (`ui/`).
+edit card's state (`form.rs`), the terminal loop with live reload (`term.rs`), and rendering (`ui/`).
 
 ## The write path
 

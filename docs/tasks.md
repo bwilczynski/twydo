@@ -90,8 +90,9 @@ moves the project to its next occurrence, adds a completed copy of the project w
 copy of every item under it (items that were already done keep their own completion time), and
 reopens all the live items. The **items' dates do not move** with the project, as in 2Do.
 
-The edit form (`r`, or `i` then the Repeat field) changes a repeat's interval: the field reads
-`every _ months` and you type the number. Adding or removing a repeat is not available yet.
+The edit card (`r`, or `i` then the Repeat field) sets, changes or removes a repeat: you type
+the rule, such as `monthly`, `2nd tue` or `mon thu after done`
+([tui.md](tui.md#the-edit-card)).
 
 ## Views and date groups
 
