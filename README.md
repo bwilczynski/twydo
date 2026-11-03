@@ -56,7 +56,7 @@ keeping everything else, including 2Do's own metadata, byte for byte.
 ## Install and quick start
 
 ```sh
-cargo install --git https://github.com/bwilczynski/twydo tdo
+mise use -g github:bwilczynski/twydo   # prebuilt tdo for macOS and Linux
 
 # try it on made-up tasks (from a clone)
 python3 tools/demo_vdir.py /tmp/twydo-demo && tdo --vdir /tmp/twydo-demo
@@ -69,7 +69,7 @@ Then point it at your own tasks and set up sync: [install.md](docs/install.md),
 
 | Page | |
 |---|---|
-| [Install](docs/install.md) | build, first run, where things live |
+| [Install](docs/install.md) | install with mise or build, first run, where things live |
 | [The TUI](docs/tui.md) | the screen and every key |
 | [How tasks behave](docs/tasks.md) | checklists vs projects, repeats, views and date groups |
 | [Sync](docs/sync.md) | vdirsyncer setup, `tdo sync`, conflicts |
@@ -82,11 +82,14 @@ Then point it at your own tasks and set up sync: [install.md](docs/install.md),
 ## Contributing
 
 ```sh
-cargo test --workspace                          # Rust tests
-python3 -m unittest discover -s tools/tests -t . # tool tests
-python3 tools/check_links.py                    # documentation links
-mise run demo                                   # re-record the README demo (needs vhs, ttyd, ffmpeg)
+mise run lint    # clippy and rustfmt
+mise run test    # Rust tests, tool tests, documentation links
+mise run demo    # re-record the README demo (needs vhs, ttyd, ffmpeg)
 ```
+
+Commits and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/).
+`feat` and `fix` changes open a release PR (version bump and `CHANGELOG.md`); merging it tags the
+version and publishes the binaries to a GitHub release.
 
 Test data is synthetic. Never commit real tasks, list names or account details; fixtures come
 from a separate test account ([AGENTS.md](AGENTS.md) has the full rules).

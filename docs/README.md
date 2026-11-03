@@ -4,7 +4,7 @@
 
 | Page | What it covers |
 |---|---|
-| [install.md](install.md) | Building `tdo`, trying it on made-up data, pointing it at your tasks |
+| [install.md](install.md) | Installing or building `tdo`, trying it on made-up data, pointing it at your tasks |
 | [tui.md](tui.md) | The screen, every key, the edit form, and what a refused write means |
 | [tasks.md](tasks.md) | How tasks behave: checklists and projects, repeats, views and date groups, alerts |
 | [sync.md](sync.md) | Setting up vdirsyncer and `tdo sync`, conflicts, emptied lists, known limits |
