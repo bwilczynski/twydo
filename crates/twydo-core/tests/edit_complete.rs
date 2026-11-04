@@ -1548,28 +1548,42 @@ fn edited_from_completion_tasks_advance_and_copy_history_like_phone() {
         .join("../../fixtures/phase0/v1/plan8-rfra");
     for (case, from, to, clear_start, expected_due) in [
         (
-            "interval",
+            "interval-p",
             "210-phone-first-actions-A",
             "280-phone-start-and-completions-A",
             false,
             "20270104",
         ),
         (
-            "offset",
+            "offset-p",
             "210-phone-first-actions-A",
             "280-phone-start-and-completions-A",
             false,
             "20261204",
         ),
         (
-            "fields",
+            "fields-p",
             "290-phone-start-changed-A",
             "300-phone-fields-completed-A",
             true,
             "20261204",
         ),
+        (
+            "interval-t",
+            "330-twydo-weekly-and-removal",
+            "340-phone-weekly-removal-and-completions",
+            false,
+            "20270104",
+        ),
+        (
+            "offset-t",
+            "330-twydo-weekly-and-removal",
+            "340-phone-weekly-removal-and-completions",
+            false,
+            "20261204",
+        ),
     ] {
-        let uid = format!("twydo-p8-rfra-{case}-p");
+        let uid = format!("twydo-p8-rfra-{case}");
         let mut input = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
         let want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
         let history = std::fs::read_dir(root.join(to))

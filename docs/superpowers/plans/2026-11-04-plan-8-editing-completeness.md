@@ -53,6 +53,11 @@ Phone return 320 is captured: five note edits preserved complete recurrence/date
 identity metadata. Barrier 330 is uploaded (anchor weekly after completion; direct
 repeat removed). Next phone batch checks those two and completes the three edited
 monthly twins. Follow the RF/RA checklist; do not repeat the completed returns.
+Return 340 accepts weekly-after-completion and retained-code repeat removal;
+interval/offset completion outputs match the core writer. User confirmed reopening
+a fields occurrence, so its ambiguous completion is excluded from clean evidence.
+Barrier 350 uploads weekly-from-due anchor and a December 10 retry on the same
+fields series; next phone batch handles both, without extra examples or syncs.
 
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,

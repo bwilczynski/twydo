@@ -1599,3 +1599,35 @@ fn phone_note_followups_preserve_twydo_written_from_completion_tasks() {
         same(case, &got, &want, &BTreeMap::new());
     }
 }
+
+#[test]
+fn phone_accepts_weekly_completion_anchor_and_retained_inactive_codes_after_removal() {
+    use common::recurrence::same;
+    use std::collections::BTreeMap;
+    for case in ["anchor", "direct"] {
+        let uid = format!("twydo-p8-rfra-{case}-t");
+        let mut got = parse(&fixture("plan8-rfra", "330-twydo-weekly-and-removal", &uid)).unwrap();
+        let want = parse(&fixture(
+            "plan8-rfra",
+            "340-phone-weekly-removal-and-completions",
+            &uid,
+        ))
+        .unwrap();
+        apply_changes(
+            &mut got,
+            &[Change::Description(Some("RFRA return 2".into()))],
+            dtstamp(&want),
+        )
+        .unwrap();
+        same(case, &got, &want, &BTreeMap::new());
+        let meta = MetaJson::parse(&todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        assert_eq!(meta.get_i64("RecurrenceFrom"), Some(2));
+        if case == "direct" {
+            assert!(todo(&want).prop("RRULE").is_none());
+            assert_eq!(meta.get_i64("RecurrenceType"), Some(0));
+            assert_eq!(meta.get_i64("RecurrenceValue"), Some(1));
+        } else {
+            assert_eq!(todo(&want).prop("RRULE").unwrap().value, "FREQ=WEEKLY");
+        }
+    }
+}

@@ -345,3 +345,30 @@ direct `t` as non-recurring; set Notes to `RFRA return 2` on both. Complete fiel
 resources and the three new histories before further writes. Two subsequent
 anchor barriers remain: weekly after completion → weekly from due, then removal,
 each with phone action/readback before proceeding. No new examples are needed.
+
+### Return 340 captured; clean fields retry paired with barrier 350
+
+Anchor's weekly-after-completion phone note edit preserved all metadata. Direct's
+non-recurring phone note edit also preserved all metadata, including the writer's
+inactive RecurrenceValue 1 / RecurrenceFrom 2 with RecurrenceType 0 and no RRULE.
+Thus this round accepts the retained-code removal representation; it did not
+normalize those fields to the baseline phone-removal zeros. A dedicated regression
+compares the full metadata and asserts these retained codes explicitly.
+
+Interval and offset completions match the core writer exactly for live and history
+resources (next Due January 4 and December 4, respectively). Their synthetic-only
+partial captures 330/340 and assertions are in the existing edit suites.
+
+Fields has an extra open December 9 occurrence and a completed December 4 history.
+The user confirmed reopening an occurrence while checking the selection. Preserve
+all versions; exclude that ambiguous fields completion sequence from clean fixture
+evidence rather than infer a single completion. No cleanup is authorized.
+
+Barrier 350 reuses the same fields `t` live series, setting Due to December 10 for
+a clean completion retry, alongside anchor `t` weekly-after-completion → weekly
+from-due. Both are uploaded after fresh scoped preflight, with exactly those two
+files changed and every other resource preserved. Phone should confirm anchor's
+weekly from-due display and set its Notes to `RFRA return 3`, then complete fields
+`t` once (Due December 10) and sync once. This retry adds no example or sync round;
+it shares the already-planned anchor barrier. One final anchor-removal barrier
+remains afterward.
