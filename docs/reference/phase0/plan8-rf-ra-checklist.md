@@ -107,6 +107,84 @@ First phone barrier (edit only `p` twins, then sync and report):
    Capture whether 2Do retains December 5 or shifts it automatically; do not
    compensate for its behavior before capture.
 
+Capture 210: phone performed all five first actions. Sync passed; exactly the
+five `p` resources changed and no other vdir files changed. Title editing left
+metadata intact; interval changed RecurrenceValue 1 → 2; anchor changed
+RecurrenceFrom 1 → 2; direct setting established monthly after-completion and a
+phone series identity. Offset Due/DTSTART moved to December 9 while metadata
+StartDate remained unchanged (December 5). Both conflict check and untouched-twin
+comparison passed. These are baseline observations, not operation enablement.
+
+Next baseline barrier: set fields notes to `RFRA notes`; change anchor to weekly
+after completion; remove direct's repeat. Leave interval/offset and all `t` twins
+unchanged. Capture before any further action.
+
+Capture 220: exactly those three resources changed; no unrelated files or twins
+changed. Fields DESCRIPTION is `RFRA notes`. Anchor RRULE becomes FREQ=WEEKLY,
+RecurrenceType 258 → 257, retaining RecurrenceFrom 2. Direct removal drops RRULE
+and clears RecurrenceType/Value/From to zero. The writer currently retains the
+inactive Value/From fields, so this difference requires an explicit comparison
+and phone return check; do not silently exclude it as stamps/layout.
+
+Next barrier: clear fields notes; switch anchor to weekly from due. All other
+tasks stay unchanged. These are separate captures from note setting and the
+weekly after-completion transition above.
+
+Capture 230: fields notes cleared; anchor RecurrenceFrom 2 → 1 with weekly
+RRULE retained. Exactly those two resources changed; all twins and unrelated
+files remained unchanged. Next barrier: change fields Due to 2026-12-09
+(date-only); remove anchor recurrence. Do not edit other tasks.
+
+Capture 240: fields Due is December 9, date-only, with monthly RRULE retained;
+anchor removal drops RRULE and clears RecurrenceType/Value/From. Exactly those
+two resources changed; twins and unrelated files remain unchanged. Anchor and
+direct baseline transition chains are now complete. Next barrier: add 09:00
+due time to fields only, leaving its December 9 date unchanged.
+
+Capture 250: only fields changed; metadata gained duetime 900 and monthly
+recurrence remained intact. Twins and unrelated resources are unchanged.
+Next barrier: change fields due time from 09:00 to 11:00, retaining December 9.
+
+Capture 260: fields DUE/DTSTART are December 9 at 11:00; duetime changed 900 →
+1100. Exactly one automatic PT0S alarm remains. Only fields changed; twins and
+unrelated files are unchanged. Next barrier: remove its due time while keeping
+December 9 (date-only), to capture time/alarm cleanup.
+
+Capture 270: fields is date-only December 9 again, duetime is absent, and the
+automatic alarm is removed. Exactly that resource changed; twins/unrelated files
+are unchanged. User requested batching to reduce sync back-and-forth: combine
+independent task actions at every remaining barrier. Preserve intermediate
+captures only where overwriting the same task would lose distinct evidence.
+
+Next combined baseline barrier:
+
+- Fields: set Start to December 7, retaining Due December 9 and monthly after
+  completion. This captures adding a start offset on an existing series.
+- Interval: complete once. This proves the edited two-month interval executes
+  from completion day and creates correctly linked history.
+- Offset: complete once. This proves the prior due edit retained a usable start
+  offset and completion advances it consistently.
+
+Do these three actions before one phone sync. Do not complete fields yet, and
+leave anchor/direct and all `t` twins untouched. Completion history means the
+next capture must validate expected new resources, not require the old count.
+
+Capture 280 (2026-11-04): fields gained December 7 Start with December 9 Due.
+Interval completion advanced Due to 2027-01-04, retaining interval 2 and completion
+anchoring. Offset completion advanced Due to 2026-12-04 and Start to 2026-11-30,
+preserving the four-day gap left by the earlier Due edit. Exactly two completed
+non-recurring history resources appeared, one for each completed series. Only
+the three expected originals and those histories changed; twins and unrelated
+files remained unchanged. Full writer/identity comparisons remain pending.
+
+Remaining baseline barriers: (1) change fields Start from December 7 to December
+8, then capture; (2) clear fields Start and complete it once, then capture live
+and history resources. The history snapshot provides the cleared-start state
+before advancement. If the phone inserts or changes a start during completion,
+stop and request a separate pre-completion clear capture rather than infer it.
+These sequential edits share one task and cannot be batched into one sync
+without losing the intermediate changed-start evidence.
+
 Do not complete anything or edit `t` twins yet. Each task has only one action in
 this barrier, so a single synchronized capture attributes every change. Stop and
 report if the phone does not offer an action or displays an unexpected shape.
