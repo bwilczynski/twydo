@@ -3,7 +3,7 @@
 `tdo` (or `tdo tui`) opens the terminal UI on the vdir from your config, or the one given with
 `--vdir`. `?` shows every key.
 
-![The Twydo TUI: views, completing a task, a checklist, the edit form and a list](demo/tui.gif)
+![The Twydo TUI: completing a task, adding one and turning it into a project with items, adding checklist items, editing a task's due date in the card, and the help](demo/tui.gif)
 
 ## The screen
 

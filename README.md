@@ -5,7 +5,7 @@ iPhone**. Tasks stay in standard iCalendar on your own CalDAV server, so the 2Do
 syncing the same lists, projects, checklists and repeats while you work from the terminal.
 The command is `tdo`. Free and open source (MIT).
 
-![Twydo in a terminal: the Today and All views, completing a task, a checklist, editing a date, and the help](docs/demo/tui.gif)
+![Twydo in a terminal: completing a task, adding one, turning it into a project and adding its items, adding checklist items, editing a task's due date, and the help](docs/demo/tui.gif)
 
 ## Status
 
