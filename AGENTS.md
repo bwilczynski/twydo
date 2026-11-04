@@ -53,8 +53,9 @@ app replacing 2Do for one user, plan by plan.
    mode now creates checklists, projects, recurring projects and items, and creates every repeat
    kind except the three 2Do 3.91 misreads (last day, last weekday, Nth weekend day; rule `edit` =
    `fail`, never written). Type changes are allowed (task to checklist/project, checklist to
-   project, empty parent to task); setting, removing or reshaping a repeat stays refused (the
-   new kind's `repeat`/`edit` rows lack `iphone_to_twydo`). **Follow-up:** completing daily,
+   project, empty parent to task); setting/removing/changing weekly and monthly repeats is allowed; daily, yearly,
+   from-completion and project/checklist repeat changes stay refused (their `repeat` rows lack
+   verdicts). **Follow-up:** completing daily,
    weekly and Nth-weekday repeats (the gate refuses them; their `execute` verdicts are
    unverified), and verifying the remaining `repeat` rows and empty project to checklist.
    Next on the roadmap: that follow-up, then the design's later features (indent and

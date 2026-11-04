@@ -1008,10 +1008,10 @@ op = "edit"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
+twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_to_iphone: session B, Twydo set weekly on S1 and the phone showed it right."
 
 [[operation]]
 case = "weekly"
@@ -1163,9 +1163,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "monthly"
@@ -1174,9 +1174,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "yearly"
