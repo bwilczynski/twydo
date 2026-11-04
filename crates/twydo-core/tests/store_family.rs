@@ -12,8 +12,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{Change, NewTask, Op};
-use twydo_core::model::TaskKind;
 use twydo_core::ical::{Component, parse};
+use twydo_core::model::TaskKind;
 use twydo_core::store::journal::{Journal, Stage};
 use twydo_core::store::{Store, WriteError};
 
