@@ -747,3 +747,34 @@ unchanged creation values, exact fresh-sync starting bytes and exact upload pres
 Actual phone inspection and follow-up of the newly uploaded Twydo bytes remain pending; no
 embedded matrix verdict is promoted at this checkpoint. Do not perform further Twydo writes
 until this phone return is captured.
+
+### 144 — clean retry accepted and acted on by the phone
+
+The user confirmed the requested inspection and phone actions: FCb note `y` → `z`, notes
+`x` on RDb/RYb with no repeat, and one completion each of the earliest reopened U1b/U2b
+history copies. Normal sync succeeded, with clean list status and no unresolved conflicts.
+`144-phone-removal-and-history-followup` contains 40 resources in A, zero in B; exactly those
+five resources changed, with no creations/deletions. All a twins, items, ended originals,
+other history and unrelated production bytes remain unchanged. Privacy scans passed before
+copying the synthetic capture into the repository.
+
+- **FCb:** the phone reads Twydo's weekly checklist and edits its note, retaining February 10
+  due, weekly recurrence, parent type and open items.
+- **RDb / RYb:** the phone reads Twydo's removed repeats and saves notes without reintroducing
+  recurrence or changing December 7 due/RUID. On these note saves it resets the inactive
+  `RecurrenceValue`/`RecurrenceFrom` fields from 1/1 to 0/0. Twydo's removal had preserved
+  1/1, as the earlier phone baseline does; both states are captured. Do not drop metadata
+  from the comparison or make unrelated Twydo note edits normalize it to hide this difference.
+- **Earliest U1b / U2b history copies:** the phone reads the Twydo-reopened non-recurring
+  copies (November 18 / January 7) and completes each in place. Their metadata/RUID links
+  remain, no further history appears, and the completed ended originals stay byte-unchanged.
+
+The regression compares every property/JSON key for all five return actions; only the two
+explicitly asserted inactive-field changes are accounted for on the phone note edits. It
+also asserts that Twydo preserves those inactive fields on unrelated edits, exact completion
+instants, stable creation fields and an exact five-resource changed set.
+
+Next proposed writer round: after a fresh sync, remove only FCb's weekly repeat, preserving
+February 10 due, note `z`, checklist type/items and identities, then upload for the final phone
+check of this batch. Obtain explicit approval first. Embedded matrix promotion and verified-mode
+TUI acceptance still follow the complete device evidence review.

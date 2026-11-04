@@ -607,6 +607,7 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "141-prepared-repeat-and-history-states",
         "142-twydo-repeat-removal-and-history-reopen",
         "143-twydo-removal-and-history-upload",
+        "144-phone-removal-and-history-followup",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -1298,4 +1299,92 @@ fn controlled_repeat_and_history_retry_matches_both_states_and_clean_upload() {
             "fresh sync preserves agreed starting state {id}"
         );
     }
+}
+
+#[test]
+fn phone_accepts_repeat_removals_and_history_reopen_with_explicit_inactive_metadata_cleanup() {
+    const BEFORE: &str = "143-twydo-removal-and-history-upload";
+    const AFTER: &str = "144-phone-removal-and-history-followup";
+    let before = step_files(BEFORE);
+    let want = step_files(AFTER);
+    let uid = |title: &str, due: &str| {
+        before
+            .iter()
+            .find(|(_, c)| {
+                let t = todo(c);
+                t.prop("SUMMARY").unwrap().value == title && t.prop("DUE").unwrap().value == due
+            })
+            .unwrap()
+            .0
+            .clone()
+    };
+    let mut expected_changed = std::collections::BTreeSet::new();
+    for (title, due, note) in [
+        ("FCb", "20270210", "z"),
+        ("RDb", "20261207", "x"),
+        ("RYb", "20261207", "x"),
+    ] {
+        let id = uid(title, due);
+        expected_changed.insert(id.clone());
+        let source = &before[&id];
+        let now = dtstamp(&want[&id]);
+        let mut got = source.clone();
+        edit::apply_changes(&mut got, &[Change::Description(Some(note.into()))], now).unwrap();
+        stamped(&got, now);
+        preserved_created(source, &got);
+        if title != "FCb" {
+            // Twydo preserves inactive metadata on an unrelated note edit. The phone
+            // accepts its repeat removal, then explicitly cleans these two old fields.
+            let read = |c: &Calendar| {
+                MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+            };
+            for key in ["RecurrenceValue", "RecurrenceFrom"] {
+                assert_eq!(read(source).get_i64(key), Some(1));
+                assert_eq!(read(&got).get_i64(key), Some(1));
+                assert_eq!(read(&want[&id]).get_i64(key), Some(0));
+            }
+            let t = got.root.children_named_mut("VTODO").next().unwrap();
+            let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut m = MetaJson::parse(&p.value).unwrap();
+            m.set_i64("RecurrenceValue", 0);
+            m.set_i64("RecurrenceFrom", 0);
+            p.set_value(&m.encode());
+        }
+        // Every other metadata key/property, including RUID, due and absent RRULE,
+        // remains in the full comparison; there is no blanket metadata exclusion.
+        same(
+            &format!("phone note after repeat removal {title}"),
+            &got,
+            &want[&id],
+            &BTreeMap::new(),
+        );
+    }
+    for (title, due) in [("U1b", "20261118"), ("U2b", "20270107")] {
+        let id = uid(title, due);
+        expected_changed.insert(id.clone());
+        let mut got = before[&id].clone();
+        let now = completed(&want[&id]);
+        edit::complete_one_time(&mut got, now).unwrap();
+        same(
+            &format!("phone recompletes reopened history {title}"),
+            &got,
+            &want[&id],
+            &BTreeMap::new(),
+        );
+        stamped(&got, now);
+        preserved_created(&before[&id], &got);
+    }
+    assert_eq!(
+        before.keys().collect::<Vec<_>>(),
+        want.keys().collect::<Vec<_>>()
+    );
+    let changed: std::collections::BTreeSet<_> = before
+        .keys()
+        .filter(|id| fixture(SCENARIO, BEFORE, id) != fixture(SCENARIO, AFTER, id))
+        .cloned()
+        .collect();
+    assert_eq!(
+        changed, expected_changed,
+        "only three note edits and two history completions"
+    );
 }
