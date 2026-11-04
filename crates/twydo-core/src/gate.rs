@@ -44,7 +44,8 @@
 //!    repeat change, the `edit` rows of the cases it leaves too; for a `Change::Repeat`
 //!    that sets, removes or reshapes the repeat (another class, from completion or end:
 //!    anything but a new interval of the same rule, which Plan 4 verified as an edit), the
-//!    `repeat` rows of the own and family cases before and after; and for a type change the
+//!    `repeat` rows of the own and family cases before and after. Pure repeat reshapes use
+//!    these rows; mixed ordinary field saves still need edit rows. For a type change the
 //!    `convert` row of its before and after types (none when the type stays). A row whose
 //!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
@@ -68,7 +69,7 @@ use crate::edit::{
 };
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
-use crate::model::repeat::{End, parse_rrule, rule_class};
+use crate::model::repeat::{End, Freq, RRule, parse_rrule, rule_class};
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::repeatinput::RepeatSpec;
 use crate::views::{Snapshot, declared_kind, task_rule_class};
@@ -202,17 +203,29 @@ pub fn check(
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
 
-    // Rule 3: matrix rows for every case the op touches.
-    let name = op_name(op);
+    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
+
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && reshaped
+        && (matches!(cases.own, "daily" | "yearly")
+            || after.is_some_and(|a| matches!(a.own, "daily" | "yearly")))
+    {
+        plain_repeat_transition(&snap.tasks[i], changes)?;
+    }
+
+    // Rule 3: a pure repeat reshape uses its dedicated evidence. Ordinary fields mixed
+    // into the save, and interval-only changes, still require the ordinary edit rows.
+    let repeat_only = reshaped
+        && matches!(op, Op::Edit { changes, .. } if changes.iter().all(|c| matches!(c, Change::Repeat(_))));
+    let name = if repeat_only { "repeat" } else { op_name(op) };
     for c in op_cases(snap, target, cases, op) {
         operation_row(m, mode, c, name)?;
     }
     // The case an edit leaves needs its `edit` row, except when the repeat is reshaped: the
     // new case is then checked against its `repeat` row instead (a weekly repeat set on a
     // plain task says nothing about editing existing weekly tasks).
-    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
     if let Some(a) = after
-        && !reshaped
+        && (!reshaped || !repeat_only)
     {
         for c in std::iter::once(a.own).chain(a.family) {
             operation_row(m, mode, c, "edit")?;
@@ -306,8 +319,9 @@ pub struct Cases {
 }
 
 /// The matrix cases of the task at `idx`, or why it has none. Only the shapes the Plan 6
-/// iPhone session captured have cases: one level of children under a typed checklist or
-/// project, no repeating checklist or item, no repeating child of a repeating project.
+/// iPhone sessions captured have cases: one level of children under a typed checklist or
+/// project, no repeating checklist or independently repeating checklist item or
+/// repeating child of a repeating project.
 pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     if !known_task_type(&snap.tasks[idx]) {
         return blocked("this 2Do task type is not verified yet");
@@ -907,6 +921,45 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
         Some((col, _)) => blocked(format!("{what} is not verified yet ({col})")),
         None => Ok(()),
     }
+}
+
+fn plain_rule(r: &RRule, freqs: &[Freq]) -> bool {
+    freqs.contains(&r.freq)
+        && r.interval == 1
+        && r.by_day.is_empty()
+        && r.by_month_day.is_empty()
+        && r.by_month.is_empty()
+        && r.by_set_pos.is_empty()
+        && r.unknown.is_empty()
+}
+
+/// Daily/yearly repeat-change evidence composes with the existing plain weekly/monthly
+/// writer. It does not establish changing endings, completion anchors or weekday shapes.
+fn plain_repeat_transition(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
+    let valid = |r: &RRule, from_completion: bool| {
+        let mut shape = r.clone();
+        shape.interval = 1; // Existing interval encoding is separately verified.
+        !from_completion
+            && r.end == End::Never
+            && plain_rule(
+                &shape,
+                &[Freq::Daily, Freq::Weekly, Freq::Monthly, Freq::Yearly],
+            )
+    };
+    if t.status != Status::Open
+        || !t
+            .rrule
+            .as_deref()
+            .is_none_or(|raw| parse_rrule(raw).is_ok_and(|r| valid(&r, t.from_completion)))
+        || !new_repeat(changes)
+            .flatten()
+            .is_none_or(|r| valid(&r.rule, r.from_completion))
+    {
+        return blocked(
+            "daily/yearly repeat changes are verified only between plain due-anchored rules without an end",
+        );
+    }
+    Ok(())
 }
 
 /// Rule 5: the repeating completions `complete_recurring` was built for: a date-only or

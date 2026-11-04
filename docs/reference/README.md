@@ -10,6 +10,10 @@ where they and this folder disagree, `docs/` wins.
 | [`phase0/`](phase0/README.md) | The phase-0 compatibility gate checklist and the logs of every session run against a test iPhone (Plans 3–6 and the gap session). The verdicts they recorded live in [`compat/matrix.toml`](../../compat/matrix.toml) |
 | [`../superpowers/`](../superpowers/) | The design spec and the implementation plans |
 
+Current device session: [Plan 8 TUI completeness](phase0/plan8-tui-completeness-session.md).
+Batch 1 phone baselines are captured; Twydo device rechecks and later batches remain pending.
+It reuses previous captures and covers the remaining existing TUI write actions.
+
 ## Tools used in those sessions
 
 All in [`tools/`](../../tools/), Python 3 with no dependencies; tests are in `tools/tests/`.

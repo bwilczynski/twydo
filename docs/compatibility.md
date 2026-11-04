@@ -123,9 +123,7 @@ weekly, monthly, yearly and from-completion repeating tasks, and **converting** 
 checklist or project, a checklist to a project, and an empty checklist or project to a task.
 **Setting a weekly or monthly repeat on a plain task, removing a weekly or monthly repeat, and
 changing a weekly repeat to monthly or a monthly one to weekly are allowed** (session A: the
-phone's own repeats; sessions B and C: Twydo's writes shown right). Repeat changes involving
-daily, yearly, from-completion, a project or a checklist stay refused: their `repeat` rows lack
-a verdict.
+phone's own repeats; sessions B and C: Twydo's writes shown right). Plain daily/yearly repeat set/change/removal now also passes, restricted to due-anchored rules without ends or weekday selectors. From-completion and project repeat changes remain unverified.
 Empty project to checklist lacks its iPhone baseline. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
@@ -146,7 +144,7 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
   counts from the completion day even when the start date is later.
 
 Not verified yet, so refused for writing in verified mode: setting, removing or changing a
-daily, yearly or "from completion" repeat, and any repeat change on a project or checklist; converting an empty project to a checklist; editing an existing "from completion"
+"from completion" repeat, and any repeat change on a project or checklist; converting an empty project to a checklist; editing an existing "from completion"
 task; completing a repeat with an end date; completing a recurring project that ends or
 repeats from completion; changing the interval of an Nth-weekday repeat (not supported by 2Do);
 reopening a repeating task itself (the last occurrence of an ended series: use undo);
