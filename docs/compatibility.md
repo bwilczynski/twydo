@@ -44,10 +44,12 @@ Twydo does not understand. Details: [data-model.md](data-model.md#what-twydo-pre
 
 ## Verified mode
 
-Every write Twydo makes is first made on the iPhone, captured, and reproduced: Twydo writes the
-same change the iPhone writes, then the iPhone was checked to read it back correctly, and to edit
-it again. The results are recorded in [`compat/matrix.toml`](../compat/matrix.toml), which is
-built into `tdo`.
+Twydo writes a change only the way 2Do writes it: each kind of write is first made on the iPhone
+and captured, so Twydo can write the same bytes (the `iphone_baseline` column). A write counts as
+verified once Twydo's own result was also checked on the iPhone: read back correctly, and edited
+again (the `twydo_to_iphone` and `iphone_to_twydo` columns). The results are recorded in
+[`compat/matrix.toml`](../compat/matrix.toml), which is built into `tdo`. Many writes have a
+baseline but are not verified yet.
 
 By default (`[writes] mode = "verified"`), Twydo runs **only** writes the matrix marks as passing,
 for the kind of task at hand. Anything else is refused before a file is touched, with the reason
@@ -87,7 +89,9 @@ on the iPhone reads differently. See [config.md](config.md).
 | Recurring project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
 
-"—" means not verified yet. The gate also covers creating items, projects, checklists and
+"—" means not verified yet. For a repeating task, "Edit" covers changing the repeat's interval
+(every 2 months instead of every month), not setting, removing or reshaping the repeat (the
+`repeat` rows). The gate also covers creating items, projects, checklists and
 repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
 checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
 repeat classes). The iPhone baselines for these were captured (see
@@ -107,7 +111,9 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
 - changing a checklist's date removes its items' copies of the old date;
 - undoing a completion before and after it was synced.
 
-Not verified yet, so refused for writing in verified mode: setting or changing repeats daily,
+Not verified yet, so refused for writing in verified mode: setting a repeat on any task,
+removing one, or changing its kind, "from completion" or end (only the interval of a monthly or
+yearly repeat can be changed); editing repeats daily,
 weekly, on set weekdays, on the 29th–31st or the last day of the month, on the nth weekday, on
 February 29, repeating from the completion date, and repeats with an end; creating projects,
 checklists and items; converting a task's type; repeating checklists; a repeating item inside a

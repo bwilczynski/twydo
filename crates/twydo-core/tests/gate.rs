@@ -11,7 +11,9 @@ use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::gate::{Blocked, Cases, check, task_cases};
 use twydo_core::views::Snapshot;
 
-const ALL_OPS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
+const ALL_OPS: [&str; 7] = [
+    "create", "edit", "complete", "reopen", "move", "delete", "repeat",
+];
 
 fn today() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()
@@ -1713,7 +1715,12 @@ fn save_move_checks_the_cases_the_edit_leaves() {
         "pass",
         "pass",
     );
-    let monthly_edit = matrix(&[("monthly", "edit")], "pass", "pass", &[]);
+    let monthly_edit = matrix(
+        &[("monthly", "edit"), ("monthly", "repeat")],
+        "pass",
+        "pass",
+        &[],
+    );
     let m = with(base.clone(), monthly_edit);
     assert_eq!(
         check(&s, &m, WriteMode::Verified, &op, today()),
@@ -1761,4 +1768,113 @@ fn no_new_item_under_a_closed_parent() {
             "{parent}"
         );
     }
+}
+
+/// Setting, removing or reshaping a repeat (not only its interval) needs the `repeat` rows
+/// of the cases before and after: the iPhone verified Plan 4's interval edits only.
+#[test]
+fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
+    let s = snap();
+    let m = Matrix::embedded();
+    let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
+    let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
+    let one_time =
+        "changing the repeat rule of one-time tasks is not verified yet (twydo_to_iphone)";
+    for text in ["monthly", "yearly", "3m"] {
+        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
+        assert_eq!(at(&op), blocked(one_time), "{text}");
+    }
+    // Removing a monthly repeat, changing it to another class or from completion.
+    let monthly = "changing the repeat rule of monthly tasks is not verified yet (twydo_to_iphone)";
+    for spec in [None, Some(repeat("yearly"))] {
+        let op = edit("gate-monthly", vec![Change::Repeat(spec.clone())]);
+        assert_eq!(at(&op), blocked(monthly), "{spec:?}");
+    }
+    let op = edit(
+        "gate-monthly",
+        vec![Change::Repeat(Some(repeat("monthly after done")))],
+    );
+    assert!(at(&op).is_err());
+    // An end (count or until) is a new shape too.
+    let op = edit(
+        "gate-monthly",
+        vec![Change::Repeat(Some(repeat("monthly 3 times")))],
+    );
+    assert_eq!(at(&op), blocked(monthly));
+    // A repeat on a project makes it a recurring project.
+    let op = edit(
+        "gate-empty-project",
+        vec![due.clone(), Change::Repeat(Some(repeat("monthly")))],
+    );
+    let Err(Blocked(why)) = at(&op) else {
+        panic!("allowed")
+    };
+    assert!(why.starts_with("changing the repeat rule of "), "{why}");
+    // Only the interval, within the class: Plan 4's verified edit.
+    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("2m")))]);
+    assert_eq!(at(&op), Ok(()));
+    let op = edit(
+        "gate-monthly",
+        vec![Change::Repeat(Some(repeat("monthly")))],
+    );
+    assert_eq!(at(&op), Ok(()));
+}
+
+#[test]
+fn repeat_rows_with_a_baseline_pass_in_test_mode() {
+    let s = snap();
+    let m = Matrix::embedded();
+    let at = |op: &Op| check(&s, m, WriteMode::Test, op, today());
+    // The phone set every repeat kind on a plain task (Plan 7 capture 01).
+    for text in ["monthly", "yearly", "daily", "weekly"] {
+        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
+        let got = at(&op);
+        // Rule verdicts still apply (days/weeks edit is unverified); the repeat rows do not stop it.
+        if let Err(Blocked(why)) = &got {
+            assert!(!why.contains("repeat rule of"), "{text}: {why}");
+        }
+    }
+    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("monthly")))]);
+    assert_eq!(at(&op), Ok(()));
+    // Not captured: a repeat on a project, or removing one.
+    let op = edit(
+        "gate-empty-project",
+        vec![
+            Change::Due(Some(Due::Date(date(2026, 11, 10)))),
+            Change::Repeat(Some(repeat("monthly"))),
+        ],
+    );
+    assert_eq!(
+        at(&op),
+        blocked("changing the repeat rule of project tasks is not verified yet (iphone_baseline)")
+    );
+    let op = edit("gate-monthly", vec![Change::Repeat(None)]);
+    assert_eq!(at(&op), Ok(()), "monthly and one-time rows have a baseline");
+    // A synthetic matrix without `repeat` rows refuses a new repeat even in test mode.
+    let m = rule(
+        matrix(
+            &[("one-time", "edit"), ("monthly", "edit")],
+            "pass",
+            "pass",
+            &[],
+        ),
+        "months-day-1-28",
+        "pass",
+        "pass",
+    );
+    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("monthly")))]);
+    assert_eq!(
+        check(&s, &m, WriteMode::Test, &op, today()),
+        blocked("changing the repeat rule of one-time tasks is not verified yet (iphone_baseline)")
+    );
+    let m = with(
+        m,
+        matrix(
+            &[("one-time", "repeat"), ("monthly", "repeat")],
+            "pass",
+            "unverified",
+            &[],
+        ),
+    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }

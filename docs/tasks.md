@@ -78,8 +78,12 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 
 A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
 (`Every Mon`). 2Do can express many rules; Twydo reads all of them and can write all of them, but in the default verified mode
-it **changes only monthly tasks on a day from 1 to 28 and yearly tasks** until the others are
-checked against the iPhone. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the
+it **edits only monthly tasks on a day from 1 to 28 and yearly tasks**, and of their repeat only
+the interval (every 2 months instead of every month), until the rest is checked against the
+iPhone. Setting a repeat on a task, removing one, or changing its kind, "from completion" or end
+is refused in verified mode, for example `changing the repeat rule of one-time tasks is not
+verified yet (twydo_to_iphone)`: the iPhone's own writes are captured, Twydo's are not checked on
+the phone yet. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the
 last day of the month, "the second Tuesday", February 29, repeat from completion, repeats with an
 end) are shown, and a write to them, including setting one, is refused with the reason, for
 example `weekdays-set repeats are not verified yet`. `tdo check` lists the repeat kinds in your data and whether each is verified.

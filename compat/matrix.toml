@@ -1134,6 +1134,116 @@ iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/04-phone-convert-empty"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
+[[operation]]
+case = "one-time"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
+notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "daily"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Setting a repeat that makes the task daily: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R03 set on one-time tasks. Changing or removing a daily repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "weekly"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
+notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "monthly"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "yearly"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Setting a repeat that makes the task yearly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R13 set on a one-time task. Changing or removing a yearly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "from-completion"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
+notes = "Setting a repeat from the completion date: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R14 set on a one-time task. Changing or removing such a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "checklist"
+op = "repeat"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Setting, changing or removing a repeat on a checklist or its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "project"
+op = "repeat"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Setting, changing or removing a repeat on a project (making it a recurring project) or its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "recurring-project"
+op = "repeat"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Changing or removing the repeat of a recurring project, or a repeat on its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "project-recurring-child"
+op = "repeat"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Setting, changing or removing the repeat of an item of a project. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
 [[edge_case]]
 id = "monthly-15th-three-months-late"
 observed = "Plan 6 iPhone session: a monthly task due 2026-08-15 completed on 2026-11-02 advanced one interval to 2026-09-15 (still past), then to 2026-10-15; each completion added a history copy. 2Do never skips missed occurrences."

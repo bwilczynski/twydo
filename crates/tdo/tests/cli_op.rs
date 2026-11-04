@@ -630,3 +630,46 @@ fn edit_repeat_bad_text_exits_2() {
     assert!(err(&o).starts_with("tdo: "), "{}", err(&o));
     assert!(err(&o).len() > 10, "{}", err(&o));
 }
+
+/// Setting or removing a repeat needs the `repeat` rows: this matrix has none, and the shipped
+/// one has not verified Twydo's writes (`twydo_*` columns) yet.
+#[test]
+fn edit_setting_a_repeat_needs_the_repeat_rows() {
+    let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
+    let set = ["edit", TASK_A, "--due", "2026-12-05", "--repeat", "monthly"];
+    let env = Env::new("test");
+    let before = fs::read(file_of(&env)).unwrap();
+    let o = env.op(&set);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains(
+            "changing the repeat rule of one-time tasks is not verified yet (iphone_baseline)"
+        ),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(fs::read(file_of(&env)).unwrap(), before);
+    let env = Env::new("verified");
+    let mut args = vec!["op"];
+    args.extend_from_slice(&set);
+    let o = env.tdo(&args);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains(
+            "changing the repeat rule of one-time tasks is not verified yet (twydo_to_iphone)"
+        ),
+        "{}",
+        err(&o)
+    );
+    assert_eq!(fs::read(file_of(&env)).unwrap(), before);
+    // Removing the monthly repeat of E is refused too.
+    let o = env.tdo(&["op", "edit", TASK_E, "--no-repeat"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains(
+            "changing the repeat rule of monthly tasks is not verified yet (twydo_to_iphone)"
+        ),
+        "{}",
+        err(&o)
+    );
+}
