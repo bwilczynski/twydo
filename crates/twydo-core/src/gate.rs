@@ -63,7 +63,7 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, NewTask, Op, REOPEN_ENDED, next_due};
+use crate::edit::{Change, Due, NTH_WEEKDAY_INTERVAL, NewTask, Op, REOPEN_ENDED, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{End, parse_rrule, rule_class};
@@ -254,6 +254,11 @@ pub fn check(
                     .any(|c| matches!(c, Change::RepeatInterval(_)))
             {
                 return not_verified();
+            }
+            if class.split('+').next() == Some("months-nth-weekday")
+                && changes_interval(snap, i, changes)
+            {
+                return blocked(NTH_WEEKDAY_INTERVAL);
             }
         }
         if let Op::Complete { .. } = op {
@@ -509,6 +514,27 @@ fn reshapes_repeat(snap: &Snapshot, idx: usize, changes: &[Change]) -> bool {
     let same_class = task_rule_class(task, snap).as_deref() == Some(&new_class(new, due.as_ref()));
     old.interval = new.rule.interval;
     !(same_class && old == new.rule)
+}
+
+/// Whether `changes` give the task's repeat a new interval: a `RepeatInterval`, or a
+/// `Change::Repeat` that keeps the rule but for another interval.
+fn changes_interval(snap: &Snapshot, idx: usize, changes: &[Change]) -> bool {
+    if changes
+        .iter()
+        .any(|c| matches!(c, Change::RepeatInterval(_)))
+    {
+        return true;
+    }
+    let old = snap.tasks[idx]
+        .rrule
+        .as_deref()
+        .and_then(|r| parse_rrule(r).ok());
+    match (new_repeat(changes), old) {
+        (Some(Some(new)), Some(old)) => {
+            !reshapes_repeat(snap, idx, changes) && new.rule.interval != old.interval
+        }
+        _ => false,
+    }
 }
 
 /// The matrix class of a rule Twydo writes, anchored on the due date it will have.
