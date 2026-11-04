@@ -2023,15 +2023,11 @@ fn new_repeat_kinds_complete_when_their_verdicts_pass() {
     );
 }
 
-/// A vdir with the session C seed (`plan7-twydo-list2/00-seed`, list `c`) and session B's
-/// first round (`plan7-twydo-list1/01-twydo-create`, list `b`), as Twydo wrote them.
-fn session_snap() -> (tempfile::TempDir, Snapshot) {
+/// A vdir with the given fixture steps, each as its own list.
+fn steps_snap(steps: &[(&str, &str)]) -> (tempfile::TempDir, Snapshot) {
     let tmp = tempfile::tempdir().unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1");
-    for (list, step) in [
-        ("c", "plan7-twydo-list2/00-seed"),
-        ("b", "plan7-twydo-list1/01-twydo-create"),
-    ] {
+    for (list, step) in steps {
         let dir = tmp.path().join(list);
         std::fs::create_dir_all(&dir).unwrap();
         for e in std::fs::read_dir(fixtures.join(step)).unwrap() {
@@ -2043,6 +2039,32 @@ fn session_snap() -> (tempfile::TempDir, Snapshot) {
     }
     let snap = load_snap(tmp.path());
     (tmp, snap)
+}
+
+/// The last occurrence of an ended series, completed in place by the phone (`C1a` in session
+/// C's `01-phone-complete`), keeps its RRULE. Reopening it is refused with the reason, before
+/// the matrix rows (whose `reopen` verdicts would otherwise be cited), in every mode.
+#[test]
+fn reopening_an_ended_series_says_why_before_the_rows() {
+    let (_tmp, s) = steps_snap(&[("c", "plan7-twydo-list2/01-phone-complete")]);
+    let uid = by_title(&s, "c", "C1a");
+    let why = "reopening the last occurrence of an ended repeat is not supported; use undo";
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        assert_eq!(
+            check(&s, Matrix::embedded(), mode, &reopen(&uid), today()),
+            blocked(why),
+            "{mode:?}"
+        );
+    }
+}
+
+/// A vdir with the session C seed (`plan7-twydo-list2/00-seed`, list `c`) and session B's
+/// first round (`plan7-twydo-list1/01-twydo-create`, list `b`), as Twydo wrote them.
+fn session_snap() -> (tempfile::TempDir, Snapshot) {
+    steps_snap(&[
+        ("c", "plan7-twydo-list2/00-seed"),
+        ("b", "plan7-twydo-list1/01-twydo-create"),
+    ])
 }
 
 fn load_snap(root: &Path) -> Snapshot {
