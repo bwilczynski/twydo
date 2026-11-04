@@ -1812,29 +1812,35 @@ fn embedded_verified_allows_the_repeat_writes_the_phone_checked() {
     // Only the interval, within the class: Plan 4's verified edit.
     let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("2m")))]);
     assert_eq!(at(&op), Ok(()));
+    // Editing an existing weekly task (Plan 7 session C, 03-twydo-edit: a new interval, and
+    // E3 weekly -> monthly, E4 weekly removed, which the phone showed right).
+    let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
+    for changes in [
+        vec![due],
+        vec![Change::Summary("Renamed".into())],
+        vec![Change::RepeatInterval(2)],
+        vec![Change::Repeat(Some(repeat("monthly")))],
+        vec![Change::Repeat(None)],
+    ] {
+        let op = edit("gate-weekly", changes.clone());
+        assert_eq!(at(&op), Ok(()), "{changes:?}");
+    }
 }
 
-/// What the phone never checked stays refused: an existing weekly task (no `edit` evidence),
-/// yearly, daily and from-completion repeats, and repeats on a project.
+/// What the phone never checked stays refused: setting or reshaping yearly, daily and
+/// from-completion repeats, and repeats on a project.
 #[test]
 fn embedded_verified_refuses_the_repeat_writes_the_phone_never_checked() {
     let s = snap();
     let m = Matrix::embedded();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // Editing an existing weekly task: the weekly `edit` row has no Twydo evidence, so the
-    // weekly `repeat` row (set on a plain task) does not unlock it.
-    let weekly_edit = blocked("edit for weekly tasks is not verified yet (twydo_to_iphone)");
-    for changes in [
-        vec![due.clone()],
-        vec![Change::Summary("Renamed".into())],
-        vec![Change::RepeatInterval(2)],
-    ] {
-        let op = edit("gate-weekly", changes);
-        assert_eq!(at(&op), weekly_edit);
-    }
-    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("monthly")))]);
-    assert_eq!(at(&op), weekly_edit);
+    // An existing weekly task made yearly: the yearly `repeat` row has no Twydo evidence.
+    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("yearly")))]);
+    assert_eq!(
+        at(&op),
+        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
+    );
     // Yearly, daily and from completion.
     let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
     assert_eq!(
@@ -1978,8 +1984,8 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
 }
 
 /// Task 14: the gate lets every repeat kind Twydo can create through to completion once its
-/// rule's `execute` verdict and the case's `complete` row pass; the real matrix keeps them
-/// unverified, so verified mode still refuses.
+/// rule's `execute` verdict and the case's `complete` row pass; since Plan 7 session C the
+/// real matrix passes them, so verified mode allows it.
 #[test]
 fn new_repeat_kinds_complete_when_their_verdicts_pass() {
     let s = snap();
@@ -2011,6 +2017,104 @@ fn new_repeat_kinds_complete_when_their_verdicts_pass() {
             &complete("gate-monthly-31"),
             today()
         ),
-        blocked("months-day-29-31 repeats are not verified yet")
+        Ok(())
     );
+}
+
+/// A vdir with the session C seed (`plan7-twydo-list2/00-seed`, list `c`) and session B's
+/// first round (`plan7-twydo-list1/01-twydo-create`, list `b`), as Twydo wrote them.
+fn session_snap() -> (tempfile::TempDir, Snapshot) {
+    let tmp = tempfile::tempdir().unwrap();
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1");
+    for (list, step) in [
+        ("c", "plan7-twydo-list2/00-seed"),
+        ("b", "plan7-twydo-list1/01-twydo-create"),
+    ] {
+        let dir = tmp.path().join(list);
+        std::fs::create_dir_all(&dir).unwrap();
+        for e in std::fs::read_dir(fixtures.join(step)).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "ics") {
+                std::fs::copy(&p, dir.join(p.file_name().unwrap())).unwrap();
+            }
+        }
+    }
+    let report = twydo_core::vdir::load(tmp.path()).unwrap();
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let mut cfg = Config::with_vdir(tmp.path().to_path_buf());
+    cfg.timezone = Some("America/New_York".to_string());
+    (tmp, Snapshot::new(report, cfg))
+}
+
+fn by_title(s: &Snapshot, list: &str, title: &str) -> String {
+    s.tasks
+        .iter()
+        .find(|t| t.collection == list && t.summary == title)
+        .unwrap_or_else(|| panic!("{list}/{title}"))
+        .uid
+        .clone()
+}
+
+/// Plan 7 session C: in verified mode with the shipped matrix, completing each kind the
+/// phone and Twydo completed alike is allowed (the `b` twins as seeded), and the session's
+/// edits of existing daily and weekly tasks too. What no session verified stays refused.
+#[test]
+fn embedded_verified_completes_every_kind_session_c_verified() {
+    let (_tmp, s) = session_snap();
+    let m = Matrix::embedded();
+    let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
+    // Classes: days (D1, D3), weeks (W1, W2), weekdays-set (WD, WK, OR), months-nth-weekday
+    // (N2, LF), months-day-29-31 (M31), years-feb-29 (Y29); modifiers from-completion (FC,
+    // FS with a start date), count (C1), until (UN).
+    for kind in [
+        "D1", "D3", "W1", "W2", "WD", "WK", "OR", "N2", "LF", "M31", "Y29", "FC", "FS", "C1", "UN",
+    ] {
+        let uid = by_title(&s, "c", &format!("{kind}b"));
+        assert_eq!(at(&complete(&uid)), Ok(()), "{kind}");
+    }
+    // Session C's edits (03-twydo-edit), which the phone showed right.
+    let e = |t: &str| by_title(&s, "c", t);
+    let due = Change::Due(Some(Due::Date(date(2026, 12, 8))));
+    for (uid, changes) in [
+        (e("E1"), vec![due, Change::Summary("E1x".into())]),
+        (e("E2"), vec![Change::RepeatInterval(2)]),
+        (e("E3"), vec![Change::Repeat(Some(repeat("monthly")))]),
+        (e("E4"), vec![Change::Repeat(None)]),
+    ] {
+        assert_eq!(at(&edit(&uid, changes.clone())), Ok(()), "{changes:?}");
+    }
+
+    // Still refused: the kinds the phone misreads (session B), even to complete.
+    for (title, class) in [
+        ("LD", "months-last-day"),
+        ("LW", "months-nth-workday"),
+        ("WE", "months-nth-weekend-day"),
+    ] {
+        let uid = by_title(&s, "b", title);
+        assert_eq!(
+            at(&complete(&uid)),
+            blocked(&format!("{class} repeats are not verified yet")),
+            "{title}"
+        );
+    }
+    // Reshaping to yearly or daily, or to from completion: no Twydo evidence.
+    for (text, case) in [("yearly", "yearly"), ("daily", "daily")] {
+        let op = edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))]);
+        assert_eq!(
+            at(&op),
+            blocked(&format!(
+                "changing the repeat rule of {case} tasks is not verified yet (twydo_to_iphone)"
+            )),
+            "{text}"
+        );
+    }
+    let op = edit(
+        &e("E3"),
+        vec![Change::Repeat(Some(repeat("monthly after done")))],
+    );
+    assert!(at(&op).is_err());
+    // Reopening a history copy of a daily or weekly repeat rests on the monthly/yearly rows;
+    // reopening a daily or weekly task itself has no Twydo evidence.
+    let op = reopen(&e("E1"));
+    assert!(at(&op).is_err());
 }
