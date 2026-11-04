@@ -117,9 +117,13 @@ fn period(tokens: &[&str]) -> Result<Option<(Freq, u32)>, String> {
         ["monthly"] => Some((Freq::Monthly, 1)),
         ["yearly"] => Some((Freq::Yearly, 1)),
         [unit] if unit_freq(unit).is_some() => Some((unit_freq(unit).unwrap(), 1)),
-        [short] if short.len() > 1 && short.as_bytes()[0].is_ascii_digit() => {
-            let (num, letter) = short.split_at(short.len() - 1);
-            let freq = match letter {
+        // A number and a unit letter: split off the last character, not the last byte, so
+        // text in another script (`2週`) is not a period rather than a panic.
+        [short]
+            if let Some(num) = short.strip_suffix(|c: char| c.is_ascii_alphabetic())
+                && num.starts_with(|c: char| c.is_ascii_digit()) =>
+        {
+            let freq = match &short[num.len()..] {
                 "d" => Freq::Daily,
                 "w" => Freq::Weekly,
                 "m" => Freq::Monthly,

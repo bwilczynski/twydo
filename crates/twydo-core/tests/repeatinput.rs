@@ -297,3 +297,31 @@ fn weekday_sets_take_no_interval() {
         }
     }
 }
+
+/// Non-ASCII text, typed one key at a time into the card, is an error, never a panic (a
+/// split inside a multi-byte character): a CJK unit, an accented letter, an emoji.
+#[test]
+fn non_ascii_input_is_an_error_not_a_panic() {
+    for bad in [
+        "2週",
+        "週",
+        "3日",
+        "2😀",
+        "😀",
+        "every 2週",
+        "2週 until 3日",
+        "2nd 週",
+        "2ndą",
+        "1ą",
+        "12ę",
+        "pią",
+        "monthly 2😀 times",
+        "１２d",
+    ] {
+        let got = std::panic::catch_unwind(|| parse(bad, today(), &WORK));
+        match got {
+            Ok(r) => assert!(r.is_err(), "{bad}: {r:?}"),
+            Err(_) => panic!("{bad}: panicked"),
+        }
+    }
+}
