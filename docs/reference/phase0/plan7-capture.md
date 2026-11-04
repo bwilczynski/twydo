@@ -141,3 +141,123 @@ for `edit`), and op `convert` with cases `task-to-checklist`, `task-to-project`,
 `checklist-to-project`, `empty-parent-to-task` (`iphone_baseline` `pass`),
 `project-to-checklist` and `parent-with-items-to-task` (`unsupported`). Every Twydo column
 stays `unverified` until Plan 7 Task 13.
+
+# Session B: Twydo's writes on the iPhone (Plan 7 Task 13)
+
+Session A recorded what the phone writes. This session checks the other direction: Twydo
+writes each new shape, the phone shows it, then acts on it, and Twydo reads the result back.
+It fills the `twydo_to_iphone` (and, where the phone acts, `iphone_to_twydo`) columns of the
+new matrix rows, and settles the guesses Plan 7 made:
+
+| Guess | Round |
+|---|---|
+| a parent Twydo makes gets JSON `uid` = its own UID; the phone adds items under it correctly | 01, 02, 03 |
+| a repeat Twydo sets gets `RUID` = own UID; completing it on the phone links its history copy | 01, 03 |
+| last-weekday writes `RecurrenceValue` -1 | 01 (`LW`) |
+| removing a repeat leaves `RecurrenceValue` / `RecurrenceFrom` / `RUID` | 02 |
+| switching an end-dated repeat to never removes `RecurrenceEndDate` | 02 |
+| empty project → checklist is a `TaskType` 2 → 1 edit | 02 |
+
+- 👤 = you, on the iPhone. 🤖 = the agent, on the Linux desktop.
+- **A throwaway list in the production account**, as in session A: a fresh backup first, a new
+  list `Twydo capture 2` that you create on the phone, every write inside it, the list deleted
+  at the end, and a comparison of the rest of production with the backup.
+- **Twydo writes in `test` mode**, so the gate lets through the shapes being verified. This
+  uses a separate, temporary config: same production vdir, its own state directory, no
+  `[sync]`, and every command names the capture list. Your normal config stays in
+  `verified` mode. Sync is run by hand with the production pair.
+- **No typing on the phone** except the list name and one item (`y`).
+
+## Setup B (🤖)
+
+```sh
+vdirsyncer sync twydo_prod                      # then back up vdir, state and config
+# 👤 creates the list `Twydo capture 2`; then:
+yes | vdirsyncer discover twydo_prod && vdirsyncer sync twydo_prod && vdirsyncer metasync twydo_prod
+export COLL=~/.local/share/twydo/vdir/<Twydo capture 2> L=<its id>
+ls "$COLL"                                      # must be empty
+export X=<scratchpad>/xdg-capture              # config.toml: vdir = production vdir, state_dir = scratch, [writes] mode = "test"
+tdo() { XDG_CONFIG_HOME=$X "$PWD/target/debug/tdo" "$@"; }
+```
+
+After each round: 🤖 `vdirsyncer sync twydo_prod`, capture into scenario `plan7-twydo-list1`
+(`--device twydo` or `iphone`), `tdo export-json` to compare with what the phone shows.
+
+## Rounds B
+
+Dates in 2026 unless given.
+
+| Round | Who | Actions | Check |
+|---|---|---|---|
+| 01-twydo-create | 🤖 | project `P` with `p1` (due Dec 5), `p2`; checklist `C` with `c1`, `c2`; recurring project `RP` (due Dec 15, monthly) with `r1`; repeating tasks, due Dec 7 unless given: `D1` daily · `D3` every 3 days · `W1` weekly · `W2` every 2 weeks · `WD` mon thu · `WK` workdays · `M1` monthly · `M31` monthly (Dec 31) · `LD` last day (Dec 31) · `N2` 2nd tue (Dec 8) · `LW` last weekday (Dec 31) · `WE` 1st weekend day (Dec 5) · `Y1` yearly · `Y29` yearly (2028-02-29) · `FC` monthly after done · `CT` monthly 3 times · `UN` monthly until 2027-06-30; plain `K1`, `K2`, `S1`, `S2` (due Dec 7); empty project `E`; empty checklist `EC` | 👤 every family shows its items; each repeating task shows the rule its name says (say which ones the phone shows differently or not at all) |
+| 02-twydo-reshape | 🤖 | `S1` repeat weekly · `S2` repeat monthly, then `S2` → every 2 months · `M1` remove repeat · `W1` → monthly · `UN` → monthly (no end) · `K1` → checklist · `K2` → project · `C` → project · `E` → checklist · `EC` → task · `P` repeat monthly (due Dec 20) | 👤 each shows its new rule or type; `P` is now a recurring project with its items |
+| 03-phone-act | 👤 | add item `y` to `K2`; complete `M31`, `W1`, `FC`, `CT`, `LW` and `RP` (confirm) | 🤖 `y` linked to `K2` (`parentuid`); each completed task advanced with a history copy linked by `RUID`; `RP`'s copy holds `r1`'s copy |
+| 04-twydo-complete | 🤖 | complete `D1`, `WK`, `N2`, `Y29`, `S1` | 👤 each moved to its next date, with a completed copy in Done |
+| 05-delete-list | 👤 | delete the list `Twydo capture 2` with its tasks | 🤖 move the local copy aside, discover, sync; the rest of production unchanged |
+
+A Twydo round passes when the phone shows what the Check column says; a phone round when
+`tdo export-json` shows it with no warnings, blocked tasks or broken links. A mismatch is a
+finding: record it, fix the encoding with a test from the capture, and leave that row
+`unverified`.
+
+## Results B
+
+Session 2026-11-04, iPhone 2Do 3.91 (the last version; it can no longer be updated from the App
+Store) against Synology Calendar, vdirsyncer 0.21.0 on Linux. Fixtures in
+`fixtures/phase0/v1/plan7-twydo-list1/` (round numbers as above). Twydo read every round with
+no warnings, nothing blocked and every family linked.
+
+**How Twydo wrote.** `test` mode still enforces the rule verdicts and the phone baseline, so
+the creates of round 01 that the matrix did not yet allow were run with `tdo op --matrix`
+(the hidden test hook) and a scratch copy of the matrix with `unverified` read as `pass`. The
+copy was never committed. The temporary config and state were removed after the session.
+
+**01, Twydo creates.** The phone showed right: project `P` with its items (`p1` dated), checklist
+`C` with its items, recurring project `RP` with `r1`, and the repeats daily, every 3 days,
+weekly, every 2 weeks, Mon and Thu, work days, monthly (on the 7th and on the 31st), 2nd
+Tuesday, yearly (also on 29 Feb), from completion, end after 3 and end on a date.
+
+- **Three kinds the iPhone does not support:** last day of the month (`LD`) shows as plain
+  monthly on the 31st, last weekday (`LW`) as "every workday", 1st weekend day (`WE`) as "every
+  weekend day". Its picker cannot create them either (session A). They most likely come from a
+  later 2Do version than the iPhone's 3.91. Matrix: rule `edit` = `fail` for
+  `months-last-day`, `months-nth-workday`, `months-nth-weekend-day`; Twydo never writes them
+  (it still reads them).
+
+**02, Twydo reshapes.** The phone showed right: a repeat set on a plain task (`S1` weekly, `S2`
+monthly), an interval change (`S2` every 2 months), a repeat removed (`M1`), a class change
+(`W1` weekly → monthly), an end date dropped (`UN`), task → checklist (`K1`), task → project
+(`K2`), checklist with items → project (`C`, items kept), empty project → checklist (`E`),
+empty checklist → task (`EC`), and a repeat set on a project with items (`P`, now a recurring
+project).
+
+**03, the phone acts on Twydo's writes.** All read back right:
+
+- An item the phone added under `K2` (a parent Twydo made, JSON `uid` = its own UID) has
+  `RELATED-TO` and `parentuid` = `K2`'s UID. So Twydo's choice of JSON `uid` works.
+- Completing `M31`, `W1`, `FC`, `CT` on the phone made a completed history copy whose `RUID` is
+  the live task's UID (the value Twydo wrote), and advanced the live task. So Twydo's `RUID`
+  choice works. `FC` (after done) moved to one month after the completion day; `CT` counted
+  down (`COUNT=2`, `RecurrenceEndRepetitions` 2).
+- Completing the recurring project `RP` (with confirmation) made a completed copy holding a
+  copy of `r1`, and reopened the live `r1`, as in Plan 6.
+
+**04, Twydo completes.** Not run: Twydo does not yet execute daily, weekly or Nth-weekday rules
+(its completion handles monthly-on-a-day and yearly only), so the gate refused all five with
+`repeat rule shape not verified`, and `Y29` with "next due date after 2028-02-29 would not
+fall on day 29". Nothing was written. Executing those rules is a follow-up.
+
+**Production afterwards.** The rest of production is byte-for-byte the backup taken before
+the session (`diff -r` empty); `tdo check`: gate passed.
+
+**Matrix.** `twydo_to_iphone` = `pass` for: `create` of checklist, project, recurring-project,
+daily, weekly, monthly, yearly, from-completion; `repeat` of one-time, weekly, monthly, project,
+recurring-project; `convert` task-to-checklist, task-to-project, checklist-to-project,
+empty-project-to-checklist, empty-parent-to-task. `iphone_baseline` and `iphone_to_twydo` =
+`pass` for `create` of daily, weekly, from-completion (the phone set the same repeat on a plain
+task in session A, and a Twydo create equals a plain create plus that repeat), and for
+from-completion `complete` (03). Rule `edit` = `pass` for days, weeks, weekdays-set,
+months-day-29-31, months-nth-weekday, years-feb-29 and the from-completion, count and until
+modifiers; `fail` for the three unsupported kinds. Still `unverified`: `repeat` of daily,
+yearly, from-completion, checklist and project-recurring-child, and every `execute` verdict of
+the new classes.
