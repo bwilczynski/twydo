@@ -1,6 +1,8 @@
 //! The write gate: matrix-driven policy with exact reasons. All content is synthetic
 //! (`tests/data/gate/`); matrices are built from TOML strings here.
 
+mod common;
+
 use std::path::Path;
 
 use chrono::NaiveDate;
@@ -1829,36 +1831,24 @@ fn embedded_verified_allows_the_repeat_writes_the_phone_checked() {
     }
 }
 
-/// What the phone never checked stays refused: setting or reshaping yearly, daily and
-/// from-completion repeats, and repeats on a project.
+/// Daily/yearly repeat transitions now pass; uncaptured anchor/family changes stay refused.
 #[test]
-fn embedded_verified_refuses_the_repeat_writes_the_phone_never_checked() {
+fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let s = snap();
     let m = Matrix::embedded();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // An existing weekly task made yearly: the yearly `repeat` row has no Twydo evidence.
-    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
-    // Yearly, daily and from completion.
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of daily tasks is not verified yet (twydo_to_iphone)")
-    );
-    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
+    for (uid, text) in [
+        ("gate-weekly", "yearly"),
+        ("gate-date", "yearly"),
+        ("gate-date", "daily"),
+        ("gate-monthly", "yearly"),
+    ] {
+        assert_eq!(
+            at(&edit(uid, vec![Change::Repeat(Some(repeat(text)))])),
+            Ok(())
+        );
+    }
     let op = edit(
         "gate-monthly",
         vec![Change::Repeat(Some(repeat("monthly after done")))],
@@ -1977,8 +1967,11 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
             "test edit {text}"
         );
     }
-    // A rule that is merely unverified keeps the old wording.
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
+    // A context that is merely unverified keeps the old wording.
+    let op = edit(
+        "gate-date",
+        vec![Change::Repeat(Some(repeat("monthly after done")))],
+    );
     let Err(Blocked(why)) = check(&s, m, WriteMode::Verified, &op, today()) else {
         panic!("allowed")
     };
@@ -2101,8 +2094,7 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
         let uid = by_title(&s, "c", &format!("{kind}b"));
         assert_eq!(at(&complete(&uid)), Ok(()), "{kind}");
     }
-    // Until: only the ending case (UN) was captured, not a series that goes on, so the
-    // modifier's `execute` stays unverified.
+    // Until execution arrives in the next stacked capability PR.
     let uid = by_title(&s, "c", "UNb");
     assert_eq!(
         at(&complete(&uid)),
@@ -2133,15 +2125,11 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
             "{title}"
         );
     }
-    // Reshaping to yearly or daily, or to from completion: no Twydo evidence.
-    for (text, case) in [("yearly", "yearly"), ("daily", "daily")] {
-        let op = edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))]);
+    // Plain daily/yearly reshaping is now covered by Plan 8.
+    for text in ["yearly", "daily"] {
         assert_eq!(
-            at(&op),
-            blocked(&format!(
-                "changing the repeat rule of {case} tasks is not verified yet (twydo_to_iphone)"
-            )),
-            "{text}"
+            at(&edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))])),
+            Ok(())
         );
     }
     let op = edit(
@@ -2298,5 +2286,129 @@ fn interval_on_a_weekday_set_repeat_is_refused() {
             Ok(()),
             "{op:?}"
         );
+    }
+}
+
+/// Sessions B/C already supply fixture-comparison tests for these edges in edit_complete.rs.
+/// Keep the summary records aligned without promoting the only partially captured edges.
+#[test]
+fn embedded_edge_records_match_existing_completion_captures() {
+    use twydo_core::compat::Verdict;
+
+    let m = Matrix::embedded();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (id, evidence) in [
+        (
+            "monthly-31st",
+            "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again",
+        ),
+        (
+            "yearly-feb-29",
+            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
+        ),
+        (
+            "from-completion-anchor",
+            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
+        ),
+        (
+            "end-after-n",
+            "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act",
+        ),
+    ] {
+        let edge = m.edge_case(id).unwrap();
+        assert_eq!(edge.verdict, Verdict::Pass, "{id}");
+        assert!(edge.evidence.iter().any(|e| e == evidence), "{id}");
+        for path in &edge.evidence {
+            assert!(root.join(path).is_dir(), "{id}: {path}");
+        }
+    }
+    assert_eq!(
+        m.edge_case("missing-fifth-weekday").unwrap().verdict,
+        Verdict::Unverified
+    );
+    assert_eq!(
+        m.edge_case("end-on-date").unwrap().verdict,
+        Verdict::Unverified
+    );
+    assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Unverified);
+}
+
+// Effective permissions for captured recurrence shapes, including uncaptured neighbors.
+mod verified_recurrence_shapes {
+    use crate::common::Env;
+    use chrono::{TimeZone, Utc};
+    use twydo_core::compat::Matrix;
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit::{Change, Op};
+    use twydo_core::gate;
+
+    const RD: &str = "db95528b16fb4aa2b6a47e56a0a1000b";
+    const RY: &str = "033d6526b6ba46999f3f510edecf888b";
+    const SEED: &str = "001-after-upload";
+    const SET: &str = "010-first-phone-actions";
+    const BOUNDARY: &str = "020-boundary-and-checklist-complete";
+    const REOPEN: &str = "040-reopen-ended-and-complete-parent";
+
+    fn env(step: &str) -> Env {
+        Env::new(WriteMode::Verified, &format!("plan8-tui-a/{step}"))
+    }
+    fn now() -> chrono::DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 4, 18, 0, 0).unwrap()
+    }
+    fn repeat(uid: &str, text: &str) -> Op {
+        Op::Edit {
+            uid: uid.into(),
+            changes: vec![Change::Repeat(
+                twydo_core::repeatinput::parse(text, now().date_naive(), &[]).unwrap(),
+            )],
+        }
+    }
+
+    #[test]
+    fn embedded_verified_operations_match_supported_phone_shapes() {
+        let mut cases = Vec::new();
+        for (step, uid, rule) in [
+            (SEED, RD, "daily"),
+            (SET, RD, "weekly"),
+            (REOPEN, RD, "none"),
+            (SEED, RY, "yearly"),
+            (BOUNDARY, RY, "monthly"),
+            (REOPEN, RY, "none"),
+        ] {
+            cases.push((step, repeat(uid, rule), 1));
+        }
+        for (step, op, writes) in cases {
+            let e = env(step);
+            let mut store = e.store(Matrix::embedded().clone());
+            store
+                .apply(&e.snap(), &op, now())
+                .unwrap_or_else(|err| panic!("{step} {op:?}: {err}"));
+            assert_eq!(e.journal()[0].writes.len(), writes, "{step} {op:?}");
+        }
+    }
+    #[test]
+    fn newly_verified_daily_yearly_changes_do_not_enable_end_or_ordinal_edits() {
+        for uid in [RD, RY] {
+            for text in [
+                "daily 3 times",
+                "yearly until 2028-12-07",
+                "mon thu",
+                "2nd tue",
+                "monthly after done",
+            ] {
+                let e = env(SET);
+                assert!(
+                    gate::check(
+                        &e.snap(),
+                        Matrix::embedded(),
+                        WriteMode::Verified,
+                        &repeat(uid, text),
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {text}"
+                );
+            }
+        }
     }
 }

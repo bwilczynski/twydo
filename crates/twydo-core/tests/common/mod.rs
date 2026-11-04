@@ -299,3 +299,5 @@ pub fn check_lines(
         "{ctx}: preserved bytes"
     );
 }
+
+pub mod recurrence;

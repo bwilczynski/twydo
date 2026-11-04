@@ -94,12 +94,11 @@ weekdays (`mon thu`, `workdays`) repeats every week only and takes no interval, 
 mode: Twydo could not complete it (`an interval is not supported on a repeat on set
 weekdays`). Existing
 "from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
-yet (iphone_baseline)`). **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
-removing a weekly or monthly repeat, changing a weekly repeat to monthly or a monthly one to
-weekly, and giving a monthly repeat an end by count are allowed. Setting, removing or changing a
-daily, yearly or "from completion" repeat, and any repeat change on a project or checklist, is
-still refused, for example `changing the repeat rule of yearly tasks is not verified yet
-(twydo_to_iphone)`.
+yet (iphone_baseline)`). **Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can
+be set, removed or changed between those classes. Newly verified daily/yearly
+transitions are due anchored and have no end or weekday selector. Existing
+monthly/weekly behavior, including a monthly count end, remains supported.
+From-completion and project repeat changes remain unverified. Checklist repeat changes remain refused.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
