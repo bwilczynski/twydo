@@ -1,0 +1,5 @@
+scenario = "plan7-twydo-list2"
+step = "02-twydo-complete"
+device = "twydo"
+action = "tdo op complete every b task once, M31b twice"
+captured_at = "2026-11-04T09:10:16Z"

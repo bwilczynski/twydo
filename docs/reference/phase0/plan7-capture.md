@@ -261,3 +261,59 @@ months-day-29-31, months-nth-weekday, years-feb-29 and the from-completion, coun
 modifiers; `fail` for the three unsupported kinds. Still `unverified`: `repeat` of daily,
 yearly, from-completion, checklist and project-recurring-child, and every `execute` verdict of
 the new classes.
+
+# Session C: completing and editing every repeat kind (Plan 7 Task 15)
+
+Twydo can now compute the next date for every kind it creates (Plan 7 Task 14), but verified
+mode refuses those completions until they match 2Do. This session records 2Do's own behaviour
+and compares Twydo's with it, twin against twin: each kind is seeded twice, the phone completes
+the `a` copy and Twydo the `b` copy. It also settles six cases Task 14 had to guess:
+
+| To confirm | Twin |
+|---|---|
+| monthly on the 31st after a short month, and whether it keeps its day | `M31` (completed twice) |
+| yearly on 29 February | `Y29` |
+| the last occurrence of an "N times" series | `C1` |
+| an "until" series whose next date is past the end | `UN` |
+| from completion with a start date later than the completion day | `FS` |
+| a due date that is not on its rule | `OR` |
+
+Same setup as session B: a fresh backup, a throwaway list `Twydo capture 3` that you create on
+the phone, Twydo writing in `test` mode through a temporary config and `tdo op --matrix` with a
+scratch matrix copy (never committed), the list deleted at the end and production compared with
+the backup. No typing on the phone except the list name.
+
+## Rounds C
+
+Dates in 2026 unless given. Each kind is seeded as `<name>a` and `<name>b`.
+
+| Round | Who | Actions | Check |
+|---|---|---|---|
+| 00-seed | 🤖 | twins: `D1` daily · `D3` every 3 days · `W1` weekly · `W2` every 2 weeks · `WD` mon thu · `WK` workdays · `N2` 2nd tue (Dec 8) · `LF` last fri (Dec 25) · `M31` monthly (2027-01-31) · `Y29` yearly (2028-02-29) · `FC` monthly after done · `FS` monthly after done, start Dec 20 · `C1` monthly 1 times · `UN` monthly until Dec 20 · `OR` mon thu due Wed Dec 9; due Dec 7 unless given. Singles for edits: `E1` daily, `E2` weekly, `E3` weekly, `E4` weekly (Dec 7) | 👤 let 2Do sync; 30 + 4 tasks |
+| 01-phone-complete | 👤 | complete every `a` task once; complete `M31a` a second time (from its new date) | 🤖 each `a`: its next date, history copy, end fields |
+| 02-twydo-complete | 🤖 | complete every `b` task once, `M31b` twice | compare each `b` with its `a`, byte for byte (except UIDs and stamps); 👤 the `b` tasks look like the `a` tasks |
+| 03-twydo-edit | 🤖 | `E1` due +1 day and title `E1x` · `E2` every 2 weeks · `E3` weekly → monthly · `E4` remove repeat | 👤 each shows its change |
+| 04-delete-list | 👤 | delete the list `Twydo capture 3` | 🤖 local copy aside, sync; production equal to the backup |
+
+Where a `b` differs from its `a`, the phone's version wins: Twydo's rule is fixed with a test
+from the capture, and that kind stays refused until it matches.
+
+## Results C (summary; details added with Task 15's matrix changes)
+
+Session 2026-11-04, iPhone 2Do 3.91, fixtures in `fixtures/phase0/v1/plan7-twydo-list2/` (an
+extra step `04-phone-m31-again`: the phone's second completion of `M31a`, which round 01 missed).
+Twydo read every round with no warnings, nothing blocked. Production afterwards was
+byte-for-byte the backup taken before the session.
+
+- Comparing each twin's next date, history copy, start date and end fields: Twydo's completion
+  matched the phone's for daily, every 3 days, weekly, every 2 weeks, Mon and Thu, work days,
+  2nd Tuesday, last Friday (Dec 25 → Jan 29), monthly on the 31st (Jan 31 → Feb 28 → Mar 28:
+  no memory of the 31st), yearly on 29 February (→ 2029-02-28), from completion, `1 times` and
+  `until` (the last occurrence is completed in place, `RRULE` kept, no copy), and a due date
+  off its rule (Mon/Thu due Wed Dec 9 → Thu Dec 10).
+- **From completion with a start date later than the completion day** (`FS`): the phone counts
+  from the completion day and ignores the start (due Dec 7 completed Nov 4 → Dec 4), and moves
+  the start by the same number of days (Dec 20 → Dec 17). Twydo counted from the start date;
+  fixed in Task 15.
+- Twydo's edits of existing daily and weekly tasks (`E1` due +1 day and renamed, `E2` every 2
+  weeks, `E3` weekly → monthly, `E4` repeat removed) showed right on the phone.

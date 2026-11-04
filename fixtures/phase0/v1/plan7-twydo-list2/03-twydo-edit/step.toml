@@ -1,0 +1,5 @@
+scenario = "plan7-twydo-list2"
+step = "03-twydo-edit"
+device = "twydo"
+action = "E1 due Dec 8 + title E1x; E2 every 2 weeks; E3 weekly to monthly; E4 remove repeat"
+captured_at = "2026-11-04T09:10:20Z"
