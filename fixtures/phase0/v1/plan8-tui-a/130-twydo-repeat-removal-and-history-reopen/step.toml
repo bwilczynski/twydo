@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "130-twydo-repeat-removal-and-history-reopen"
+device = "twydo"
+action = "Approved fixed-binary round: FCb monthly to weekly; remove RDb/RYb repeats; reopen only earliest U1b/U2b history copies (Nov 18 / Jan 7), leaving ended originals completed."
+captured_at = "2026-11-04T15:27:02Z"

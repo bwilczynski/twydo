@@ -656,3 +656,34 @@ Next proposed writer round: change FCb monthly → weekly, remove RDb/RYb repeat
 only the earliest b-twin until history copies (U1b due November 18, U2b due January 7), leaving
 the ended originals completed. Obtain explicit approval before these new synthetic writes
 and sync. Checklist repeat removal and verified-mode TUI acceptance still follow.
+
+### 130 — repeat removal/history reopening captured locally; upload conflicted
+
+The user requested continuation of the proposed synthetic-only round. The first FCb repeat
+change was refused before any writes: the gate incorrectly also required ordinary-edit
+evidence for a pure repeat reshape. A regression failed first, the gate was corrected to use
+own/family repeat rows for pure reshapes, and mixed/interval-only edits remain protected by
+ordinary-edit rows. All 797 Rust tests, 49 Python tests, documentation links and lint passed;
+an independent review found no substantive issue. The focused fix is commit `a6000af`.
+
+The fixed binary changed FCb to weekly. An invalid CLI repeat-removal spelling then failed
+without changing RDb; the remaining operations resumed with `--no-repeat` after validating
+the one successful FCb write, which was not repeated. All five intended operations succeeded:
+
+- FCb monthly → weekly, retaining February 10 due, note `y`, identity and unchanged items.
+- RDb/RYb repeat removal, keeping December 7 due and existing inactive recurrence metadata.
+- Reopen only the first U1b/U2b history copies, due November 18 / January 7, with no repeat;
+  the ended live originals and later copies remain byte-unchanged.
+
+Pre-upload `130-twydo-repeat-removal-and-history-reopen` contains 40 resources in A, zero in B.
+Exactly the intended five resources changed, with no creations/deletions; all a twins and
+unrelated production bytes remain unchanged. Privacy scans passed for the synthetic capture.
+The candidate store replay compares every resource and five single-resource journal entries.
+
+Normal sync then reported five held both-changed conflicts, all on those same synthetic
+resources. Preserved server versions already have the same visible states, with earlier
+modification stamps; RDb/RYb additionally have inactive `RecurrenceValue`/`RecurrenceFrom` 0
+instead of the local retained 1. No conflict was automatically resolved, and no 131 upload
+capture exists yet. Both versions remain preserved privately. The user was asked whether
+those phone changes were performed earlier and which versions to retain. No matrix verdict
+is promoted while upload/device inspection is pending.
