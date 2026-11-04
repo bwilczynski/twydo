@@ -98,8 +98,9 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 "—" means not verified yet. The Complete column is the matrix row, but the gate also needs
 the repeat rule's own `execute` verdict: completing works only for a monthly repeat on a day from
 1 to 28 and a yearly repeat (not 29 February), with no end and not from completion. Everything
-else is refused: daily, weekly, on set weekdays, Nth weekday, monthly on the 29th to 31st,
-29 February, from completion, and repeats with an end by count or date. For a repeating
+else is refused until its `execute` verdict passes: daily, weekly, on set weekdays, Nth weekday,
+monthly on the 29th to 31st, 29 February, from completion, and repeats with an end by count or
+date (Twydo computes their next dates; the phone has not yet confirmed them). For a repeating
 task, "Edit" covers changing the repeat's interval, not setting, removing or reshaping the repeat (the
 `repeat` rows). Interval-only changes are allowed within a class whose rule `edit` verdict passes
 and whose task row `edit` passes: monthly (day 1 to 28) and yearly tasks, whose interval edits

@@ -11,7 +11,8 @@ use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::model::repeat::parse_rrule;
 
 use common::{
-    check_in_place, dtstamp, fixture, is_stamp, lines, sorted, stamp, todo, with_completed_now,
+    Line, check_in_place, check_lines, dtstamp, fixture, is_stamp, lines, sorted, stamp, todo,
+    with_completed_now,
 };
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
@@ -41,6 +42,16 @@ fn now() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-11-01T15:00:00Z")
         .unwrap()
         .with_timezone(&Utc)
+}
+
+fn today() -> NaiveDate {
+    now().date_naive()
+}
+
+/// Complete a repeat that advances: (live, history copy), the completion day = `now`'s.
+fn advance(cal: &Calendar, now: DateTime<Utc>, copy_uid: &str) -> (Calendar, Calendar) {
+    let (live, copy) = complete_recurring(cal, now, now.date_naive(), copy_uid).unwrap();
+    (live, copy.expect("a history copy"))
 }
 
 fn unsupported(err: &EditError) -> &str {
@@ -151,7 +162,7 @@ fn check_copy_and_advance_with(
     let cal = parse(&input).unwrap();
     let before = cal.clone();
 
-    let (live, copy) = complete_recurring(&cal, now, copy_uid).unwrap();
+    let (live, copy) = advance(&cal, now, copy_uid);
     assert_eq!(cal, before, "{ctx}: input untouched");
 
     // Live: only the stamps, DTSTART and DUE change, to 2Do's values.
@@ -228,16 +239,20 @@ fn yearly_copy_and_advance_matches_2do() {
 fn next_due_intervals() {
     let monthly2 = parse_rrule("FREQ=MONTHLY;INTERVAL=2").unwrap();
     assert_eq!(
-        next_due(date(2026, 12, 10), &monthly2).unwrap(),
+        next_due(date(2026, 12, 10), &monthly2, None)
+            .unwrap()
+            .unwrap(),
         date(2027, 2, 10)
     );
     let yearly2 = parse_rrule("FREQ=YEARLY;INTERVAL=2").unwrap();
     assert_eq!(
-        next_due(date(2026, 11, 15), &yearly2).unwrap(),
+        next_due(date(2026, 11, 15), &yearly2, None)
+            .unwrap()
+            .unwrap(),
         date(2028, 11, 15)
     );
     let bymonthday = parse_rrule("FREQ=MONTHLY;BYMONTHDAY=10").unwrap();
-    let err = next_due(date(2026, 12, 10), &bymonthday).unwrap_err();
+    let err = next_due(date(2026, 12, 10), &bymonthday, None).unwrap_err();
     assert!(
         unsupported(&err).starts_with("repeat rule shape not verified: "),
         "{err:?}"
@@ -245,28 +260,25 @@ fn next_due_intervals() {
 }
 
 #[test]
-fn next_due_refuses_unverified_shapes_and_clamping() {
+fn next_due_refuses_shapes_twydo_does_not_write() {
     for r in [
-        "FREQ=WEEKLY",
-        "FREQ=DAILY",
-        "FREQ=MONTHLY;COUNT=3",
-        "FREQ=MONTHLY;UNTIL=20271231",
         "FREQ=YEARLY;BYMONTH=11",
-        "FREQ=MONTHLY;BYDAY=1MO",
         "FREQ=MONTHLY;WKST=MO",
+        "FREQ=MONTHLY;BYMONTHDAY=-1",
+        "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+        "FREQ=MONTHLY;BYDAY=SA,SU;BYSETPOS=1",
+        "FREQ=MONTHLY;INTERVAL=2;BYDAY=2TU",
+        "FREQ=MONTHLY;BYDAY=6TU",
+        "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO",
+        "FREQ=DAILY;BYDAY=MO",
     ] {
         let rule = parse_rrule(r).unwrap();
-        let err = next_due(date(2026, 12, 10), &rule).unwrap_err();
+        let err = next_due(date(2026, 12, 10), &rule, None).unwrap_err();
         assert!(
             unsupported(&err).starts_with("repeat rule shape not verified: "),
             "{r}: {err:?}"
         );
     }
-    // Day 31 / Feb 29 would clamp: a bug, not a result.
-    let monthly = parse_rrule("FREQ=MONTHLY").unwrap();
-    assert!(next_due(date(2027, 1, 31), &monthly).is_err());
-    let yearly = parse_rrule("FREQ=YEARLY").unwrap();
-    assert!(next_due(date(2028, 2, 29), &yearly).is_err());
 }
 
 const PLAIN: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:synthetic-1\r\nSUMMARY:Synthetic\r\nSTATUS:NEEDS-ACTION\r\nCREATED:20261101T100000Z\r\nDUE;VALUE=DATE:20261125\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
@@ -365,10 +377,21 @@ fn complete_recurring_refuses_unverified_cases() {
             "completed",
             monthly_with(|s| s.replace("STATUS:NEEDS-ACTION", "STATUS:COMPLETED")),
         ),
-        ("from completion", {
+        ("unknown RecurrenceFrom", {
             let mut c = monthly_with(|s| s);
-            set_meta(&mut c, "RecurrenceFrom", 2);
+            set_meta(&mut c, "RecurrenceFrom", 3);
             c
+        }),
+        ("end type without COUNT", {
+            let mut c = monthly_with(|s| s);
+            set_meta(&mut c, "RecurrenceEndType", 2);
+            c
+        }),
+        ("COUNT without its end type", {
+            monthly_with(|s| s.replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=MONTHLY;COUNT=3"))
+        }),
+        ("UNTIL without its end type", {
+            monthly_with(|s| s.replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=MONTHLY;UNTIL=20270630"))
         }),
         ("type mismatch", {
             let mut c = monthly_with(|s| s);
@@ -389,7 +412,7 @@ fn complete_recurring_refuses_unverified_cases() {
             MONTHLY_COPY
         };
         let before = cal.clone();
-        let Err(err) = complete_recurring(&cal, now(), copy_uid) else {
+        let Err(err) = complete_recurring(&cal, now(), today(), copy_uid) else {
             panic!("{name}: accepted");
         };
         assert_eq!(cal, before, "{name}");
@@ -407,7 +430,7 @@ fn copy_without_ruid_gets_original_uid() {
         m.remove("RUID");
         p.set_value(&m.encode());
     }
-    let (_, copy) = complete_recurring(&cal, now(), MONTHLY_COPY).unwrap();
+    let (_, copy) = advance(&cal, now(), MONTHLY_COPY);
     let m = MetaJson::parse(&todo(&copy).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(m.get_str("RUID"), Some(MONTHLY));
     assert!(todo(&copy).prop("RRULE").is_none());
@@ -532,7 +555,7 @@ fn zoned_due_time_is_refused() {
             .replace("DUE:20261220T090000", due)
             .replace("DTSTART:20261220T090000", start);
         let cal = parse(s.as_bytes()).unwrap();
-        let err = complete_recurring(&cal, now(), T_COPY).unwrap_err();
+        let err = complete_recurring(&cal, now(), today(), T_COPY).unwrap_err();
         assert_eq!(
             unsupported(&err),
             "completing a repeat with a zoned due time is not verified",
@@ -552,7 +575,7 @@ fn start_on_day_31_moves_by_the_due_dates_days() {
         )
         .replace("20261205", "20261105");
     let cal = parse(s.as_bytes()).unwrap();
-    let (live, _) = complete_recurring(&cal, now(), S_COPY).unwrap();
+    let (live, _) = advance(&cal, now(), S_COPY);
     let start = date(2026, 11, 30)
         .and_hms_opt(0, 0, 0)
         .unwrap()
@@ -577,7 +600,7 @@ fn unusual_start_date_is_refused() {
         );
         assert!(s.contains(&format!("StartDate%22%3A{secs}")), "{secs}");
         let cal = parse(s.as_bytes()).unwrap();
-        let err = complete_recurring(&cal, now(), S_COPY).unwrap_err();
+        let err = complete_recurring(&cal, now(), today(), S_COPY).unwrap_err();
         assert_eq!(
             unsupported(&err),
             "completing a repeat with an unusual start date is not verified",
@@ -607,7 +630,7 @@ fn recurring_project_copy_rewrites_json_uid() {
     );
     let input = parse(&fixture(P6, "04-reopen-child", R)).unwrap();
     assert_eq!(json_uid(&input).as_deref(), Some(R), "fixture carries uid");
-    let (live, copy) = complete_recurring(&input, now(), R_COPY).unwrap();
+    let (live, copy) = advance(&input, now(), R_COPY);
     assert_eq!(json_uid(&live).as_deref(), Some(R));
     assert_eq!(json_uid(&copy).as_deref(), Some(R_COPY));
 }
@@ -622,6 +645,384 @@ fn foreign_json_uid_is_kept_in_the_copy() {
         m.set_str("uid", "someone-else");
         p.set_value(&m.encode());
     }
-    let (_, copy) = complete_recurring(&cal, now(), R_COPY).unwrap();
+    let (_, copy) = advance(&cal, now(), R_COPY);
     assert_eq!(json_uid(&copy).as_deref(), Some("someone-else"));
+}
+
+// ---- Every repeat kind Twydo can create (Task 14) ----
+
+fn next(due: NaiveDate, rule: &str, from: Option<NaiveDate>) -> Option<NaiveDate> {
+    next_due(due, &parse_rrule(rule).unwrap(), from).unwrap()
+}
+
+#[test]
+fn next_due_days() {
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=DAILY", None),
+        Some(date(2026, 12, 8))
+    );
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=DAILY;INTERVAL=3", None),
+        Some(date(2026, 12, 10))
+    );
+    assert_eq!(
+        next(date(2026, 12, 31), "FREQ=DAILY", None),
+        Some(date(2027, 1, 1))
+    );
+}
+
+#[test]
+fn next_due_weeks() {
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=WEEKLY", None),
+        Some(date(2026, 12, 14))
+    );
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=WEEKLY;INTERVAL=2", None),
+        Some(date(2026, 12, 21))
+    );
+}
+
+#[test]
+fn next_due_weekdays_set() {
+    // 2026-12-07 is a Monday.
+    let mon_thu = "FREQ=WEEKLY;BYDAY=MO,TH";
+    assert_eq!(
+        next(date(2026, 12, 7), mon_thu, None),
+        Some(date(2026, 12, 10))
+    );
+    assert_eq!(
+        next(date(2026, 12, 10), mon_thu, None),
+        Some(date(2026, 12, 14))
+    );
+    let work = "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
+    assert_eq!(
+        next(date(2026, 12, 11), work, None),
+        Some(date(2026, 12, 14))
+    );
+    assert_eq!(next(date(2026, 12, 7), work, None), Some(date(2026, 12, 8)));
+    // A due off the set (a Sunday) moves to the set's next day.
+    assert_eq!(
+        next(date(2026, 12, 13), mon_thu, None),
+        Some(date(2026, 12, 14))
+    );
+}
+
+#[test]
+fn next_due_month_day_29_31() {
+    // As `M31` on the phone (session B round 03): Dec 31 -> Jan 31.
+    assert_eq!(
+        next(date(2026, 12, 31), "FREQ=MONTHLY", None),
+        Some(date(2027, 1, 31))
+    );
+    // TO CONFIRM in Task 15 (session C): what 2Do does after Jan 31 is unknown. Twydo adds a
+    // calendar month and keeps the last day of a shorter month (the port recommendation's
+    // reading, as Apple's calendar arithmetic does): Feb 28, Feb 29 in a leap year.
+    assert_eq!(
+        next(date(2027, 1, 31), "FREQ=MONTHLY", None),
+        Some(date(2027, 2, 28))
+    );
+    assert_eq!(
+        next(date(2028, 1, 31), "FREQ=MONTHLY", None),
+        Some(date(2028, 2, 29))
+    );
+    assert_eq!(
+        next(date(2026, 12, 31), "FREQ=MONTHLY;INTERVAL=2", None),
+        Some(date(2027, 2, 28))
+    );
+    // TO CONFIRM in Task 15 (session C): Twydo does not remember the day. The next date is
+    // computed from the current due alone, so after a short month the day drifts (Feb 28 ->
+    // Mar 28, not Mar 31). 2Do may do the same, as it keeps no other day than the due date.
+    assert_eq!(
+        next(date(2027, 2, 28), "FREQ=MONTHLY", None),
+        Some(date(2027, 3, 28))
+    );
+    assert_eq!(
+        next(date(2026, 10, 30), "FREQ=MONTHLY", None),
+        Some(date(2026, 11, 30))
+    );
+}
+
+#[test]
+fn next_due_nth_weekday() {
+    // `N2`: 2nd Tuesday, Dec 8 -> Jan 12.
+    assert_eq!(
+        next(date(2026, 12, 8), "FREQ=MONTHLY;BYDAY=2TU", None),
+        Some(date(2027, 1, 12))
+    );
+    // Last Friday: Dec 25 -> Jan 29.
+    assert_eq!(
+        next(date(2026, 12, 25), "FREQ=MONTHLY;BYDAY=-1FR", None),
+        Some(date(2027, 1, 29))
+    );
+    // 1st Sunday: Dec 6 -> Jan 3.
+    assert_eq!(
+        next(date(2026, 12, 6), "FREQ=MONTHLY;BYDAY=1SU", None),
+        Some(date(2027, 1, 3))
+    );
+    // A month without a 5th Tuesday is skipped (RFC 5545). Dec 29 2026 is one; Jan 2027 has
+    // none (5, 12, 19, 26), March 2027 does (30).
+    assert_eq!(
+        next(date(2026, 12, 29), "FREQ=MONTHLY;BYDAY=5TU", None),
+        Some(date(2027, 3, 30))
+    );
+}
+
+#[test]
+fn next_due_feb_29() {
+    // TO CONFIRM in Task 15 (session C): 2Do moves the due by a calendar year (01 §6), so
+    // a yearly task on 29 Feb lands on 28 Feb in a common year (not 2032-02-29), and then
+    // stays on the 28th (stateless, as monthly on the 31st).
+    assert_eq!(
+        next(date(2028, 2, 29), "FREQ=YEARLY", None),
+        Some(date(2029, 2, 28))
+    );
+    assert_eq!(
+        next(date(2028, 2, 29), "FREQ=YEARLY;INTERVAL=4", None),
+        Some(date(2032, 2, 29))
+    );
+    assert_eq!(
+        next(date(2029, 2, 28), "FREQ=YEARLY", None),
+        Some(date(2030, 2, 28))
+    );
+}
+
+#[test]
+fn next_due_from_completion_uses_the_completion_day() {
+    // As `FC`: due Dec 7, completed Nov 4 -> Dec 4.
+    let nov4 = Some(date(2026, 11, 4));
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=MONTHLY", nov4),
+        Some(date(2026, 12, 4))
+    );
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=DAILY;INTERVAL=3", nov4),
+        Some(date(2026, 11, 7))
+    );
+    // 2026-11-04 is a Wednesday.
+    assert_eq!(
+        next(date(2026, 12, 7), "FREQ=WEEKLY;BYDAY=MO,TH", nov4),
+        Some(date(2026, 11, 5))
+    );
+    assert_eq!(
+        next(date(2026, 12, 8), "FREQ=MONTHLY;BYDAY=2TU", nov4),
+        Some(date(2026, 11, 10))
+    );
+}
+
+#[test]
+fn next_due_count_and_until() {
+    let dec7 = date(2026, 12, 7);
+    assert_eq!(
+        next(dec7, "FREQ=MONTHLY;COUNT=3", None),
+        Some(date(2027, 1, 7))
+    );
+    assert_eq!(
+        next(dec7, "FREQ=MONTHLY;COUNT=2", None),
+        Some(date(2027, 1, 7))
+    );
+    // The last occurrence: completing it ends the series.
+    assert_eq!(next(dec7, "FREQ=MONTHLY;COUNT=1", None), None);
+    let until = "FREQ=MONTHLY;UNTIL=20270630";
+    assert_eq!(
+        next(date(2027, 5, 30), until, None),
+        Some(date(2027, 6, 30))
+    );
+    assert_eq!(next(date(2027, 6, 30), until, None), None);
+    assert_eq!(next(date(2027, 6, 7), until, None), None);
+    assert_eq!(
+        next(date(2027, 6, 7), "FREQ=WEEKLY;UNTIL=20270621T120000Z", None),
+        Some(date(2027, 6, 14))
+    );
+}
+
+const B: &str = "plan7-twydo-list1";
+const M31: &str = "2efdb1dfa22440b3ba534691e1af4cc9";
+const M31_COPY: &str = "98227f2a00e6492489f6e19e700c1260";
+const FC: &str = "6b70ef35984e4d7596f49aeca80446ba";
+const FC_COPY: &str = "901d489189364fd39205c3f33f3b16fc";
+const CT: &str = "2630b1beda5847018f0a12a9e561bd92";
+const CT_COPY: &str = "da76e526ae2647248b429c64870ca3d4";
+const UN: &str = "2dff793258bc472ca6860c76249970a3";
+const UN_COPY: &str = "0123456789abcdef0123456789abcdef";
+
+/// Lines the phone adds when it rewrites a file; Twydo neither writes nor needs them.
+const PHONE_LAYOUT: &[&str] = &[
+    "PRODID",
+    "X-2DOAPP-SYNC-IMAGE",
+    "X-2DOAPP-SYNC-AUDIO",
+    "X-2DOAPP-AUDIO-DURATION",
+];
+
+fn without_layout(v: Vec<Line>) -> Vec<Line> {
+    v.into_iter()
+        .filter(|l| !PHONE_LAYOUT.contains(&l.1.as_str()))
+        .collect()
+}
+
+/// Complete session B's `02-twydo-reshape/<uid>` as the phone did in `03-phone-act` (now =
+/// its live DTSTAMP, completion day = that day) and compare the live task and the history
+/// copy with the phone's, leaving out stamps and the phone's layout lines. The phone gave the
+/// copy the time it first received the task as CREATED; Twydo copies the file's CREATED.
+fn check_phone_completion(uid: &str, copy_uid: &str, live_due: &str, changed: &[&str]) {
+    let ctx = format!("{B} {uid}");
+    let input = fixture(B, "02-twydo-reshape", uid);
+    let want_live = parse(&fixture(B, "03-phone-act", uid)).unwrap();
+    let want_copy = parse(&fixture(B, "03-phone-act", copy_uid)).unwrap();
+    let now = dtstamp(&want_live);
+    let cal = parse(&input).unwrap();
+    let (live, copy) = advance(&cal, now, copy_uid);
+
+    assert_eq!(todo(&live).prop("DUE").unwrap().value, live_due, "{ctx}");
+    let want = with_completed_now(lines(&want_live), now);
+    check_lines(&ctx, &input, &serialize(&live), want, changed, PHONE_LAYOUT);
+
+    let created = todo(&cal).prop("CREATED").unwrap().value.clone();
+    let mut want = without_layout(with_completed_now(lines(&want_copy), now));
+    for l in &mut want {
+        if is_stamp(&l.1) {
+            l.3 = stamp(now);
+        }
+        if l.1 == "CREATED" {
+            l.3 = created.clone();
+        }
+    }
+    let copy = parse(&serialize(&copy)).unwrap();
+    assert_eq!(
+        sorted(without_layout(lines(&copy))),
+        sorted(want),
+        "{ctx}: copy"
+    );
+    assert_eq!(todo(&copy).prop("UID").unwrap().value, copy_uid);
+}
+
+#[test]
+fn month_day_31_completion_matches_the_phone() {
+    check_phone_completion(M31, M31_COPY, "20270131", &["DTSTART", "DUE"]);
+}
+
+#[test]
+fn from_completion_counts_from_the_completion_day() {
+    check_phone_completion(FC, FC_COPY, "20261204", &["DTSTART", "DUE"]);
+}
+
+#[test]
+fn count_counts_down() {
+    check_phone_completion(
+        CT,
+        CT_COPY,
+        "20270107",
+        &["DTSTART", "DUE", "RRULE", "X-2DOAPP-METADATA"],
+    );
+    let want = parse(&fixture(B, "03-phone-act", CT)).unwrap();
+    assert_eq!(
+        todo(&want).prop("RRULE").unwrap().value,
+        "FREQ=MONTHLY;COUNT=2"
+    );
+}
+
+/// Complete `cal` where the series ends: the task itself is completed in place, no copy.
+/// TO CONFIRM in Task 15 (session C): no capture shows 2Do's last completion yet.
+fn check_series_ends(cal: &Calendar, rrule: &str, due: &str) {
+    let before = cal.clone();
+    let (live, copy) =
+        complete_recurring(cal, now(), today(), "0123456789abcdef0123456789abcdef").unwrap();
+    assert_eq!(cal, &before);
+    assert!(copy.is_none(), "no history copy when the series ends");
+    let t = todo(&live);
+    let v = |n: &str| t.prop(n).map(|p| p.value.clone());
+    assert_eq!(v("STATUS").as_deref(), Some("COMPLETED"));
+    assert_eq!(v("PERCENT-COMPLETE").as_deref(), Some("100"));
+    assert_eq!(v("COMPLETED"), Some(stamp(now())));
+    assert_eq!(v("RRULE").as_deref(), Some(rrule), "RRULE kept");
+    assert_eq!(v("DUE").as_deref(), Some(due), "due not moved");
+    assert_eq!(v("UID"), todo(&before).prop("UID").map(|p| p.value.clone()));
+    // Nothing else changes: same metadata, same start.
+    for name in ["X-2DOAPP-METADATA", "DTSTART", "SUMMARY"] {
+        assert_eq!(t.prop(name), todo(&before).prop(name), "{name}");
+    }
+}
+
+#[test]
+fn count_at_one_ends_the_series() {
+    let s = String::from_utf8(fixture(B, "02-twydo-reshape", CT))
+        .unwrap()
+        .replace("COUNT=3", "COUNT=1");
+    let mut cal = parse(s.as_bytes()).unwrap();
+    set_meta(&mut cal, "RecurrenceEndRepetitions", 1);
+    check_series_ends(&cal, "FREQ=MONTHLY;COUNT=1", "20261207");
+}
+
+fn un_with_due(due: &str) -> Calendar {
+    let s = String::from_utf8(fixture(B, "01-twydo-create", UN))
+        .unwrap()
+        .replace("20261207", due);
+    parse(s.as_bytes()).unwrap()
+}
+
+#[test]
+fn until_ends_after_the_date() {
+    // Due on the end date: the next (Jul 30) is past it.
+    check_series_ends(
+        &un_with_due("20270630"),
+        "FREQ=MONTHLY;UNTIL=20270630",
+        "20270630",
+    );
+    // Before it, the task advances, and RRULE is kept as it is.
+    let cal = un_with_due("20270530");
+    let (live, copy) = advance(&cal, now(), UN_COPY);
+    let t = todo(&live);
+    assert_eq!(t.prop("DUE").unwrap().value, "20270630");
+    assert_eq!(
+        t.prop("RRULE").unwrap().value,
+        "FREQ=MONTHLY;UNTIL=20270630"
+    );
+    assert_eq!(
+        t.prop("X-2DOAPP-METADATA"),
+        todo(&cal).prop("X-2DOAPP-METADATA")
+    );
+    // TO CONFIRM in Task 15 (session C): the copy drops the end as `CT`'s copy does
+    // (`RecurrenceEndType` 0); its `RecurrenceEndDate` is assumed to go with it.
+    let m = MetaJson::parse(&todo(&copy).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(m.get_i64("RecurrenceEndType"), Some(0));
+    assert_eq!(m.get_i64("RecurrenceEndDate"), None);
+    assert!(todo(&copy).prop("RRULE").is_none());
+}
+
+#[test]
+fn every_kind_completes_with_its_metadata() {
+    // A repeat Twydo writes (the codes `set_repeat` gives) completes for every kind.
+    let cases = [
+        ("FREQ=DAILY", 256, 1, "20261208"),
+        ("FREQ=DAILY;INTERVAL=3", 256, 3, "20261210"),
+        ("FREQ=WEEKLY", 257, 1, "20261214"),
+        ("FREQ=WEEKLY;INTERVAL=2", 257, 2, "20261221"),
+        ("FREQ=WEEKLY;BYDAY=MO,TH", 72, 1, "20261210"),
+        ("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", 124, 1, "20261208"),
+        // A due off the rule (Mon Dec 7) moves to the rule's next day: 2nd Tue Dec 8.
+        ("FREQ=MONTHLY;BYDAY=2TU", 261, 2, "20261208"),
+        ("FREQ=MONTHLY;BYDAY=-1FR", 264, -1, "20261225"),
+        ("FREQ=YEARLY", 259, 1, "20271207"),
+    ];
+    for (rule, kind, value, due) in cases {
+        let s = String::from_utf8(fixture(B, "02-twydo-reshape", M31))
+            .unwrap()
+            .replace("20261231", "20261207")
+            .replace("RRULE:FREQ=MONTHLY", &format!("RRULE:{rule}"));
+        let mut cal = parse(s.as_bytes()).unwrap();
+        set_meta(&mut cal, "RecurrenceType", kind);
+        set_meta(&mut cal, "RecurrenceValue", value);
+        let (live, copy) = advance(&cal, now(), M31_COPY);
+        assert_eq!(todo(&live).prop("DUE").unwrap().value, due, "{rule}");
+        assert_eq!(todo(&live).prop("DTSTART").unwrap().value, due, "{rule}");
+        assert_eq!(todo(&copy).prop("DUE").unwrap().value, "20261207", "{rule}");
+        // The wrong codes are refused.
+        set_meta(&mut cal, "RecurrenceType", 258);
+        set_meta(&mut cal, "RecurrenceValue", 1);
+        let err = complete_recurring(&cal, now(), today(), M31_COPY).unwrap_err();
+        assert!(
+            unsupported(&err).contains("RecurrenceType"),
+            "{rule}: {err:?}"
+        );
+    }
 }

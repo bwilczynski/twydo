@@ -104,9 +104,11 @@ refuses to write them in every mode, for example `months-last-day repeats are no
 2Do on the iPhone`.
 
 **Completing** works in Twydo only for a monthly repeat on a day from 1 to 28 and a yearly repeat
-(not 29 February), with no end and not from completion. Every other repeat (daily, weekly, set
-weekdays, Nth weekday, monthly on the 29th to 31st, 29 February, from completion, with an end by
-count or date) is refused and nothing is written. Complete those on the iPhone for now. `tdo check` lists the repeat kinds
+(not 29 February), with no end and not from completion. Twydo can work out the next date of every
+other kind it creates (daily, weekly, set weekdays, Nth weekday, monthly on the 29th to 31st,
+29 February, from completion, with an end by count or date), but until the phone has confirmed
+it does the same, those completions are refused and nothing is written. Complete those on the
+iPhone for now. `tdo check` lists the repeat kinds
 in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
@@ -118,6 +120,17 @@ In the TUI the cursor stays on the row where the task was, as after completing a
 it does not follow the task to its next date.
 
 How the next occurrence is found:
+
+- **From the current due date alone**, by the rule: every N days or weeks; the next day of a
+  set of weekdays; every N months or years by the calendar, a day the shorter month lacks
+  becoming its last day (a monthly task on January 31 moves to February 28, then to March 28;
+  a yearly one on February 29 moves to February 28); the Nth or last weekday of the next month
+  that has one. A repeat **from completion** counts from the day you complete it (or from its
+  start date, if that is later): a monthly task due December 7 completed on November 4 moves to
+  December 4.
+- **An end by count** counts down with each completion (`COUNT=3` becomes `COUNT=2`). Completing
+  the last occurrence, or one whose next date would be after the end date, completes the task
+  itself: no copy is added and the task stays in Done with its repeat.
 
 - **One interval per completion.** Missed occurrences are not skipped: a monthly task due
   August 15 and completed in November moves to September 15, still overdue. Complete it once per

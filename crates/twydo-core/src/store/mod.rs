@@ -676,14 +676,20 @@ impl Store {
                 let t = self.target(snap, uid)?;
                 if t.repeats {
                     // 2Do's copy-and-advance: the history copy first, then the live task.
+                    // The last occurrence of an ending series has no copy.
                     let copy_uid = new_uid();
-                    let (live, copy) = complete_recurring(&t.cal, now, &copy_uid)?;
-                    let copy = create(&t.collection, &copy_uid, &copy)?;
-                    Plan {
-                        kind: "complete",
-                        uids: vec![uid.clone(), copy_uid],
-                        writes: vec![copy, t.update(&live)?],
-                        holds: Vec::new(),
+                    let today = now.with_timezone(&snap.tz()).date_naive();
+                    match complete_recurring(&t.cal, now, today, &copy_uid)? {
+                        (live, Some(copy)) => {
+                            let copy = create(&t.collection, &copy_uid, &copy)?;
+                            Plan {
+                                kind: "complete",
+                                uids: vec![uid.clone(), copy_uid],
+                                writes: vec![copy, t.update(&live)?],
+                                holds: Vec::new(),
+                            }
+                        }
+                        (live, None) => one("complete", uid, t.update(&live)?),
                     }
                 } else {
                     let mut cal = t.cal.clone();

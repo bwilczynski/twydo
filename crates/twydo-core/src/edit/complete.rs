@@ -8,15 +8,16 @@
 //!   copy-and-advance. The live task's due date moves to the next occurrence, and a completed
 //!   history copy with a new UID records the occurrence that was done.
 //!
-//! Only the captured repeat shape is supported: a date-only or floating-time `DUE` (the time
-//! is kept), `RRULE` `FREQ=MONTHLY` or `FREQ=YEARLY` with an optional `INTERVAL`, repeating
-//! from the due date. A JSON `StartDate` moves by as many days as the due date (H11, gap
-//! session round 04), and a JSON `uid`
-//! naming the task (a project) is rewritten to the copy's UID. Anything else is
+//! Every repeat kind Twydo can create completes (see [`next_due`]): a date-only or
+//! floating-time `DUE` (the time is kept), from the due date or from completion, with an
+//! optional `COUNT` or `UNTIL` end (session B, `plan7-twydo-list1/03-phone-act`). A JSON
+//! `StartDate` moves by as many days as the due date (H11, gap session round 04), and a JSON
+//! `uid` naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
 
-use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc, Weekday};
 
+use super::repeat::twodo_codes;
 use super::{
     EditError, Meta, has_own_dtstart, meta_of, set_date_prop, the_todo, touch, unsupported,
     write_meta,
@@ -26,11 +27,9 @@ use crate::ical::{Calendar, Component, Property};
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{End, Freq, RRule, parse_rrule};
 
-/// 2Do's `RecurrenceType` codes for the verified frequencies (reference 01 §6).
-const TYPE_MONTHLY: i64 = 0x102;
-const TYPE_YEARLY: i64 = 0x103;
-/// `RecurrenceFrom` of a task that repeats from its due date (the only value captured).
+/// `RecurrenceFrom` of a task that repeats from its due date, and from completion (01 §6).
 const FROM_DUE: i64 = 1;
+const FROM_COMPLETION: i64 = 2;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum State {
@@ -182,48 +181,42 @@ pub(super) fn rule_text(r: &RRule) -> String {
     parts.join(";")
 }
 
-/// `d` moved forward by `months`. A result on another day of the month (day 29-31 or Feb 29,
-/// which the gate excludes) is refused rather than clamped.
-pub fn shift_months(d: NaiveDate, months: u32) -> Result<NaiveDate, EditError> {
-    let next = d
-        .checked_add_months(Months::new(months))
-        .ok_or_else(|| unsupported("date is out of range"))?;
-    if next.day() != d.day() {
-        return Err(unsupported(format!(
-            "the next date would not fall on day {} of the month",
-            d.day()
-        )));
-    }
-    Ok(next)
+/// The repeat kinds Twydo completes: everything it can create (`repeatinput`). The kinds
+/// 2Do 3.91 on the iPhone cannot show (last day, Nth workday, Nth weekend day; session B) and
+/// shapes Twydo never writes are refused.
+enum Step {
+    /// `FREQ=DAILY` (N days) and plain `FREQ=WEEKLY` (7N days).
+    Days(u64),
+    /// Plain `FREQ=MONTHLY` (N months) and `FREQ=YEARLY` (12N months).
+    Months(u32),
+    /// `FREQ=WEEKLY;BYDAY=<set>`, 2Do's weekday bitmask (no interval).
+    Weekdays(Vec<Weekday>),
+    /// `FREQ=MONTHLY;BYDAY=<n><day>`, n 1..=5 or -1 (last).
+    NthWeekday(i8, Weekday),
 }
 
-/// [`shift_months`] with the refusal worded for `what` ("due" or "start").
-fn shift_named(d: NaiveDate, months: u32, what: &str) -> Result<NaiveDate, EditError> {
-    shift_months(d, months).map_err(|e| match e {
-        EditError::Unsupported(m) if m.starts_with("the next date") => unsupported(format!(
-            "next {what} date after {d} would not fall on day {} of the month",
-            d.day()
-        )),
-        EditError::Unsupported(_) => unsupported(format!("next {what} date is out of range")),
-        e => e,
-    })
-}
-
-/// The months one repeat interval spans. Verified shape only: `FREQ=MONTHLY|YEARLY` with an
-/// optional `INTERVAL` and nothing else.
-fn rule_months(rule: &RRule) -> Result<u32, EditError> {
-    let plain = rule.by_day.is_empty()
-        && rule.by_month_day.is_empty()
+fn step_of(rule: &RRule) -> Result<Step, EditError> {
+    let plain = rule.by_month_day.is_empty()
         && rule.by_month.is_empty()
         && rule.by_set_pos.is_empty()
-        && rule.end == End::Never
-        && rule.unknown.is_empty();
-    let months = match rule.freq {
-        Freq::Monthly if plain => Some(rule.interval),
-        Freq::Yearly if plain => rule.interval.checked_mul(12),
+        && rule.unknown.is_empty()
+        && rule.interval >= 1;
+    let n = rule.interval;
+    let step = match (rule.freq, rule.by_day.as_slice()) {
+        _ if !plain => None,
+        (Freq::Daily, []) => Some(Step::Days(u64::from(n))),
+        (Freq::Weekly, []) => Some(Step::Days(u64::from(n) * 7)),
+        (Freq::Weekly, days) if n == 1 && days.iter().all(|(o, _)| o.is_none()) => {
+            Some(Step::Weekdays(days.iter().map(|(_, w)| *w).collect()))
+        }
+        (Freq::Monthly, []) => Some(Step::Months(n)),
+        (Freq::Monthly, [(Some(o), w)]) if n == 1 && matches!(o, 1..=5 | -1) => {
+            Some(Step::NthWeekday(*o, *w))
+        }
+        (Freq::Yearly, []) => n.checked_mul(12).map(Step::Months),
         _ => None,
     };
-    months.filter(|&m| m >= 1).ok_or_else(|| {
+    step.ok_or_else(|| {
         unsupported(format!(
             "repeat rule shape not verified: {}",
             rule_text(rule)
@@ -231,57 +224,152 @@ fn rule_months(rule: &RRule) -> Result<u32, EditError> {
     })
 }
 
-/// The next due date of a date-only repeat (see [`rule_months`] and [`shift_months`]).
-pub fn next_due(due: NaiveDate, rule: &RRule) -> Result<NaiveDate, EditError> {
-    shift_named(due, rule_months(rule)?, "due")
+/// The `n`th (`-1` = last) `w` of the month.
+fn nth_weekday(year: i32, month: u32, n: i8, w: Weekday) -> Option<NaiveDate> {
+    if n > 0 {
+        return NaiveDate::from_weekday_of_month_opt(year, month, w, n.unsigned_abs());
+    }
+    let first = NaiveDate::from_ymd_opt(year, month, 1)?;
+    let last = first.checked_add_months(Months::new(1))?.pred_opt()?;
+    let back = (7 + last.weekday().num_days_from_monday() - w.num_days_from_monday()) % 7;
+    last.checked_sub_days(Days::new(u64::from(back)))
 }
 
-/// The JSON repeat fields must describe the same verified rule as `RRULE`: repeat from the
-/// due date, matching type and interval, no end.
-fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<(), EditError> {
-    let want_type = match rule.freq {
-        Freq::Monthly => TYPE_MONTHLY,
-        Freq::Yearly => TYPE_YEARLY,
-        _ => return Err(unsupported("repeat rule shape not verified")),
+/// The first `n`th `w` of a month after `base`. A month without one (a 5th Tuesday) is
+/// skipped, as RFC 5545 does.
+fn nth_weekday_after(base: NaiveDate, n: i8, w: Weekday) -> Option<NaiveDate> {
+    let mut month = base.with_day(1)?;
+    for _ in 0..24 {
+        if let Some(d) = nth_weekday(month.year(), month.month(), n, w)
+            && d > base
+        {
+            return Some(d);
+        }
+        month = month.checked_add_months(Months::new(1))?;
+    }
+    None
+}
+
+/// The date part of an `UNTIL`.
+fn until_date(u: &IcalDateTime) -> NaiveDate {
+    match u {
+        IcalDateTime::Date(d) => *d,
+        IcalDateTime::Floating(n) => n.date(),
+        IcalDateTime::Utc(t) => t.date_naive(),
+        IcalDateTime::Zoned { local, .. } => local.date(),
+    }
+}
+
+/// The next due date of a repeat whose current due date is `due`. `from` is the day a
+/// from-completion rule counts from (see [`completion_base`]); `None` counts from `due`.
+/// `Ok(None)`: the rule has ended (`COUNT=1`, or the next date is after `UNTIL`), so
+/// completing finishes the series.
+///
+/// Stateless, from the one date given (2Do keeps no other day): every N days or weeks; a
+/// weekday set's next day in the set; every N calendar months or years, a day the shorter
+/// month lacks becoming its last day (Jan 31 -> Feb 28, Feb 29 -> Feb 28; then the 28th);
+/// the Nth or last weekday of the next month that has one.
+pub fn next_due(
+    due: NaiveDate,
+    rule: &RRule,
+    from: Option<NaiveDate>,
+) -> Result<Option<NaiveDate>, EditError> {
+    let step = step_of(rule)?;
+    let base = from.unwrap_or(due);
+    let next = match step {
+        Step::Days(n) => base.checked_add_days(Days::new(n)),
+        Step::Months(n) => base.checked_add_months(Months::new(n)),
+        Step::Weekdays(set) => (1..=7)
+            .filter_map(|i| base.checked_add_days(Days::new(i)))
+            .find(|d| set.contains(&d.weekday())),
+        Step::NthWeekday(n, w) => nth_weekday_after(base, n, w),
+    }
+    .ok_or_else(|| unsupported("next due date is out of range"))?;
+    let ended = match &rule.end {
+        End::Never => false,
+        End::Count(n) => *n <= 1,
+        End::Until(u) => next > until_date(u),
     };
-    let checks = [
-        ("RecurrenceFrom", Some(FROM_DUE)),
-        ("RecurrenceType", Some(want_type)),
-        ("RecurrenceValue", Some(i64::from(rule.interval))),
-    ];
-    for (key, want) in checks {
+    Ok((!ended).then_some(next))
+}
+
+/// The day a from-completion repeat counts from: the completion day, or the task's 2Do start
+/// date (JSON `StartDate`, UTC midnight) if that is later (reference 01 §6).
+pub fn completion_base(today: NaiveDate, start_secs: Option<i64>) -> NaiveDate {
+    start_secs
+        .filter(|s| *s > 0 && s % 86_400 == 0)
+        .and_then(|s| DateTime::from_timestamp(s, 0))
+        .map(|t| t.date_naive())
+        .map_or(today, |start| start.max(today))
+}
+
+/// The JSON repeat fields must describe the same rule as `RRULE`: the codes Twydo and the
+/// phone write for it ([`twodo_codes`]), from the due date (1) or from completion (2), and the
+/// matching end. Returns whether the rule repeats from completion.
+fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
+    let refuse = |key: &str, got: Option<i64>| {
+        unsupported(format!(
+            "2Do repeat metadata not verified for completion: {key} = {}",
+            got.map_or("missing".to_string(), |v| v.to_string())
+        ))
+    };
+    let from = m.get_i64("RecurrenceFrom");
+    let from_completion = match from {
+        Some(FROM_DUE) => false,
+        Some(FROM_COMPLETION) => true,
+        _ => return Err(refuse("RecurrenceFrom", from)),
+    };
+    let (kind, value) = twodo_codes(rule);
+    for (key, want) in [("RecurrenceType", kind), ("RecurrenceValue", value)] {
         let got = m.get_i64(key);
-        if got != want {
-            return Err(unsupported(format!(
-                "2Do repeat metadata not verified for completion: {key} = {}",
-                got.map_or("missing".to_string(), |v| v.to_string())
-            )));
+        if got != Some(want) {
+            return Err(refuse(key, got));
         }
     }
-    if let Some(t) = m.get_i64("RecurrenceEndType")
-        && t != 0
-    {
-        return Err(unsupported(format!(
-            "2Do repeat metadata not verified for completion: RecurrenceEndType = {t}"
-        )));
+    let end = m.get_i64("RecurrenceEndType");
+    let end_ok = match &rule.end {
+        End::Never => end.is_none_or(|t| t == 0),
+        End::Count(n) => {
+            end == Some(2) && m.get_i64("RecurrenceEndRepetitions") == Some(i64::from(*n))
+        }
+        End::Until(_) => end == Some(1),
+    };
+    if !end_ok {
+        return Err(refuse("RecurrenceEndType", end));
     }
-    Ok(())
+    Ok(from_completion)
 }
 
-/// Complete a repeating task the way 2Do does. Returns (the advanced live resource, the
-/// completed history copy with UID `copy_uid`); `cal` is not changed.
+/// `raw` (an RRULE value) with its `COUNT` part set to `n`, every other part as written.
+fn with_count(raw: &str, n: u32) -> String {
+    raw.split(';')
+        .map(|part| match part.split_once('=') {
+            Some((k, _)) if k.trim().eq_ignore_ascii_case("COUNT") => format!("{k}={n}"),
+            _ => part.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Complete a repeating task the way 2Do does. Returns the live resource and, when the series
+/// goes on, the completed history copy with UID `copy_uid`; `cal` is not changed. `today` is
+/// the completion day, which a from-completion rule counts from.
 ///
-/// - Live: `DUE` and its `DTSTART` mirror move by one interval (a floating time keeps its
-///   time), as does JSON `StartDate`; stamps touched.
+/// - Live: `DUE` and its `DTSTART` mirror move to [`next_due`] (a floating time keeps its
+///   time), JSON `StartDate` by as many days; a `COUNT` and JSON `RecurrenceEndRepetitions`
+///   count down by one (`CT`, session B); stamps touched.
 /// - Copy: cloned from `cal`; `UID` = `copy_uid`, stamps touched, completed (`STATUS`,
 ///   `PERCENT-COMPLETE`, `COMPLETED`), `RRULE` removed, JSON `RecurrenceValue`,
-///   `RecurrenceType`, `RecurrenceFrom` = 0, `RUID` kept (set to the original UID if missing
-///   or empty).
+///   `RecurrenceType`, `RecurrenceFrom` and the end keys = 0 (`RecurrenceEndDate` removed),
+///   `RUID` kept (set to the original UID if missing or empty).
+/// - Last occurrence (`COUNT=1`, or the next date after `UNTIL`): no copy; the live task is
+///   completed in place, its `RRULE`, due and metadata kept.
 pub fn complete_recurring(
     cal: &Calendar,
     now: DateTime<Utc>,
+    today: NaiveDate,
     copy_uid: &str,
-) -> Result<(Calendar, Calendar), EditError> {
+) -> Result<(Calendar, Option<Calendar>), EditError> {
     let mut live = cal.clone();
     let todo = the_todo(&mut live)?;
     let uid = todo
@@ -314,19 +402,12 @@ pub fn complete_recurring(
         }
         Err(e) => return Err(unsupported(format!("unreadable due date: {e}"))),
     };
-    let months = rule_months(&rule).map_err(|e| match e {
-        EditError::Unsupported(m) if m.starts_with("repeat rule shape") => {
-            unsupported(format!("repeat rule shape not verified: {raw}"))
-        }
-        e => e,
-    })?;
-    let next = match &due {
-        IcalDateTime::Floating(t) => {
-            IcalDateTime::Floating(shift_named(t.date(), months, "due")?.and_time(t.time()))
-        }
-        IcalDateTime::Date(d) => IcalDateTime::Date(shift_named(*d, months, "due")?),
+    let due_date = match &due {
+        IcalDateTime::Floating(t) => t.date(),
+        IcalDateTime::Date(d) => *d,
         _ => unreachable!("zoned due times are refused above"),
     };
+    step_of(&rule).map_err(|_| unsupported(format!("repeat rule shape not verified: {raw}")))?;
     let meta = match meta_of(todo) {
         Meta::Json(m) => m,
         _ => {
@@ -335,32 +416,44 @@ pub fn complete_recurring(
             ));
         }
     };
-    check_repeat_meta(&meta, &rule)?;
+    let from_completion = check_repeat_meta(&meta, &rule)?;
     let mirror = todo.prop("DTSTART").is_some();
     if mirror && has_own_dtstart(todo) {
         return Err(unsupported(
             "completing a repeat with its own start (DTSTART) is not verified",
         ));
     }
-
-    // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
-    // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
-    // 2027-02-13 -> 2028-02-14 (`gap-list1/04-phone-complete`).
-    let (due_date, next_date) = match (&due, &next) {
-        (IcalDateTime::Floating(a), IcalDateTime::Floating(b)) => (a.date(), b.date()),
-        (IcalDateTime::Date(a), IcalDateTime::Date(b)) => (*a, *b),
-        _ => unreachable!("the next due keeps the due's form"),
-    };
-    let mut live_meta = meta.clone();
-    if let Some(secs) = meta.get_i64("StartDate") {
-        if secs <= 0 || secs % 86_400 != 0 {
+    let start = match meta.get_i64("StartDate") {
+        None => None,
+        Some(secs) if secs <= 0 || secs % 86_400 != 0 => {
             return Err(unsupported(
                 "completing a repeat with an unusual start date is not verified",
             ));
         }
-        let start = DateTime::from_timestamp(secs, 0)
-            .map(|t| t.date_naive())
-            .ok_or_else(|| unsupported("2Do start date is out of range"))?;
+        Some(secs) => Some(
+            DateTime::from_timestamp(secs, 0)
+                .map(|t| t.date_naive())
+                .ok_or_else(|| unsupported("2Do start date is out of range"))?,
+        ),
+    };
+    let from = from_completion.then(|| completion_base(today, meta.get_i64("StartDate")));
+
+    let Some(next_date) = next_due(due_date, &rule, from)? else {
+        // The series ends with this occurrence: the task itself is done.
+        mark_completed(todo, now);
+        touch(todo, now);
+        return Ok((live, None));
+    };
+    let next = match &due {
+        IcalDateTime::Floating(t) => IcalDateTime::Floating(next_date.and_time(t.time())),
+        _ => IcalDateTime::Date(next_date),
+    };
+
+    // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
+    // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
+    // 2027-02-13 -> 2028-02-14 (`gap-list1/04-phone-complete`).
+    let mut live_meta = meta.clone();
+    if let Some(start) = start {
         let next_start = start
             .checked_add_signed(next_date - due_date)
             .ok_or_else(|| unsupported("next start date is out of range"))?;
@@ -368,6 +461,13 @@ pub fn complete_recurring(
             "StartDate",
             next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
         );
+    }
+    if let End::Count(n) = rule.end {
+        let left = n - 1;
+        if let Some(p) = todo.prop_mut("RRULE") {
+            p.set_value(&with_count(&raw, left));
+        }
+        live_meta.set_i64("RecurrenceEndRepetitions", i64::from(left));
     }
 
     if mirror {
@@ -389,6 +489,17 @@ pub fn complete_recurring(
     for key in ["RecurrenceValue", "RecurrenceType", "RecurrenceFrom"] {
         m.set_i64(key, 0);
     }
+    // `CT`'s copy (session B): the end goes too.
+    for key in [
+        "RecurrenceEndType",
+        "RecurrenceEndRepetitions",
+        "RecurrenceEndRepetitionsOrig",
+    ] {
+        if m.get_i64(key).is_some() {
+            m.set_i64(key, 0);
+        }
+    }
+    m.remove("RecurrenceEndDate");
     if m.get_str("uid") == Some(uid.as_str()) {
         m.set_str("uid", copy_uid);
     }
@@ -396,5 +507,5 @@ pub fn complete_recurring(
         m.set_str("RUID", &uid);
     }
     write_meta(t, Some(&meta), &m);
-    Ok((live, copy))
+    Ok((live, Some(copy)))
 }
