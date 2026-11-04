@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "110-twydo-second-reset-reshape-and-end"
+device = "twydo"
+action = "Approved fixed-binary round: complete all-done FCb parent again; reshape RDb weekly and RYb monthly; complete U1b/U2b final originals. Capture completed state before reopening."
+captured_at = "2026-11-04T15:09:48Z"

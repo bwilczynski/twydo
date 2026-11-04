@@ -601,3 +601,33 @@ weekly/monthly, and complete then reopen U1b/U2b with the fixed writer, capturin
 intermediate completed state before reopen. Obtain explicit approval for these new writes
 and sync before running them. Device rechecks and the remaining repeat-removal/reshape
 steps still precede any broad capability promotion.
+
+### 110/111/112 — second checklist reset, repeat reshaping and Twydo-ended reopen uploaded
+
+The user explicitly approved completing FCb again, changing RDb to weekly and RYb to monthly,
+and completing then reopening U1b/U2b with both intermediate states captured, followed by sync.
+The fixed binary ran exactly these seven operations. The private process-only candidate
+configuration retains the shared production vdir/state/lock and disables after-edit sync;
+only the scratch matrix overrides `mod:until.execute`. Normal configuration remains verified.
+
+- `110-twydo-second-reset-reshape-and-end`: FCb advances January 10 → February 10 with note
+  `x`; all three live items reopen without dates. Four checklist history resources are added;
+  the January 10 parent copy is completed, and every child copy retains its individual phone
+  completion time from step 100. Those child copies have no native dates, matching their
+  live source items. RDb becomes weekly and RYb monthly, retaining December 7 due and series
+  identity. U1b/U2b finish in place, retaining rule/due/end metadata, with no extra history.
+- `111-twydo-ended-originals-reopened`: only U1b/U2b change, reopening in place with due
+  November 20 / March 7 and their rules/identities/end metadata retained. No resource is
+  created or removed. This captures Twydo's own ended-series reopen writer separately from
+  the phone's earlier reopening of Twydo-completed data.
+- `112-twydo-second-round-upload`: normal-config sync succeeds, preserving all resource
+  bytes from 111. A contains 40 resources and B zero. Across the round, only eight expected
+  existing b-twin resources changed and four checklist history resources were created. All
+  a twins, earlier history, other synthetic resources and unrelated production bytes remain
+  unchanged. Privacy scans passed before the synthetic captures entered the repository.
+
+`plan8_batch1.rs` replays the whole round through the candidate store, compares every resource
+at both intermediate states under explicit generated-history identity mappings, verifies the
+five initial journal entries (8/1/1/1/1 resources) plus two single-resource reopen entries,
+and asserts exact upload preservation. Actual phone inspection/follow-up is still pending;
+no embedded operation/rule verdict is promoted by this local/upload checkpoint.

@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "112-twydo-second-round-upload"
+device = "twydo"
+action = "Normal-config upload of the second checklist reset, RDb/RYb reshaping and Twydo-ended original reopening; awaiting phone inspection and follow-up."
+captured_at = "2026-11-04T15:09:57Z"

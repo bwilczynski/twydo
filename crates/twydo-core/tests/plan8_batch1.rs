@@ -597,6 +597,9 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "090-twydo-checklist-reset-and-until-end",
         "091-twydo-reset-and-end-upload",
         "100-phone-items-and-ended-reopen",
+        "110-twydo-second-reset-reshape-and-end",
+        "111-twydo-ended-originals-reopened",
+        "112-twydo-second-round-upload",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -863,4 +866,129 @@ fn phone_item_completion_and_ended_reopen_after_twydo_reset_match_store() {
         fixture(SCENARIO, AFTER, parent),
         "completing all items leaves the parent byte-unchanged"
     );
+}
+
+#[test]
+fn second_checklist_reset_reshape_and_twydo_ended_reopen_match_captures() {
+    const BEFORE: &str = "100-phone-items-and-ended-reopen";
+    const ENDED: &str = "110-twydo-second-reset-reshape-and-end";
+    const OPEN: &str = "111-twydo-ended-originals-reopened";
+    const UPLOADED: &str = "112-twydo-second-round-upload";
+    let before = step_files(BEFORE);
+    let ended = step_files(ENDED);
+    let uid = |title: &str| {
+        before
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == title && todo(c).prop("RRULE").is_some()
+            })
+            .unwrap()
+            .0
+            .clone()
+    };
+    let history: BTreeMap<_, _> = ended
+        .iter()
+        .filter(|(id, _)| !before.contains_key(*id))
+        .map(|(id, c)| (todo(c).prop("SUMMARY").unwrap().value.clone(), id.clone()))
+        .collect();
+    assert_eq!(history.len(), 4);
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+    let mut matrix = candidate();
+    // These repeat changes are still candidates pending this round's phone follow-up.
+    for case in ["daily", "yearly"] {
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == case && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+    }
+    let mut store = env.store(matrix);
+    for title in ["FCb", "RDb", "RYb", "U1b", "U2b"] {
+        let id = uid(title);
+        let (op, now) = if title == "RDb" || title == "RYb" {
+            let now = dtstamp(&ended[&id]);
+            let rule = if title == "RDb" { "weekly" } else { "monthly" };
+            (
+                Op::Edit {
+                    uid: id,
+                    changes: vec![Change::Repeat(
+                        twydo_core::repeatinput::parse(rule, now.date_naive(), &[]).unwrap(),
+                    )],
+                },
+                now,
+            )
+        } else {
+            let done = if title == "FCb" {
+                &ended[&history[title]]
+            } else {
+                &ended[&id]
+            };
+            (Op::Complete { uid: id }, completed(done))
+        };
+        store.apply(&env.snap(), &op, now).unwrap();
+    }
+    let journal = env.journal();
+    let mut counts: Vec<_> = journal.iter().map(|e| e.writes.len()).collect();
+    counts.sort_unstable();
+    assert_eq!(counts, [1, 1, 1, 1, 8]);
+    let ids: BTreeMap<_, _> = journal
+        .iter()
+        .flat_map(|e| &e.writes)
+        .filter(|w| w.before.is_none())
+        .map(|w| {
+            let c = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+            (
+                todo(&c).prop("UID").unwrap().value.clone(),
+                history[&todo(&c).prop("SUMMARY").unwrap().value].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(ids.len(), 4);
+    for step in [ENDED, OPEN] {
+        let want = step_files(step);
+        if step == OPEN {
+            for title in ["U1b", "U2b"] {
+                let id = uid(title);
+                store
+                    .apply(
+                        &env.snap(),
+                        &Op::Reopen { uid: id.clone() },
+                        dtstamp(&want[&id]),
+                    )
+                    .unwrap();
+            }
+            assert_eq!(env.journal().len(), 7);
+        }
+        let files = env.files();
+        let tasks: Vec<_> = files
+            .iter()
+            .filter(|(path, _)| path.ends_with(".ics"))
+            .collect();
+        assert_eq!(tasks.len(), want.len());
+        for (_, bytes) in tasks {
+            let got = parse(bytes).unwrap();
+            let ours = &todo(&got).prop("UID").unwrap().value;
+            let theirs = ids.get(ours).unwrap_or(ours);
+            same(
+                &format!("second round {step} {theirs}"),
+                &got,
+                &want[theirs],
+                &ids,
+            );
+        }
+    }
+    let open = step_files(OPEN);
+    let uploaded = step_files(UPLOADED);
+    assert_eq!(
+        open.keys().collect::<Vec<_>>(),
+        uploaded.keys().collect::<Vec<_>>()
+    );
+    for id in open.keys() {
+        assert_eq!(
+            fixture(SCENARIO, OPEN, id),
+            fixture(SCENARIO, UPLOADED, id),
+            "upload preserves {id}"
+        );
+    }
 }
