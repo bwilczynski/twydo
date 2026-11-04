@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "091-twydo-reset-and-end-upload"
+device = "twydo"
+action = "Normal-config upload of fixed checklist reset and final until completions; awaiting phone inspection and follow-up."
+captured_at = "2026-11-04T14:55:43Z"

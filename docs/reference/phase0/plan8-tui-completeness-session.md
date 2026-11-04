@@ -547,3 +547,32 @@ twins, other synthetic resources and unrelated production bytes remain unchanged
 This is intermediate round-trip evidence, not completion of the planned transitions: rule
 removal/reshaping, checklist family reset and ending/reopening still need their fixed-binary
 phone checks. No matrix verdict is promoted at this checkpoint.
+
+
+### 090/091 — fixed checklist reset and final until occurrences uploaded
+
+After step 080, the user explicitly approved completing **FCb**, finishing **U1b/U2b**, and
+syncing those synthetic results for phone inspection. The fixed binary ran only those three
+operations, using the same private process-only candidate configuration and shared production
+lock/journal identity. The scratch matrix overrides only `mod:until.execute`; the normal
+configuration remains verified. No other operation or cleanup was authorized by this round.
+
+Pre-upload `090-twydo-checklist-reset-and-until-end` and post-upload
+`091-twydo-reset-and-end-upload` contain 36 resources in A, zero in B. Six live resources
+changed and four checklist history resources were created. All a twins, other synthetic
+resources and unrelated production bytes remain unchanged; upload preserved every resource's
+bytes. Privacy scans passed before copying these synthetic captures into the repository.
+
+- **FCb:** monthly live checklist advances December 10 → January 10, retains note `x`, and
+  its three live items reopen with inherited DUE/DTSTART removed. The completed December 10
+  checklist and three completed item copies have fresh identities/links; item 2's history
+  retains its earlier completion timestamp.
+- **U1b / U2b:** final originals complete in place, due November 20 / March 7, retaining RRULE
+  and all end metadata. No additional until history copies are created.
+- `plan8_batch1.rs` replays these operations through the store against the captured output,
+  checks the 8/1/1-resource journal entries, and asserts exact upload preservation. Existing
+  checklist tests cover undo/redo/recovery and refusal of uncaptured scheduling shapes.
+
+Await actual phone inspection of the fixed checklist reset and final originals before claiming
+this device round trip. Later phone follow-ups and Twydo-ended reopen still need their planned
+checks. No operation/rule verdict is promoted merely because local validation/upload passed.

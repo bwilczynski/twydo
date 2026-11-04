@@ -594,6 +594,8 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "070-twydo-first-transitions",
         "071-twydo-first-upload",
         "080-phone-check-twydo-first",
+        "090-twydo-checklist-reset-and-until-end",
+        "091-twydo-reset-and-end-upload",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -693,6 +695,86 @@ fn first_twydo_upload_and_phone_followup_match_the_writers() {
     for id in local.keys() {
         assert_eq!(
             fixture(SCENARIO, LOCAL, id),
+            fixture(SCENARIO, UPLOADED, id),
+            "upload preserves {id}"
+        );
+    }
+}
+
+#[test]
+fn fixed_checklist_reset_and_until_end_match_preupload_capture() {
+    const BEFORE: &str = "080-phone-check-twydo-first";
+    const AFTER: &str = "090-twydo-checklist-reset-and-until-end";
+    const UPLOADED: &str = "091-twydo-reset-and-end-upload";
+    let before = step_files(BEFORE);
+    let want = step_files(AFTER);
+    let uid = |title: &str| {
+        before
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == title && todo(c).prop("RRULE").is_some()
+            })
+            .unwrap()
+            .0
+            .clone()
+    };
+    let history: BTreeMap<_, _> = want
+        .iter()
+        .filter(|(id, _)| !before.contains_key(*id))
+        .map(|(id, c)| (todo(c).prop("SUMMARY").unwrap().value.clone(), id.clone()))
+        .collect();
+    assert_eq!(history.len(), 4);
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+    let mut store = env.store(candidate());
+    for title in ["FCb", "U1b", "U2b"] {
+        let id = uid(title);
+        let done = if title == "FCb" {
+            &want[&history[title]]
+        } else {
+            &want[&id]
+        };
+        store
+            .apply(&env.snap(), &Op::Complete { uid: id }, completed(done))
+            .unwrap();
+    }
+    let journal = env.journal();
+    assert_eq!(
+        journal.iter().map(|e| e.writes.len()).collect::<Vec<_>>(),
+        [8, 1, 1]
+    );
+    let ids: BTreeMap<_, _> = journal
+        .iter()
+        .flat_map(|e| &e.writes)
+        .filter(|w| w.before.is_none())
+        .map(|w| {
+            let c = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+            (
+                todo(&c).prop("UID").unwrap().value.clone(),
+                history[&todo(&c).prop("SUMMARY").unwrap().value].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(ids.len(), 4, "only checklist history is created");
+    let files = env.files();
+    let tasks: Vec<_> = files
+        .iter()
+        .filter(|(path, _)| path.ends_with(".ics"))
+        .collect();
+    assert_eq!(tasks.len(), want.len());
+    for (_, bytes) in tasks {
+        let got = parse(bytes).unwrap();
+        let ours = &todo(&got).prop("UID").unwrap().value;
+        let theirs = ids.get(ours).unwrap_or(ours);
+        same(&format!("fixed round {theirs}"), &got, &want[theirs], &ids);
+    }
+    let uploaded = step_files(UPLOADED);
+    assert_eq!(
+        want.keys().collect::<Vec<_>>(),
+        uploaded.keys().collect::<Vec<_>>()
+    );
+    for id in want.keys() {
+        assert_eq!(
+            fixture(SCENARIO, AFTER, id),
             fixture(SCENARIO, UPLOADED, id),
             "upload preserves {id}"
         );
