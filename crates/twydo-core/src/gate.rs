@@ -51,8 +51,9 @@
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
 //!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
 //! 5. the verified shape of a repeating completion (a recurring project's rule must have no
-//!    end and repeat from its due date); a completed repeating task (the last
-//!    occurrence of an ended series, completed in place) is not reopened (use undo);
+//!    end and repeat from its due date); a completed repeating task (the last occurrence of
+//!    an ended series, completed in place) is not reopened (use undo), checked right after
+//!    rule 2 so the reason is not a matrix row;
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
 //!    rule 3 (so the write mode applies).
 
@@ -184,6 +185,15 @@ pub fn check(
         (None, _) => unreachable!("only a create has no target"),
     };
 
+    // Rule 5b before the rows: the last occurrence of an ended series, completed in place,
+    // keeps its RRULE; reopening it is not supported (undo restores it).
+    if let (Some(i), Op::Reopen { .. }) = (target, op)
+        && snap.tasks[i].status == Status::Completed
+        && snap.tasks[i].rrule.is_some()
+    {
+        return blocked(REOPEN_ENDED);
+    }
+
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
 
@@ -264,15 +274,6 @@ pub fn check(
             }
             recurring_complete_shape(task, m, today)?;
         }
-    }
-
-    // Rule 5b: the last occurrence of an ended series, completed in place, keeps its RRULE;
-    // reopening it is not supported (undo restores it).
-    if let Op::Reopen { .. } = op
-        && task.status == Status::Completed
-        && task.rrule.is_some()
-    {
-        return blocked(REOPEN_ENDED);
     }
 
     // Rule 6: a history copy left by completing a repeat.
