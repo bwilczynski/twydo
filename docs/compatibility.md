@@ -82,7 +82,19 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 
 ## What is verified today
 
-| Kind of task | Create | Edit | Complete | Reopen | Move | Delete |
+The [editing-completeness audit and plan](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+tracks the remaining operations, imported-shape restrictions and later editing features. The
+table below summarizes individual matrix cases, not every combination: a recurring project
+also needs its own repeat's operation rows, for example, so its monthly/yearly repeat can still
+block a move even though the recurring-project row passes. `tdo op check <uid>` gives the
+effective result for an existing task.
+
+The [Plan 8 phone session](reference/phase0/plan8-tui-completeness-session.md#regression-test-map)
+finished its first batch: five logical synthetic cases, eight newly passing operation rows,
+and narrowly guarded `until` execution. Its later project/item, lifecycle and native-date
+batches remain unfinished. A passing row is combined with the shape restrictions below.
+
+| Kind of task | Create | Ordinary edit | Complete | Reopen | Move | Delete |
 |---|---|---|---|---|---|---|
 | One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Monthly repeat (any day, Nth weekday) | ✅ | ✅ | ✅ | — | — | ✅ |
@@ -91,68 +103,59 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 | Weekly repeat | ✅ | ✅ | ✅ | — | — | — |
 | Repeat from completion | ✅ | — | ✅ | — | — | — |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring checklist | — | — | Monthly only | — | — | — |
+| Recurring checklist | — | — | Monthly only¹ | — | — | — |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
 
-"—" means not verified yet. The Complete column is the matrix row, but the gate also needs
-the repeat rule's own `execute` verdict. Since Plan 7 session C every repeat kind Twydo creates
-passes it but an end date: daily, weekly, on set weekdays, monthly on any day (the 29th to 31st
-included), the Nth or last weekday, yearly (29 February included), from completion, and repeats
-with an end by count. A repeat with an end date (`mod:until`) stays unverified: only its last
-occurrence was captured, not one that moves on. A recurring project whose repeat ends or counts
-from completion is refused to complete in every mode (not captured for families). The phone
-completed one copy of each kind and Twydo an identical copy, and
-Twydo's result equals the phone's byte for byte (see
-[`plan7-capture.md`](reference/phase0/plan7-capture.md), session C). For a repeating
-task, "Edit" covers the due date, title and other fields, and changing the repeat's interval,
-not setting, removing or reshaping the repeat (the `repeat` rows). Interval-only changes are
-allowed within a class whose rule `edit` verdict passes and whose task row `edit` passes: daily,
-weekly, monthly and yearly tasks. The same interval encoding is accepted as verified for the
-29th to 31st, 29 February, and repeats with an end, so those can change interval when their
-task's `edit` row passes. An Nth-weekday repeat's interval is never changed: 2Do keeps its
-ordinal where the interval would go. Nor does a repeat on set weekdays get one, in any mode:
-Twydo completes it every week only. Editing an existing "from completion" task stays refused
-(its `edit` row has no baseline). The gate also covers creating items, projects, checklists and
-repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
-checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
-repeat classes). The iPhone baselines for these were captured and Twydo's writes were checked
-on the phone (see [`plan7-capture.md`](reference/phase0/plan7-capture.md)). In verified mode that
-allows **creating** checklists, projects, recurring projects and items, and creating daily,
-weekly, monthly, yearly and from-completion repeating tasks, and **converting** a task to a
-checklist or project, a checklist to a project, and an empty checklist or project to a task.
-**Setting a weekly or monthly repeat on a plain task, removing a weekly or monthly repeat, and
-changing a weekly repeat to monthly or a monthly one to weekly are allowed** (session A: the
-phone's own repeats; sessions B and C: Twydo's writes shown right). Plain daily/yearly repeat set/change/removal now also passes, restricted to due-anchored rules without ends or weekday selectors. From-completion and project repeat changes remain unverified.
-Empty project to checklist lacks its iPhone baseline. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
-`--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
-`mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
-`tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task (`--kind` naming the type the file already has writes nothing). The gate still decides: a
-combination whose matrix row is not verified is refused (exit 1), and repeat text that does not parse exits 2.
-Dates with and without a time, start dates, and 2Do's automatic alert are handled as described in [tasks.md](tasks.md).
+“—” means not verified yet. Repeat changes use separate rows from ordinary edits. The complete
+column also needs the rule/modifier's execution verdict and the gate's scheduling/family checks.
 
-Verified behaviour that is easy to get wrong, each checked on the iPhone:
+The newly enabled operations are:
 
-- a monthly task completed months late moves one month per completion (no skipping);
-- completing a task with a start date moves the start by as many days as the due date;
-- completing a recurring project with some items done and some open;
-- changing a checklist's date removes its items' copies of the old date;
-- undoing a completion before and after it was synced;
-- completing every repeat kind Twydo creates gives the phone's result: a monthly task on the
-  31st moves to February 28, then March 28 (no memory of the 31st); 29 February moves to
-  28 February; the last occurrence of an ended series is completed in place; "from completion"
-  counts from the completion day even when the start date is later.
+| Matrix case / operation | Verified scope |
+|---|---|
+| `daily.repeat` | Set, remove or change between plain due-anchored daily/weekly/monthly/yearly rules, without ends or weekday selectors |
+| `yearly.repeat` | Same scope; existing interval encodings are preserved |
+| `checklist.repeat` | Set/remove plain date-only monthly/weekly recurrence on an existing checklist |
+| `recurring-checklist.repeat` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
+| `recurring-checklist.complete` | ¹Plain monthly day 1–28, interval 1, date-only, due anchored, no end/start/alert/delay; mixed or all-done items, no cancelled items |
+| `ended-until-daily.reopen` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
+| `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
+| `history-copy.reopen` | Top-level non-recurring, date-only task copies linked by RUID; no children/start/alerts/delay |
 
-Not verified yet, so refused for writing in verified mode: setting, removing or changing a
-"from completion" repeat, and any repeat change on a project; converting an empty project to a checklist; editing an existing "from completion"
-task; completing a repeat with an end date; completing a recurring project that ends or
-repeats from completion; changing the interval of an Nth-weekday repeat (not supported by 2Do);
-reopening a repeating task itself (the last occurrence of an ended series: use undo);
-other recurring-checklist shapes; a repeating
-item inside a repeating project (creating one included); nested projects and checklists; moving,
-deleting or reopening a single item on its own; editing alerts. Converting a project that has
-items is not supported by 2Do at all.
+`until` completion now passes for top-level plain daily/monthly day 1–28 tasks with interval 1,
+date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,
+inclusive boundary, final in-place completion and completion after reopening were checked both
+ways. Other until combinations stay refused even though offset/base-rule evidence passes.
+Count-ended originals, family history and other ended-series reopen shapes remain refused.
+
+A recurring checklist's completion copies the family before resetting live items and removing
+inherited dates. Item history keeps earlier individual completion times. Independent item starts
+or due times, including start-only items without a due date, are refused without partial writes.
+Weekly/yearly checklist completion, direct recurring-checklist creation and ordinary edits of a
+recurring checklist remain unverified. A mixed card save needing such an edit is refused as a
+whole and retains its text; a pure captured repeat change can pass on its own.
+
+Existing repeat completion support remains: daily, weekly, weekday sets, monthly including the
+29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
+The [Plan 7 session](reference/phase0/plan7-capture.md) supplies those fixtures. Recurring projects
+that end or repeat from completion remain refused. Moving/deleting one item, editing existing
+from-completion tasks, project repeat changes, empty-project-to-checklist conversion and native
+alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+tracks the remaining combinations; this batch does not certify the entire TUI surface.
+
+A pure repeat set/removal/reshape needs the repeat rows of both its source and destination
+cases. Interval-only edits still need ordinary edit evidence; mixed saves need both. Newly
+verified daily/yearly transitions do not establish changing count/date ends, completion anchors,
+weekday sets or Nth rules. Their repeat writer preserves due/start/alerts bytewise, allowing
+those already verified field representations to compose with a pure repeat edit; completion
+has stricter shape restrictions because it advances dates and creates history.
+
+Task/checklist/project and item creation and the previously verified type conversions remain
+as documented in [tasks.md](tasks.md). `tdo op add` takes `--kind`, `--parent` and `--repeat`;
+`tdo op edit` takes `--repeat`, `--no-repeat` and `--kind`. The TUI card exposes the same gate.
+Known unsafe conversions and the three misread rule classes remain refused.
 
 Three repeat kinds fail on the iPhone and Twydo never writes them in any mode: the last day of
 the month, the last weekday and the Nth weekend day. 2Do 3.91 misreads them and its picker cannot
@@ -170,8 +173,3 @@ Twydo's change read by the iPhone. The session logs are in
 Verifying more needs a 2Do device and a test account. The method is in the
 [phase-0 checklist](reference/phase0/README.md); `tools/seed_fixture.py` sets up test tasks on
 the server so they do not have to be typed on the phone.
-
-Scoped checklist repeat changes and monthly reset/history now pass: plain interval-1
-monthly/weekly date-only repeat edits without an end/start/alert/delay, and plain
-monthly day1–28 completion with open/done items. Weekly/yearly completion,
-cancelled items, ordinary recurring-checklist edits and direct creation stay refused.

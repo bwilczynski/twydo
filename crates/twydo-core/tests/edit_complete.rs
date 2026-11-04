@@ -1393,3 +1393,148 @@ fn until_must_match_the_json_end_date() {
         );
     }
 }
+
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::recurrence::*;
+    use crate::common::{completed, dtstamp, fixture, todo};
+    use std::collections::BTreeMap;
+    use twydo_core::edit;
+    use twydo_core::ical::Property;
+    use twydo_core::model::meta_edit::MetaJson;
+
+    #[test]
+    fn until_continuation_inclusive_boundary_end_reopen_and_recompletion_match_phone() {
+        for uid in [U1, U2] {
+            let mut input = cal(SEED, uid);
+            for (from, to) in [
+                (SEED, SET),
+                (SET, ADVANCE),
+                (ADVANCE, END),
+                (REOPEN, REMOVE),
+            ] {
+                if from == REOPEN {
+                    let want = cal(REOPEN, uid);
+                    let now = dtstamp(&want);
+                    edit::reopen_ended_until(&mut input, now).unwrap();
+                    same("ended until reopen", &input, &want, &BTreeMap::new());
+                    stamped(&input, now);
+                }
+                let before_files = step_files(from);
+                let after_files = step_files(to);
+                let copies: Vec<_> = after_files
+                    .iter()
+                    .filter(|(id, c)| {
+                        !before_files.contains_key(*id)
+                            && todo(c).prop("SUMMARY").unwrap().value
+                                == todo(&input).prop("SUMMARY").unwrap().value
+                    })
+                    .collect();
+                let want = cal(to, uid);
+                let now = copies
+                    .first()
+                    .map_or_else(|| completed(&want), |(_, c)| completed(c));
+                let copy_uid = copies
+                    .first()
+                    .map_or("0123456789abcdef0123456789abcdef", |(id, _)| id.as_str());
+                let (live, copy) =
+                    edit::complete_recurring(&input, now, now.date_naive(), copy_uid).unwrap();
+                same(&format!("{uid} {to} live"), &live, &want, &BTreeMap::new());
+                stamped(&live, now);
+                preserved_created(&input, &live);
+                match (copies.first(), copy) {
+                    (Some((_, want)), Some(got)) => {
+                        same("until history", &got, want, &BTreeMap::new());
+                        stamped(&got, now);
+                        preserved_created(&input, &got);
+                    }
+                    (None, None) => {}
+                    _ => panic!("wrong history-copy count for {uid} {to}"),
+                }
+                input = live;
+            }
+        }
+    }
+
+    #[test]
+    fn reopening_until_history_does_not_reopen_the_ended_original() {
+        for (uid, history_uid) in [
+            (U1, "7435cbd64d9443888f9eb8ebc84518f4"),
+            (U2, "84df3db1133a47c583278e7ec8c07bcc"),
+        ] {
+            let before = cal(REMOVE, history_uid);
+            let want = cal(HISTORY, history_uid);
+            let mut got = before.clone();
+            edit::reopen_one_time(&mut got, dtstamp(&want)).unwrap();
+            same("history reopen", &got, &want, &BTreeMap::new());
+            assert_eq!(
+                fixture(SCENARIO, REMOVE, uid),
+                fixture(SCENARIO, HISTORY, uid)
+            );
+        }
+    }
+
+    #[test]
+    fn ended_until_reopen_refuses_uncaptured_or_inconsistent_shapes_atomically() {
+        for case in [
+            "count",
+            "interval",
+            "native-start",
+            "metadata-start",
+            "yearly",
+            "open",
+            "not-final",
+            "timed",
+            "parent",
+            "metadata-parent",
+            "from-completion",
+            "wrong-end",
+            "duplicate-rule",
+        ] {
+            let mut input = cal(END, U1);
+            let t = input.root.children_named_mut("VTODO").next().unwrap();
+            match case {
+                "interval" => t
+                    .prop_mut("RRULE")
+                    .unwrap()
+                    .set_value("FREQ=DAILY;INTERVAL=2;UNTIL=20261120"),
+                "native-start" => t.prop_mut("DTSTART").unwrap().set_value("20261119"),
+                "count" => t.prop_mut("RRULE").unwrap().set_value("FREQ=DAILY;COUNT=1"),
+                "yearly" => t
+                    .prop_mut("RRULE")
+                    .unwrap()
+                    .set_value("FREQ=YEARLY;UNTIL=20261120"),
+                "open" => t.prop_mut("STATUS").unwrap().set_value("NEEDS-ACTION"),
+                "not-final" => t.prop_mut("DUE").unwrap().set_value("20261119"),
+                "timed" => {
+                    t.prop_mut("DUE").unwrap().set_params(Vec::new());
+                    t.prop_mut("DUE").unwrap().set_value("20261120T090000");
+                }
+                "parent" => t.insert_prop(
+                    Property::new("RELATED-TO", Vec::new(), "some-parent"),
+                    Some("UID"),
+                ),
+                "duplicate-rule" => t.insert_prop(
+                    Property::new("RRULE", Vec::new(), "FREQ=DAILY;UNTIL=20261120"),
+                    Some("DUE"),
+                ),
+                _ => {
+                    let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                    let mut m = MetaJson::parse(&p.value).unwrap();
+                    match case {
+                        "metadata-start" => m.set_i64("StartDate", 1_795_132_800),
+                        "metadata-parent" => m.set_str("parentuid", "some-parent"),
+                        "from-completion" => m.set_i64("RecurrenceFrom", 2),
+                        "wrong-end" => m.set_i64("RecurrenceEndDate", 1_795_262_400),
+                        _ => unreachable!(),
+                    }
+                    p.set_value(&m.encode());
+                }
+            }
+            let before = input.clone();
+            let now = dtstamp(&input);
+            assert!(edit::reopen_ended_until(&mut input, now).is_err(), "{case}");
+            assert_eq!(input, before, "{case}: no partial edit");
+        }
+    }
+}

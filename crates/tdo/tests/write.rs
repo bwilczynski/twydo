@@ -1063,6 +1063,8 @@ mod verified_recurrence_tui {
     use twydo_core::model::{Status, TaskKind};
 
     const FC: &str = "61ed74be3ba34212ab7476b698de1263";
+    const U1: &str = "91fb1d1636754afda633eb2bda234417";
+    const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
     fn env(step: &str) -> Env {
         let e = Env::new();
         let list = e.vdir().join("list1");
@@ -1161,7 +1163,11 @@ mod verified_recurrence_tui {
 
     #[test]
     fn ticks_complete_captured_until_tasks_and_reset_a_monthly_checklist() {
-        for (uid, step, confirm, history_count) in [(FC, "010-first-phone-actions", true, 4)] {
+        for (uid, step, confirm, history_count) in [
+            (U1, "001-after-upload", false, 1),
+            (U2, "001-after-upload", false, 1),
+            (FC, "010-first-phone-actions", true, 4),
+        ] {
             let e = env(step);
             let (mut w, _) = writer(&e.config());
             let before = e.snapshot().tasks.len();
@@ -1187,6 +1193,33 @@ mod verified_recurrence_tui {
                     assert!(a.snapshot.tasks[c].due.is_none());
                 }
             }
+        }
+    }
+
+    #[test]
+    fn done_ticks_reopen_an_ended_original_and_a_history_copy_in_verified_mode() {
+        for (uid, step, keeps_rule) in [
+            (U1, "030-end-series-and-items", true),
+            (
+                "7435cbd64d9443888f9eb8ebc84518f4",
+                "050-remove-repeat-and-refinish",
+                false,
+            ),
+        ] {
+            let e = env(step);
+            let (mut w, _) = writer(&e.config());
+            let count = e.snapshot().tasks.len();
+            let mut a = App::new(
+                e.snapshot(),
+                now().with_timezone(&chrono_tz::America::New_York),
+            );
+            select(&mut a, uid, true);
+            let r = request(a.handle_key(key('x')));
+            run(&e, &mut a, &mut w, r);
+            let t = &a.snapshot.tasks[a.snapshot.find(uid).unwrap()];
+            assert_eq!(t.status, Status::Open);
+            assert_eq!(t.rrule.is_some(), keeps_rule);
+            assert_eq!(a.snapshot.tasks.len(), count);
         }
     }
 }

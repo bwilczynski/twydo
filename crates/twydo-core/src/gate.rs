@@ -36,27 +36,27 @@
 //!
 //!    An edit that changes the type ([`Change::Kind`]) or the repeat rule
 //!    ([`Change::Repeat`]) must also leave a task with cases and a repeat with a due date
-//!    (so a repeating task cannot
-//!    become a checklist, an item cannot become a parent, and a repeating project cannot
+//!    (an item cannot become a parent, and a repeating project cannot
 //!    keep a repeating item);
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
 //!    attribute cases (with rule 6, the only rules the write mode changes); for a type or
 //!    repeat change, the `edit` rows of the cases it leaves too; for a `Change::Repeat`
 //!    that sets, removes or reshapes the repeat (another class, from completion or end:
 //!    anything but a new interval of the same rule, which Plan 4 verified as an edit), the
-//!    `repeat` rows of the own and family cases before and after. Pure repeat reshapes use
-//!    these rows; mixed ordinary field saves still need edit rows. For a type change the
+//!    `repeat` rows of the own and family cases before and after. A repeat-only reshape
+//!    needs these rows instead of ordinary `edit` rows; a mixed field save still needs both.
+//!    For a type change, the
 //!    `convert` row of its before and after types (none when the type stays). A row whose
 //!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
 //!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
-//! 5. the verified shape of a repeating completion (a recurring project's rule must have no
-//!    end and repeat from its due date); a completed repeating task (the last occurrence of
-//!    an ended series, completed in place) is not reopened (use undo), checked right after
-//!    rule 2 so the reason is not a matrix row;
-//! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
-//!    rule 3 (so the write mode applies).
+//! 5. the verified shape of a repeating completion (a recurring parent's rule must have no
+//!    end and repeat from its due date); reopening an ended series is refused except the
+//!    captured top-level date-only daily/plain-monthly UNTIL shapes, which need dedicated rows
+//!    checked right after rule 2. Count/family/other-ended shapes still use undo;
+//! 6. reopening a repeat's history copy needs its dedicated `history-copy` row (older/custom
+//!    matrices may use the monthly/yearly rows), checked as in rule 3 so write mode applies.
 
 use std::fmt;
 
@@ -188,12 +188,41 @@ pub fn check(
     };
 
     // Rule 5b before the rows: the last occurrence of an ended series, completed in place,
-    // keeps its RRULE; reopening it is not supported (undo restores it).
+    // keeps its RRULE. Only the captured top-level UNTIL shapes may be reopened, and they
+    // need a dedicated row rather than a broad daily/monthly reopen verdict.
     if let (Some(i), Op::Reopen { .. }) = (target, op)
         && snap.tasks[i].status == Status::Completed
         && snap.tasks[i].rrule.is_some()
     {
-        return blocked(REOPEN_ENDED);
+        let task = &snap.tasks[i];
+        let class = task_rule_class(task, snap);
+        let case = match class.as_deref() {
+            Some("days+until") => "ended-until-daily",
+            Some("months-day-1-28+until") => "ended-until-monthly",
+            _ => return blocked(REOPEN_ENDED),
+        };
+        let ended = match (
+            &task.due,
+            task.rrule.as_deref().and_then(|r| parse_rrule(r).ok()),
+        ) {
+            (Some(IcalDateTime::Date(due)), Some(rule)) => {
+                matches!(rule.end, End::Until(IcalDateTime::Date(_)))
+                    && next_due(*due, &rule, None).is_ok_and(|n| n.is_none())
+            }
+            _ => false,
+        };
+        if task.kind != TaskKind::Task
+            || snap.parent(i).is_some()
+            || !snap.children(i).is_empty()
+            || !ended
+            || !captured_until(snap, i)
+        {
+            return blocked(REOPEN_ENDED);
+        }
+        if combined_verdicts(m, class.as_deref().unwrap()).0 != Verdict::Pass {
+            return blocked("the ended repeat's preservation is not verified yet");
+        }
+        return operation_row(m, mode, case, "reopen");
     }
 
     // In every mode: no interval Twydo could not complete or 2Do could not keep.
@@ -328,6 +357,17 @@ pub fn check(
                     "only plain monthly, date-only checklist completion is verified yet",
                 );
             }
+            if task
+                .rrule
+                .as_deref()
+                .and_then(|r| parse_rrule(r).ok())
+                .is_some_and(|r| matches!(r.end, End::Until(_)))
+                && !captured_until(snap, i)
+            {
+                return blocked(
+                    "until completion is verified only for top-level date-only daily/plain-monthly tasks without starts or alerts",
+                );
+            }
             if execute != Verdict::Pass {
                 return not_verified();
             }
@@ -339,9 +379,25 @@ pub fn check(
     if let Op::Reopen { .. } = op
         && is_history_copy(task)
     {
-        let reopen_ok = ["monthly", "yearly"]
-            .iter()
-            .any(|c| operation_row(m, mode, c, "reopen").is_ok());
+        if m.operation("history-copy", "reopen").is_some()
+            && (task.kind != TaskKind::Task
+                || snap.parent(i).is_some()
+                || !snap.children(i).is_empty()
+                || !captured_schedule(task))
+        {
+            return blocked(
+                "history reopening is verified only for top-level date-only task copies without starts or alerts",
+            );
+        }
+        let reopen_ok = if m.operation("history-copy", "reopen").is_some() {
+            operation_row(m, mode, "history-copy", "reopen").is_ok()
+        } else {
+            // Compatibility with older/custom matrices: a history copy no longer carries
+            // its original rule class. New matrices name this operation explicitly.
+            ["monthly", "yearly"]
+                .iter()
+                .any(|c| operation_row(m, mode, c, "reopen").is_ok())
+        };
         if !reopen_ok {
             return blocked("reopening a repeat's history copy is not verified yet");
         }
@@ -987,6 +1043,25 @@ fn plain_rule(r: &RRule, freqs: &[Freq]) -> bool {
         && r.by_month.is_empty()
         && r.by_set_pos.is_empty()
         && r.unknown.is_empty()
+}
+
+fn captured_until(snap: &Snapshot, i: usize) -> bool {
+    let t = &snap.tasks[i];
+    t.kind == TaskKind::Task
+        && snap.parent(i).is_none()
+        && snap.children(i).is_empty()
+        && captured_schedule(t)
+        && matches!(
+            task_rule_class(t, snap).as_deref(),
+            Some("days+until" | "months-day-1-28+until")
+        )
+        && t.rrule
+            .as_deref()
+            .and_then(|r| parse_rrule(r).ok())
+            .is_some_and(|r| {
+                plain_rule(&r, &[Freq::Daily, Freq::Monthly])
+                    && matches!(r.end, End::Until(IcalDateTime::Date(_)))
+            })
 }
 
 /// Daily/yearly repeat-change evidence composes with the existing plain weekly/monthly

@@ -17,6 +17,8 @@ pub const REOPEN: &str = "040-reopen-ended-and-complete-parent";
 pub const REMOVE: &str = "050-remove-repeat-and-refinish";
 pub const HISTORY: &str = "060-remove-checklist-repeat-and-history-reopen";
 pub const FC: &str = "61ed74be3ba34212ab7476b698de1263";
+pub const U1: &str = "91fb1d1636754afda633eb2bda234417";
+pub const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
 pub const RD: &str = "db95528b16fb4aa2b6a47e56a0a1000b";
 pub const RY: &str = "033d6526b6ba46999f3f510edecf888b";
 

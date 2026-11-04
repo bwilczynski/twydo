@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "151-twydo-checklist-repeat-removed"
+device = "twydo"
+action = "Remove only FCb weekly repeat with the fixed writer. Retain checklist type, February 10 due, note z, open items, identities and inactive recurrence metadata. Pre-upload snapshot."
+captured_at = "2026-11-04T16:08:00Z"

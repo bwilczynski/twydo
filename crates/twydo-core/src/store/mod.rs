@@ -20,7 +20,7 @@ use crate::compat::{Matrix, Verdict};
 use crate::config::{Config, WriteMode};
 use crate::edit::{
     Change, EditError, Op, apply_changes, complete_one_time, complete_recurring, file_name,
-    moved_copy, new_task, new_uid, reopen_one_time,
+    moved_copy, new_task, new_uid, reopen_ended_until, reopen_one_time,
 };
 use crate::gate::{self, Blocked};
 use crate::ical::{self, Calendar};
@@ -726,7 +726,11 @@ impl Store {
             Op::Reopen { uid } => {
                 let t = self.target(snap, uid)?;
                 let mut cal = t.cal.clone();
-                reopen_one_time(&mut cal, now)?;
+                if t.repeats {
+                    reopen_ended_until(&mut cal, now)?;
+                } else {
+                    reopen_one_time(&mut cal, now)?;
+                }
                 one("reopen", uid, t.update(&cal)?)
             }
             Op::Move { uid, to } => {

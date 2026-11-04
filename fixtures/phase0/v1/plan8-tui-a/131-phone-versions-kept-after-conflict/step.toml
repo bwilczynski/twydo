@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "131-phone-versions-kept-after-conflict"
+device = "iphone"
+action = "User confirmed earlier phone changes and explicitly chose phone/server versions for the five synthetic conflicts. Remote choices applied by normal sync; this is not Twydo write verification."
+captured_at = "2026-11-04T15:49:52Z"

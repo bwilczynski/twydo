@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "090-twydo-checklist-reset-and-until-end"
+device = "twydo"
+action = "Fixed writer: complete FCb monthly checklist (note x retained); finish U1b/U2b final UNTIL occurrences in place. Pre-upload snapshot."
+captured_at = "2026-11-04T14:55:36Z"
