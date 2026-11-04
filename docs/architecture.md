@@ -62,7 +62,11 @@ Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same wa
    metadata; every other line keeps its bytes.
 3. **Store.** Under the exclusive vdir lock, the store checks that every file it is about to
    write still holds the bytes the caller loaded (otherwise: "changed on disk; reload and try
-   again"), records the operation in the journal, applies it, and marks it applied.
+   again"), records the operation in the journal, applies it, and marks it applied. Files the
+   operation relies on but does not write are checked the same way: the parent of a new item,
+   and the family members it leaves as they are. An operation whose result depends on a task's
+   items (a family operation, a checklist's date change, a change of type) also rescans the
+   list and is refused if an item arrived after the load.
 
 An operation that touches a family (a project or checklist and its items) writes the parent and
 every affected child in one journal entry, so it is applied completely or not at all.
