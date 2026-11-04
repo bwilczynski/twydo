@@ -12,6 +12,8 @@
 //! The loaded files' bytes do not show an item a sync added after the snapshot, so these ops
 //! also rescan the task's list under the lock ([`Store::check_family`]) and are refused if
 //! the task has an item that was not loaded, including a first item of a task that had none.
+//! A change of type is rescanned too: whether a task may become a task, checklist or project
+//! depends on its items.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -46,7 +48,8 @@ struct Child {
 
 impl Store {
     /// The task `op` acts on and the items loaded with it, for the rescan under the lock: every
-    /// complete, reopen, move and delete, and a checklist's date change; `None` otherwise.
+    /// complete, reopen, move and delete, a checklist's date change and a change of type
+    /// (also as part of a save); `None` otherwise.
     pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
         let uid = match op {
             Op::Complete { uid }
@@ -55,7 +58,8 @@ impl Store {
             | Op::Delete { uid } => uid,
             Op::Edit { uid, .. } => uid,
             Op::Create(_) => return Ok(None),
-            // A save's move rescans the family; without one, its edit may.
+            // A save's move rescans the whole family, which covers its edit; without one, its
+            // edit may.
             Op::Save { uid, changes, to } => {
                 let part = match to {
                     Some(to) => Op::Move {
@@ -74,13 +78,15 @@ impl Store {
             return Ok(None);
         };
         // Any task may have gained an item since the snapshot, even one that had none (an
-        // empty checklist or project, or a plain task). An edit matters only for a checklist's
-        // dates, which its items follow.
+        // empty checklist or project, or a plain task). An edit matters for a checklist's
+        // dates, which its items follow, and for a change of type, which the gate allows or
+        // refuses by the items the task has.
         if let Op::Edit { changes, .. } = op {
             let dates = changes
                 .iter()
                 .any(|c| matches!(c, Change::Due(_) | Change::Start(_)));
-            if snap.tasks[idx].kind != TaskKind::Checklist || !dates {
+            let kind = changes.iter().any(|c| matches!(c, Change::Kind(_)));
+            if !kind && (snap.tasks[idx].kind != TaskKind::Checklist || !dates) {
                 return Ok(None);
             }
         }
