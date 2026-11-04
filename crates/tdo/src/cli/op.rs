@@ -195,11 +195,14 @@ fn parse_repeat(text: &str, today: NaiveDate, cfg: &Config) -> Result<RepeatSpec
 
 /// `has_due` is whether the task will have a due date once the other changes apply. Core never
 /// reads the clock, so a repeat on an undated task gets today's date first (2Do does the same).
+/// `declared` is the type the task's file declares: `--kind` naming it changes nothing, so it
+/// is left out rather than written as new stamps alone.
 fn edit_changes(
     a: &EditArgs,
     cfg: &Config,
     today: NaiveDate,
     has_due: bool,
+    declared: Option<TaskKind>,
 ) -> Result<Vec<Change>, Failure> {
     let mut changes = Vec::new();
     if let Some(t) = &a.title {
@@ -223,8 +226,14 @@ fn edit_changes(
     if let Some(n) = a.every {
         changes.push(Change::RepeatInterval(n));
     }
+    let mut same_kind = None;
     if let Some(k) = a.kind {
-        changes.push(Change::Kind(k.into()));
+        let k: TaskKind = k.into();
+        if declared == Some(k) {
+            same_kind = Some(k);
+        } else {
+            changes.push(Change::Kind(k));
+        }
     }
     if let Some(text) = &a.repeat {
         let spec = parse_repeat(text, today, cfg)?;
@@ -236,6 +245,14 @@ fn edit_changes(
         changes.push(Change::Repeat(None));
     }
     if changes.is_empty() {
+        if let Some(k) = same_kind {
+            let name = match k {
+                TaskKind::Task => "task",
+                TaskKind::Checklist => "checklist",
+                TaskKind::Project => "project",
+            };
+            return usage(format!("the task is already a {name}; nothing to change"));
+        }
         return usage("nothing to change; pass at least one option");
     }
     Ok(changes)
@@ -377,16 +394,18 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             })
         }
         OpCommand::Edit(a) => {
-            let has_due = if a.repeat.is_some() {
+            let (has_due, declared) = if a.repeat.is_some() || a.kind.is_some() {
                 let snap = snapshot(&cfg, store.state_dir())?;
-                snap.find(&a.uid)
-                    .is_some_and(|i| snap.tasks[i].due.is_some())
-                    && !a.clear_due
+                let t = snap.find(&a.uid).map(|i| &snap.tasks[i]);
+                (
+                    t.is_some_and(|t| t.due.is_some()) && !a.clear_due,
+                    t.map(twydo_core::views::declared_kind),
+                )
             } else {
-                true
+                (true, None)
             };
             Op::Edit {
-                changes: edit_changes(&a, &cfg, today, has_due)?,
+                changes: edit_changes(&a, &cfg, today, has_due, declared)?,
                 uid: a.uid,
             }
         }

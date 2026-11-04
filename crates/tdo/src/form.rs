@@ -86,6 +86,9 @@ pub struct EditForm {
     /// The stored rule cannot be written in the field's syntax: the field starts empty and
     /// the rule stays as it is unless something is typed.
     kept_rule: bool,
+    /// The type the task's file declares (an untyped parent shows as a project but is a
+    /// task): choosing it writes nothing.
+    declared: TaskKind,
     initial: Values,
 }
 
@@ -118,6 +121,7 @@ impl EditForm {
         let mut f = EditForm::with(Some(task.uid.clone()), None, values, stored_repeat);
         f.item_of = item_of;
         f.kept_rule = kept_rule;
+        f.declared = twydo_core::views::declared_kind(task);
         f
     }
 
@@ -163,6 +167,7 @@ impl EditForm {
             parent,
             stored_repeat,
             kept_rule: false,
+            declared: v.kind,
             initial: v,
         }
     }
@@ -340,7 +345,7 @@ impl EditForm {
         if title != i.title.trim() {
             out.push(Change::Summary(title.to_string()));
         }
-        if self.kind != i.kind {
+        if self.kind != i.kind && self.kind != self.declared {
             out.push(Change::Kind(self.kind));
         }
         let due_edited = self.due != i.due;

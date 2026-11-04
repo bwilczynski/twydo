@@ -673,3 +673,21 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
         err(&o)
     );
 }
+
+/// `--kind` naming the type the file already declares changes nothing, so nothing is
+/// written: not even new stamps.
+#[test]
+fn edit_kind_same_as_declared_writes_nothing() {
+    let env = Env::new("test");
+    let file = env.vdir().join(format!("list1/{TASK_A}.ics"));
+    let before = fs::read(&file).unwrap();
+    let o = env.op(&["edit", TASK_A, "--kind", "task"]);
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(err(&o).contains("already a task"), "{}", err(&o));
+    assert_eq!(fs::read(&file).unwrap(), before);
+    // With another change, only that change is written.
+    let o = env.op(&["edit", TASK_A, "--kind", "task", "--title", "Synthetic A"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let after = fs::read_to_string(&file).unwrap();
+    assert!(after.contains("SUMMARY:Synthetic A"), "{after}");
+}

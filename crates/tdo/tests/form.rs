@@ -613,3 +613,41 @@ fn emptying_the_repeat_of_a_repeating_task_says_it_removes_it() {
     focus(&mut g, Field::Notes);
     assert_eq!(g.preview(Field::Repeat, today(), &WD).as_deref(), removes);
 }
+
+/// A plain task with an item shows as a project; its file declares a task, so choosing Task
+/// in the card changes nothing.
+#[test]
+fn untyped_parent_set_to_task_is_no_change() {
+    let root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../twydo-core/tests/data/sample-vdir");
+    let mut rep = twydo_core::vdir::load(&root).unwrap();
+    let d = task("Call the dentist");
+    let other = rep
+        .tasks
+        .iter_mut()
+        .find(|t| t.parent.is_none() && t.uid != d.uid && t.collection == d.collection)
+        .unwrap();
+    other.parent = Some(d.uid.clone());
+    let mut cfg = twydo_core::config::Config::with_vdir(root);
+    cfg.timezone = Some("America/New_York".into());
+    let snap = twydo_core::views::Snapshot::new(rep, cfg);
+    let t = &snap.tasks[snap.find(&d.uid).unwrap()];
+    let mut f = EditForm::open(t, None, NY);
+    assert_eq!(f.kind, TaskKind::Project, "shown as a project");
+    assert_eq!(changes(&f), Ok(vec![]));
+    focus(&mut f, Field::Type);
+    // Project → Checklist → Task.
+    f.key(key('l'));
+    f.key(key('l'));
+    assert_eq!(f.kind, TaskKind::Task);
+    assert_eq!(changes(&f), Ok(vec![]));
+    f.key(key('l'));
+    assert_eq!(f.kind, TaskKind::Project);
+    assert_eq!(
+        changes(&f),
+        Ok(vec![]),
+        "back to what it shows: no change either"
+    );
+    f.key(key('l'));
+    assert_eq!(changes(&f), Ok(vec![Change::Kind(TaskKind::Checklist)]));
+}

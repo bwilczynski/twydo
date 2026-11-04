@@ -767,7 +767,8 @@ impl App {
                     'p' => (TaskKind::Project, "project"),
                     _ => (TaskKind::Checklist, "checklist"),
                 };
-                if task.kind == kind {
+                // The type the file declares: an untyped parent shows as a project.
+                if twydo_core::views::declared_kind(task) == kind {
                     self.message = Some(format!("\"{}\" is already a {name}", task.summary));
                     return None;
                 }
