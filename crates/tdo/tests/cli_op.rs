@@ -632,7 +632,7 @@ fn edit_repeat_bad_text_exits_2() {
 }
 
 /// Setting or removing a repeat needs the `repeat` rows: this matrix has none, and the shipped
-/// one has not verified Twydo's writes (`twydo_*` columns) yet.
+/// one has not verified the iPhone acting on Twydo's repeats (`iphone_to_twydo`) yet.
 #[test]
 fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
@@ -656,7 +656,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(
         err(&o).contains(
-            "changing the repeat rule of one-time tasks is not verified yet (twydo_to_iphone)"
+            "changing the repeat rule of one-time tasks is not verified yet (iphone_to_twydo)"
         ),
         "{}",
         err(&o)
@@ -667,7 +667,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(
         err(&o).contains(
-            "changing the repeat rule of monthly tasks is not verified yet (twydo_to_iphone)"
+            "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)"
         ),
         "{}",
         err(&o)

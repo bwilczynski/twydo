@@ -94,9 +94,13 @@ on the iPhone reads differently. See [config.md](config.md).
 `repeat` rows). The gate also covers creating items, projects, checklists and
 repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
 checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
-repeat classes). The iPhone baselines for these were captured (see
-[`plan7-capture.md`](reference/phase0/plan7-capture.md)), but Twydo's own writes are not checked
-on the phone yet, so in verified mode most of them are refused until they are. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
+repeat classes). The iPhone baselines for these were captured and Twydo's writes were checked
+on the phone (see [`plan7-capture.md`](reference/phase0/plan7-capture.md)). In verified mode that
+allows **creating** checklists, projects, recurring projects and items, and creating daily,
+weekly, monthly, yearly and from-completion repeating tasks. Setting, removing or reshaping a
+repeat and converting a task's type were written right, but their `iphone_to_twydo` column (the
+phone changing such a task, read back by Twydo) is not verified yet, so they are refused in
+verified mode. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
 `tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task (`--kind` naming the type the file already has writes nothing). The gate still decides: a
@@ -111,16 +115,18 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
 - changing a checklist's date removes its items' copies of the old date;
 - undoing a completion before and after it was synced.
 
-Not verified yet, so refused for writing in verified mode: setting a repeat on any task,
+Not verified yet, so refused for writing in verified mode: setting a repeat on a task,
 removing one, or changing its kind, "from completion" or end (only the interval of a monthly or
-yearly repeat can be changed); editing repeats daily,
-weekly, on set weekdays, on the 29th–31st or the last day of the month, on the nth weekday, on
-February 29, repeating from the completion date, and repeats with an end; creating projects,
-checklists and items; converting a task's type; repeating checklists; a repeating item inside a
-repeating project; nested projects and checklists; moving, deleting or reopening a single item on
-its own; editing alerts. Last day, last weekday and the Nth weekend day of the month can be typed, but the
-iPhone cannot create them, so they have no baseline to compare with and stay unverified. Converting a
-project that has items is not supported by 2Do at all.
+yearly repeat can be changed); converting a task's type; completing daily, weekly and
+Nth-weekday repeats (Twydo does not execute those rules yet); repeating checklists; a repeating
+item inside a repeating project (creating one included); nested projects and checklists; moving,
+deleting or reopening a single item on its own; editing alerts. Converting a project that has
+items is not supported by 2Do at all.
+
+Three repeat kinds fail on the iPhone and Twydo never writes them in any mode: the last day of
+the month, the last weekday and the Nth weekend day. 2Do 3.91 misreads them and its picker cannot
+create them. Twydo still reads them, and the refusal says `… repeats are not supported by 2Do on
+the iPhone`.
 
 ## How far this has been tested
 
