@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "143-twydo-removal-and-history-upload"
+device = "twydo"
+action = "Clean normal-config upload of the fixed-writer retry; no unresolved conflicts, upload preserved every resource. Await actual phone inspection and follow-up."
+captured_at = "2026-11-04T15:56:23Z"

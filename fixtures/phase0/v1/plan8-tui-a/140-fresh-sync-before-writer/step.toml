@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "140-fresh-sync-before-writer"
+device = "iphone"
+action = "Fresh normal-config sync before the approved writer retry; compare with the chosen phone-version snapshot before any new writes."
+captured_at = "2026-11-04T15:56:13Z"

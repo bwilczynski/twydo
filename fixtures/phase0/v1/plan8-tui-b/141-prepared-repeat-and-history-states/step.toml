@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "141-prepared-repeat-and-history-states"
+device = "twydo"
+action = "Preparation on the same five synthetic resources: FCb monthly, RDb daily, RYb yearly; complete the two earliest non-recurring history copies. Capture before the writer verification transitions."
+captured_at = "2026-11-04T15:56:15Z"

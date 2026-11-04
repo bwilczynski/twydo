@@ -603,6 +603,10 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "120-phone-second-round-followup",
         "130-twydo-repeat-removal-and-history-reopen",
         "131-phone-versions-kept-after-conflict",
+        "140-fresh-sync-before-writer",
+        "141-prepared-repeat-and-history-states",
+        "142-twydo-repeat-removal-and-history-reopen",
+        "143-twydo-removal-and-history-upload",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -1174,6 +1178,124 @@ fn repeat_removal_and_earliest_history_reopen_match_fixed_preupload_capture() {
             fixture(SCENARIO, BEFORE, &id),
             fixture(SCENARIO, AFTER, &id),
             "history reopening leaves ended original unchanged"
+        );
+    }
+}
+
+#[test]
+fn controlled_repeat_and_history_retry_matches_both_states_and_clean_upload() {
+    const BEFORE: &str = "140-fresh-sync-before-writer";
+    const PREPARED: &str = "141-prepared-repeat-and-history-states";
+    const AFTER: &str = "142-twydo-repeat-removal-and-history-reopen";
+    const UPLOADED: &str = "143-twydo-removal-and-history-upload";
+    let before = step_files(BEFORE);
+    let uid = |title: &str, history_due: Option<&str>| {
+        before
+            .iter()
+            .find(|(_, c)| {
+                let t = todo(c);
+                if t.prop("SUMMARY").unwrap().value != title {
+                    return false;
+                }
+                match history_due {
+                    Some(due) => t.prop("RRULE").is_none() && t.prop("DUE").unwrap().value == due,
+                    None => {
+                        if title == "FCb" {
+                            t.prop("RRULE").is_some()
+                        } else {
+                            t.prop("DUE").unwrap().value == "20261207"
+                        }
+                    }
+                }
+            })
+            .unwrap()
+            .0
+            .clone()
+    };
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+    let mut matrix = Matrix::embedded().clone();
+    for (case, op) in [
+        ("recurring-checklist", "repeat"),
+        ("daily", "repeat"),
+        ("yearly", "repeat"),
+        ("history-copy", "reopen"),
+    ] {
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == case && r.op == op)
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+    }
+    let mut store = env.store(matrix);
+    for (step, checklist_repeat, daily_repeat, yearly_repeat, history_action) in [
+        (PREPARED, "monthly", "daily", "yearly", "complete"),
+        (AFTER, "weekly", "none", "none", "reopen"),
+    ] {
+        let want = step_files(step);
+        for (title, due, action) in [
+            ("FCb", None, checklist_repeat),
+            ("RDb", None, daily_repeat),
+            ("RYb", None, yearly_repeat),
+            ("U1b", Some("20261118"), history_action),
+            ("U2b", Some("20270107"), history_action),
+        ] {
+            let id = uid(title, due);
+            let now = if action == "complete" {
+                completed(&want[&id])
+            } else {
+                dtstamp(&want[&id])
+            };
+            let op = match action {
+                "complete" => Op::Complete { uid: id },
+                "reopen" => Op::Reopen { uid: id },
+                text => Op::Edit {
+                    uid: id,
+                    changes: vec![Change::Repeat(
+                        twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap(),
+                    )],
+                },
+            };
+            store.apply(&env.snap(), &op, now).unwrap();
+        }
+        let files = env.files();
+        let tasks: Vec<_> = files
+            .iter()
+            .filter(|(path, _)| path.ends_with(".ics"))
+            .collect();
+        assert_eq!(tasks.len(), want.len());
+        for (_, bytes) in tasks {
+            let got = parse(bytes).unwrap();
+            let id = &todo(&got).prop("UID").unwrap().value;
+            same(
+                &format!("controlled retry {step} {id}"),
+                &got,
+                &want[id],
+                &BTreeMap::new(),
+            );
+            preserved_created(&before[id], &got);
+        }
+    }
+    let journal = env.journal();
+    assert_eq!(journal.len(), 10);
+    assert!(journal.iter().all(|e| e.writes.len() == 1));
+    let after = step_files(AFTER);
+    assert_eq!(
+        after.keys().collect::<Vec<_>>(),
+        step_files(UPLOADED).keys().collect::<Vec<_>>()
+    );
+    for id in after.keys() {
+        assert_eq!(
+            fixture(SCENARIO, AFTER, id),
+            fixture(SCENARIO, UPLOADED, id),
+            "upload preserves {id}"
+        );
+    }
+    for id in before.keys() {
+        assert_eq!(
+            fixture(SCENARIO, "131-phone-versions-kept-after-conflict", id),
+            fixture(SCENARIO, BEFORE, id),
+            "fresh sync preserves agreed starting state {id}"
         );
     }
 }

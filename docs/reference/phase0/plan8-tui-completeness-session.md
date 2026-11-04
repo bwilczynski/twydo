@@ -717,3 +717,33 @@ Candidate 130 output remains separately captured and replay-tested. Its repeat-r
 history-reopen Twydo → phone verdicts remain unverified, and checklist repeat removal and TUI
 acceptance are still pending. No extra writer round or list cleanup is authorized by choosing
 phone versions for these conflicts.
+
+### 140–143 — controlled writer retry after fresh sync, uploaded cleanly
+
+The user explicitly approved re-running Twydo's checklist repeat change, daily/yearly repeat
+removal and history reopening on the same synthetic resources, followed by phone inspection.
+Normal preflight sync succeeded first, with no unresolved conflicts; `140-fresh-sync-before-writer`
+was byte-identical to the agreed 131 phone-version starting state. The fixed binary and private
+process-only test configuration retain the shared production vdir/state/lock and disable
+after-edit sync. The scratch matrix copies the embedded matrix without rule overrides;
+normal production configuration stays verified.
+
+- `141-prepared-repeat-and-history-states`: on only the same five resources, set FCb monthly,
+  restore RDb daily and RYb yearly, and complete the earliest U1b/U2b non-recurring history
+  copies (due November 18 / January 7). Capture these prerequisites before verification.
+- `142-twydo-repeat-removal-and-history-reopen`: change FCb monthly → weekly; remove RDb/RYb
+  repeats with `--no-repeat`, preserving the resulting inactive values/from and existing RUIDs;
+  reopen the two prepared history copies in place. FCb retains February 10 due, note `y` and
+  open items. RDb/RYb retain December 7 due. The ended originals remain completed and exact.
+- `143-twydo-removal-and-history-upload`: normal-config upload succeeds with clean list status,
+  no unresolved conflicts and every resource byte unchanged from 142. A contains 40 resources,
+  B zero; no resources are created/deleted. All ten prerequisite/verification operations affect
+  only the same five resources; a twins, items, ended originals, other history and unrelated
+  production bytes stay unchanged.
+
+Privacy scans passed before these synthetic captures entered the repository. The candidate
+store replay checks every resource in both writer stages, ten single-resource journal entries,
+unchanged creation values, exact fresh-sync starting bytes and exact upload preservation.
+Actual phone inspection and follow-up of the newly uploaded Twydo bytes remain pending; no
+embedded matrix verdict is promoted at this checkpoint. Do not perform further Twydo writes
+until this phone return is captured.

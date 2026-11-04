@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "142-twydo-repeat-removal-and-history-reopen"
+device = "twydo"
+action = "Fixed writer: FCb monthly to weekly; remove RDb/RYb repeats with inactive metadata preserved; reopen only the two earliest history copies, leaving ended originals unchanged. Pre-upload snapshot."
+captured_at = "2026-11-04T15:56:17Z"
