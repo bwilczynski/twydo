@@ -398,3 +398,61 @@ git commit -m "docs(phase0): capture 2Do's repeat kinds, conversions and new ite
 - [ ] **Step 5: Commit** `docs(phase0): verify Twydo's new writes on the iPhone`.
 - [ ] **Step 6: Confirm with the user** which daily shapes (plain, project, checklist, monthly
   on a day, yearly; items; conversions they use) now pass, before phase 1 is used on production.
+
+### Task 14: Complete every repeat kind Twydo can create
+
+Added 2026-11-04 after session B (user decision): everything Twydo lets you create must also
+complete and edit before merge. Today `next_due` (crates/twydo-core/src/edit/complete.rs) only
+handles monthly on a day and yearly; the gate refuses other shapes (`repeat rule shape not
+verified`, `recurring_complete_shape` in gate.rs).
+
+**Files:**
+- Modify: `crates/twydo-core/src/edit/complete.rs` (`next_due`, `complete_recurring`, the JSON
+  checks), `crates/twydo-core/src/gate.rs` (`recurring_complete_shape`)
+- Test: `crates/twydo-core/tests/edit_complete.rs`, `crates/twydo-core/tests/gate.rs`
+
+**Interfaces:**
+- Produces: `next_due(due: NaiveDate, rule: &RRule, from: Option<NaiveDate>) -> Result<Option<NaiveDate>, EditError>`
+  (`from` = the completion day for a from-completion rule; `Ok(None)` = the rule has ended,
+  so completing finishes the series). Callers updated.
+
+- [ ] **Step 1: Write the failing tests** in `edit_complete.rs`, one per kind, from 2Do's rules
+  (01 §6) and the session-B phone completions (`fixtures/phase0/v1/plan7-twydo-list1/03-phone-act`):
+  `next_due_days` (every 1 and 3 days), `next_due_weeks` (1 and 2), `next_due_weekdays_set`
+  (Mon+Thu from a Monday → Thursday; from a Thursday → next Monday; work days from a Friday →
+  Monday), `next_due_month_day_29_31` (Dec 31 → Jan 31, as `M31`; Jan 31 → what 2Do does for
+  February is unknown until session C: test Jan 31 → Feb 28 as the port recommendation and mark
+  it to confirm), `next_due_nth_weekday` (2nd Tue Dec 8 → Jan 12; last Fri), `next_due_feb_29`
+  (2028-02-29 → 2029-02-28 or 2032-02-29: unknown until session C; pick the 01 §6 reading, mark
+  it to confirm), `from_completion_counts_from_the_completion_day` (as `FC`: due Dec 7,
+  completed Nov 4 → Dec 4), `count_counts_down` (as `CT`: `COUNT=3` → `COUNT=2`,
+  `RecurrenceEndRepetitions` 3 → 2; at 1, completing ends the series: the task is completed
+  with no new copy), `until_ends_after_the_date`. Each complete test byte-compares the live
+  task and history copy with session B's `03-phone-act` files where one exists (`M31`, `FC`,
+  `CT`), excluding stamps, UIDs and the phone layout lines as earlier tests do.
+- [ ] **Step 2: Run** `cargo test -p twydo-core --test edit_complete` — FAIL.
+- [ ] **Step 3: Implement**; the gate's `recurring_complete_shape` accepts the new shapes, still
+  subject to the rule's `execute` verdict and the case's `complete` row (unverified until Task 15,
+  so verified mode keeps refusing them).
+- [ ] **Step 4: Run** `mise run lint` and `mise run test` — PASS.
+- [ ] **Step 5: Commit** `feat(core): complete every repeat kind Twydo can create`.
+
+### Task 15: Session C on the phone (with the user)
+
+**Files:** `docs/reference/phase0/plan7-capture.md` (session C), `compat/matrix.toml`,
+`fixtures/phase0/v1/plan7-twydo-list2/`, docs that state what verified mode allows.
+
+- [ ] **Step 1: Write the rounds** (same setup as session B: backup, throwaway list in
+  production, temporary `test`-mode config, `tdo op --matrix` with a scratch matrix): 🤖 seed a
+  pair of each kind (daily, every 3 days, weekly, every 2 weeks, Mon+Thu, work days, monthly on
+  the 31st due Jan 31, 2nd Tuesday, yearly on 29 Feb, from completion, 3 times with the last
+  occurrence next, until). 👤 completes the first of each pair on the phone. 🤖 completes the
+  twin in Twydo; compare the two pairs byte for byte. 🤖 also edits existing daily and weekly
+  tasks (due +1 day, title, interval) and changes weekly → monthly; 👤 checks on the phone, then
+  completes the Twydo-completed twins once more.
+- [ ] **Step 2: Ask the user to approve**, then run together.
+- [ ] **Step 3: Record results**; fix Task 14's two "to confirm" cases from the phone's
+  behaviour with tests from the capture; set `execute` verdicts, `complete` rows and
+  daily/weekly `edit` rows that passed; update the docs.
+- [ ] **Step 4: Run** `mise run lint`, `mise run test`, `python3 tools/check_links.py` — PASS.
+- [ ] **Step 5: Commit** `docs(phase0): verify completing and editing every repeat kind`.
