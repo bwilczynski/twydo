@@ -34,8 +34,9 @@ the rest with a reason, so the phone never gets something it would misread.
   with the title); today the title goes in the row and dates and repeats in the card
 - Desktop notifications for alerts, and editing alerts
 - Manual ordering, and creating or renaming lists
-- Setting, removing or reshaping a repeat, and changing a task's type, in verified mode: Twydo
-  can write them, but refuses until the iPhone's reading of them is checked too
+- Setting, removing or reshaping a repeat, in verified mode: Twydo can write them, but refuses
+  until the iPhone's reading of them is checked too (type changes are allowed, except empty
+  project to checklist)
 - Completing daily, weekly and Nth-weekday repeats (Twydo refuses; monthly, yearly and from
   completion work)
 - Repeats on the last day of the month, the last weekday and the Nth weekend day: the iPhone

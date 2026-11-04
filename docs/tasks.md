@@ -34,9 +34,10 @@ selector does:
   finish the items first.
 - Converting to the type it already has does nothing.
 
-Twydo's conversions were written and shown right on the iPhone, but in verified mode they are
-still refused (`… is not verified yet (iphone_to_twydo)`) until the phone's own changes to a
-converted task are checked too ([compatibility.md](compatibility.md#verified-mode)).
+In verified mode task to checklist, task to project, checklist to project and empty checklist or
+project to task are allowed. Empty project to checklist is still refused
+(`… is not verified yet (iphone_baseline)`), as is any conversion not listed
+([compatibility.md](compatibility.md#verified-mode)).
 
 To fill a parent, `a` adds an item (on a plain task it asks first whether to make it a project
 or a checklist). A checklist's items have no dates, repeat or alerts of their own.
@@ -83,10 +84,11 @@ mode, **creating** a task with any repeat but the three below is allowed (daily,
 weekdays, monthly on a day or the Nth weekday, yearly including February 29, repeat from
 completion, with an end by count or date), and so is creating a checklist, a project, a
 recurring project and their items. **Editing** the interval of an existing repeat is allowed for
-monthly (day 1 to 28) and yearly tasks. Setting a repeat on a task, removing one, or changing its
-kind, "from completion" or end is written correctly (the iPhone showed each right) but is still
-refused in verified mode, for example `changing the repeat rule of one-time tasks is not
-verified yet (iphone_to_twydo)`, until the phone's own changes to such a task are checked.
+monthly (day 1 to 28) and yearly tasks. A plain task's "one-time" side of setting a repeat is
+verified, but the repeat it becomes is not: setting one is still refused for the new kind, for
+example `changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)`.
+Removing a repeat, or changing its kind, "from completion" or end, is refused the same way (the
+iPhone showed each right; the phone's own changes to such a task are not checked yet).
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them

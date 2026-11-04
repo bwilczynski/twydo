@@ -619,8 +619,7 @@ fn convert_needs_convert_row() {
         ),
         blocked(NESTED)
     );
-    // The embedded matrix carries the rows: Twydo's write was verified, the phone acting on
-    // the result (`iphone_to_twydo`) was not.
+    // The embedded matrix carries the rows: task to checklist is verified both ways now.
     assert_eq!(
         check(
             &s,
@@ -629,7 +628,18 @@ fn convert_needs_convert_row() {
             &kind("gate-nodue", Checklist),
             today()
         ),
-        blocked("converting a task to a checklist is not verified yet (iphone_to_twydo)")
+        Ok(())
+    );
+    // An empty project to a checklist still lacks its iPhone baseline.
+    assert_eq!(
+        check(
+            &s,
+            Matrix::embedded(),
+            WriteMode::Verified,
+            &kind("gate-empty-project", Checklist),
+            today()
+        ),
+        blocked("converting an empty project to a checklist is not verified yet (iphone_baseline)")
     );
     assert_eq!(
         check(
@@ -1784,11 +1794,28 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
     let m = Matrix::embedded();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    let one_time =
-        "changing the repeat rule of one-time tasks is not verified yet (iphone_to_twydo)";
-    for text in ["monthly", "yearly", "3m"] {
+    // The one-time row passes now (session A), so a repeat set on a plain task is refused
+    // for the class it becomes, never for "one-time tasks".
+    let monthly_new =
+        "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)";
+    for text in ["monthly", "3m"] {
         let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
-        assert_eq!(at(&op), blocked(one_time), "{text}");
+        assert_eq!(at(&op), blocked(monthly_new), "{text}");
+    }
+    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
+    assert_eq!(
+        at(&op),
+        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
+    );
+    for (text, case) in [("daily", "daily"), ("weekly", "weekly")] {
+        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
+        assert_eq!(
+            at(&op),
+            blocked(&format!(
+                "edit for {case} tasks is not verified yet (twydo_to_iphone)"
+            )),
+            "{text}"
+        );
     }
     // Removing a monthly repeat, changing it to another class or from completion.
     let monthly = "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)";
