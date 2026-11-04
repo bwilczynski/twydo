@@ -899,3 +899,38 @@ fn type_conversion_refused_when_an_item_joined_after_load() {
         }
     }
 }
+
+#[test]
+fn creating_an_item_refused_when_its_parent_is_gone() {
+    let (env, mut store, uid, path) = verified_with_empty_project();
+    let snap = env.snap();
+    fs::remove_file(&path).unwrap();
+    let before = env.files();
+    let op = Op::Create(NewTask {
+        parent: Some(uid),
+        ..NewTask::plain("list2", "Synthetic item")
+    });
+    match store.apply(&snap, &op, later()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, path),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(env.files(), before);
+}
+
+#[test]
+fn creating_an_item_refused_when_its_parent_changed() {
+    let (env, mut store, uid, path) = verified_with_empty_project();
+    let snap = env.snap();
+    let text = fs::read_to_string(&path).unwrap() + "\r\n";
+    fs::write(&path, text).unwrap();
+    let before = env.files();
+    let op = Op::Create(NewTask {
+        parent: Some(uid),
+        ..NewTask::plain("list2", "Synthetic item")
+    });
+    match store.apply(&snap, &op, later()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, path),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(env.files(), before);
+}

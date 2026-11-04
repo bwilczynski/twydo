@@ -669,7 +669,13 @@ impl Store {
                 let parent_json_uid = n.parent.as_deref().and_then(|p| parent_json_uid(snap, p));
                 let cal = new_task(n, &uid, parent_json_uid.as_deref(), now)?;
                 let w = create(&n.collection, &uid, &cal)?;
-                one("create", &uid, w)
+                let mut plan = one("create", &uid, w);
+                // The parent the gate checked must still be as loaded: not removed, nor
+                // turned into a task that cannot have items.
+                if let Some(p) = &n.parent {
+                    plan.holds.push(self.target(snap, p)?.hold());
+                }
+                plan
             }
             Op::Edit { uid, changes }
                 if let Some(i) = parent(uid)
