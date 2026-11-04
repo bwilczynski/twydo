@@ -199,8 +199,8 @@ pub fn check(
             operation_row(m, mode, c, "edit")?;
         }
     }
-    if let (Some(i), Op::Edit { changes, .. }, Some(a)) = (target, op, after)
-        && reshapes_repeat(snap, i, changes)
+    if let Some(a) = after
+        && reshaped
     {
         let before = std::iter::once(cases.own).chain(cases.family);
         let mut seen = Vec::new();
