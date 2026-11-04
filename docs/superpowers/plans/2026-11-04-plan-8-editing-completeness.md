@@ -63,6 +63,12 @@ history but left the live series byte-identical at December 10; scoped followup
 361 did not change it. User was asked for the phone's displayed live Due. Pause
 dependent writes and final anchor removal until reconciled; both shipping rows
 remain unverified. Preserve all private captures and do not repeat completion.
+Update 363: phone note on the visibly active December 4 series exported the
+advanced date under the original UID/RUID. Clean December 10 history and live
+advance now match the core writer plus followup note exactly. No internal cause
+is assumed for the export delay. Barrier 370's final anchor removal is uploaded;
+phone no-repeat inspection and `RFRA return 4` note are pending. Then close out
+scoped verdicts/tests/docs; do not replay earlier captures or clean up the extra copy.
 
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,

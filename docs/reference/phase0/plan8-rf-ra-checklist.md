@@ -392,3 +392,26 @@ writes. Do not enable either operation row or advance the final anchor-removal
 barrier while this mismatch is unresolved. Do not discard the new history,
 restore over phone edits or repeat the already-completed baselines. No clean
 fields-retry fixture was exported. All other return evidence remains usable.
+
+### Diagnostic 363 reconciles fields; final anchor removal 370 uploaded
+
+The user identified the unfinished monthly-after-completion instance as December
+4 and saved `RFRA live check` notes on it, without another completion. Scoped pull
+363 changed exactly the original fields `t` UID: Due is now December 4, RRULE is
+monthly, RecurrenceFrom remains 2 and RUID is unchanged. Thus the live advance
+reached the server with that note save; the phone was not using a different UID.
+This establishes the observed export timing, not its internal cause. Never infer
+complete remote advancement from the history upload alone.
+
+The December 10 history from 360 is byte-unchanged in 363. Its exact core output
+and the advanced live resource plus subsequent note save pass the regression
+`edited_from_completion_live_and_history_match_phone_after_followup_note_exports_advance`.
+Exported source fields retry is in partial fixture 350; 363 contains only the clean
+live/history pair. The ambiguous reopened sequence stays excluded. No deletion,
+rollback or replacement UID was needed.
+
+After fresh scoped preflight, barrier 370 removed only anchor `t` recurrence and
+uploaded it. All other resource bytes and normal config are unchanged. Final
+planned phone action: confirm `RFRA anchor t` has no repeat, set Notes to
+`RFRA return 4`, then sync once. Do not complete or edit other tasks. Capture that
+return before promoting either shipping operation row and running final checks.

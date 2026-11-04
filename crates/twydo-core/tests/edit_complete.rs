@@ -1620,3 +1620,52 @@ fn edited_from_completion_tasks_advance_and_copy_history_like_phone() {
         same(case, &copy.unwrap(), &history, &BTreeMap::new());
     }
 }
+
+#[test]
+fn edited_from_completion_live_and_history_match_phone_after_followup_note_exports_advance() {
+    use common::recurrence::{preserved_created, same};
+    use std::collections::BTreeMap;
+    use twydo_core::edit::{Change, apply_changes};
+    let uid = "twydo-p8-rfra-fields-t";
+    let before = parse(&fixture("plan8-rfra", "350-twydo-weekly-due-anchor", uid)).unwrap();
+    let want = parse(&fixture("plan8-rfra", "363-phone-fields-live-note", uid)).unwrap();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan8-rfra/363-phone-fields-live-note");
+    let history = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "ics"))
+        .map(|p| parse(&std::fs::read(p).unwrap()).unwrap())
+        .find(|c| {
+            todo(c)
+                .prop("STATUS")
+                .is_some_and(|p| p.value == "COMPLETED")
+        })
+        .unwrap();
+    let now = common::completed(&history);
+    let copy_uid = &todo(&history).prop("UID").unwrap().value;
+    let (mut live, copy) = complete_recurring(&before, now, now.date_naive(), copy_uid).unwrap();
+    assert_eq!(todo(&history).prop("DUE").unwrap().value, "20261210");
+    assert_eq!(todo(&live).prop("DUE").unwrap().value, "20261204");
+    same(
+        "clean fields history",
+        &copy.unwrap(),
+        &history,
+        &BTreeMap::new(),
+    );
+    // The phone displayed December 4 immediately, but the advanced live resource
+    // reached the server only with this later note save; do not treat 360 as final.
+    apply_changes(
+        &mut live,
+        &[Change::Description(Some("RFRA live check".into()))],
+        dtstamp(&want),
+    )
+    .unwrap();
+    preserved_created(&before, &live);
+    same(
+        "clean fields live after note",
+        &live,
+        &want,
+        &BTreeMap::new(),
+    );
+}
