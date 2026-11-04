@@ -12,7 +12,7 @@ use crate::ical::value::{IcalDateTime, escape_text, format_date_time};
 use crate::ical::{Calendar, Component, Param, Property};
 use crate::model::TaskKind;
 use crate::model::meta_edit::{MetaJson, default_task_meta};
-use crate::model::repeat::{End, parse_rrule};
+use crate::model::repeat::{End, RRule, parse_rrule};
 use crate::repeatinput::RepeatSpec;
 
 pub mod complete;
@@ -21,7 +21,8 @@ pub mod family;
 pub mod repeat;
 
 pub use complete::{
-    REOPEN_ENDED, complete_one_time, complete_recurring, next_due, reopen_one_time,
+    REOPEN_ENDED, complete_one_time, complete_recurring, interval_refusal, next_due,
+    reopen_one_time,
 };
 pub use create::{file_name, new_task, new_uid};
 pub use family::{complete_member, drop_member_dates, member_copy, reopen_member};
@@ -513,6 +514,12 @@ fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditE
 pub const NTH_WEEKDAY_INTERVAL: &str =
     "changing the interval of an Nth-weekday repeat is not supported";
 
+/// Why a repeat on set weekdays takes no interval: Twydo completes it every week only.
+pub const WEEKDAY_SET_INTERVAL: &str = "an interval is not supported on a repeat on set weekdays";
+
+/// Why another rule takes no interval of this size: Twydo could not complete it.
+pub const UNSUPPORTED_INTERVAL: &str = "this interval is not supported on this repeat";
+
 /// `RRULE` `INTERVAL=n` (appended, or replaced in place; removed for 1) and JSON
 /// `RecurrenceValue` = n (`rule-*/03-edit`).
 fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
@@ -533,6 +540,13 @@ fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
     // for it (01 §6), so a new interval would overwrite the ordinal.
     if rule.by_day.iter().any(|(n, _)| n.is_some()) {
         return Err(unsupported(NTH_WEEKDAY_INTERVAL));
+    }
+    // A shape that completes only every 1 (a weekday set) must keep it.
+    if let Some(why) = interval_refusal(&RRule {
+        interval: n,
+        ..rule
+    }) {
+        return Err(unsupported(why));
     }
     let interval = format!("INTERVAL={n}");
     let mut parts: Vec<String> = Vec::new();

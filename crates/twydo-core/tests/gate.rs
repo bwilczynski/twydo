@@ -2247,3 +2247,56 @@ fn interval_of_an_nth_weekday_repeat_is_refused() {
         assert_eq!(check(&s, m, mode, &same, today()), Ok(()), "{mode:?}");
     }
 }
+
+/// A weekday set (`FREQ=WEEKLY;BYDAY=MO,TH`) completes only every week, so no op may give it
+/// another interval, in any mode: by `RepeatInterval`, an interval-only `Change::Repeat`, a
+/// reshape or a create. Interval 1 (the same rule) passes.
+#[test]
+fn interval_on_a_weekday_set_repeat_is_refused() {
+    let (_tmp, s) = session_snap();
+    let m = Matrix::embedded();
+    let wd = by_title(&s, "c", "WDb");
+    let monthly = by_title(&s, "c", "E3");
+    let why = blocked("an interval is not supported on a repeat on set weekdays");
+    let mut every_2 = repeat("mon thu");
+    every_2.rule.interval = 2;
+    let due = Due::Date(date(2026, 12, 7));
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        for op in [
+            edit(&wd, vec![Change::RepeatInterval(2)]),
+            edit(&wd, vec![Change::Repeat(Some(every_2.clone()))]),
+            edit(
+                &wd,
+                vec![
+                    Change::Repeat(Some(repeat("mon thu"))),
+                    Change::RepeatInterval(3),
+                ],
+            ),
+            edit(&monthly, vec![Change::Repeat(Some(every_2.clone()))]),
+            Op::Create(NewTask {
+                due: Some(due),
+                repeat: Some(every_2.clone()),
+                ..NewTask::plain("c", "Synthetic")
+            }),
+        ] {
+            assert_eq!(check(&s, m, mode, &op, today()), why, "{mode:?} {op:?}");
+        }
+    }
+    // The same interval, or an interval the next `Repeat` replaces, passes.
+    for op in [
+        edit(&wd, vec![Change::RepeatInterval(1)]),
+        edit(
+            &wd,
+            vec![
+                Change::RepeatInterval(2),
+                Change::Repeat(Some(repeat("mon thu"))),
+            ],
+        ),
+    ] {
+        assert_eq!(
+            check(&s, m, WriteMode::Test, &op, today()),
+            Ok(()),
+            "{op:?}"
+        );
+    }
+}

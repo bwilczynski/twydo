@@ -234,6 +234,26 @@ fn step_of(rule: &RRule) -> Result<Step, EditError> {
     })
 }
 
+/// Why a rule Twydo would write cannot have its interval: with interval 1 its shape completes
+/// (`step_of`), with this one it does not, so the task could no longer be completed (a weekday
+/// set or an Nth weekday repeats every week or month only). `None` when the rule completes,
+/// or when its shape completes at no interval (its completion is refused anyway).
+pub fn interval_refusal(rule: &RRule) -> Option<&'static str> {
+    if step_of(rule).is_ok() {
+        return None;
+    }
+    let every_one = RRule {
+        interval: 1,
+        ..rule.clone()
+    };
+    step_of(&every_one).ok()?;
+    Some(match rule.by_day.as_slice() {
+        [(Some(_), _)] => super::NTH_WEEKDAY_INTERVAL,
+        [_, ..] => super::WEEKDAY_SET_INTERVAL,
+        [] => super::UNSUPPORTED_INTERVAL,
+    })
+}
+
 /// The `n`th (`-1` = last) `w` of the month.
 fn nth_weekday(year: i32, month: u32, n: i8, w: Weekday) -> Option<NaiveDate> {
     if n > 0 {

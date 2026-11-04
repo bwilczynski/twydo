@@ -381,22 +381,23 @@ fn start_without_metadata_inserts_default_meta() {
     assert_eq!(meta.get_i64("RecurrenceValue"), Some(0));
 }
 
+/// (A weekday set takes no interval: `interval_of_a_weekday_set_repeat_is_refused`.)
 #[test]
 fn repeat_interval_one_removes_interval() {
     let s = SYNTHETIC.replace(
         "END:VTODO",
-        "RRULE:FREQ=WEEKLY;INTERVAL=3;BYDAY=MO\r\nEND:VTODO",
+        "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTH=1,4,7,10\r\nEND:VTODO",
     );
     let mut cal = parse(s.as_bytes()).unwrap();
     apply_changes(&mut cal, &[Change::RepeatInterval(1)], now()).unwrap();
     assert_eq!(
         todo(&cal).prop("RRULE").unwrap().value,
-        "FREQ=WEEKLY;BYDAY=MO"
+        "FREQ=MONTHLY;BYMONTH=1,4,7,10"
     );
     apply_changes(&mut cal, &[Change::RepeatInterval(4)], now()).unwrap();
     assert_eq!(
         todo(&cal).prop("RRULE").unwrap().value,
-        "FREQ=WEEKLY;BYDAY=MO;INTERVAL=4"
+        "FREQ=MONTHLY;BYMONTH=1,4,7,10;INTERVAL=4"
     );
     let before = cal.clone();
     assert!(apply_changes(&mut cal, &[Change::RepeatInterval(0)], now()).is_err());
@@ -997,4 +998,30 @@ fn interval_of_an_nth_weekday_repeat_is_refused() {
         }
         assert_eq!(cal, before);
     }
+}
+
+/// A weekday-set repeat (`WDb`, Mon and Thu, session C seed) completes only every week, so
+/// another interval is refused, nothing changed; interval 1 keeps the rule.
+#[test]
+fn interval_of_a_weekday_set_repeat_is_refused() {
+    let input = fixture(
+        "plan7-twydo-list2",
+        "00-seed",
+        "9f4b28de4b9d4bc895137fa09bb684e3",
+    );
+    for n in [2, 3] {
+        let mut cal = parse(&input).unwrap();
+        let before = cal.clone();
+        let err = apply_changes(&mut cal, &[Change::RepeatInterval(n)], now()).unwrap_err();
+        match err {
+            EditError::Unsupported(m) => assert_eq!(
+                m, "an interval is not supported on a repeat on set weekdays",
+                "{n}"
+            ),
+            e => panic!("{n}: {e:?}"),
+        }
+        assert_eq!(cal, before);
+    }
+    let mut cal = parse(&input).unwrap();
+    apply_changes(&mut cal, &[Change::RepeatInterval(1)], now()).unwrap();
 }

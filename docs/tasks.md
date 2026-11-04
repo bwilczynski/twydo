@@ -89,7 +89,10 @@ title, other fields, and the interval: every 2 weeks instead of every week). The
 change is accepted for monthly on the 29th to 31st, for February 29 and for repeats with an
 end, which share the same interval encoding. The interval of an Nth-weekday repeat (`2nd tue`,
 `last fri`) does not change: 2Do has none for it and keeps the ordinal where the interval would
-go (`changing the interval of an Nth-weekday repeat is not supported`). Existing
+go (`changing the interval of an Nth-weekday repeat is not supported`). A repeat on set
+weekdays (`mon thu`, `workdays`) repeats every week only and takes no interval, in any write
+mode: Twydo could not complete it (`an interval is not supported on a repeat on set
+weekdays`). Existing
 "from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
 yet (iphone_baseline)`). **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
 removing a weekly or monthly repeat, changing a weekly repeat to monthly or a monthly one to

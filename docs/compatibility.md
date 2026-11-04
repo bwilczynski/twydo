@@ -111,7 +111,8 @@ allowed within a class whose rule `edit` verdict passes and whose task row `edit
 weekly, monthly and yearly tasks. The same interval encoding is accepted as verified for the
 29th to 31st, 29 February, and repeats with an end, so those can change interval when their
 task's `edit` row passes. An Nth-weekday repeat's interval is never changed: 2Do keeps its
-ordinal where the interval would go. Editing an existing "from completion" task stays refused
+ordinal where the interval would go. Nor does a repeat on set weekdays get one, in any mode:
+Twydo completes it every week only. Editing an existing "from completion" task stays refused
 (its `edit` row has no baseline). The gate also covers creating items, projects, checklists and
 repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
 checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
