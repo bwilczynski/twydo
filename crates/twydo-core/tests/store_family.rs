@@ -13,7 +13,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
 use twydo_core::edit::Op;
 use twydo_core::ical::{Component, parse};
-use twydo_core::store::journal::Stage;
+use twydo_core::store::journal::{Journal, Stage};
 use twydo_core::store::{Store, WriteError};
 
 use common::{Env, Line, fixture, is_stamp, lines, sorted, stamp, with_completed_now};
@@ -616,4 +616,126 @@ fn op_on_plain_task_refused_when_an_item_arrives_after_load() {
         Err(WriteError::Stale(p)) => assert_eq!(p, item),
         other => panic!("expected Stale, got {other:?}"),
     }
+}
+
+/// list2's files, unfolded and keyed by SUMMARY, with the UIDs a move picks at random named by their
+/// task's SUMMARY instead.
+fn moved_by_summary(env: &Env) -> BTreeMap<String, String> {
+    let moved: Vec<String> = env
+        .files()
+        .into_iter()
+        .filter(|(k, _)| k.starts_with("list2/"))
+        .map(|(_, b)| {
+            // Unfolded, so a UID split across a folded line is still found.
+            String::from_utf8(b)
+                .unwrap()
+                .replace("\r\n ", "")
+                .replace("\n ", "")
+        })
+        .collect();
+    let names: Vec<(String, String)> = moved
+        .iter()
+        .map(|s| {
+            let t = todo_of(s.as_bytes());
+            (value(&t, "UID").unwrap(), value(&t, "SUMMARY").unwrap())
+        })
+        .collect();
+    names
+        .iter()
+        .zip(&moved)
+        .map(|((_, summary), text)| {
+            let mut text = text.clone();
+            for (uid, name) in &names {
+                text = text.replace(uid.as_str(), &format!("uid-of-{name}"));
+            }
+            (summary.clone(), text)
+        })
+        .collect()
+}
+
+/// A save that changes a dated checklist's date and moves it: the same files as the edit and
+/// then the move, in one journal entry that undo reverts byte for byte.
+#[test]
+fn save_with_family_date_change_and_move_is_one_step() {
+    let changes = match new_date() {
+        Op::Edit { changes, .. } => changes,
+        _ => unreachable!(),
+    };
+    let mv = Op::Move {
+        uid: C.into(),
+        to: "list2".into(),
+    };
+    let (two, mut store) = dated_checklist();
+    store.apply(&two.snap(), &new_date(), now()).unwrap();
+    store.apply(&two.snap(), &mv, now()).unwrap();
+    assert_eq!(two.journal().len(), 2);
+
+    let (env, mut store) = dated_checklist();
+    let before = env.files();
+    let save = Op::Save {
+        uid: C.into(),
+        changes,
+        to: Some("list2".into()),
+    };
+    store.apply(&env.snap(), &save, now()).unwrap();
+    let want = moved_by_summary(&two);
+    assert_eq!(want.len(), 1 + C_ITEMS.len());
+    assert_eq!(moved_by_summary(&env), want);
+    for uid in std::iter::once(C).chain(C_ITEMS) {
+        assert!(!env.file(uid).exists(), "{uid} left in list1");
+    }
+    let journal = env.journal();
+    assert_eq!(journal.len(), 1);
+    assert_eq!(journal[0].kind, "save");
+    // Each source edited then removed is one write; each copy one more.
+    assert_eq!(journal[0].writes.len(), 2 * (1 + C_ITEMS.len()));
+
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+}
+
+/// A grouped save (a family date change and move) interrupted half way: its entry is still
+/// Prepared, the copies are written but the sources not removed. Opening the store rolls it
+/// forward to the files the whole save writes.
+#[test]
+fn interrupted_family_save_is_rolled_forward() {
+    let changes = match new_date() {
+        Op::Edit { changes, .. } => changes,
+        _ => unreachable!(),
+    };
+    let save = Op::Save {
+        uid: C.into(),
+        changes,
+        to: Some("list2".into()),
+    };
+    let (done, mut store) = dated_checklist();
+    store.apply(&done.snap(), &save, now()).unwrap();
+    let mut entry = done.journal().pop().unwrap();
+    let want = done.files();
+
+    let (env, _) = dated_checklist();
+    entry.stage = Stage::Prepared;
+    // Every write but the last: the copies exist, one source is not removed yet.
+    let (last, first) = entry.writes.split_last().unwrap();
+    assert!(last.after.is_none() && last.before.is_some(), "{last:?}");
+    for w in first {
+        let p = env.vdir.join(&w.path);
+        match &w.after {
+            Some(text) => fs::write(&p, text).unwrap(),
+            None => fs::remove_file(&p).unwrap(),
+        }
+    }
+    Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
+    assert_ne!(env.files(), want);
+
+    let (_store, report) = Store::open_with(&env.cfg, matrix()).unwrap();
+    assert_eq!(report.resumed, vec![entry.id.clone()]);
+    assert!(report.stuck.is_empty(), "{report:?}");
+    assert_eq!(env.files(), want);
+    let got = env
+        .journal()
+        .into_iter()
+        .find(|e| e.id == entry.id)
+        .unwrap();
+    assert_eq!(got.stage, Stage::Applied);
 }
