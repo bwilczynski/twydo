@@ -1049,3 +1049,144 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
     assert!(app.snapshot.find(&socks).is_some(), "the saved item stays");
     assert!(!app.snapshot.tasks.iter().any(|t| t.summary == "Hat"));
 }
+
+/// Keyboard/card requests and the real writer together, using the shipped verified matrix.
+/// These fixtures are copied to a tempdir; no production vdir, config or sync is used.
+mod verified_recurrence_tui {
+    use super::{Env, now, writer};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::fs;
+    use std::path::Path;
+    use tdo::app::{App, Outcome};
+    use tdo::write::{Request, Writer};
+    use twydo_core::config::WriteMode;
+    use twydo_core::model::{Status, TaskKind};
+
+    const FC: &str = "61ed74be3ba34212ab7476b698de1263";
+    fn env(step: &str) -> Env {
+        let e = Env::new();
+        let list = e.vdir().join("list1");
+        fs::remove_dir_all(&list).unwrap();
+        fs::create_dir(&list).unwrap();
+        let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/phase0/v1/plan8-tui-a")
+            .join(step);
+        for p in fs::read_dir(src).unwrap().map(|p| p.unwrap().path()) {
+            if p.extension().is_some_and(|x| x == "ics") {
+                fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
+            }
+        }
+        assert_eq!(e.config().writes.mode, WriteMode::Verified);
+        e
+    }
+    fn key(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+    fn select(a: &mut App, uid: &str, done: bool) {
+        a.handle_key(key(if done { '4' } else { '2' }));
+        a.cursor = a
+            .visible_rows()
+            .iter()
+            .position(|r| a.snapshot.tasks[r.task].uid == uid)
+            .unwrap();
+    }
+    fn request(o: Outcome) -> Request {
+        match o {
+            Outcome::Write(r) => r,
+            other => panic!("expected TUI write, got {other:?}"),
+        }
+    }
+    fn run(e: &Env, a: &mut App, w: &mut Writer, r: Request) {
+        let result = w.run(a.write_snapshot(), &r, now());
+        a.reload(e.snapshot());
+        a.write_finished(result.clone().map_err(|e| e.message()));
+        result.unwrap();
+    }
+    fn card_repeat(a: &mut App, text: &str) -> Request {
+        a.handle_key(key('r'));
+        a.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        for c in text.chars() {
+            a.handle_key(key(c));
+        }
+        request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)))
+    }
+
+    #[test]
+    fn repeat_card_uses_verified_permissions_and_mixed_refusal_keeps_typing() {
+        let e = env("010-first-phone-actions");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, FC, false);
+        let original = fs::read(e.vdir().join(format!("list1/{FC}.ics"))).unwrap();
+        let r = card_repeat(&mut a, "weekly");
+        run(&e, &mut a, &mut w, r);
+        let t = &a.snapshot.tasks[a.snapshot.find(FC).unwrap()];
+        assert_eq!(t.rrule.as_deref(), Some("FREQ=WEEKLY"));
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(
+            fs::read(e.vdir().join(format!("list1/{FC}.ics"))).unwrap(),
+            original
+        );
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &mut w, r);
+        select(&mut a, FC, false);
+        a.handle_key(key('r'));
+        a.handle_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        for c in "monthly".chars() {
+            a.handle_key(key(c));
+        }
+        a.form.as_mut().unwrap().title.push_str(" changed");
+        let typed = a.form.as_ref().unwrap().title.clone();
+        let before = fs::read(e.vdir().join(format!("list1/{FC}.ics"))).unwrap();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(err.message()));
+        assert_eq!(a.form.as_ref().unwrap().title, typed);
+        assert_eq!(a.form.as_ref().unwrap().repeat, "monthly");
+        assert_eq!(
+            fs::read(e.vdir().join(format!("list1/{FC}.ics"))).unwrap(),
+            before
+        );
+        a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let r = card_repeat(&mut a, "none");
+        run(&e, &mut a, &mut w, r);
+        let t = &a.snapshot.tasks[a.snapshot.find(FC).unwrap()];
+        assert!(t.rrule.is_none());
+        assert_eq!(t.kind, TaskKind::Checklist);
+    }
+
+    #[test]
+    fn ticks_complete_captured_until_tasks_and_reset_a_monthly_checklist() {
+        for (uid, step, confirm, history_count) in [(FC, "010-first-phone-actions", true, 4)] {
+            let e = env(step);
+            let (mut w, _) = writer(&e.config());
+            let before = e.snapshot().tasks.len();
+            let mut a = App::new(
+                e.snapshot(),
+                now().with_timezone(&chrono_tz::America::New_York),
+            );
+            select(&mut a, uid, false);
+            let first = a.handle_key(key('x'));
+            let r = if confirm {
+                assert!(matches!(first, Outcome::Continue));
+                request(a.handle_key(key('x')))
+            } else {
+                request(first)
+            };
+            run(&e, &mut a, &mut w, r);
+            assert_eq!(a.snapshot.tasks.len(), before + history_count);
+            let i = a.snapshot.find(uid).unwrap();
+            assert_eq!(a.snapshot.tasks[i].status, Status::Open);
+            if uid == FC {
+                for &c in a.snapshot.children(i) {
+                    assert_eq!(a.snapshot.tasks[c].status, Status::Open);
+                    assert!(a.snapshot.tasks[c].due.is_none());
+                }
+            }
+        }
+    }
+}

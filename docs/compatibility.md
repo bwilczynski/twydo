@@ -91,6 +91,7 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 | Weekly repeat | ✅ | ✅ | ✅ | — | — | — |
 | Repeat from completion | ✅ | — | ✅ | — | — | — |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Recurring checklist | — | — | Monthly only | — | — | — |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
@@ -144,11 +145,11 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
   counts from the completion day even when the start date is later.
 
 Not verified yet, so refused for writing in verified mode: setting, removing or changing a
-"from completion" repeat, and any repeat change on a project or checklist; converting an empty project to a checklist; editing an existing "from completion"
+"from completion" repeat, and any repeat change on a project; converting an empty project to a checklist; editing an existing "from completion"
 task; completing a repeat with an end date; completing a recurring project that ends or
 repeats from completion; changing the interval of an Nth-weekday repeat (not supported by 2Do);
 reopening a repeating task itself (the last occurrence of an ended series: use undo);
-repeating checklists; a repeating
+other recurring-checklist shapes; a repeating
 item inside a repeating project (creating one included); nested projects and checklists; moving,
 deleting or reopening a single item on its own; editing alerts. Converting a project that has
 items is not supported by 2Do at all.
@@ -169,3 +170,8 @@ Twydo's change read by the iPhone. The session logs are in
 Verifying more needs a 2Do device and a test account. The method is in the
 [phase-0 checklist](reference/phase0/README.md); `tools/seed_fixture.py` sets up test tasks on
 the server so they do not have to be typed on the phone.
+
+Scoped checklist repeat changes and monthly reset/history now pass: plain interval-1
+monthly/weekly date-only repeat edits without an end/start/alert/delay, and plain
+monthly day1–28 completion with open/done items. Weekly/yearly completion,
+cancelled items, ordinary recurring-checklist edits and direct creation stay refused.

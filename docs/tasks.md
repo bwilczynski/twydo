@@ -98,7 +98,11 @@ yet (iphone_baseline)`). **Setting or removing a repeat:** plain daily, weekly, 
 be set, removed or changed between those classes. Newly verified daily/yearly
 transitions are due anchored and have no end or weekday selector. Existing
 monthly/weekly behavior, including a monthly count end, remains supported.
-From-completion and project repeat changes remain unverified. Checklist repeat changes remain refused.
+From-completion and project repeat changes remain unverified. Existing
+checklists can set/change/remove plain monthly/weekly rules: interval 1,
+date-only due, no end/start/alerts/delay or completion anchor. Monthly recurring
+checklists reset items and create history on completion; ordinary recurring
+checklist edits, creation and other completion shapes remain refused.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them

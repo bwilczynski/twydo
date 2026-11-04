@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use twydo_core::compat::{Matrix, OperationEntry, Verdict};
 use twydo_core::ical::{Calendar, parse};
 use twydo_core::model::meta_edit::MetaJson;
 
@@ -90,4 +91,43 @@ pub fn stamped(cal: &Calendar, now: DateTime<Utc>) {
 
 pub fn preserved_created(before: &Calendar, after: &Calendar) {
     assert_eq!(todo(before).prop("CREATED"), todo(after).prop("CREATED"));
+}
+
+/// This is deliberately a candidate, not the embedded matrix. Device verification of the
+/// fixed Twydo output must precede shipping any new operation/rule verdict.
+pub fn candidate() -> Matrix {
+    let mut matrix = Matrix::embedded().clone();
+    matrix
+        .rule
+        .iter_mut()
+        .find(|r| r.class == "mod:until")
+        .unwrap()
+        .execute = Verdict::Pass;
+    for (case, op) in [
+        ("recurring-checklist", "complete"),
+        ("ended-until-daily", "reopen"),
+        ("ended-until-monthly", "reopen"),
+    ] {
+        let entry = OperationEntry {
+            case: case.into(),
+            op: op.into(),
+            iphone_baseline: Verdict::Pass,
+            mac_to_iphone: Verdict::Unverified,
+            iphone_to_mac: Verdict::Unverified,
+            twydo_to_iphone: Verdict::Pass,
+            iphone_to_twydo: Verdict::Pass,
+            evidence: Vec::new(),
+            notes: "Local candidate only".into(),
+        };
+        if let Some(existing) = matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == case && r.op == op)
+        {
+            *existing = entry;
+        } else {
+            matrix.operation.push(entry);
+        }
+    }
+    matrix
 }
