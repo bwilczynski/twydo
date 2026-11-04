@@ -800,11 +800,11 @@ fn weekly_recurring_project_advances() {
     );
 }
 
-/// Task 14: the last occurrence of a counted recurring project completes the project and its
-/// open items in place, as a plain project (H5); no copies. Session C confirmed the in-place
-/// end for single tasks (`C1a`, `UNa`), not yet for a recurring project.
+/// A recurring project that ends (here its last occurrence, `COUNT=1`) is not completed: no
+/// capture shows what 2Do does with a counted, until or from-completion recurring project, so
+/// the gate refuses in every mode and nothing is written.
 #[test]
-fn last_occurrence_of_recurring_project_completes_the_family() {
+fn completing_a_recurring_project_that_ends_is_refused() {
     let (env, mut store) = reshaped_r(
         "RRULE:FREQ=MONTHLY",
         "RRULE:FREQ=MONTHLY;COUNT=1",
@@ -816,17 +816,13 @@ fn last_occurrence_of_recurring_project_completes_the_family() {
         &["mod:count"],
     );
     let before = env.files();
-    store
+    let err = store
         .apply(&env.snap(), &Op::Complete { uid: R.into() }, now())
-        .unwrap();
-    let after = env.files();
-    assert_eq!(after.len(), before.len(), "no copies");
-    let r = todo_of(&after[&key(R)]);
-    assert_eq!(value(&r, "STATUS").as_deref(), Some("COMPLETED"));
-    assert_eq!(value(&r, "DUE").as_deref(), Some("20261215"));
-    assert_eq!(value(&r, "RRULE").as_deref(), Some("FREQ=MONTHLY;COUNT=1"));
-    assert_eq!(status(&after, R2), "COMPLETED");
-    // The items already completed keep their files.
-    assert_eq!(after[&key(R1)], before[&key(R1)]);
-    assert_eq!(after[&key(R3)], before[&key(R3)]);
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("completing a recurring project that ends or repeats from completion"),
+        "{err}"
+    );
+    assert_eq!(env.files(), before);
 }

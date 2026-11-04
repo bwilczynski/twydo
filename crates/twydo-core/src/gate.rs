@@ -50,7 +50,8 @@
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
 //!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
-//! 5. the verified shape of a repeating completion; a completed repeating task (the last
+//! 5. the verified shape of a repeating completion (a recurring project's rule must have no
+//!    end and repeat from its due date); a completed repeating task (the last
 //!    occurrence of an ended series, completed in place) is not reopened (use undo);
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
 //!    rule 3 (so the write mode applies).
@@ -64,7 +65,7 @@ use crate::config::WriteMode;
 use crate::edit::{Change, Due, NewTask, Op, REOPEN_ENDED, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
-use crate::model::repeat::{parse_rrule, rule_class};
+use crate::model::repeat::{End, parse_rrule, rule_class};
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::repeatinput::RepeatSpec;
 use crate::views::{Snapshot, declared_kind, task_rule_class};
@@ -91,6 +92,8 @@ const CHILD_RECURRENCE: &str = "a repeating task inside a repeating project is n
                                 (project-child-own-recurrence)";
 const NO_DUE: &str = "a repeating task needs a due date";
 const PLAIN_PARENT: &str = "subtasks of a plain task are not verified yet";
+const PROJECT_END: &str =
+    "completing a recurring project that ends or repeats from completion is not verified yet";
 const START_OFFSETS: &str =
     "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
 
@@ -244,6 +247,18 @@ pub fn check(
             }
         }
         if let Op::Complete { .. } = op {
+            // A recurring project's completion was captured for a plain rule only.
+            let ends = task
+                .rrule
+                .as_deref()
+                .and_then(|r| parse_rrule(r).ok())
+                .is_some_and(|r| r.end != End::Never);
+            if cases.family == Some("recurring-project")
+                && task.rrule.is_some()
+                && (ends || task.from_completion)
+            {
+                return blocked(PROJECT_END);
+            }
             if execute != Verdict::Pass {
                 return not_verified();
             }
