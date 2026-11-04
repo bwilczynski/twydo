@@ -632,7 +632,7 @@ fn edit_repeat_bad_text_exits_2() {
 }
 
 /// Setting or removing a repeat needs the `repeat` rows: this matrix has none, and the shipped
-/// one passes the one-time row but not yet the monthly one (`iphone_to_twydo`).
+/// one has verified weekly and monthly repeats but not yearly ones.
 #[test]
 fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
@@ -649,29 +649,34 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
         err(&o)
     );
     assert_eq!(fs::read(file_of(&env)).unwrap(), before);
+    // The shipped matrix (verified mode) refuses a yearly repeat, still unverified.
     let env = Env::new("verified");
-    let mut args = vec!["op"];
-    args.extend_from_slice(&set);
-    let o = env.tdo(&args);
+    let o = env.tdo(&[
+        "op",
+        "edit",
+        TASK_A,
+        "--due",
+        "2026-12-05",
+        "--repeat",
+        "yearly",
+    ]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(
         err(&o).contains(
-            "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)"
+            "changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)"
         ),
         "{}",
         err(&o)
     );
     assert_eq!(fs::read(file_of(&env)).unwrap(), before);
-    // Removing the monthly repeat of E is refused too.
+    // Setting a monthly repeat on a one-time task and removing E's monthly repeat are verified.
+    let mut args = vec!["op"];
+    args.extend_from_slice(&set);
+    let o = env.tdo(&args);
+    assert!(o.status.success(), "{}", err(&o));
+    assert_ne!(fs::read(file_of(&env)).unwrap(), before);
     let o = env.tdo(&["op", "edit", TASK_E, "--no-repeat"]);
-    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
-    assert!(
-        err(&o).contains(
-            "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)"
-        ),
-        "{}",
-        err(&o)
-    );
+    assert!(o.status.success(), "{}", err(&o));
 }
 
 /// `--kind` naming the type the file already declares changes nothing, so nothing is

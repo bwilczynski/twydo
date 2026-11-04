@@ -1794,46 +1794,45 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
     let m = Matrix::embedded();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // The one-time row passes now (session A), so a repeat set on a plain task is refused
-    // for the class it becomes, never for "one-time tasks".
-    let monthly_new =
-        "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)";
-    for text in ["monthly", "3m"] {
+    // Allowed with the shipped matrix: one-time to monthly or weekly, removing a monthly
+    // repeat, and changing between weekly and monthly.
+    for text in ["monthly", "3m", "weekly", "2w"] {
         let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
-        assert_eq!(at(&op), blocked(monthly_new), "{text}");
+        assert_eq!(at(&op), Ok(()), "{text}");
     }
+    let op = edit("gate-monthly", vec![Change::Repeat(None)]);
+    assert_eq!(at(&op), Ok(()));
+    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("weekly")))]);
+    assert_eq!(at(&op), Ok(()));
+    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("monthly")))]);
+    assert_eq!(at(&op), Ok(()));
+    // Still refused: yearly, daily and from completion.
     let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
     assert_eq!(
         at(&op),
         blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
     );
-    for (text, case) in [("daily", "daily"), ("weekly", "weekly")] {
-        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
-        assert_eq!(
-            at(&op),
-            blocked(&format!(
-                "edit for {case} tasks is not verified yet (twydo_to_iphone)"
-            )),
-            "{text}"
-        );
-    }
-    // Removing a monthly repeat, changing it to another class or from completion.
-    let monthly = "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)";
-    for spec in [None, Some(repeat("yearly"))] {
-        let op = edit("gate-monthly", vec![Change::Repeat(spec.clone())]);
-        assert_eq!(at(&op), blocked(monthly), "{spec:?}");
-    }
+    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
+    assert_eq!(
+        at(&op),
+        blocked("edit for daily tasks is not verified yet (twydo_to_iphone)")
+    );
+    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("yearly")))]);
+    assert_eq!(
+        at(&op),
+        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
+    );
     let op = edit(
         "gate-monthly",
         vec![Change::Repeat(Some(repeat("monthly after done")))],
     );
     assert!(at(&op).is_err());
-    // An end (count or until) is a new shape too.
+    // An end by count passes since session B (`mod:count` edit).
     let op = edit(
         "gate-monthly",
         vec![Change::Repeat(Some(repeat("monthly 3 times")))],
     );
-    assert_eq!(at(&op), blocked(monthly));
+    assert_eq!(at(&op), Ok(()));
     // A repeat on a project makes it a recurring project.
     let op = edit(
         "gate-empty-project",

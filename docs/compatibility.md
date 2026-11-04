@@ -99,9 +99,10 @@ on the phone (see [`plan7-capture.md`](reference/phase0/plan7-capture.md)). In v
 allows **creating** checklists, projects, recurring projects and items, and creating daily,
 weekly, monthly, yearly and from-completion repeating tasks, and **converting** a task to a
 checklist or project, a checklist to a project, and an empty checklist or project to a task.
-Setting, removing or reshaping a repeat were written right, but the new or old repeat kind's
-`repeat` row still lacks a verdict (`iphone_to_twydo` for monthly, weekly and project rows; more
-for daily, yearly, from completion and checklists), so they are refused in verified mode.
+**Setting a weekly or monthly repeat on a plain task, removing one, and changing between weekly
+and monthly are allowed** (session A: the phone's own repeats; session B: Twydo's writes shown
+right). Repeat changes involving daily, yearly, from-completion, a project or a checklist stay
+refused: their `repeat` rows lack a verdict.
 Empty project to checklist lacks its iPhone baseline. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
@@ -117,9 +118,8 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
 - changing a checklist's date removes its items' copies of the old date;
 - undoing a completion before and after it was synced.
 
-Not verified yet, so refused for writing in verified mode: setting a repeat on a task,
-removing one, or changing its kind, "from completion" or end (only the interval of a monthly or
-yearly repeat can be changed); converting an empty project to a checklist; completing daily, weekly and
+Not verified yet, so refused for writing in verified mode: setting, removing or changing a
+daily, yearly or "from completion" repeat, and any repeat change on a project or checklist; converting an empty project to a checklist; completing daily, weekly and
 Nth-weekday repeats (Twydo does not execute those rules yet); repeating checklists; a repeating
 item inside a repeating project (creating one included); nested projects and checklists; moving,
 deleting or reopening a single item on its own; editing alerts. Converting a project that has
