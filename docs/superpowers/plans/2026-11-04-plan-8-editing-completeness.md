@@ -44,6 +44,11 @@ Local RF/RA validation passes (823 Rust / 49 Python tests, lint and links).
 Return preflight 310 stopped on two non-session server-emptied collection guards;
 no return edits or force-delete ran. Reconcile that condition before resuming;
 see the RF/RA checklist's interrupted-preflight checkpoint. Do not repeat baselines.
+Update: user confirmed the non-session server emptying was intentional. Scoped
+sync now selects only the two capture collections through the existing runner,
+without forced deletion or normal-config changes. Barrier 310's fourteen Twydo
+edits are uploaded; five-task phone inspection/note followup is pending. All
+non-target resource bytes, including the other lists' local copies, are preserved.
 
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,

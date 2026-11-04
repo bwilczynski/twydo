@@ -296,3 +296,27 @@ remain in `/tmp/twydo-rfra-session-path` and `/tmp/twydo-rfra-current-path`; the
 prepared return script is `/tmp/twydo-rfra-return1.py` and must not be replayed
 without checking whether it has already started. Baselines through 300 must not
 be repeated.
+
+### Return barrier 310 uploaded
+
+The user confirmed the non-session server emptying was intentional. No local
+deletion or force-delete was inferred from that confirmation. A private sync
+configuration retains the same vdir/state/lock identity and uses the normal
+vdirsyncer config explicitly; its executable wrapper accepts only `sync <pair>`
+and expands it to the two approved capture collection selectors with
+`--no-force-delete`. Metasync and after-edit sync are disabled for this process.
+Normal configuration is unchanged; ordinary full-pair sync can still report the
+unresolved local deletion decisions for the non-session collections.
+
+Scoped preflight and upload passed. All fourteen approved edits ran with separate
+local snapshots; only the five `t` files changed. Before/after full-vdir hashes
+confirm other resources, including the emptied-list local copies, are unchanged.
+The private baseline-only candidate matrix grants the captured edit baseline to
+the session process; shipping operation verdicts remain unverified.
+
+Phone barrier pending: inspect fields (monthly after completion, Due December 9,
+no Start), interval (every 2 months after completion, Due December 7), anchor and
+direct (monthly after completion, Due December 7), offset (monthly after completion,
+Due December 9, Start December 5). Set Notes to `RFRA return 1` on all five `t`
+tasks, then sync once. Do not complete them or change their repeats yet. Capture
+this phone return before the next recurrence transition barrier.
