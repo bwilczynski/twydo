@@ -227,22 +227,16 @@ mod tests {
         let m = Matrix::embedded();
         let p = Verdict::Pass;
         assert_eq!(combined_verdicts(m, "months-day-1-28"), (p, p, p));
-        // Since Plan 7 session C every modifier executes, so the worst part is the class.
+        // Since Plan 7 session C the count modifier executes, so the worst part is the class.
         assert_eq!(combined_verdicts(m, "months-day-1-28+count"), (p, p, p));
         let (preserve, execute, edit) = combined_verdicts(m, "months-last-day+count");
         assert_eq!(preserve, Verdict::Unverified);
         assert_eq!(execute, Verdict::Unverified);
         assert_eq!(edit, Verdict::Fail);
-        // A modifier worse than its class wins too.
-        let mut m = m.clone();
-        m.rule
-            .iter_mut()
-            .find(|r| r.class == "mod:count")
-            .unwrap()
-            .execute = Verdict::Unverified;
+        // A modifier worse than its class wins: until's `execute` is unverified.
         assert_eq!(
-            combined_verdicts(&m, "months-day-1-28+count").1,
-            Verdict::Unverified
+            combined_verdicts(m, "months-day-1-28+until"),
+            (p, Verdict::Unverified, p)
         );
     }
 
