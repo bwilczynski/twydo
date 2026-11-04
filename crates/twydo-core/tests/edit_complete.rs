@@ -1207,6 +1207,12 @@ fn check_twin_step(
         live_due,
         "{ctx}: due"
     );
+    // `twin_lines` sets CREATED aside; the live task keeps its own.
+    assert_eq!(
+        todo(&got).prop("CREATED").unwrap().value,
+        created,
+        "{ctx}: live CREATED"
+    );
     assert_eq!(
         twin_lines(&got, t, &created),
         twin_lines(&want_live, t, &created),
