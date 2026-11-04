@@ -1,10 +1,9 @@
 # RF/RA bounded capture checklist
 
-Status: user approved proceeding and confirmed current backup / 2Do 3.91.
-Minimum evidence set reduced to five pairs; ten tasks seeded and synced.
-Preflight and seed sync passed; preexisting local resource bytes unchanged. Continues the
-[Plan 8 checkpoint](../../superpowers/plans/2026-11-04-plan-8-editing-completeness.md).
-Authorization comes from the conversation; the scope remains bounded below.
+Status: **RF/RA phone evidence complete through 380; scoped shipping verdicts enabled**.
+The user approved the bounded production scope and confirmed backup / 2Do 3.91.
+Five twin pairs supplied the minimum evidence set. No further phone actions or
+cleanup are authorized by this completed checklist.
 
 ## Scope and reused evidence
 
@@ -415,3 +414,41 @@ uploaded it. All other resource bytes and normal config are unchanged. Final
 planned phone action: confirm `RFRA anchor t` has no repeat, set Notes to
 `RFRA return 4`, then sync once. Do not complete or edit other tasks. Capture that
 return before promoting either shipping operation row and running final checks.
+
+## Completed RF/RA closeout
+
+Final return 380 confirmed no repeat on anchor `t`; `RFRA return 4` notes preserved
+UID/RUID and all metadata, including inactive Value 1 / From 1. Its exact writer
+comparison passes. Both dedicated operation rows now pass their iPhone baseline
+and two Twydo direction columns; Mac columns remain unverified. Effective limits
+remain in `captured_from_completion_edit` / `captured_automatic_alarm`.
+
+Writer equivalence is bounded: ordinary field writers preserve the existing rule
+and identity in per-action phone comparisons; scalar interval and full card repeat
+specs both match the captured two-month rule/metadata; plain monthly/weekly repeat
+serialization is shared across anchor/class transitions, with both anchor switches,
+set/removal and retained inactive codes accepted by subsequent phone edits. This
+does not establish selectors, endings, arbitrary intervals, families or lifecycle
+operations. Tests now use the shipping matrix rather than a candidate override.
+
+Final review found that an open history copy could otherwise acquire recurrence
+while retaining another series' RUID. A failing regression using actual reopened
+history now passes with a narrow refusal: a plain source with a nonempty foreign
+series id cannot establish completion recurrence. This also conservatively refuses
+reactivating a former phone series with an ambiguous foreign id. Existing live
+recurring phone tasks may retain opaque ids different from their UID; positive
+edit/transition tests preserve that support.
+
+New regression assertions remain in existing `edit_fields`, `edit_complete`, `gate`,
+CLI `cli_op` and TUI `write` targets. All fixtures are allowlisted synthetic partial
+captures; the ambiguous reopened sequence is not used as clean evidence. Preserve
+all private versions and leave synthetic list/copy cleanup for separate consent.
+The matrix now contains 69 passing, 35 unverified and 2 unsupported operation rows;
+these counts are not the remaining feature backlog. The next increment requires
+its own minimum checklist and fresh device approval; Plan 8 remains in progress; PR #26 stays draft.
+
+Final validation: `mise run test` passed 830 Rust tests, 49 Python tests and
+all documentation links; `mise run lint` passed Clippy and formatting. Fixture
+privacy scan and diff checks passed. Final review's history-linked source gap
+was reproduced by a failing test, fixed and re-reviewed with no remaining
+important findings. No new device work or cleanup remains in this RF/RA increment.

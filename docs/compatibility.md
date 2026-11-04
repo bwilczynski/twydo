@@ -101,7 +101,7 @@ batches remain unfinished. A passing row is combined with the shape restrictions
 | Yearly repeat (29 February included) | ✅ | ✅ | ✅ | — | — | ✅ |
 | Daily repeat | ✅ | ✅ | ✅ | — | — | — |
 | Weekly repeat | ✅ | ✅ | ✅ | — | — | — |
-| Repeat from completion | ✅ | — | ✅ | — | — | — |
+| Repeat from completion | ✅ | Monthly only² | ✅ | — | — | — |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring checklist | — | — | Monthly only¹ | — | — | — |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -123,6 +123,8 @@ The newly enabled operations are:
 | `ended-until-daily.reopen` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
 | `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
 | `history-copy.reopen` | Top-level non-recurring, date-only task copies linked by RUID; no children/start/alerts/delay |
+| `from-completion.edit` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly interval 1 → 2 also passes |
+| `from-completion.repeat` | Pure plain interval-1 monthly/weekly set/remove, class and due/completion anchor changes; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
 
 `until` completion now passes for top-level plain daily/monthly day 1–28 tasks with interval 1,
 date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,
@@ -141,16 +143,25 @@ Existing repeat completion support remains: daily, weekly, weekday sets, monthly
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
 The [Plan 7 session](reference/phase0/plan7-capture.md) supplies those fixtures. Recurring projects
 that end or repeat from completion remain refused. Moving/deleting one item, editing existing
-from-completion tasks, project repeat changes, empty-project-to-checklist conversion and native
-alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+weekly/interval-2 from-completion tasks, project repeat changes, empty-project-to-checklist
+conversion and native alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
-The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) now has phone
-baselines for standalone monthly from-completion edits and monthly/weekly anchor
-changes. Fixture and candidate TUI tests cover those shapes; Twydo-to-phone return
-checks are pending. Their shipping operation rows remain unverified. A passing
-custom matrix cannot widen these edits to daily/yearly rules, endings, families,
-ordinary weekly/interval-2 field edits or custom alarms.
+The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) records both-direction
+phone checks and exact writer comparisons for the two from-completion rows. Retained inactive
+repeat codes after removal were accepted and edited by the phone. The interval edit works
+through the card and CLI; mixed interval/field saves are refused atomically and keep typed
+text. Daily/yearly rules, endings, families, ordinary weekly/interval-2 edits and custom alarms
+remain outside this evidence. Setting completion recurrence on a plain task with a
+foreign series link is also refused, including reopened history; existing live recurring
+phone tasks retain their opaque series ids. The [task guide](tasks.md) gives the supported
+edit vocabulary.
+
+During the clean fields return, 2Do displayed the advanced date while the server initially
+had only its new completed history copy; the live advance arrived with a subsequent phone
+note save under the same UID/RUID. A history upload alone therefore did not prove complete
+remote advancement in this session. Preserve both versions and check the live resource;
+do not repeat completion to repair an apparently stale date.
 
 A pure repeat set/removal/reshape needs the repeat rows of both its source and destination
 cases. Interval-only edits still need ordinary edit evidence; mixed saves need both. Newly

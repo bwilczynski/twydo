@@ -1,7 +1,7 @@
 # Plan 8: close the task-editing compatibility gaps
 
-Date: 2026-11-04. Status: batch 1 phone rounds complete through 153; eight scoped operation
-rows and narrow until execution enabled. Later device batches/full TUI surface remain pending.
+Date: 2026-11-04. Status: batch 1 and RF/RA complete through capture 380; ten scoped
+operation rows and narrow until execution enabled. Later batches/full TUI surface remain pending.
 See the session's regression map and local closeout for exact enabled/refused shapes.
 
 ## Resume checkpoint — start here after the required project/spec reading
@@ -13,67 +13,51 @@ See the session's regression map and local closeout for exact enabled/refused sh
   logical synthetic cases yielded eight newly passing operation rows, narrow date-only
   daily/plain-monthly until execution, and its end-date summary edge. Exact scopes and remaining
   refusals are in [compatibility.md](../../compatibility.md#what-is-verified-today).
-- Validation on the completed code: `mise run test` passed 813 Rust tests, 49 Python tests and
+- Validation on the completed code: `mise run test` passed 830 Rust tests, 49 Python tests and
   documentation links; `mise run lint` passed. Offline verified-mode TUI key/card/writer tests
-  cover the newly enabled batch, not the whole remaining TUI surface.
+  cover batch 1 and RF/RA, not the whole remaining TUI surface.
 - Assertions live in existing behavior suites (`edit_fields`, `edit_complete`, `store`,
   `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
   are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
   [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
-- Matrix accounting: 67 passing, 37 unverified and 2 unsupported operation rows. Of the 37,
-  15 are unused attribute placeholders and 5 generic reopen rows overlap narrower dedicated
-  cases; 17 are other task/family case-operation entries. This is **not** a complete count of
+- Matrix accounting after RF/RA: 69 passing, 35 unverified and 2 unsupported operation rows.
+  Of the 35, 15 are unused attribute placeholders and 5 generic reopen rows overlap narrower
+  dedicated cases; 15 are other task/family case-operation entries. This is **not** a complete count of
   remaining features: absent rows and guarded combinations add real gaps.
 - Private production session manifests/backups are outside git. Existing synthetic test lists
   remain; no cleanup, account/config change or additional production operation is authorized
   by this checkpoint. The five conflicts at 130 were resolved using the user's phone versions.
   Acceptance comes from the clean 141–144/151–153 retry, not that conflicted attempt.
 
-### Next bounded increment: existing from-completion editing and anchor changes
+### RF/RA completed; next bounded increment
 
-RF/RA progress: the user approved the bounded production scope, confirmed a fresh
-backup and 2Do 3.91, and requested a minimum example set and batched phone actions.
-Five twin pairs (ten tasks) were seeded in the existing capture A list. Phone
-baselines through capture 300 are complete; do not repeat them. See the
-[RF/RA checklist](../../reference/phase0/plan8-rf-ra-checklist.md) for reasons per
-pair, exact observations and the next Twydo return barrier. Baseline fixtures are
-in `fixtures/phase0/v1/plan8-rfra`; ordinary edit/completion/gate/TUI suites hold
-their assertions. A candidate gate restricts the future operation rows to the
-captured shapes; shipping verdicts remain unchanged pending phone returns.
-Local RF/RA validation passes (823 Rust / 49 Python tests, lint and links).
-Return preflight 310 stopped on two non-session server-emptied collection guards;
-no return edits or force-delete ran. Reconcile that condition before resuming;
-see the RF/RA checklist's interrupted-preflight checkpoint. Do not repeat baselines.
-Update: user confirmed the non-session server emptying was intentional. Scoped
-sync now selects only the two capture collections through the existing runner,
-without forced deletion or normal-config changes. Barrier 310's fourteen Twydo
-edits are uploaded; five-task phone inspection/note followup is pending. All
-non-target resource bytes, including the other lists' local copies, are preserved.
-Phone return 320 is captured: five note edits preserved complete recurrence/date/
-identity metadata. Barrier 330 is uploaded (anchor weekly after completion; direct
-repeat removed). Next phone batch checks those two and completes the three edited
-monthly twins. Follow the RF/RA checklist; do not repeat the completed returns.
-Return 340 accepts weekly-after-completion and retained-code repeat removal;
-interval/offset completion outputs match the core writer. User confirmed reopening
-a fields occurrence, so its ambiguous completion is excluded from clean evidence.
-Barrier 350 uploads weekly-from-due anchor and a December 10 retry on the same
-fields series; next phone batch handles both, without extra examples or syncs.
-Return 360 accepts weekly-from-due anchor. Fields retry produced its December 10
-history but left the live series byte-identical at December 10; scoped followup
-361 did not change it. User was asked for the phone's displayed live Due. Pause
-dependent writes and final anchor removal until reconciled; both shipping rows
-remain unverified. Preserve all private captures and do not repeat completion.
-Update 363: phone note on the visibly active December 4 series exported the
-advanced date under the original UID/RUID. Clean December 10 history and live
-advance now match the core writer plus followup note exactly. No internal cause
-is assumed for the export delay. Barrier 370's final anchor removal is uploaded;
-phone no-repeat inspection and `RFRA return 4` note are pending. Then close out
-scoped verdicts/tests/docs; do not replay earlier captures or clean up the extra copy.
+The user approved a minimum RF/RA evidence set: five twin pairs, ten tasks, with
+batched phone actions. Baselines 202–300 and returns 310–380 are complete. **Do not
+repeat them.** Scoped `from-completion.edit` and `from-completion.repeat` now pass;
+see [the RF/RA checklist](../../reference/phase0/plan8-rf-ra-checklist.md) for exact
+capabilities, fixture/test map, writer-equivalence argument and refusal neighbors.
+Tests use the shipping matrix directly, including CLI/card interval changes,
+date-key undo/redo and atomic grouped-save refusals retaining typed text.
 
-Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
-`from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,
-project/item work and other repeat shapes for separate increments. Do not broaden matrix rows
-beyond captured operations and a written writer-equivalence argument.
+The fields retry's live advance reached the server with a later note save under
+the original UID/RUID; its unchanged December 10 history and December 4 live output
+match the core writer exactly. The user's earlier reopened occurrence remains
+preserved and excluded from clean completion evidence. Review also added a
+refusal for setting completion recurrence on plain tasks with a foreign series
+link, while supporting opaque foreign ids on existing live recurring tasks.
+
+Two non-session lists were intentionally emptied on the server, as confirmed by
+the user. They were not force-deleted locally. The session used private scoped sync
+through the same runner/locks, selecting only the two capture collections with
+forced deletion prohibited. Normal config, account and write mode are unchanged.
+Private manifests/backups and all extra synthetic copies remain outside cleanup.
+
+Next: prepare a minimum bounded checklist for the remaining Task 2 work (repeat
+end changes or project/item repeat cases), consulting the full session coverage
+ledger first. RF/RA does not authorize additional device operations, move/delete,
+family work, arbitrary rule shapes or cleanup. Keep later increments separate and
+obtain fresh approval for their exact production scope. The written checklist
+below applies to that next increment, not to replaying completed RF/RA rounds.
 
 Before involving the phone, reuse prior fixtures, inspect the actual gate/writer paths, and
 prepare one concise checklist showing:

@@ -99,15 +99,26 @@ end, which share the same interval encoding. The interval of an Nth-weekday repe
 go (`changing the interval of an Nth-weekday repeat is not supported`). A repeat on set
 weekdays (`mon thu`, `workdays`) repeats every week only and takes no interval, in any write
 mode: Twydo could not complete it (`an interval is not supported on a repeat on set
-weekdays`). Existing
-"from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
-yet (iphone_baseline)`). **Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can be set,
+weekdays`). Existing standalone monthly **from-completion** tasks now support title,
+notes, due date/time and start edits at interval 1, without an end. Source and resulting
+due dates must be on days 1–28; date-only and floating times with the captured automatic
+due alarm are supported, while custom alarms and zoned dates remain refused. A separate
+pure, date-only interval change from monthly interval 1 to 2 is verified through both CLI
+and card. Ordinary weekly or interval-2 from-completion field edits remain unverified.
+
+**Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can be set,
 removed or changed between those classes. Newly verified daily/yearly transitions are due
 anchored and have no end or weekday selector; they do not enable end/anchor/Nth-rule changes.
 The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
 can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
 start, alerts or completion anchor. Ordinary recurring-checklist edits, interval changes,
-other checklist rules and project/from-completion repeat changes remain refused.
+other checklist rules and project repeat changes remain refused. Standalone tasks can
+set/remove and switch between plain monthly/weekly rules anchored on due date or completion:
+interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;
+mixing ordinary edits or a due change into the same repeat save stays refused. Daily/yearly,
+weekday-selector and family from-completion transitions remain unverified. A plain task
+still linked to another series (including reopened history) cannot acquire completion
+recurrence; its identity transition is unverified.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them

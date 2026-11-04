@@ -1181,6 +1181,18 @@ fn captured_from_completion_edit(
     let Some(meta) = json_meta(t) else {
         return refuse();
     };
+    // A plain task retaining a foreign series id may be reopened history. Setting
+    // recurrence there would create a second live series with the old link. Live
+    // imported recurring tasks can legitimately have opaque foreign RUIDs.
+    if old.is_none()
+        && meta
+            .get_str("RUID")
+            .is_some_and(|r| !r.is_empty() && r != t.uid)
+    {
+        return blocked(
+            "setting completion recurrence on a plain task linked to another series is not verified yet",
+        );
+    }
     if t.kind != TaskKind::Task
         || t.status != Status::Open
         || snap.parent(i).is_some()

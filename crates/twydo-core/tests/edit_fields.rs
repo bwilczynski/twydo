@@ -1489,12 +1489,18 @@ fn check_after_done_edit(from: &str, to: &str, case: &str, change: Change) {
 
 #[test]
 fn existing_from_completion_interval_edit_matches_phone() {
-    check_after_done_edit(
-        "202-seeded-after-upload-A",
-        "210-phone-first-actions-A",
-        "interval",
+    // CLI and card use different Change variants; both must match all phone metadata.
+    for change in [
         Change::RepeatInterval(2),
-    );
+        Change::Repeat(Some(spec("every 2 months after done"))),
+    ] {
+        check_after_done_edit(
+            "202-seeded-after-upload-A",
+            "210-phone-first-actions-A",
+            "interval",
+            change,
+        );
+    }
 }
 
 #[test]
@@ -1649,4 +1655,36 @@ fn phone_accepts_switch_back_from_completion_to_weekly_due_anchor() {
     let meta = MetaJson::parse(&todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(meta.get_i64("RecurrenceFrom"), Some(1));
     assert_eq!(meta.get_str("RUID"), Some(uid));
+}
+
+#[test]
+fn phone_accepts_final_due_anchored_repeat_removal_with_series_identity_preserved() {
+    use common::recurrence::same;
+    use std::collections::BTreeMap;
+    let uid = "twydo-p8-rfra-anchor-t";
+    let mut got = parse(&fixture(
+        "plan8-rfra",
+        "370-twydo-final-anchor-removal",
+        uid,
+    ))
+    .unwrap();
+    let want = parse(&fixture(
+        "plan8-rfra",
+        "380-phone-final-anchor-followup",
+        uid,
+    ))
+    .unwrap();
+    apply_changes(
+        &mut got,
+        &[Change::Description(Some("RFRA return 4".into()))],
+        dtstamp(&want),
+    )
+    .unwrap();
+    same("final repeat removal", &got, &want, &BTreeMap::new());
+    assert!(todo(&want).prop("RRULE").is_none());
+    let meta = MetaJson::parse(&todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(meta.get_str("RUID"), Some(uid));
+    assert_eq!(meta.get_i64("RecurrenceType"), Some(0));
+    assert_eq!(meta.get_i64("RecurrenceValue"), Some(1));
+    assert_eq!(meta.get_i64("RecurrenceFrom"), Some(1));
 }

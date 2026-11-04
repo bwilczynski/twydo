@@ -1118,20 +1118,10 @@ mod verified_recurrence_tui {
     }
 
     #[test]
-    fn completion_anchored_card_and_date_keys_use_candidate_permissions_and_keep_refused_text() {
-        use twydo_core::compat::{Matrix, Verdict};
+    fn completion_anchored_card_and_date_keys_use_verified_permissions_and_keep_refused_text() {
         let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
         let uid = "twydo-p8-rfra-fields-p";
-        let mut matrix = Matrix::embedded().clone();
-        // Local candidate only: shipping verdicts await the phone return round.
-        for entry in &mut matrix.operation {
-            if entry.case == "from-completion" && matches!(entry.op.as_str(), "edit" | "repeat") {
-                entry.iphone_baseline = Verdict::Pass;
-                entry.iphone_to_twydo = Verdict::Pass;
-                entry.twydo_to_iphone = Verdict::Pass;
-            }
-        }
-        let (mut w, _) = super::writer_with(&e.config(), matrix);
+        let (mut w, _) = writer(&e.config());
         let mut a = App::new(
             e.snapshot(),
             now().with_timezone(&chrono_tz::America::New_York),
@@ -1171,19 +1161,10 @@ mod verified_recurrence_tui {
 
     #[test]
     fn completion_anchored_interval_card_accepts_only_the_captured_pure_change() {
-        use twydo_core::compat::{Matrix, Verdict};
         for mixed in [false, true] {
             let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
             let uid = "twydo-p8-rfra-interval-p";
-            let mut matrix = Matrix::embedded().clone();
-            for entry in &mut matrix.operation {
-                if entry.case == "from-completion" && entry.op == "edit" {
-                    entry.iphone_baseline = Verdict::Pass;
-                    entry.iphone_to_twydo = Verdict::Pass;
-                    entry.twydo_to_iphone = Verdict::Pass;
-                }
-            }
-            let (mut w, _) = super::writer_with(&e.config(), matrix);
+            let (mut w, _) = writer(&e.config());
             let mut a = App::new(
                 e.snapshot(),
                 now().with_timezone(&chrono_tz::America::New_York),
