@@ -21,7 +21,8 @@ the rest with a reason, so the phone never gets something it would misread.
 - Change dates with single keys (today, tomorrow, ±1 day, ±1 week) or type them (`fri 5pm`,
   `3d`, `15th`); edit titles, notes (in your `$EDITOR`) and a repeat's interval
 - Checklists, projects and recurring projects, acting on the whole family as 2Do does
-- Monthly (day 1–28) and yearly repeats, including start dates, due times and missed
+- Every repeat Twydo creates (daily, weekly, set weekdays, monthly on any day or the Nth
+  weekday, yearly, from completion, with an end), including start dates, due times and missed
   occurrences, completed the way 2Do completes them
 - Sync through vdirsyncer with conflict handling: when the phone and Twydo change the same task,
   both versions are kept until you choose
@@ -38,10 +39,8 @@ the rest with a reason, so the phone never gets something it would misread.
   and checklists, in verified mode: Twydo can write them, but refuses until they are checked on
   the phone (weekly and monthly repeats, and type changes except empty project to checklist,
   are allowed)
-- Completing most repeats: only monthly on a day from 1 to 28 and yearly (not 29 February),
-  without an end and not from completion, can be completed in Twydo. Daily, weekly, set
-  weekdays, Nth weekday, monthly on the 29th to 31st, 29 February, from completion and repeats
-  with an end are refused
+- Editing an existing from-completion task, and reopening the last occurrence of an ended
+  repeat (undo works)
 - Repeats on the last day of the month, the last weekday and the Nth weekend day: the iPhone
   (2Do 3.91) misreads them, so Twydo shows them but never writes them
 - Prebuilt releases (build from source for now)

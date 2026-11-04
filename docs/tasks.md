@@ -84,16 +84,16 @@ mode, **creating** a task with any repeat but the three below is allowed (daily,
 weekdays, monthly on a day or the Nth weekday, yearly including February 29, repeat from
 completion, with an end by count or date), and so is creating a checklist, a project, a
 recurring project and their items. **Editing** an
-existing repeating task: only monthly and yearly tasks can be edited at all (the due date, title,
-other fields, and the interval: every 2 months instead of every month). The same interval change
-is accepted for the monthly kinds on the 29th to 31st and on the Nth weekday, for February 29 and
-for repeats with an end, which share monthly's and yearly's interval encoding. Existing daily and
-weekly tasks cannot be edited yet (`edit for weekly tasks is not verified yet`), interval
-included. **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
-removing a monthly repeat, changing a monthly repeat to weekly, and giving a monthly repeat an end
-by count are allowed. Setting, removing or changing a daily, yearly or "from completion" repeat,
-anything on an existing weekly task, and any repeat change on a project or checklist, is still
-refused, for example `changing the repeat rule of yearly tasks is not verified yet
+existing repeating task: daily, weekly, monthly and yearly tasks can be edited (the due date,
+title, other fields, and the interval: every 2 weeks instead of every week). The same interval
+change is accepted for the monthly kinds on the 29th to 31st and on the Nth weekday, for
+February 29 and for repeats with an end, which share the same interval encoding. Existing
+"from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
+yet (iphone_baseline)`). **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
+removing a weekly or monthly repeat, changing a weekly repeat to monthly or a monthly one to
+weekly, and giving a monthly repeat an end by count are allowed. Setting, removing or changing a
+daily, yearly or "from completion" repeat, and any repeat change on a project or checklist, is
+still refused, for example `changing the repeat rule of yearly tasks is not verified yet
 (twydo_to_iphone)`.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
@@ -103,13 +103,11 @@ Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, mis
 refuses to write them in every mode, for example `months-last-day repeats are not supported by
 2Do on the iPhone`.
 
-**Completing** works in Twydo only for a monthly repeat on a day from 1 to 28 and a yearly repeat
-(not 29 February), with no end and not from completion. Twydo can work out the next date of every
-other kind it creates (daily, weekly, set weekdays, Nth weekday, monthly on the 29th to 31st,
-29 February, from completion, with an end by count or date), but until the phone has confirmed
-it does the same, those completions are refused and nothing is written. Complete those on the
-iPhone for now. `tdo check` lists the repeat kinds
-in your data and whether each is verified.
+**Completing** works for every repeat kind Twydo creates: daily, weekly, set weekdays, monthly
+on any day, the Nth or last weekday, yearly including 29 February, from completion, and with an
+end by count or date. Each was checked against the iPhone: the phone completed one copy of a
+task, Twydo an identical copy, and the two results were the same, byte for byte. `tdo check`
+lists the repeat kinds in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
 
@@ -122,15 +120,21 @@ it does not follow the task to its next date.
 How the next occurrence is found:
 
 - **From the current due date alone**, by the rule: every N days or weeks; the next day of a
-  set of weekdays; every N months or years by the calendar, a day the shorter month lacks
-  becoming its last day (a monthly task on January 31 moves to February 28, then to March 28;
-  a yearly one on February 29 moves to February 28); the Nth or last weekday of the next month
-  that has one. A repeat **from completion** counts from the day you complete it (or from its
-  start date, if that is later): a monthly task due December 7 completed on November 4 moves to
-  December 4.
+  set of weekdays (a due date off the set moves to the set's next day: Mon and Thu due on a
+  Wednesday moves to Thursday); every N months or years by the calendar, a day the shorter month
+  lacks becoming its last day. Twydo, like 2Do, keeps no memory of the original day: a monthly
+  task on January 31 moves to February 28, then to March 28, not March 31; a yearly one on
+  29 February moves to 28 February the next year, and stays on the 28th. The Nth or last weekday
+  moves to the next month that has one (last Friday: December 25 to January 29).
+- **A repeat from completion** counts from the day you complete it, whatever its due or start
+  date: a monthly task due December 7 completed on November 4 moves to December 4, and a start
+  date of December 20 moves by the same 3 days back, to December 17.
 - **An end by count** counts down with each completion (`COUNT=3` becomes `COUNT=2`). Completing
   the last occurrence, or one whose next date would be after the end date, completes the task
-  itself: no copy is added and the task stays in Done with its repeat.
+  itself in place, as 2Do does: no copy is added, and the task stays in Done with its repeat,
+  due date and end. Undo brings it back; reopening it (`x` on it, `tdo op reopen`) is refused
+  (`reopening the last occurrence of an ended repeat is not supported; use undo`), as no capture
+  shows what 2Do does then.
 
 - **One interval per completion.** Missed occurrences are not skipped: a monthly task due
   August 15 and completed in November moves to September 15, still overdue. Complete it once per
@@ -141,8 +145,9 @@ How the next occurrence is found:
 - **A due time is kept**, and a relative alert (such as 2Do's automatic one at the due time)
   moves with the due date. The completed copy keeps its alert.
 
-**Undo** after completing a repeating task removes the completed copy and moves the task back,
-also after the change has been synced to the phone.
+**Undo** after completing a repeating task removes the completed copy and moves the task back
+(or, for the last occurrence completed in place, makes it open again), also after the change has
+been synced to the phone.
 
 **Recurring projects** (a repeating project): completing one asks first if items are open, then
 moves the project to its next occurrence, adds a completed copy of the project with a completed
