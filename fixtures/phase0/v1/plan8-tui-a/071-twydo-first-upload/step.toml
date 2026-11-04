@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "071-twydo-first-upload"
+device = "twydo"
+action = "Uploaded fixed-binary first b-twin transitions; normal config remains verified; awaiting phone inspection and follow-up edits"
+captured_at = "2026-11-04T14:17:58Z"

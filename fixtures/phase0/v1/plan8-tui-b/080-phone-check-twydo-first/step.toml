@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "080-phone-check-twydo-first"
+device = "iphone"
+action = "User confirmed b-twin inspection: FCb note x; RDb every 3 days; RYb every 2 years; U1b/U2b completed once onto inclusive until boundaries."
+captured_at = "2026-11-04T14:47:28Z"

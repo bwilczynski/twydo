@@ -583,10 +583,118 @@ fn recurring_checklist_refuses_uncaptured_item_shapes_without_partial_history() 
 
 #[test]
 fn every_batch1_resource_roundtrips_byte_equal() {
-    for step in [SEED, SET, ADVANCE, END, REOPEN, REMOVE, HISTORY] {
+    for step in [
+        SEED,
+        SET,
+        ADVANCE,
+        END,
+        REOPEN,
+        REMOVE,
+        HISTORY,
+        "070-twydo-first-transitions",
+        "071-twydo-first-upload",
+        "080-phone-check-twydo-first",
+    ] {
         let files = step_files(step);
         for (uid, c) in files {
             assert_eq!(serialize(&c), fixture(SCENARIO, step, &uid));
         }
+    }
+}
+
+/// Exercise the same writers against the captured Twydo upload and the phone's subsequent
+/// edits/completions. The phone is acting on Twydo-created series identities here.
+#[test]
+fn first_twydo_upload_and_phone_followup_match_the_writers() {
+    const LOCAL: &str = "070-twydo-first-transitions";
+    const UPLOADED: &str = "071-twydo-first-upload";
+    const PHONE: &str = "080-phone-check-twydo-first";
+    let seeds = step_files(SEED);
+    let uid = |title: &str| {
+        seeds
+            .iter()
+            .find(|(_, c)| todo(c).prop("SUMMARY").unwrap().value == title)
+            .unwrap()
+            .0
+            .clone()
+    };
+    for (from, to, edits) in [
+        (
+            HISTORY,
+            LOCAL,
+            [("FCb", "monthly"), ("RDb", "daily"), ("RYb", "yearly")],
+        ),
+        (
+            UPLOADED,
+            PHONE,
+            [("FCb", "note"), ("RDb", "3d"), ("RYb", "2y")],
+        ),
+    ] {
+        for (title, text) in edits {
+            let id = uid(title);
+            let before = cal(from, &id);
+            let want = cal(to, &id);
+            let now = dtstamp(&want);
+            let change = if text == "note" {
+                Change::Description(Some("x".into()))
+            } else {
+                Change::Repeat(twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap())
+            };
+            let mut got = before.clone();
+            edit::apply_changes(&mut got, &[change], now).unwrap();
+            same(
+                &format!("{title} {from} -> {to}"),
+                &got,
+                &want,
+                &BTreeMap::new(),
+            );
+            stamped(&got, now);
+            preserved_created(&before, &got);
+        }
+        let before_files = step_files(from);
+        let after_files = step_files(to);
+        for title in ["U1b", "U2b"] {
+            let id = uid(title);
+            let copies: Vec<_> = after_files
+                .iter()
+                .filter(|(id, c)| {
+                    !before_files.contains_key(*id)
+                        && todo(c).prop("SUMMARY").unwrap().value == title
+                })
+                .collect();
+            assert_eq!(copies.len(), 1, "{title}: one completed occurrence");
+            let (copy_id, want_copy) = copies[0];
+            let now = completed(want_copy);
+            let (live, copy) =
+                edit::complete_recurring(&before_files[&id], now, now.date_naive(), copy_id)
+                    .unwrap();
+            same(
+                &format!("{title} {to} live"),
+                &live,
+                &after_files[&id],
+                &BTreeMap::new(),
+            );
+            same(
+                &format!("{title} {to} history"),
+                &copy.unwrap(),
+                want_copy,
+                &BTreeMap::new(),
+            );
+            stamped(&live, now);
+            preserved_created(&before_files[&id], &live);
+        }
+    }
+    let local = step_files(LOCAL);
+    let uploaded = step_files(UPLOADED);
+    assert_eq!(
+        local.keys().collect::<Vec<_>>(),
+        uploaded.keys().collect::<Vec<_>>()
+    );
+    for id in local.keys() {
+        assert_eq!(
+            fixture(SCENARIO, LOCAL, id),
+            fixture(SCENARIO, UPLOADED, id),
+            "upload preserves {id}"
+        );
     }
 }

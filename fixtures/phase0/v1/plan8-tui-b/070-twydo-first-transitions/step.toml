@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "070-twydo-first-transitions"
+device = "twydo"
+action = "Fixed binary: FCb monthly, RDb daily, RYb yearly; U1b/U2b first until completion. Captured before upload."
+captured_at = "2026-11-04T14:16:04Z"

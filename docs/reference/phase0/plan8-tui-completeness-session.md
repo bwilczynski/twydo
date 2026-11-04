@@ -523,3 +523,27 @@ FCb monthly/due Dec 10/items 1+3 open and 2 done, then add synthetic note `x`; R
 Dec 7 then change to every 3 days; RYb yearly/due Dec 7 then every 2 years; U1b due Nov 19 and
 U2b due Feb 7, then complete each once onto its until boundary. Keep `a` twins unchanged.
 Do not promote verdicts merely because upload and local comparisons passed.
+
+
+### 080 — first Twydo writes inspected and acted on by the phone
+
+The user confirmed every requested b-twin inspection/action and reported synced. The normal
+sync pair succeeded. Capture `080-phone-check-twydo-first` contains 32 resources in A (two
+new history copies), zero in B. Exactly the five expected b-twin originals changed; all a
+twins, other synthetic resources and unrelated production bytes remain unchanged.
+
+- **FCb:** the phone read Twydo's monthly checklist and its mixed-state items; adding note
+  `x` retains checklist type, December 10 due and monthly repeat.
+- **RDb / RYb:** the phone read Twydo's daily/yearly series, then changed them to every three
+  days / every two years. December 7 due and the Twydo-created series identities are retained.
+- **U1b / U2b:** the phone completed Twydo's advanced originals onto November 20 / March 7
+  inclusive. Both stay open with rule/end metadata intact and gain one completed history
+  copy each, due November 19 / February 7 respectively.
+- `plan8_batch1.rs` now compares the captured initial Twydo writes and phone follow-ups with
+  the writers, including full recurrence/identity/end metadata. The 070 pre-upload and 071
+  post-upload resources are also asserted byte-identical. Privacy scans passed before the
+  synthetic captures entered the repository.
+
+This is intermediate round-trip evidence, not completion of the planned transitions: rule
+removal/reshaping, checklist family reset and ending/reopening still need their fixed-binary
+phone checks. No matrix verdict is promoted at this checkpoint.
