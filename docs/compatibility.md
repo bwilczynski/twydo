@@ -73,25 +73,39 @@ reading the iPhone's). Reading is never refused: every task is shown.
 To see what is allowed for one task: `tdo op check <uid>` prints each operation with `ok` or the
 reason. To see it for your whole data: `tdo check`.
 
-`[writes] mode = "test"` turns the check off. It exists for testing against a separate test
-account, and must never point at your real data: an unverified write can produce something 2Do
-on the iPhone reads differently. See [config.md](config.md).
+`[writes] mode = "test"` relaxes the check: it drops the requirement that Twydo's own writes were
+checked on the phone, but still needs the phone's baseline, the rule verdicts and the safety
+rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
+separate test account, and must never point at your real data: an unverified write can produce
+something 2Do on the iPhone reads differently. See [config.md](config.md).
 
 ## What is verified today
 
 | Kind of task | Create | Edit | Complete | Reopen | Move | Delete |
 |---|---|---|---|---|---|---|
 | One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Monthly repeat (day 1–28) | — | ✅ | ✅ | — | — | ✅ |
-| Yearly repeat | — | ✅ | ✅ | — | — | ✅ |
-| Checklist | — | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring project | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Monthly repeat (day 1–28) | ✅ | ✅ | ✅ | — | — | ✅ |
+| Yearly repeat | ✅ | ✅ | ✅ | — | — | ✅ |
+| Daily repeat | ✅ | — | — | — | — | — |
+| Weekly repeat | ✅ | — | — | — | — | — |
+| Repeat from completion | ✅ | — | ✅ | — | — | — |
+| Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
 
-"—" means not verified yet. For a repeating task, "Edit" covers changing the repeat's interval
-(every 2 months instead of every month), not setting, removing or reshaping the repeat (the
-`repeat` rows). The gate also covers creating items, projects, checklists and
+"—" means not verified yet. The Complete column is the matrix row, but the gate also needs
+the repeat rule's own `execute` verdict: completing works only for a monthly repeat on a day from
+1 to 28 and a yearly repeat (not 29 February), with no end and not from completion. Everything
+else is refused: daily, weekly, on set weekdays, Nth weekday, monthly on the 29th to 31st,
+29 February, from completion, and repeats with an end by count or date. For a repeating
+task, "Edit" covers changing the repeat's interval, not setting, removing or reshaping the repeat (the
+`repeat` rows). Interval-only changes are allowed within a class whose rule `edit` verdict passes
+and whose task row `edit` passes: monthly (day 1 to 28) and yearly tasks, whose interval edits
+the phone verified. The same interval encoding is accepted as verified for the 29th to 31st,
+Nth weekday, 29 February, and repeats with an end, so those can change interval when their task's
+`edit` row passes (their cases are monthly or yearly); an interval edit of a daily or weekly task
+stays refused, since the `edit` rows of those tasks are unverified. The gate also covers creating items, projects, checklists and
 repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
 checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
 repeat classes). The iPhone baselines for these were captured and Twydo's writes were checked
@@ -99,10 +113,11 @@ on the phone (see [`plan7-capture.md`](reference/phase0/plan7-capture.md)). In v
 allows **creating** checklists, projects, recurring projects and items, and creating daily,
 weekly, monthly, yearly and from-completion repeating tasks, and **converting** a task to a
 checklist or project, a checklist to a project, and an empty checklist or project to a task.
-**Setting a weekly or monthly repeat on a plain task, removing one, and changing between weekly
-and monthly are allowed** (session A: the phone's own repeats; session B: Twydo's writes shown
+**Setting a weekly or monthly repeat on a plain task, removing a monthly repeat, and changing a
+monthly repeat to weekly are allowed** (session A: the phone's own repeats; session B: Twydo's writes shown
 right). Repeat changes involving daily, yearly, from-completion, a project or a checklist stay
-refused: their `repeat` rows lack a verdict.
+refused: their `repeat` rows lack a verdict. So does any edit of an existing weekly task, a
+repeat removal included: the weekly `edit` row has no Twydo evidence.
 Empty project to checklist lacks its iPhone baseline. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and

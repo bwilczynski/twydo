@@ -38,8 +38,10 @@ the rest with a reason, so the phone never gets something it would misread.
   and checklists, in verified mode: Twydo can write them, but refuses until they are checked on
   the phone (weekly and monthly repeats, and type changes except empty project to checklist,
   are allowed)
-- Completing daily, weekly and Nth-weekday repeats (Twydo refuses; monthly, yearly and from
-  completion work)
+- Completing most repeats: only monthly on a day from 1 to 28 and yearly (not 29 February),
+  without an end and not from completion, can be completed in Twydo. Daily, weekly, set
+  weekdays, Nth weekday, monthly on the 29th to 31st, 29 February, from completion and repeats
+  with an end are refused
 - Repeats on the last day of the month, the last weekday and the Nth weekend day: the iPhone
   (2Do 3.91) misreads them, so Twydo shows them but never writes them
 - Prebuilt releases (build from source for now)

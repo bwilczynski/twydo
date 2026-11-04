@@ -471,7 +471,7 @@ fn changing_or_removing_a_repeat_needs_the_old_class_edit_verdict() {
     let m = rule(base.clone(), "months-day-1-28", "pass", "pass");
     let m = rule(m, "years", "pass", "pass");
     assert_eq!(check(&s, &m, WriteMode::Verified, &change, today()), Ok(()));
-    // The new own case's edit row: monthly to yearly needs yearly edit.
+    // The new own case is checked against its `repeat` row, not its `edit` row.
     let m = rule(
         cases(&["monthly"], "pass", "pass", &[]),
         "months-day-1-28",
@@ -481,7 +481,7 @@ fn changing_or_removing_a_repeat_needs_the_old_class_edit_verdict() {
     let m = rule(m, "years", "pass", "pass");
     assert_eq!(
         check(&s, &m, WriteMode::Verified, &change, today()),
-        blocked("edit for yearly tasks is not verified yet (iphone_baseline)")
+        blocked("changing the repeat rule of yearly tasks is not verified yet (iphone_baseline)")
     );
 }
 
@@ -1787,15 +1787,14 @@ fn no_new_item_under_a_closed_parent() {
 }
 
 /// Setting, removing or reshaping a repeat (not only its interval) needs the `repeat` rows
-/// of the cases before and after: the iPhone verified Plan 4's interval edits only.
+/// of the cases before and after, and the before case's `edit` row. With the shipped matrix
+/// these repeat writes are verified.
 #[test]
-fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
+fn embedded_verified_allows_the_repeat_writes_the_phone_checked() {
     let s = snap();
     let m = Matrix::embedded();
-    let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // Allowed with the shipped matrix: one-time to monthly or weekly, removing a monthly
-    // repeat, and changing between weekly and monthly.
+    // One-time to monthly or weekly, removing a monthly repeat, weekly <-> monthly.
     for text in ["monthly", "3m", "weekly", "2w"] {
         let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
         assert_eq!(at(&op), Ok(()), "{text}");
@@ -1804,9 +1803,39 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
     assert_eq!(at(&op), Ok(()));
     let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("weekly")))]);
     assert_eq!(at(&op), Ok(()));
-    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("monthly")))]);
+    // An end by count passes since session B (`mod:count` edit).
+    let op = edit(
+        "gate-monthly",
+        vec![Change::Repeat(Some(repeat("monthly 3 times")))],
+    );
     assert_eq!(at(&op), Ok(()));
-    // Still refused: yearly, daily and from completion.
+    // Only the interval, within the class: Plan 4's verified edit.
+    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("2m")))]);
+    assert_eq!(at(&op), Ok(()));
+}
+
+/// What the phone never checked stays refused: an existing weekly task (no `edit` evidence),
+/// yearly, daily and from-completion repeats, and repeats on a project.
+#[test]
+fn embedded_verified_refuses_the_repeat_writes_the_phone_never_checked() {
+    let s = snap();
+    let m = Matrix::embedded();
+    let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
+    let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
+    // Editing an existing weekly task: the weekly `edit` row has no Twydo evidence, so the
+    // weekly `repeat` row (set on a plain task) does not unlock it.
+    let weekly_edit = blocked("edit for weekly tasks is not verified yet (twydo_to_iphone)");
+    for changes in [
+        vec![due.clone()],
+        vec![Change::Summary("Renamed".into())],
+        vec![Change::RepeatInterval(2)],
+    ] {
+        let op = edit("gate-weekly", changes);
+        assert_eq!(at(&op), weekly_edit);
+    }
+    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("monthly")))]);
+    assert_eq!(at(&op), weekly_edit);
+    // Yearly, daily and from completion.
     let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
     assert_eq!(
         at(&op),
@@ -1815,7 +1844,7 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
     let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
     assert_eq!(
         at(&op),
-        blocked("edit for daily tasks is not verified yet (twydo_to_iphone)")
+        blocked("changing the repeat rule of daily tasks is not verified yet (twydo_to_iphone)")
     );
     let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("yearly")))]);
     assert_eq!(
@@ -1827,29 +1856,15 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
         vec![Change::Repeat(Some(repeat("monthly after done")))],
     );
     assert!(at(&op).is_err());
-    // An end by count passes since session B (`mod:count` edit).
-    let op = edit(
-        "gate-monthly",
-        vec![Change::Repeat(Some(repeat("monthly 3 times")))],
-    );
-    assert_eq!(at(&op), Ok(()));
     // A repeat on a project makes it a recurring project.
     let op = edit(
         "gate-empty-project",
-        vec![due.clone(), Change::Repeat(Some(repeat("monthly")))],
+        vec![due, Change::Repeat(Some(repeat("monthly")))],
     );
     let Err(Blocked(why)) = at(&op) else {
         panic!("allowed")
     };
     assert!(why.starts_with("changing the repeat rule of "), "{why}");
-    // Only the interval, within the class: Plan 4's verified edit.
-    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("2m")))]);
-    assert_eq!(at(&op), Ok(()));
-    let op = edit(
-        "gate-monthly",
-        vec![Change::Repeat(Some(repeat("monthly")))],
-    );
-    assert_eq!(at(&op), Ok(()));
 }
 
 #[test]
@@ -1941,6 +1956,17 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
             check(&s, m, WriteMode::Verified, &set, today()),
             want,
             "edit {text}"
+        );
+        // The rule verdict applies in test mode too.
+        assert_eq!(
+            check(&s, m, WriteMode::Test, &create, today()),
+            want,
+            "test create {text}"
+        );
+        assert_eq!(
+            check(&s, m, WriteMode::Test, &set, today()),
+            want,
+            "test edit {text}"
         );
     }
     // A rule that is merely unverified keeps the old wording.
