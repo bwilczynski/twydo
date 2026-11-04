@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "150-fresh-sync-before-checklist-removal"
+device = "iphone"
+action = "Fresh normal-config sync before approved final batch-one writer action: remove only FCb weekly recurrence."
+captured_at = "2026-11-04T16:07:59Z"

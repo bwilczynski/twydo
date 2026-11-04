@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "152-twydo-checklist-removal-upload"
+device = "twydo"
+action = "Clean normal-config upload of FCb repeat removal; all bytes preserved. Await final phone inspection and note edit of the non-recurring checklist."
+captured_at = "2026-11-04T16:08:05Z"

@@ -608,6 +608,9 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "142-twydo-repeat-removal-and-history-reopen",
         "143-twydo-removal-and-history-upload",
         "144-phone-removal-and-history-followup",
+        "150-fresh-sync-before-checklist-removal",
+        "151-twydo-checklist-repeat-removed",
+        "152-twydo-checklist-removal-upload",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -1387,4 +1390,108 @@ fn phone_accepts_repeat_removals_and_history_reopen_with_explicit_inactive_metad
         changed, expected_changed,
         "only three note edits and two history completions"
     );
+}
+
+#[test]
+fn checklist_repeat_removal_matches_capture_and_needs_both_family_repeat_rows() {
+    const BEFORE: &str = "150-fresh-sync-before-checklist-removal";
+    const AFTER: &str = "151-twydo-checklist-repeat-removed";
+    const UPLOADED: &str = "152-twydo-checklist-removal-upload";
+    let before = step_files(BEFORE);
+    let want = step_files(AFTER);
+    let uid = before
+        .iter()
+        .find(|(_, c)| {
+            todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+        })
+        .unwrap()
+        .0
+        .clone();
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+    let op = Op::Edit {
+        uid: uid.clone(),
+        changes: vec![Change::Repeat(None)],
+    };
+    let now = dtstamp(&want[&uid]);
+    let mut matrix = Matrix::embedded().clone();
+    matrix
+        .operation
+        .iter_mut()
+        .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+        .unwrap()
+        .twydo_to_iphone = Verdict::Pass;
+    assert!(
+        twydo_core::gate::check(
+            &env.snap(),
+            &matrix,
+            WriteMode::Verified,
+            &op,
+            now.date_naive()
+        )
+        .is_err(),
+        "the destination plain-checklist repeat row must pass too"
+    );
+    matrix
+        .operation
+        .iter_mut()
+        .find(|r| r.case == "checklist" && r.op == "repeat")
+        .unwrap()
+        .twydo_to_iphone = Verdict::Pass;
+    let mut store = env.store(matrix);
+    let original = env.files();
+    store.apply(&env.snap(), &op, now).unwrap();
+    let changed = env.files();
+    let journal = env.journal();
+    assert_eq!(journal.len(), 1);
+    assert_eq!(journal[0].writes.len(), 1);
+    let target = format!("list1/{uid}.ics");
+    for (path, bytes) in &original {
+        if path != &target {
+            assert_eq!(&changed[path], bytes, "only the parent is edited");
+        }
+    }
+    assert_eq!(
+        original.keys().collect::<Vec<_>>(),
+        changed.keys().collect::<Vec<_>>()
+    );
+    let got = parse(&changed[&target]).unwrap();
+    same(
+        "FCb weekly repeat removal",
+        &got,
+        &want[&uid],
+        &BTreeMap::new(),
+    );
+    stamped(&got, now);
+    preserved_created(&before[&uid], &got);
+    store.undo_last(now).unwrap();
+    assert_eq!(env.files(), original, "repeat removal is one undo step");
+    store.redo_last(now).unwrap();
+    assert_eq!(env.files(), changed, "redo restores the same parent bytes");
+    assert_eq!(
+        before.keys().collect::<Vec<_>>(),
+        want.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        want.keys().collect::<Vec<_>>(),
+        step_files(UPLOADED).keys().collect::<Vec<_>>()
+    );
+    for id in before.keys() {
+        assert_eq!(
+            fixture(SCENARIO, "144-phone-removal-and-history-followup", id),
+            fixture(SCENARIO, BEFORE, id),
+            "fresh sync preserves {id}"
+        );
+        if id != &uid {
+            assert_eq!(
+                fixture(SCENARIO, BEFORE, id),
+                fixture(SCENARIO, AFTER, id),
+                "checklist removal leaves {id} unchanged"
+            );
+        }
+        assert_eq!(
+            fixture(SCENARIO, AFTER, id),
+            fixture(SCENARIO, UPLOADED, id),
+            "clean upload preserves {id}"
+        );
+    }
 }

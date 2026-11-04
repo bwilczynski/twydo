@@ -778,3 +778,27 @@ Next proposed writer round: after a fresh sync, remove only FCb's weekly repeat,
 February 10 due, note `z`, checklist type/items and identities, then upload for the final phone
 check of this batch. Obtain explicit approval first. Embedded matrix promotion and verified-mode
 TUI acceptance still follow the complete device evidence review.
+
+### 150–152 — final batch-one checklist repeat removal uploaded
+
+The user explicitly approved removing only FCb's weekly repeat and syncing for phone
+inspection. Normal fresh sync succeeded without conflicts, and `150-fresh-sync-before-checklist-removal`
+is byte-identical to the confirmed 144 phone state. The same fixed binary, embedded-copy scratch
+matrix and private process-only test configuration retain the shared production lock/state
+identity; normal production mode/configuration stay verified and unchanged.
+
+- `151-twydo-checklist-repeat-removed`: remove FCb's weekly repeat with `--no-repeat`.
+  February 10 due, note `z`, checklist type, identities and inactive recurrence metadata are
+  preserved. All three live items remain open and byte-unchanged. Exactly one resource changes;
+  A remains at 40 resources and B at zero, with no creations/deletions.
+- `152-twydo-checklist-removal-upload`: normal-config upload succeeds with clean list status
+  and no unresolved conflicts, preserving every byte from 151. All a twins, items, ended
+  originals, history copies, other synthetic resources and unrelated production data remain
+  unchanged. Privacy scans passed before these synthetic captures entered the repository.
+
+The candidate regression requires both old recurring-checklist and destination plain-checklist
+repeat rows, compares the parent with the captured output, asserts one journal write and exact
+unrelated bytes, checks one-step undo/redo, and verifies exact preflight/upload preservation.
+Actual phone inspection and a subsequent note edit of FCb are still required. No capability
+verdict is promoted merely from local validation/upload, and no further production writer
+operation or list cleanup is authorized by this round.
