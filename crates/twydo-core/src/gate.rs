@@ -188,7 +188,13 @@ pub fn check(
     for c in op_cases(snap, target, cases, op) {
         operation_row(m, mode, c, name)?;
     }
-    if let Some(a) = after {
+    // The case an edit leaves needs its `edit` row, except when the repeat is reshaped: the
+    // new case is then checked against its `repeat` row instead (a weekly repeat set on a
+    // plain task says nothing about editing existing weekly tasks).
+    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
+    if let Some(a) = after
+        && !reshaped
+    {
         for c in std::iter::once(a.own).chain(a.family) {
             operation_row(m, mode, c, "edit")?;
         }

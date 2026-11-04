@@ -19,7 +19,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "weeks"
@@ -27,7 +27,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "weekdays-set"
@@ -35,7 +35,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-day-1-28"
@@ -51,7 +51,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-last-day"
@@ -67,7 +67,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-nth-workday"
@@ -99,7 +99,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "unrecognized"
@@ -115,7 +115,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:count"
@@ -123,7 +123,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:until"
@@ -131,7 +131,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right."
+notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[operation]]
 case = "one-time"
@@ -241,7 +241,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "monthly"
@@ -296,7 +296,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/rule-years/02-complete", "fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. StartDate moves by the same number of days as the due (2027-03-01 -> 2028-03-01 is 366 days, so start 2027-02-13 -> 2028-02-14). Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. StartDate moves by the same number of days as the due (2027-03-01 -> 2028-03-01 is 366 days, so start 2027-02-13 -> 2028-02-14). Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -307,7 +307,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/gap-list1/05-phone-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Round 05 (iphone_baseline): reopening the history copy sets STATUS:NEEDS-ACTION and PERCENT-COMPLETE:0, drops COMPLETED, as for monthly. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Round 05 (iphone_baseline): reopening the history copy sets STATUS:NEEDS-ACTION and PERCENT-COMPLETE:0, drops COMPLETED, as for monthly. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -318,7 +318,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list2/02-edit", "fixtures/phase0/v1/gap-list2/06-phone-move"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "yearly"
@@ -340,7 +340,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
 case = "from-completion"
@@ -351,7 +351,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "from-completion"
@@ -362,7 +362,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/03-phone-act"]
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session. Plan 7 session B 03: the phone completed FC (monthly after done); next due one month after completion, history copy linked by RUID, Twydo read it back."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B 03: the phone completed FC (monthly after done); next due one month after completion, history copy linked by RUID, Twydo read it back."
 
 [[operation]]
 case = "from-completion"
@@ -373,7 +373,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "from-completion"
@@ -384,7 +384,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "from-completion"
@@ -395,7 +395,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -406,7 +406,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
 case = "recurring-project"
@@ -417,7 +417,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the recurring project itself changes only SUMMARY and stamps; a child edit (plan6-list1 02-edit) is a plain edit. Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the recurring project itself changes only SUMMARY and stamps; a child edit (plan6-list1 02-edit) is a plain edit. Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -428,7 +428,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Completing the project: live parent advances one interval and keeps its UID; a completed copy of the parent and of every child is added (new UIDs, RELATED-TO the copy); live children are reopened, and their dates do not move (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Completing the project: live parent advances one interval and keeps its UID; a completed copy of the parent and of every child is added (new UIDs, RELATED-TO the copy); live children are reopened, and their dates do not move (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -439,7 +439,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the completed copy: it becomes an open project without RRULE and every child copy is reopened; the live project is untouched. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the completed copy: it becomes an open project without RRULE and every child copy is reopened; the live project is untouched. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -450,7 +450,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. New UIDs for the project and its children; RUID becomes the new UID. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. New UIDs for the project and its children; RUID becomes the new UID. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -461,7 +461,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/plan6-twydo-list1/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the live project deletes its children; the completed copy and its children stay. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the live project deletes its children; the completed copy and its children stay. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -472,7 +472,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
 case = "checklist"
@@ -483,7 +483,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/02-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Item title and checklist date. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Item title and checklist date. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -494,7 +494,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Item alone (03); the checklist after a confirmation completes every open item (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Item alone (03); the checklist after a confirmation completes every open item (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -505,7 +505,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the checklist reopens every item (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the checklist reopens every item (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -516,7 +516,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the checklist recreates it and every item with new UIDs. Moving one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the checklist recreates it and every item with new UIDs. Moving one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -527,7 +527,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the checklist deletes its items. Deleting one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the checklist deletes its items. Deleting one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -538,7 +538,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
 case = "project"
@@ -549,7 +549,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/02-edit", "fixtures/phase0/v1/gap-list1/01-twydo-edit", "fixtures/phase0/v1/gap-list1/02-phone-edit"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Setting a date on a project or an item writes DUE and DTSTART only. Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Child date only; the project itself was not edited. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Setting a date on a project or an item writes DUE and DTSTART only. Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Child date only; the project itself was not edited. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -560,7 +560,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Child alone (03); the project after a confirmation completes every open child, including a repeating one, which keeps its RRULE and does not advance (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Child alone (03); the project after a confirmation completes every open child, including a repeating one, which keeps its RRULE and does not advance (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -571,7 +571,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the project reopens every child, including a repeating child's completed history copy (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the project reopens every child, including a repeating child's completed history copy (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -582,7 +582,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the project recreates it and every child with new UIDs. Moving one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the project recreates it and every child with new UIDs. Moving one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -593,7 +593,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the project deletes its children, history copies included. Deleting one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the project deletes its children, history copies included. Deleting one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project-recurring-child"
@@ -604,7 +604,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
 case = "project-recurring-child"
@@ -615,7 +615,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the repeating item changes only SUMMARY and stamps. The repeating child was not edited. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the repeating item changes only SUMMARY and stamps. The repeating child was not edited. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project-recurring-child"
@@ -626,7 +626,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-twydo-list1/02-phone-complete", "fixtures/phase0/v1/gap-list1/01-twydo-edit"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Like a plain monthly completion; the history copy keeps RELATED-TO and parentuid. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Like a plain monthly completion; the history copy keeps RELATED-TO and parentuid. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project-recurring-child"
@@ -637,7 +637,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/03-phone-reopen", "fixtures/phase0/v1/gap-list1/03-twydo-reopen"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Plan 6 Task 7 round 03: reopening the repeating item's history copy is a plain reopen (PERCENT-COMPLETE:0, COMPLETED removed); RUID and parent kept. Only reopened through its parent (06-reopen-parent), which also reopened its history copy. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Plan 6 Task 7 round 03: reopening the repeating item's history copy is a plain reopen (PERCENT-COMPLETE:0, COMPLETED removed); RUID and parent kept. Only reopened through its parent (06-reopen-parent), which also reopened its history copy. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project-recurring-child"
@@ -648,7 +648,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Moved with its project. Only moved with its parent: new UID, but RUID keeps the old UID (unlike a top-level repeat). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Moved with its project. Only moved with its parent: new UID, but RUID keeps the old UID (unlike a top-level repeat). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
 case = "project-recurring-child"
@@ -659,7 +659,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Deleted with its project. Only deleted with its parent. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified yet."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Deleted with its project. Only deleted with its parent. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
 case = "date-only"
@@ -692,7 +692,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "date-only"
@@ -703,7 +703,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "date-only"
@@ -714,7 +714,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "date-only"
@@ -725,7 +725,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -758,7 +758,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -769,7 +769,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -780,7 +780,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "timed"
@@ -791,7 +791,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -824,7 +824,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -835,7 +835,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -846,7 +846,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "start-date"
@@ -857,7 +857,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -868,7 +868,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -879,7 +879,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -890,7 +890,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
-notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -901,7 +901,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -912,7 +912,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "alarms"
@@ -923,7 +923,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_* columns: not verified in the Plan 4 session."
+notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "daily"
@@ -934,7 +934,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
 case = "daily"
@@ -945,7 +945,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); twydo_to_iphone is not verified. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "daily"
@@ -1000,7 +1000,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
+notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
 case = "weekly"
@@ -1008,10 +1008,10 @@ op = "edit"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "pass"
+twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); the other twydo columns are not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. twydo_to_iphone: session B, Twydo set weekly on S1 and the phone showed it right."
+evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due"]
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures); twydo_to_iphone is not verified. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "weekly"
@@ -1066,7 +1066,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "task-to-project"
@@ -1077,7 +1077,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/03b-phone-item-under-converted", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "checklist-to-project"
@@ -1088,7 +1088,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "project-to-checklist"
@@ -1099,7 +1099,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items (P). Not offered, so Twydo refuses it. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items (P). Not offered, so Twydo refuses it. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "empty-project-to-checklist"
@@ -1121,7 +1121,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items to a task (Q). Not offered, so Twydo refuses it. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items to a task (Q). Not offered, so Twydo refuses it. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "empty-parent-to-task"
@@ -1132,7 +1132,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/04-phone-convert-empty", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "one-time"
@@ -1143,7 +1143,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
+notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "daily"
@@ -1154,7 +1154,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Setting a repeat that makes the task daily: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R03 set on one-time tasks. Changing or removing a daily repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Setting a repeat that makes the task daily: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R03 set on one-time tasks. Changing or removing a daily repeat was not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "weekly"
@@ -1165,7 +1165,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
+notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "monthly"
@@ -1176,7 +1176,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
+notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "yearly"
@@ -1187,7 +1187,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Setting a repeat that makes the task yearly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R13 set on a one-time task. Changing or removing a yearly repeat (other than its interval, the edit row) was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Setting a repeat that makes the task yearly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R13 set on a one-time task. Changing or removing a yearly repeat (other than its interval, the edit row) was not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "from-completion"
@@ -1198,7 +1198,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Setting a repeat from the completion date: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R14 set on a one-time task. Changing or removing such a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Setting a repeat from the completion date: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R14 set on a one-time task. Changing or removing such a repeat was not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "checklist"
@@ -1209,7 +1209,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Setting, changing or removing a repeat on a checklist or its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Setting, changing or removing a repeat on a checklist or its item. Not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "project"
@@ -1220,7 +1220,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting, changing or removing a repeat on a project (making it a recurring project) or its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Setting, changing or removing a repeat on a project (making it a recurring project) or its item. Not captured. Unverified columns: iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
 case = "recurring-project"
@@ -1231,7 +1231,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Changing or removing the repeat of a recurring project, or a repeat on its item. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Changing or removing the repeat of a recurring project, or a repeat on its item. Not captured. Unverified columns: iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
 case = "project-recurring-child"
@@ -1242,7 +1242,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
-notes = "Setting, changing or removing the repeat of an item of a project. Not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+notes = "Setting, changing or removing the repeat of an item of a project. Not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[edge_case]]
 id = "monthly-15th-three-months-late"

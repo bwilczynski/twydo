@@ -83,12 +83,18 @@ A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details 
 mode, **creating** a task with any repeat but the three below is allowed (daily, weekly, on set
 weekdays, monthly on a day or the Nth weekday, yearly including February 29, repeat from
 completion, with an end by count or date), and so is creating a checklist, a project, a
-recurring project and their items. **Editing** the interval of an existing repeat is allowed for
-monthly (day 1 to 28) and yearly tasks. Setting a weekly or monthly repeat on a plain task, removing a
-weekly or monthly repeat, changing between weekly and monthly, and giving a monthly repeat an
-end by count are allowed. Setting, removing or changing a daily, yearly or "from completion"
-repeat, and any repeat change on a project or checklist, is still refused, for example
-`changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)`.
+recurring project and their items. **Editing** an
+existing repeating task: only monthly and yearly tasks can be edited at all (the due date, title,
+other fields, and the interval: every 2 months instead of every month). The same interval change
+is accepted for the monthly kinds on the 29th to 31st and on the Nth weekday, for February 29 and
+for repeats with an end, which share monthly's and yearly's interval encoding. Existing daily and
+weekly tasks cannot be edited yet (`edit for weekly tasks is not verified yet`), interval
+included. **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
+removing a monthly repeat, changing a monthly repeat to weekly, and giving a monthly repeat an end
+by count are allowed. Setting, removing or changing a daily, yearly or "from completion" repeat,
+anything on an existing weekly task, and any repeat change on a project or checklist, is still
+refused, for example `changing the repeat rule of yearly tasks is not verified yet
+(twydo_to_iphone)`.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
@@ -97,8 +103,10 @@ Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, mis
 refuses to write them in every mode, for example `months-last-day repeats are not supported by
 2Do on the iPhone`.
 
-**Completing** a daily, weekly or Nth-weekday repeat is not supported yet: the gate refuses it
-and nothing is written. Complete those on the iPhone for now. `tdo check` lists the repeat kinds
+**Completing** works in Twydo only for a monthly repeat on a day from 1 to 28 and a yearly repeat
+(not 29 February), with no end and not from completion. Every other repeat (daily, weekly, set
+weekdays, Nth weekday, monthly on the 29th to 31st, 29 February, from completion, with an end by
+count or date) is refused and nothing is written. Complete those on the iPhone for now. `tdo check` lists the repeat kinds
 in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:

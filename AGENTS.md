@@ -55,9 +55,9 @@ app replacing 2Do for one user, plan by plan.
    `fail`, never written). Type changes are allowed (task to checklist/project, checklist to
    project, empty parent to task); setting/removing/changing weekly and monthly repeats is allowed; daily, yearly,
    from-completion and project/checklist repeat changes stay refused (their `repeat` rows lack
-   verdicts). **Follow-up:** completing daily,
-   weekly and Nth-weekday repeats (the gate refuses them; their `execute` verdicts are
-   unverified), and verifying the remaining `repeat` rows and empty project to checklist.
+   verdicts). **Follow-up:** completing every repeat but monthly (day 1 to 28) and
+   yearly without an end (daily, weekly, weekdays, Nth weekday, 29th to 31st, 29 Feb, from
+   completion, count/until; their `execute` verdicts are unverified, so the gate refuses), and verifying the remaining `repeat` rows and empty project to checklist.
    Next on the roadmap: that follow-up, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
