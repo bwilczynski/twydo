@@ -9,6 +9,8 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::gate::{Blocked, Cases, check, task_cases};
+use twydo_core::ical::{parse, serialize};
+use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::views::Snapshot;
 
 const ALL_OPS: [&str; 7] = [
@@ -2039,11 +2041,16 @@ fn session_snap() -> (tempfile::TempDir, Snapshot) {
             }
         }
     }
-    let report = twydo_core::vdir::load(tmp.path()).unwrap();
+    let snap = load_snap(tmp.path());
+    (tmp, snap)
+}
+
+fn load_snap(root: &Path) -> Snapshot {
+    let report = twydo_core::vdir::load(root).unwrap();
     assert!(report.errors.is_empty(), "{:?}", report.errors);
-    let mut cfg = Config::with_vdir(tmp.path().to_path_buf());
+    let mut cfg = Config::with_vdir(root.to_path_buf());
     cfg.timezone = Some("America/New_York".to_string());
-    (tmp, Snapshot::new(report, cfg))
+    Snapshot::new(report, cfg)
 }
 
 fn by_title(s: &Snapshot, list: &str, title: &str) -> String {
@@ -2124,4 +2131,68 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
     // reopening a daily or weekly task itself has no Twydo evidence.
     let op = reopen(&e("E1"));
     assert!(at(&op).is_err());
+}
+
+/// Session B's recurring project `RP` (monthly, with item `r1`).
+const RP: &str = "c3e14351e7f745b4a713b0c5e64bb8fd";
+
+/// Completing a recurring project is verified for a plain rule only: no capture shows 2Do
+/// completing one that ends (count or until) or repeats from completion.
+#[test]
+fn embedded_verified_refuses_completing_a_recurring_project_with_an_end_or_from_completion() {
+    let (tmp, s) = session_snap();
+    let m = Matrix::embedded();
+    assert_eq!(
+        check(&s, m, WriteMode::Verified, &complete(RP), today()),
+        Ok(())
+    );
+    let path = tmp.path().join("b").join(format!("{RP}.ics"));
+    let original = std::fs::read(&path).unwrap();
+    let why = "completing a recurring project that ends or repeats from completion is not \
+               verified yet";
+    for (name, rrule, meta) in [
+        (
+            "count",
+            "FREQ=MONTHLY;COUNT=3",
+            &[
+                ("RecurrenceEndType", 2),
+                ("RecurrenceEndRepetitions", 3),
+                ("RecurrenceEndRepetitionsOrig", 3),
+            ][..],
+        ),
+        (
+            "until",
+            "FREQ=MONTHLY;UNTIL=20270630",
+            &[
+                ("RecurrenceEndType", 1),
+                ("RecurrenceEndDate", 1_814_356_800),
+            ][..],
+        ),
+        (
+            "from completion",
+            "FREQ=MONTHLY",
+            &[("RecurrenceFrom", 2)][..],
+        ),
+    ] {
+        let mut cal = parse(&original).unwrap();
+        {
+            let t = cal.root.children_named_mut("VTODO").next().unwrap();
+            t.prop_mut("RRULE").unwrap().set_value(rrule);
+            let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut j = MetaJson::parse(&p.value).unwrap();
+            for (k, v) in meta {
+                j.set_i64(k, *v);
+            }
+            p.set_value(&j.encode());
+        }
+        std::fs::write(&path, serialize(&cal)).unwrap();
+        let s = load_snap(tmp.path());
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            assert_eq!(
+                check(&s, m, mode, &complete(RP), today()),
+                blocked(why),
+                "{name} {mode:?}"
+            );
+        }
+    }
 }
