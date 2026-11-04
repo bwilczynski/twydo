@@ -82,6 +82,18 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 
 ## What is verified today
 
+The [editing-completeness audit and plan](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+tracks the remaining operations, imported-shape restrictions and later editing features. The
+table below summarizes individual matrix cases, not every combination: a recurring project
+also needs its own repeat's operation rows, for example, so its monthly/yearly repeat can still
+block a move even though the recurring-project row passes. `tdo op check <uid>` gives the
+effective result for an existing task.
+
+The [next iPhone session plan](reference/phase0/plan8-tui-completeness-session.md) covers the
+remaining existing TUI actions, including repeating checklists, repeat changes and lifecycle
+operations. Its first phone-baseline batch is captured; the fixed Twydo output still needs its
+device round trip. Planned rounds and baseline-only findings do not count as verified writes.
+
 | Kind of task | Create | Edit | Complete | Reopen | Move | Delete |
 |---|---|---|---|---|---|---|
 | One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

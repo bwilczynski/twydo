@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "001-after-upload"
+device = "twydo"
+action = "Uploaded batch 1; no phone test action yet"
+captured_at = "2026-11-04T13:20:12Z"

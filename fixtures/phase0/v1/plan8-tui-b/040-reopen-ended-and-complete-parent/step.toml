@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "040-reopen-ended-and-complete-parent"
+device = "iphone"
+action = "User reported synced: FCa parent completed with all children already done; RDa daily; RYa yearly; ended original U1a/U2a reopened in Done; b twins untouched"
+captured_at = "2026-11-04T13:47:02Z"

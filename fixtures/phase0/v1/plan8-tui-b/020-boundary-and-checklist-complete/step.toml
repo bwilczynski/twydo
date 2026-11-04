@@ -1,0 +1,5 @@
+scenario = "plan8-tui-b"
+step = "020-boundary-and-checklist-complete"
+device = "iphone"
+action = "User reported synced: FCa parent complete; RDa every 3 days; RYa every 2 years; live U1a/U2a complete once to end-date boundary; b twins untouched"
+captured_at = "2026-11-04T13:36:04Z"

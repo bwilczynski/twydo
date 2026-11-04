@@ -204,20 +204,21 @@ mod tests {
             }
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
-        assert_eq!(m.operation.len(), 101);
+        assert_eq!(m.operation.len(), 106);
         assert_eq!(m.edge_case.len(), 12);
     }
 
     #[test]
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
-        assert_eq!(m.operation.len(), 101);
+        assert_eq!(m.operation.len(), 106);
         // Verified in the Plan 7 session B: baseline and both Twydo round trips.
         let e = m.operation("from-completion", "create").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Pass);
-        // Still unverified: a repeat on a checklist (no baseline at all).
+        // Plan 8 has a checklist-repeat baseline, but its Twydo device recheck is pending.
         let e = m.operation("checklist", "repeat").unwrap();
-        assert_eq!(e.iphone_baseline, Verdict::Unverified);
+        assert_eq!(e.iphone_baseline, Verdict::Pass);
+        assert_eq!(e.twydo_to_iphone, Verdict::Unverified);
         assert!(m.edge_case(&m.edge_case[0].id).is_some());
         assert!(m.operation("nope", "create").is_none());
     }

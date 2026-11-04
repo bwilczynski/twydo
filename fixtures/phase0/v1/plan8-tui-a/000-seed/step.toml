@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "000-seed"
+device = "twydo"
+action = "Seed FC, RD, RY, U1, U2 synthetic a/b starting states; FC item 2 already completed"
+captured_at = "2026-11-04T13:19:38Z"

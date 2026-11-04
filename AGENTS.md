@@ -66,8 +66,22 @@ app replacing 2Do for one user, plan by plan.
    the remaining `repeat` rows (daily, yearly, from-completion, projects, checklists); editing
    existing from-completion tasks; empty project to checklist; what 2Do does when an ended
    series' last occurrence is reopened (Twydo refuses, undo works); recurring projects that end
-   or repeat from completion; the unused edge cases `monthly-31st`, `yearly-feb-29`,
-   `from-completion-anchor`, `end-after-n`, `end-on-date` could cite session C.
+   or repeat from completion. Plan 8 reconciles the unused edge records `monthly-31st`,
+   `yearly-feb-29`, `from-completion-anchor` and `end-after-n` from sessions B/C; `end-on-date`
+   records its partial session-C evidence and stays unverified.
+   **Current follow-up plan:** `docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md`
+   audits the remaining editing/lifecycle gaps and separates missing implementation from missing
+   phone evidence and permanent 2Do limits. Local audit/evidence cleanup is done; device rounds
+   need fresh user approval. Continue its first unfinished task; do not infer permission from past sessions.
+   The user requested coverage of **all existing TUI actions**, not only checklist/until gaps:
+   `docs/reference/phase0/plan8-tui-completeness-session.md` is the pending session plan, with
+   phone baselines, a local implementation checkpoint, final phone round trips and verified-mode
+   TUI acceptance. The user approved two synthetic-only production throwaway lists, confirmed
+   a fresh 2Do backup and 2Do 3.91, and batch 1 phone baselines (steps 000–060) are captured.
+   See the session Results: local checklist-reset and narrow until-ended reopen writers/tests
+   are implemented; new Twydo-to-iPhone verdicts and `mod:until.execute` stay unverified until
+   final device rechecks. Private session state/backups are outside git. Do not touch other
+   data, change accounts/global write mode, or delete the test lists without the agreed consent.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
