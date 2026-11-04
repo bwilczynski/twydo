@@ -1631,3 +1631,22 @@ fn phone_accepts_weekly_completion_anchor_and_retained_inactive_codes_after_remo
         }
     }
 }
+
+#[test]
+fn phone_accepts_switch_back_from_completion_to_weekly_due_anchor() {
+    use common::recurrence::same;
+    use std::collections::BTreeMap;
+    let uid = "twydo-p8-rfra-anchor-t";
+    let mut got = parse(&fixture("plan8-rfra", "350-twydo-weekly-due-anchor", uid)).unwrap();
+    let want = parse(&fixture("plan8-rfra", "360-phone-weekly-due-anchor", uid)).unwrap();
+    apply_changes(
+        &mut got,
+        &[Change::Description(Some("RFRA return 3".into()))],
+        dtstamp(&want),
+    )
+    .unwrap();
+    same("weekly due anchor", &got, &want, &BTreeMap::new());
+    let meta = MetaJson::parse(&todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(meta.get_i64("RecurrenceFrom"), Some(1));
+    assert_eq!(meta.get_str("RUID"), Some(uid));
+}

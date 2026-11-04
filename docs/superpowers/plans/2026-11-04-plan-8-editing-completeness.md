@@ -58,6 +58,11 @@ interval/offset completion outputs match the core writer. User confirmed reopeni
 a fields occurrence, so its ambiguous completion is excluded from clean evidence.
 Barrier 350 uploads weekly-from-due anchor and a December 10 retry on the same
 fields series; next phone batch handles both, without extra examples or syncs.
+Return 360 accepts weekly-from-due anchor. Fields retry produced its December 10
+history but left the live series byte-identical at December 10; scoped followup
+361 did not change it. User was asked for the phone's displayed live Due. Pause
+dependent writes and final anchor removal until reconciled; both shipping rows
+remain unverified. Preserve all private captures and do not repeat completion.
 
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,

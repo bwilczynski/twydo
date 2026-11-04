@@ -372,3 +372,23 @@ weekly from-due display and set its Notes to `RFRA return 3`, then complete fiel
 `t` once (Due December 10) and sync once. This retry adds no example or sync round;
 it shares the already-planned anchor barrier. One final anchor-removal barrier
 remains afterward.
+
+### Return 360/361: anchor accepted; fields live update unresolved
+
+Weekly-from-due anchor returned with `RFRA return 3` notes and unchanged complete
+metadata, including RecurrenceFrom 1 and the original series identity. Partial
+350/360 anchor fixtures and an exact note-rewrite regression record this evidence.
+
+The fields retry produced one completed non-recurring December 10 history copy,
+but the live repeating task remained byte-identical to the uploaded December 10
+resource rather than advancing. A second scoped pull (361) changed no files.
+There was no unresolved conflict. Both captures and all earlier versions remain
+private and preserved. This follows the user's earlier reopened-history sequence;
+do not assume either user error or a writer/phone defect from this state alone.
+
+User was asked what Due the repeating task currently shows on the phone, with an
+explicit request not to repeat completion. Await that answer before dependent
+writes. Do not enable either operation row or advance the final anchor-removal
+barrier while this mismatch is unresolved. Do not discard the new history,
+restore over phone edits or repeat the already-completed baselines. No clean
+fields-retry fixture was exported. All other return evidence remains usable.
