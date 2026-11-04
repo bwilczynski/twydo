@@ -306,7 +306,7 @@ fn create_item_under_plain_task_is_refused() {
     assert_eq!(at("nope"), blocked("no task with UID nope"));
     assert_eq!(
         at("gate-monthly-checklist"),
-        blocked("repeating checklists are not verified yet")
+        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
     // An item is a task, in its parent's list.
     let op = Op::Create(NewTask {
@@ -353,7 +353,7 @@ fn checklist_item_with_date_is_refused() {
             "{n:?}"
         );
     }
-    // A new checklist cannot repeat.
+    // A repeating checklist needs its own create verdict, not the plain checklist's.
     let op = Op::Create(NewTask {
         kind: twydo_core::model::TaskKind::Checklist,
         due: Some(Due::Date(date(2026, 11, 9))),
@@ -362,7 +362,7 @@ fn checklist_item_with_date_is_refused() {
     });
     assert_eq!(
         check(&s, &m, WriteMode::Test, &op, today()),
-        blocked("repeating checklists are not verified yet")
+        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
 }
 
@@ -599,7 +599,7 @@ fn convert_needs_convert_row() {
         ),
         Ok(())
     );
-    // A repeating task cannot become a checklist; an item cannot become a parent.
+    // A repeating task needs the recurring checklist's edit verdict; items cannot be parents.
     let m = rows(&[("task-to-checklist", "convert")], "pass");
     assert_eq!(
         check(
@@ -609,7 +609,7 @@ fn convert_needs_convert_row() {
             &kind("gate-monthly", Checklist),
             today()
         ),
-        blocked("repeating checklists are not verified yet")
+        blocked("edit for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
     assert_eq!(
         check(
@@ -860,6 +860,14 @@ fn family_cases() {
     );
     // A completed project without RRULE (like a recurring project's copy) is a plain project.
     assert_eq!(at("gate-done-project"), cs("one-time", Some("project")));
+    assert_eq!(
+        at("gate-monthly-checklist"),
+        cs("monthly", Some("recurring-checklist"))
+    );
+    assert_eq!(
+        at("gate-monthly-checklist-item"),
+        cs("one-time", Some("recurring-checklist"))
+    );
 }
 
 const NESTED: &str = "nested projects and checklists are not verified yet";
@@ -873,16 +881,8 @@ fn family_refusals() {
         ("gate-nested-child", NESTED),
         ("gate-nested-grandchild", NESTED),
         (
-            "gate-monthly-checklist",
-            "repeating checklists are not verified yet",
-        ),
-        (
-            "gate-monthly-checklist-item",
-            "repeating checklists are not verified yet",
-        ),
-        (
             "gate-checklist-repeating-item",
-            "repeating checklists are not verified yet",
+            "checklist items take their date from the checklist",
         ),
         (
             "gate-recurring-repeating-child",
@@ -1035,7 +1035,7 @@ fn parent_op_refused_when_child_has_no_case() {
             &complete("gate-checklist-mixed"),
             today()
         ),
-        blocked("repeating checklists are not verified yet")
+        blocked("checklist items take their date from the checklist")
     );
     assert_eq!(
         check(

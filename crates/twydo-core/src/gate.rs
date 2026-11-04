@@ -20,12 +20,12 @@
 //!    checklist item a due or start date, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `daily`, `weekly`, `monthly`,
 //!    `yearly`, or `from-completion` for any rule repeated from completion) and family case
-//!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
+//!    (`checklist`, `recurring-checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
 //!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
 //!    does not match the task's kind (0 task, 1 checklist, 2 project; a parent without
 //!    `@tasktype` counts as a task) refuses with "this 2Do task type is not verified yet";
-//!    then a broken parent link ("broken parent link"), nested families, repeating
-//!    checklists, a repeating child of a repeating project, children of a plain task, or the
+//!    then a broken parent link ("broken parent link"), nested families, independently repeating
+//!    checklist items, a repeating child of a repeating project, children of a plain task, or the
 //!    repeat refusals of the own case.
 //!
 //!    A create has the cases of the new task: its own case from its repeat, and the family
@@ -36,8 +36,7 @@
 //!
 //!    An edit that changes the type ([`Change::Kind`]) or the repeat rule
 //!    ([`Change::Repeat`]) must also leave a task with cases and a repeat with a due date
-//!    (so a repeating task cannot
-//!    become a checklist, an item cannot become a parent, and a repeating project cannot
+//!    (an item cannot become a parent, and a repeating project cannot
 //!    keep a repeating item);
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
 //!    attribute cases (with rule 6, the only rules the write mode changes); for a type or
@@ -50,7 +49,7 @@
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
 //!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
-//! 5. the verified shape of a repeating completion (a recurring project's rule must have no
+//! 5. the verified shape of a repeating completion (a recurring parent's rule must have no
 //!    end and repeat from its due date); a completed repeating task (the last occurrence of
 //!    an ended series, completed in place) is not reopened (use undo), checked right after
 //!    rule 2 so the reason is not a matrix row;
@@ -90,7 +89,6 @@ fn blocked<T>(reason: impl Into<String>) -> Result<T, Blocked> {
 }
 
 const NESTED: &str = "nested projects and checklists are not verified yet";
-const REPEATING_CHECKLIST: &str = "repeating checklists are not verified yet";
 const CHILD_RECURRENCE: &str = "a repeating task inside a repeating project is not verified yet \
                                 (project-child-own-recurrence)";
 const NO_DUE: &str = "a repeating task needs a due date";
@@ -268,11 +266,27 @@ pub fn check(
                 .as_deref()
                 .and_then(|r| parse_rrule(r).ok())
                 .is_some_and(|r| r.end != End::Never);
-            if cases.family == Some("recurring-project")
-                && task.rrule.is_some()
+            if matches!(
+                cases.family,
+                Some("recurring-project" | "recurring-checklist")
+            ) && task.rrule.is_some()
                 && (ends || task.from_completion)
             {
-                return blocked(PROJECT_END);
+                return blocked(if cases.family == Some("recurring-checklist") {
+                    "completing a recurring checklist that ends or repeats from completion is not verified yet"
+                } else {
+                    PROJECT_END
+                });
+            }
+            if cases.family == Some("recurring-checklist")
+                && snap
+                    .children(i)
+                    .iter()
+                    .any(|&c| snap.tasks[c].status == Status::Cancelled)
+            {
+                return blocked(
+                    "completing a recurring checklist with cancelled items is not verified yet",
+                );
             }
             if execute != Verdict::Pass {
                 return not_verified();
@@ -301,13 +315,14 @@ pub fn check(
 pub struct Cases {
     /// `one-time`, `daily`, `weekly`, `monthly`, `yearly` or `from-completion`.
     pub own: &'static str,
-    /// `checklist`, `project`, `recurring-project` or `project-recurring-child`.
+    /// `checklist`, `recurring-checklist`, `project`, `recurring-project` or `project-recurring-child`.
     pub family: Option<&'static str>,
 }
 
 /// The matrix cases of the task at `idx`, or why it has none. Only the shapes the Plan 6
-/// iPhone session captured have cases: one level of children under a typed checklist or
-/// project, no repeating checklist or item, no repeating child of a repeating project.
+/// iPhone sessions captured have cases: one level of children under a typed checklist or
+/// project, recurring checklists included; no independently repeating checklist item or
+/// repeating child of a repeating project.
 pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     if !known_task_type(&snap.tasks[idx]) {
         return blocked("this 2Do task type is not verified yet");
@@ -387,7 +402,8 @@ fn family_case(
     own_repeats: bool,
 ) -> Result<&'static str, Blocked> {
     Ok(match head {
-        TaskKind::Checklist if head_repeats || own_repeats => return blocked(REPEATING_CHECKLIST),
+        TaskKind::Checklist if item && own_repeats => return blocked(ITEM_DATES),
+        TaskKind::Checklist if head_repeats => "recurring-checklist",
         TaskKind::Checklist => "checklist",
         _ if !item && head_repeats => "recurring-project",
         _ if !item => "project",

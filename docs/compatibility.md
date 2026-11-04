@@ -167,6 +167,11 @@ item inside a repeating project (creating one included); nested projects and che
 deleting or reopening a single item on its own; editing alerts. Converting a project that has
 items is not supported by 2Do at all.
 
+The candidate recurring-checklist writer copies the completed family before resetting live
+items and removing their inherited due dates. It refuses independent item start dates and
+due times, including start-only items without a due date. Local tests cover atomic refusal,
+undo, redo and interrupted recovery; the device round trip remains pending.
+
 Three repeat kinds fail on the iPhone and Twydo never writes them in any mode: the last day of
 the month, the last weekday and the Nth weekend day. 2Do 3.91 misreads them and its picker cannot
 create them. Twydo still reads them, and the refusal says `… repeats are not supported by 2Do on

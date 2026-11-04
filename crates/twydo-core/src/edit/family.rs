@@ -154,6 +154,24 @@ pub fn drop_member_dates(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), E
     if todo.prop("DUE").is_none() {
         return Err(unsupported("item has no date of its own"));
     }
+    check_member_date_shape(todo)?;
+    todo.remove_props("DUE");
+    todo.remove_props("DTSTART");
+    touch(todo, now);
+    *cal = work;
+    Ok(())
+}
+
+/// Whether an item carries an inherited due date. Validate even undated items: a start
+/// without a due date is an uncaptured shape, not an item whose dates can be skipped.
+pub(crate) fn member_has_inherited_dates(cal: &Calendar) -> Result<bool, EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    check_member_date_shape(todo)?;
+    Ok(todo.prop("DUE").is_some())
+}
+
+fn check_member_date_shape(todo: &Component) -> Result<(), EditError> {
     if has_own_dtstart(todo) {
         return Err(unsupported(
             "removing an item's own start (DTSTART) is not verified yet",
@@ -171,9 +189,5 @@ pub fn drop_member_dates(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), E
             "removing an item's due time or start date is not verified yet",
         ));
     }
-    todo.remove_props("DUE");
-    todo.remove_props("DTSTART");
-    touch(todo, now);
-    *cal = work;
     Ok(())
 }
