@@ -4,6 +4,59 @@ Date: 2026-11-04. Status: batch 1 phone rounds complete through 153; eight scope
 rows and narrow until execution enabled. Later device batches/full TUI surface remain pending.
 See the session's regression map and local closeout for exact enabled/refused shapes.
 
+## Resume checkpoint — start here after the required project/spec reading
+
+- Branch: `feat/tui-editing-completeness`; draft [PR #26](https://github.com/bwilczynski/twydo/pull/26).
+  Batch 1 code is commit `594d4ba`; test organization is `9afa123`. Work is pushed, not merged.
+  GitHub PR validation (CI and conventional commits) passed on `594d4ba`.
+- Batch 1 phone work is complete through 153. **Do not repeat those phone rounds.** Five
+  logical synthetic cases yielded eight newly passing operation rows, narrow date-only
+  daily/plain-monthly until execution, and its end-date summary edge. Exact scopes and remaining
+  refusals are in [compatibility.md](../../compatibility.md#what-is-verified-today).
+- Validation on the completed code: `mise run test` passed 813 Rust tests, 49 Python tests and
+  documentation links; `mise run lint` passed. Offline verified-mode TUI key/card/writer tests
+  cover the newly enabled batch, not the whole remaining TUI surface.
+- Assertions live in existing behavior suites (`edit_fields`, `edit_complete`, `store`,
+  `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
+  are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
+  [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
+- Matrix accounting: 67 passing, 37 unverified and 2 unsupported operation rows. Of the 37,
+  15 are unused attribute placeholders and 5 generic reopen rows overlap narrower dedicated
+  cases; 17 are other task/family case-operation entries. This is **not** a complete count of
+  remaining features: absent rows and guarded combinations add real gaps.
+- Private production session manifests/backups are outside git. Existing synthetic test lists
+  remain; no cleanup, account/config change or additional production operation is authorized
+  by this checkpoint. The five conflicts at 130 were resolved using the user's phone versions.
+  Acceptance comes from the clean 141–144/151–153 retry, not that conflicted attempt.
+
+### Next bounded increment: existing from-completion editing and anchor changes
+
+Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
+`from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,
+project/item work and other repeat shapes for separate increments. Do not broaden matrix rows
+beyond captured operations and a written writer-equivalence argument.
+
+Before involving the phone, reuse prior fixtures, inspect the actual gate/writer paths, and
+prepare one concise checklist showing:
+
+1. Exact remaining actions and synthetic UID targets, with reused evidence identified.
+2. The specific field/anchor transitions to prove and expected resource changes.
+3. Named capture barriers and a fixed planned number of phone return rounds; explain any
+   necessary expansion before requesting it.
+4. Exact capabilities that will be enabled, their negative neighbors, and the stop condition:
+   implementation + both device directions + ordinary behavior tests + verified-mode TUI
+   checks + matching docs, or a precise unsupported finding.
+
+Get fresh approval for that exact production scope before seeding/writing/syncing/phone work.
+Pull and validate the latest phone state before each writer round; the user's report of phone
+changes is not approval to repeat them on stale desktop copies. Preserve remote edits and both
+conflict versions. Keep commits focused, and push updates to the existing draft PR.
+
+The initial audit and unchecked multi-batch checklist below predate this closeout; they do not
+mean batch 1 is unfinished. The checkpoint, current compatibility page/matrix/gate and session
+local closeout identify the present state. This is a handoff within Plan 8, not a new plan or a
+claim that all existing TUI actions are complete.
+
 ## Goal and boundaries
 
 Make supported tasks usable through their whole lifecycle: create, edit, change/remove repeat,
@@ -21,7 +74,7 @@ Sources: [main spec](../specs/2026-10-31-terminal-tasks-design.md),
 [`store/family.rs`](../../../crates/twydo-core/src/store/family.rs), and
 [`compat/matrix.toml`](../../../compat/matrix.toml).
 
-## Audit: missing task operations
+## Initial audit: missing task operations
 
 “Implemented, gated” means code exists but the complete operation still needs captured evidence;
 it does not mean the code is known to produce the right result.

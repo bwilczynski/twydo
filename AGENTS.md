@@ -70,7 +70,10 @@ app replacing 2Do for one user, plan by plan.
    `yearly-feb-29`, `from-completion-anchor` and `end-after-n` from sessions B/C; `end-on-date`
    records its partial session-C evidence and stays unverified.
    **Current follow-up plan:** `docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md`
-   audits the remaining editing/lifecycle gaps and separates missing implementation from missing
+   starts with a resume checkpoint: draft PR #26, completed batch 1, precise coverage counts,
+   and the next bounded RF/RA from-completion increment. Use that checkpoint to resume without
+   replaying the prior phone work; prepare a fixed checklist before requesting a new session.
+   The plan audits the remaining editing/lifecycle gaps and separates missing implementation from missing
    phone evidence and permanent 2Do limits. Local audit/evidence cleanup is done; device rounds
    need fresh user approval. Continue its first unfinished task; do not infer permission from past sessions.
    The user requested coverage of **all existing TUI actions**, not only checklist/until gaps:
