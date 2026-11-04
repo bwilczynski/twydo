@@ -2065,13 +2065,20 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
     // Classes: days (D1, D3), weeks (W1, W2), weekdays-set (WD, WK, OR), months-nth-weekday
     // (N2, LF), months-day-29-31 (M31), years-feb-29 (Y29); modifiers from-completion (FC,
-    // FS with a start date), count (C1), until (UN).
+    // FS with a start date) and count (C1).
     for kind in [
-        "D1", "D3", "W1", "W2", "WD", "WK", "OR", "N2", "LF", "M31", "Y29", "FC", "FS", "C1", "UN",
+        "D1", "D3", "W1", "W2", "WD", "WK", "OR", "N2", "LF", "M31", "Y29", "FC", "FS", "C1",
     ] {
         let uid = by_title(&s, "c", &format!("{kind}b"));
         assert_eq!(at(&complete(&uid)), Ok(()), "{kind}");
     }
+    // Until: only the ending case (UN) was captured, not a series that goes on, so the
+    // modifier's `execute` stays unverified.
+    let uid = by_title(&s, "c", "UNb");
+    assert_eq!(
+        at(&complete(&uid)),
+        blocked("months-day-1-28+until repeats are not verified yet")
+    );
     // Session C's edits (03-twydo-edit), which the phone showed right.
     let e = |t: &str| by_title(&s, "c", t);
     let due = Change::Due(Some(Due::Date(date(2026, 12, 8))));

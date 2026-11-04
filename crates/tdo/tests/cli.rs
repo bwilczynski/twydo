@@ -103,13 +103,10 @@ mod gate {
             "{out}"
         );
         assert!(out.contains("parse errors: 0"), "{out}");
-        // Every class of the sample passes since Plan 7 session C; a later matrix may differ.
-        assert!(
-            out.contains("GATE: PASSED")
-                || (out.contains("GATE: NOT PASSED (")
-                    && out.contains("rule classes unverified, 0 parse errors, 0 blocked)")),
-            "{out}"
-        );
+        // Every class of the sample (monthly, weekdays, weekly, yearly) executes since Plan 7
+        // session C, so the gate passes.
+        assert!(out.contains("GATE: PASSED"), "{out}");
+        assert!(!out.contains("GATE: NOT PASSED"), "{out}");
         assert!(!out.contains("Pay rent"), "{out}");
         let v = tdo(&["--vdir", sample(), "check", "--verbose"]);
         assert!(stdout(&v).contains("Pay rent"));
