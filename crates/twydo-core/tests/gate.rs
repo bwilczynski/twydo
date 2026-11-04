@@ -1843,6 +1843,7 @@ fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
         ("gate-date", "yearly"),
         ("gate-date", "daily"),
         ("gate-monthly", "yearly"),
+        ("gate-monthly", "monthly after done"),
     ] {
         assert_eq!(
             at(&edit(uid, vec![Change::Repeat(Some(repeat(text)))])),
@@ -1851,7 +1852,7 @@ fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     }
     let op = edit(
         "gate-monthly",
-        vec![Change::Repeat(Some(repeat("monthly after done")))],
+        vec![Change::Repeat(Some(repeat("monthly after done 3 times")))],
     );
     assert!(at(&op).is_err());
     // A repeat on a project makes it a recurring project.
@@ -2123,7 +2124,7 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
         );
     }
     // Plain daily/yearly reshaping is now covered by Plan 8.
-    for text in ["yearly", "daily"] {
+    for text in ["yearly", "daily", "monthly after done"] {
         assert_eq!(
             at(&edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))])),
             Ok(())
@@ -2131,7 +2132,7 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
     }
     let op = edit(
         &e("E3"),
-        vec![Change::Repeat(Some(repeat("monthly after done")))],
+        vec![Change::Repeat(Some(repeat("monthly after done 3 times")))],
     );
     assert!(at(&op).is_err());
     // Reopening a history copy of a daily or weekly repeat rests on the monthly/yearly rows;
@@ -2857,6 +2858,182 @@ mod verified_recurrence_shapes {
             )
             .is_err(),
             "the top-level history row does not enable recurring-family history"
+        );
+    }
+}
+
+#[test]
+fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
+    let dir = tempfile::tempdir().unwrap();
+    let list = dir.path().join("list");
+    std::fs::create_dir(&list).unwrap();
+    let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload-A/twydo-p8-rfra-fields-p.ics",
+    );
+    std::fs::copy(seed, list.join("fields.ics")).unwrap();
+    let m = Matrix::embedded().clone();
+    let uid = "twydo-p8-rfra-fields-p";
+    for (text, allowed) in [
+        ("monthly after done", true),
+        ("weekly after done", true),
+        ("weekly", true),
+        ("daily after done", false),
+        ("yearly after done", false),
+        ("monthly after done 3 times", false),
+    ] {
+        let s = load_snap(dir.path());
+        let op = Op::Edit {
+            uid: uid.into(),
+            changes: vec![Change::Repeat(Some(repeat(text)))],
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            allowed,
+            "{text}"
+        );
+    }
+    for (rule, change, allowed) in [
+        ("FREQ=MONTHLY", Change::Summary("changed".into()), true),
+        ("FREQ=WEEKLY", Change::Summary("changed".into()), false),
+        ("FREQ=YEARLY", Change::Summary("changed".into()), false),
+        (
+            "FREQ=MONTHLY;INTERVAL=2",
+            Change::Summary("changed".into()),
+            false,
+        ),
+        ("FREQ=MONTHLY", Change::RepeatInterval(2), true),
+        ("FREQ=MONTHLY", Change::RepeatInterval(3), false),
+    ] {
+        let mut s = load_snap(dir.path());
+        let i = s.find(uid).unwrap();
+        s.tasks[i].rrule = Some(rule.into());
+        let op = Op::Edit {
+            uid: uid.into(),
+            changes: vec![change],
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            allowed,
+            "{rule}: {op:?}"
+        );
+    }
+}
+
+#[test]
+fn verified_from_completion_due_edits_refuse_custom_zero_offset_alarms_atomically() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/phase0/v1/plan8-rfra/250-phone-time-added-A/twydo-p8-rfra-fields-p.ics",
+    );
+    let original = std::fs::read_to_string(fixture).unwrap();
+    let m = Matrix::embedded().clone();
+    for variant in ["automatic", "custom", "related-end"] {
+        let dir = tempfile::tempdir().unwrap();
+        let list = dir.path().join("list");
+        std::fs::create_dir(&list).unwrap();
+        let text = match variant {
+            "custom" => original.replace(
+                "X-2DOAPP-ISAUTO;SHARE-SCOPE=GLOBAL:1",
+                "X-2DOAPP-ISAUTO;SHARE-SCOPE=GLOBAL:0",
+            ),
+            "related-end" => original.replace("TRIGGER:PT0S", "TRIGGER;RELATED=END:PT0S"),
+            _ => original.clone(),
+        };
+        let path = list.join("fields.ics");
+        std::fs::write(&path, &text).unwrap();
+        let s = load_snap(dir.path());
+        let op = Op::Save {
+            uid: "twydo-p8-rfra-fields-p".into(),
+            changes: vec![
+                Change::Summary("retained".into()),
+                Change::Due(Some(Due::Time(today().and_hms_opt(11, 0, 0).unwrap()))),
+            ],
+            to: None,
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            variant == "automatic",
+            "{variant}"
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+    }
+}
+
+#[test]
+fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_foreign_series_ids() {
+    use twydo_core::edit::reopen_one_time;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1/plan8-rfra");
+    let history = std::fs::read_dir(root.join("363-phone-fields-live-note"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "ics"))
+        .map(|p| parse(&std::fs::read(p).unwrap()).unwrap())
+        .find(|c| {
+            c.root
+                .children_named("VTODO")
+                .next()
+                .unwrap()
+                .prop("STATUS")
+                .is_some_and(|p| p.value == "COMPLETED")
+        })
+        .unwrap();
+    let mut reopened = history;
+    reopen_one_time(
+        &mut reopened,
+        chrono::DateTime::parse_from_rfc3339("2026-11-04T21:00:00Z")
+            .unwrap()
+            .to_utc(),
+    )
+    .unwrap();
+    let history_uid = reopened
+        .root
+        .children_named("VTODO")
+        .next()
+        .unwrap()
+        .prop("UID")
+        .unwrap()
+        .value
+        .clone();
+    let dir = tempfile::tempdir().unwrap();
+    let list = dir.path().join("list");
+    std::fs::create_dir(&list).unwrap();
+    std::fs::write(list.join("history.ics"), serialize(&reopened)).unwrap();
+    let s = load_snap(dir.path());
+    let op = Op::Edit {
+        uid: history_uid,
+        changes: vec![Change::Repeat(Some(repeat("monthly after done")))],
+    };
+    assert!(
+        check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err(),
+        "reopened history must not become a second series with the old RUID"
+    );
+
+    let mut live = parse(
+        &std::fs::read(root.join("202-seeded-after-upload-A/twydo-p8-rfra-fields-p.ics")).unwrap(),
+    )
+    .unwrap();
+    let p = live
+        .root
+        .children_named_mut("VTODO")
+        .next()
+        .unwrap()
+        .prop_mut("X-2DOAPP-METADATA")
+        .unwrap();
+    let mut meta = MetaJson::parse(&p.value).unwrap();
+    meta.set_str("RUID", "synthetic-phone-live-series-id");
+    p.set_value(&meta.encode());
+    std::fs::write(list.join("live.ics"), serialize(&live)).unwrap();
+    let s = load_snap(dir.path());
+    for change in [
+        Change::Summary("safe live edit".into()),
+        Change::Repeat(Some(repeat("weekly after done"))),
+    ] {
+        let op = Op::Edit {
+            uid: "twydo-p8-rfra-fields-p".into(),
+            changes: vec![change],
+        };
+        assert!(
+            check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_ok(),
+            "live opaque series IDs are supported"
         );
     }
 }

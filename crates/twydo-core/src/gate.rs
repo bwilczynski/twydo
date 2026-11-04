@@ -284,6 +284,15 @@ pub fn check(
         operation_row(m, mode, case, "convert")?;
     }
 
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && ((snap.tasks[i].rrule.is_some() && snap.tasks[i].from_completion)
+            || new_repeat(changes)
+                .flatten()
+                .is_some_and(|r| r.from_completion))
+    {
+        captured_from_completion_edit(snap, i, changes)?;
+    }
+
     let Some(i) = target else {
         return Ok(());
     };
@@ -1089,6 +1098,183 @@ fn plain_repeat_transition(t: &Task, changes: &[Change]) -> Result<(), Blocked> 
         return blocked(
             "daily/yearly repeat changes are verified only between plain due-anchored rules without an end",
         );
+    }
+    Ok(())
+}
+
+/// Inspect the original component: the parsed alarm model does not distinguish a
+/// custom zero-offset alarm from 2Do's automatic due-time alarm.
+fn captured_automatic_alarm(snap: &Snapshot, t: &Task) -> bool {
+    let Some(cal) = snap
+        .source(&t.path)
+        .and_then(|b| crate::ical::parse(b).ok())
+    else {
+        return false;
+    };
+    let Some(todo) = cal.root.children_named("VTODO").next() else {
+        return false;
+    };
+    if let Some(start) = todo.prop("DTSTART")
+        && !todo
+            .prop("DUE")
+            .is_some_and(|due| start.params == due.params && start.value == due.value)
+    {
+        return false;
+    }
+    let alarms: Vec<_> = todo.children_named("VALARM").collect();
+    alarms.len() == t.alarms.len()
+        && alarms.iter().all(|a| {
+            a.children.is_empty()
+                && a.props.len() == 6
+                && [
+                    "TRIGGER",
+                    "ACTION",
+                    "DESCRIPTION",
+                    "X-2DOAPP-SOUND",
+                    "X-2DOAPP-ISAUTO",
+                    "X-2DOAPP-RELDUETIME",
+                ]
+                .iter()
+                .all(|name| a.props.iter().filter(|p| p.name == *name).count() == 1)
+                && a.props.iter().all(|p| match p.name.as_str() {
+                    "TRIGGER" => p.value == "PT0S" && p.params.is_empty(),
+                    "ACTION" => p.value == "AUDIO" && p.params.is_empty(),
+                    "DESCRIPTION" => p.params.is_empty(),
+                    "X-2DOAPP-SOUND" | "X-2DOAPP-ISAUTO" | "X-2DOAPP-RELDUETIME" => {
+                        let expected = if p.name == "X-2DOAPP-SOUND" {
+                            "Basso"
+                        } else {
+                            "1"
+                        };
+                        p.value == expected
+                            && p.params.len() == 1
+                            && p.params[0].name == "SHARE-SCOPE"
+                            && p.params[0].values == ["GLOBAL"]
+                    }
+                    _ => false,
+                })
+        })
+}
+
+/// RF/RA evidence covers ordinary monthly edits and plain monthly/weekly anchor
+/// transitions separately. Their shared operation row must not enable other classes,
+/// families, endings or combinations that were never captured.
+fn captured_from_completion_edit(
+    snap: &Snapshot,
+    i: usize,
+    changes: &[Change],
+) -> Result<(), Blocked> {
+    const REASON: &str = "from-completion edits are verified only for captured standalone monthly fields, interval 1 to 2, or plain monthly/weekly anchor changes without an end";
+    let t = &snap.tasks[i];
+    let refuse = || blocked(REASON);
+    let old = t
+        .rrule
+        .as_deref()
+        .map(parse_rrule)
+        .transpose()
+        .map_err(|_| Blocked(REASON.into()))?;
+    let plain = |r: &RRule| r.end == End::Never && plain_rule(r, &[Freq::Monthly, Freq::Weekly]);
+    let due_ok = |d: &Due| match d {
+        Due::Date(d) => d.day() <= 28,
+        Due::Time(d) => d.day() <= 28,
+    };
+    let Some(meta) = json_meta(t) else {
+        return refuse();
+    };
+    // A plain task retaining a foreign series id may be reopened history. Setting
+    // recurrence there would create a second live series with the old link. Live
+    // imported recurring tasks can legitimately have opaque foreign RUIDs.
+    if old.is_none()
+        && meta
+            .get_str("RUID")
+            .is_some_and(|r| !r.is_empty() && r != t.uid)
+    {
+        return blocked(
+            "setting completion recurrence on a plain task linked to another series is not verified yet",
+        );
+    }
+    if t.kind != TaskKind::Task
+        || t.status != Status::Open
+        || snap.parent(i).is_some()
+        || !snap.children(i).is_empty()
+        || !match t.due {
+            Some(IcalDateTime::Date(d)) => d.day() <= 28,
+            Some(IcalDateTime::Floating(d)) => d.day() <= 28,
+            _ => false,
+        }
+        || !captured_automatic_alarm(snap, t)
+        || !due_after(snap, i, changes).as_ref().is_some_and(due_ok)
+        || meta.get_i64("StartDayDelay").unwrap_or(0) != 0
+        || meta
+            .get_i64("StartDate")
+            .is_some_and(|n| n <= 0 || n % 86_400 != 0)
+        || !t
+            .start
+            .as_ref()
+            .is_none_or(|s| matches!(s, IcalDateTime::Date(_)))
+        || t.alarms.len() > 1
+        || t.alarms
+            .iter()
+            .any(|a| !matches!(a.trigger, Trigger::Relative { offset, .. } if offset.is_zero()))
+    {
+        return refuse();
+    }
+    let date_only = matches!(t.due, Some(IcalDateTime::Date(_)))
+        && t.start.is_none()
+        && t.alarms.is_empty()
+        && meta.get_i64("StartDate").is_none()
+        && meta.get_i64("duetime").is_none();
+    if changes.iter().all(|c| matches!(c, Change::Repeat(_))) {
+        // The edit card represents an interval-only change with a full Repeat spec.
+        // The CLI uses RepeatInterval; both write the same captured recurrence fields.
+        let interval_two = old
+            .as_ref()
+            .is_some_and(|r| r.freq == Freq::Monthly && plain(r))
+            && t.from_completion
+            && new_repeat(changes).flatten().is_some_and(|r| {
+                let mut rule = r.rule.clone();
+                rule.interval = 1;
+                r.from_completion
+                    && r.rule.interval == 2
+                    && rule.freq == Freq::Monthly
+                    && plain(&rule)
+            });
+        if date_only && interval_two {
+            return Ok(());
+        }
+        if !date_only
+            || !old.as_ref().is_none_or(plain)
+            || !new_repeat(changes).flatten().is_none_or(|r| plain(&r.rule))
+        {
+            return refuse();
+        }
+        return Ok(());
+    }
+    let Some(old) = old else {
+        return refuse();
+    };
+    if !t.from_completion || old.freq != Freq::Monthly || !plain(&old) {
+        return refuse();
+    }
+    if changes
+        .iter()
+        .any(|c| matches!(c, Change::RepeatInterval(_)))
+    {
+        return if date_only
+            && changes
+                .iter()
+                .all(|c| matches!(c, Change::RepeatInterval(2)))
+        {
+            Ok(())
+        } else {
+            refuse()
+        };
+    }
+    if changes
+        .iter()
+        .any(|c| matches!(c, Change::Repeat(_) | Change::Kind(_)))
+    {
+        return refuse();
     }
     Ok(())
 }

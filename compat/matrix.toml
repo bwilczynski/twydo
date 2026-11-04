@@ -345,13 +345,13 @@ notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a sub
 [[operation]]
 case = "from-completion"
 op = "edit"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-rfra"]
+notes = "Plan 8 RF: standalone open monthly interval-1 completion-anchored field edits (title, notes, due/date/time, start) and date-only interval 1 to 2. Phone baselines 202-300, Twydo writes and phone note checks 310-320; interval/offset completion returns 330-340 and clean fields live/history 350/363 match the writer. A live advance reached the server with a later note save; history alone is not proof of remote advancement. Guard rejects ordinary weekly/interval-2 edits, day29-31, ends, families, zoned dates and custom alarms. Automatic due alarm only; source/destination date shapes are constrained by gate. Mac round trips remain unverified."
 
 [[operation]]
 case = "from-completion"
@@ -1195,10 +1195,10 @@ op = "repeat"
 iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat"]
-notes = "Setting a repeat from the completion date: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R14 set on a one-time task. Changing or removing such a repeat was not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-rfra"]
+notes = "Plan 8 RA: plain interval-1 date-only monthly/weekly anchor/class transitions and set/remove, top-level open JSON tasks without ends, starts or alarms. Phone baselines 202-240 and Twydo/phone returns 310-380 verify setting completion anchor, monthly-to-weekly after completion, switching weekly back to due and removal. Existing RUID preserved; direct set establishes series identity. Phone accepts retained inactive From/Value after Twydo removal (340 and 380), while phone removal baseline zeros them. Shared repeat writer plus exact field/metadata fixture comparisons justify the guarded monthly/weekly transition vocabulary; no daily/yearly, selector, ending, family or interval-change inference. Plain sources with a foreign RUID are refused (reopened-history identity transition unverified); existing live opaque series IDs stay supported. Mac round trips remain unverified."
 
 [[operation]]
 case = "checklist"
