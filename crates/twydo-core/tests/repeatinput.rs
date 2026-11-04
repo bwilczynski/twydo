@@ -273,3 +273,27 @@ fn describe_matches_2do_labels() {
         assert_eq!(describe(&spec(typed), anchor), want, "{typed}");
     }
 }
+
+/// A weekday set repeats every week only (Twydo cannot complete it with an interval), so no
+/// typed form gives it another interval.
+#[test]
+fn weekday_sets_take_no_interval() {
+    for input in [
+        "every 2 weeks on mon thu",
+        "every 2 weeks mon thu",
+        "2w mon thu",
+        "mon thu every 2w",
+        "every 2 mon thu",
+        "biweekly mon",
+        "workdays every 2 weeks",
+    ] {
+        match parse(input, today(), &WORK) {
+            Err(_) => {}
+            Ok(Some(s)) => assert!(
+                s.rule.by_day.is_empty() || s.rule.interval == 1,
+                "{input}: {s:?}"
+            ),
+            Ok(None) => panic!("{input}: no repeat"),
+        }
+    }
+}

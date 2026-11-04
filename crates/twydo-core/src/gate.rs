@@ -63,7 +63,9 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, NTH_WEEKDAY_INTERVAL, NewTask, Op, REOPEN_ENDED, next_due};
+use crate::edit::{
+    Change, Due, NTH_WEEKDAY_INTERVAL, NewTask, Op, REOPEN_ENDED, interval_refusal, next_due,
+};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{End, parse_rrule, rule_class};
@@ -194,6 +196,9 @@ pub fn check(
         return blocked(REOPEN_ENDED);
     }
 
+    // In every mode: no interval Twydo could not complete or 2Do could not keep.
+    written_interval(snap, target, op)?;
+
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
 
@@ -254,11 +259,6 @@ pub fn check(
                     .any(|c| matches!(c, Change::RepeatInterval(_)))
             {
                 return not_verified();
-            }
-            if class.split('+').next() == Some("months-nth-weekday")
-                && changes_interval(snap, i, changes)
-            {
-                return blocked(NTH_WEEKDAY_INTERVAL);
             }
         }
         if let Op::Complete { .. } = op {
@@ -534,6 +534,54 @@ fn changes_interval(snap: &Snapshot, idx: usize, changes: &[Change]) -> bool {
             !reshapes_repeat(snap, idx, changes) && new.rule.interval != old.interval
         }
         _ => false,
+    }
+}
+
+/// The interval of a rule Twydo writes. An Nth-weekday repeat keeps its interval (2Do stores
+/// its ordinal where the interval would go), and a written rule must not get an interval its
+/// shape cannot be completed with ([`interval_refusal`]: a weekday set repeats every week
+/// only), whether by `RepeatInterval`, by `Change::Repeat` or on a create.
+fn written_interval(snap: &Snapshot, target: Option<usize>, op: &Op) -> Result<(), Blocked> {
+    let rule = match (target, op) {
+        (None, Op::Create(n)) => n.repeat.as_ref().map(|r| r.rule.clone()),
+        (Some(i), Op::Edit { changes, .. }) => {
+            let writes = changes
+                .iter()
+                .any(|c| matches!(c, Change::Repeat(_) | Change::RepeatInterval(_)));
+            if !writes {
+                return Ok(());
+            }
+            let old = snap.tasks[i]
+                .rrule
+                .as_deref()
+                .and_then(|r| parse_rrule(r).ok());
+            if old
+                .as_ref()
+                .is_some_and(|r| r.by_day.iter().any(|(n, _)| n.is_some()))
+                && changes_interval(snap, i, changes)
+            {
+                return blocked(NTH_WEEKDAY_INTERVAL);
+            }
+            // The rule the changes leave, in order.
+            let mut rule = old;
+            for c in changes {
+                match c {
+                    Change::Repeat(r) => rule = r.as_ref().map(|r| r.rule.clone()),
+                    Change::RepeatInterval(n) => {
+                        if let Some(r) = rule.as_mut() {
+                            r.interval = *n;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            rule
+        }
+        _ => None,
+    };
+    match rule.as_ref().and_then(interval_refusal) {
+        Some(why) => blocked(why),
+        None => Ok(()),
     }
 }
 
