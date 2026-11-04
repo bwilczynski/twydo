@@ -276,10 +276,13 @@ impl EditForm {
             let spec = self.stored_repeat.as_ref()?;
             return Some(format!("→ {} (kept)", repeatinput::describe(spec, due)));
         }
-        if self.repeat.trim().is_empty() {
+        // Saving an emptied field on a repeating task removes the rule: say so.
+        let removes = self.stored_repeat.is_some();
+        if self.repeat.trim().is_empty() && !removes {
             return (self.focus == Field::Repeat).then(|| EXAMPLES.to_string());
         }
         Some(match repeatinput::parse(&self.repeat, today, work_days) {
+            Ok(None) if removes => "→ none (removes the repeat)".into(),
             Ok(None) => "→ none".into(),
             Ok(Some(spec)) => {
                 let mut p = format!("→ {}", repeatinput::describe(&spec, due.or(Some(today))));
