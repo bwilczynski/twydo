@@ -2821,3 +2821,115 @@ mod verified_recurrence_shapes {
         );
     }
 }
+
+#[test]
+fn candidate_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
+    use twydo_core::compat::Verdict;
+    let dir = tempfile::tempdir().unwrap();
+    let list = dir.path().join("list");
+    std::fs::create_dir(&list).unwrap();
+    let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload-A/twydo-p8-rfra-fields-p.ics",
+    );
+    std::fs::copy(seed, list.join("fields.ics")).unwrap();
+    let mut m = Matrix::embedded().clone();
+    for e in &mut m.operation {
+        if e.case == "from-completion" && matches!(e.op.as_str(), "edit" | "repeat") {
+            e.iphone_baseline = Verdict::Pass;
+            e.twydo_to_iphone = Verdict::Pass;
+            e.iphone_to_twydo = Verdict::Pass;
+        }
+    }
+    let uid = "twydo-p8-rfra-fields-p";
+    for (text, allowed) in [
+        ("monthly after done", true),
+        ("weekly after done", true),
+        ("weekly", true),
+        ("daily after done", false),
+        ("yearly after done", false),
+        ("monthly after done 3 times", false),
+    ] {
+        let s = load_snap(dir.path());
+        let op = Op::Edit {
+            uid: uid.into(),
+            changes: vec![Change::Repeat(Some(repeat(text)))],
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            allowed,
+            "{text}"
+        );
+    }
+    for (rule, change, allowed) in [
+        ("FREQ=MONTHLY", Change::Summary("changed".into()), true),
+        ("FREQ=WEEKLY", Change::Summary("changed".into()), false),
+        ("FREQ=YEARLY", Change::Summary("changed".into()), false),
+        (
+            "FREQ=MONTHLY;INTERVAL=2",
+            Change::Summary("changed".into()),
+            false,
+        ),
+        ("FREQ=MONTHLY", Change::RepeatInterval(2), true),
+        ("FREQ=MONTHLY", Change::RepeatInterval(3), false),
+    ] {
+        let mut s = load_snap(dir.path());
+        let i = s.find(uid).unwrap();
+        s.tasks[i].rrule = Some(rule.into());
+        let op = Op::Edit {
+            uid: uid.into(),
+            changes: vec![change],
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            allowed,
+            "{rule}: {op:?}"
+        );
+    }
+}
+
+#[test]
+fn candidate_from_completion_due_edits_refuse_custom_zero_offset_alarms_atomically() {
+    use twydo_core::compat::Verdict;
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/phase0/v1/plan8-rfra/250-phone-time-added-A/twydo-p8-rfra-fields-p.ics",
+    );
+    let original = std::fs::read_to_string(fixture).unwrap();
+    let mut m = Matrix::embedded().clone();
+    for e in &mut m.operation {
+        if e.case == "from-completion" && e.op == "edit" {
+            e.iphone_baseline = Verdict::Pass;
+            e.twydo_to_iphone = Verdict::Pass;
+            e.iphone_to_twydo = Verdict::Pass;
+        }
+    }
+    for variant in ["automatic", "custom", "related-end"] {
+        let dir = tempfile::tempdir().unwrap();
+        let list = dir.path().join("list");
+        std::fs::create_dir(&list).unwrap();
+        let text = match variant {
+            "custom" => original.replace(
+                "X-2DOAPP-ISAUTO;SHARE-SCOPE=GLOBAL:1",
+                "X-2DOAPP-ISAUTO;SHARE-SCOPE=GLOBAL:0",
+            ),
+            "related-end" => original.replace("TRIGGER:PT0S", "TRIGGER;RELATED=END:PT0S"),
+            _ => original.clone(),
+        };
+        let path = list.join("fields.ics");
+        std::fs::write(&path, &text).unwrap();
+        let s = load_snap(dir.path());
+        let op = Op::Save {
+            uid: "twydo-p8-rfra-fields-p".into(),
+            changes: vec![
+                Change::Summary("retained".into()),
+                Change::Due(Some(Due::Time(today().and_hms_opt(11, 0, 0).unwrap()))),
+            ],
+            to: None,
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
+            variant == "automatic",
+            "{variant}"
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+    }
+}

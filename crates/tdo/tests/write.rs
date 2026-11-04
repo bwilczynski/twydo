@@ -1066,12 +1066,16 @@ mod verified_recurrence_tui {
     const U1: &str = "91fb1d1636754afda633eb2bda234417";
     const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
     fn env(step: &str) -> Env {
+        env_in("plan8-tui-a", step)
+    }
+    fn env_in(scenario: &str, step: &str) -> Env {
         let e = Env::new();
         let list = e.vdir().join("list1");
         fs::remove_dir_all(&list).unwrap();
         fs::create_dir(&list).unwrap();
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/plan8-tui-a")
+            .join("../../fixtures/phase0/v1")
+            .join(scenario)
             .join(step);
         for p in fs::read_dir(src).unwrap().map(|p| p.unwrap().path()) {
             if p.extension().is_some_and(|x| x == "ics") {
@@ -1111,6 +1115,107 @@ mod verified_recurrence_tui {
             a.handle_key(key(c));
         }
         request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)))
+    }
+
+    #[test]
+    fn completion_anchored_card_and_date_keys_use_candidate_permissions_and_keep_refused_text() {
+        use twydo_core::compat::{Matrix, Verdict};
+        let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
+        let uid = "twydo-p8-rfra-fields-p";
+        let mut matrix = Matrix::embedded().clone();
+        // Local candidate only: shipping verdicts await the phone return round.
+        for entry in &mut matrix.operation {
+            if entry.case == "from-completion" && matches!(entry.op.as_str(), "edit" | "repeat") {
+                entry.iphone_baseline = Verdict::Pass;
+                entry.iphone_to_twydo = Verdict::Pass;
+                entry.twydo_to_iphone = Verdict::Pass;
+            }
+        }
+        let (mut w, _) = super::writer_with(&e.config(), matrix);
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, uid, false);
+        let path = e.vdir().join(format!("list1/{uid}.ics"));
+        let original = fs::read(&path).unwrap();
+        let r = request(a.handle_key(key(']')));
+        run(&e, &mut a, &mut w, r);
+        assert_ne!(fs::read(&path).unwrap(), original);
+        assert!(a.snapshot.tasks[a.snapshot.find(uid).unwrap()].from_completion);
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(fs::read(&path).unwrap(), original);
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &mut w, r);
+        select(&mut a, uid, false);
+        let r = card_repeat(&mut a, "weekly after done");
+        run(&e, &mut a, &mut w, r);
+        let task = &a.snapshot.tasks[a.snapshot.find(uid).unwrap()];
+        assert_eq!(task.rrule.as_deref(), Some("FREQ=WEEKLY"));
+        assert!(task.from_completion);
+        select(&mut a, uid, false);
+        let r = card_repeat(&mut a, "daily after done");
+        a.form.as_mut().unwrap().title.push_str(" retained");
+        let typed = a.form.as_ref().unwrap().title.clone();
+        // Re-submit the grouped card after adding its ordinary field change.
+        let _ = r;
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let before = fs::read(&path).unwrap();
+        let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(err.message()));
+        assert_eq!(a.form.as_ref().unwrap().title, typed);
+        assert_eq!(a.form.as_ref().unwrap().repeat, "daily after done");
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn completion_anchored_interval_card_accepts_only_the_captured_pure_change() {
+        use twydo_core::compat::{Matrix, Verdict};
+        for mixed in [false, true] {
+            let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
+            let uid = "twydo-p8-rfra-interval-p";
+            let mut matrix = Matrix::embedded().clone();
+            for entry in &mut matrix.operation {
+                if entry.case == "from-completion" && entry.op == "edit" {
+                    entry.iphone_baseline = Verdict::Pass;
+                    entry.iphone_to_twydo = Verdict::Pass;
+                    entry.twydo_to_iphone = Verdict::Pass;
+                }
+            }
+            let (mut w, _) = super::writer_with(&e.config(), matrix);
+            let mut a = App::new(
+                e.snapshot(),
+                now().with_timezone(&chrono_tz::America::New_York),
+            );
+            select(&mut a, uid, false);
+            let first = card_repeat(&mut a, "every 2 months after done");
+            let r = if mixed {
+                a.form.as_mut().unwrap().title.push_str(" retained");
+                request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)))
+            } else {
+                first
+            };
+            let before = fs::read(e.vdir().join(format!("list1/{uid}.ics"))).unwrap();
+            let result = w.run(a.write_snapshot(), &r, now());
+            if mixed {
+                let err = result.unwrap_err();
+                a.write_finished(Err(err.message()));
+                assert!(a.form.as_ref().unwrap().title.ends_with(" retained"));
+                assert_eq!(a.form.as_ref().unwrap().repeat, "every 2 months after done");
+                assert_eq!(
+                    fs::read(e.vdir().join(format!("list1/{uid}.ics"))).unwrap(),
+                    before
+                );
+            } else {
+                result.unwrap();
+                let snap = e.snapshot();
+                assert_eq!(
+                    snap.tasks[snap.find(uid).unwrap()].rrule.as_deref(),
+                    Some("FREQ=MONTHLY;INTERVAL=2")
+                );
+            }
+        }
     }
 
     #[test]

@@ -31,6 +31,20 @@ See the session's regression map and local closeout for exact enabled/refused sh
 
 ### Next bounded increment: existing from-completion editing and anchor changes
 
+RF/RA progress: the user approved the bounded production scope, confirmed a fresh
+backup and 2Do 3.91, and requested a minimum example set and batched phone actions.
+Five twin pairs (ten tasks) were seeded in the existing capture A list. Phone
+baselines through capture 300 are complete; do not repeat them. See the
+[RF/RA checklist](../../reference/phase0/plan8-rf-ra-checklist.md) for reasons per
+pair, exact observations and the next Twydo return barrier. Baseline fixtures are
+in `fixtures/phase0/v1/plan8-rfra`; ordinary edit/completion/gate/TUI suites hold
+their assertions. A candidate gate restricts the future operation rows to the
+captured shapes; shipping verdicts remain unchanged pending phone returns.
+Local RF/RA validation passes (823 Rust / 49 Python tests, lint and links).
+Return preflight 310 stopped on two non-session server-emptied collection guards;
+no return edits or force-delete ran. Reconcile that condition before resuming;
+see the RF/RA checklist's interrupted-preflight checkpoint. Do not repeat baselines.
+
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,
 project/item work and other repeat shapes for separate increments. Do not broaden matrix rows

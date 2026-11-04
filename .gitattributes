@@ -1,2 +1,4 @@
 # Exact bytes (CRLF vs LF) of test data must never be converted.
 crates/twydo-core/tests/data/** -text
+# Captures preserve CRLF and meaningful spaces at folded property boundaries.
+fixtures/**/*.ics -text whitespace=-blank-at-eol,cr-at-eol

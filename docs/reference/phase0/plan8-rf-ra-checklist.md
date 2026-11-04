@@ -185,6 +185,12 @@ stop and request a separate pre-completion clear capture rather than infer it.
 These sequential edits share one task and cannot be batched into one sync
 without losing the intermediate changed-start evidence.
 
+Capture 290: fields StartDate changed from 1796601600 (December 7) to
+1796688000 (December 8); monthly completion anchoring remained intact. Exactly
+one resource changed; both earlier histories, all twins and unrelated resources
+are unchanged. Final baseline batch pending: clear fields Start, then complete
+it once and sync; capture the live resource and its new history copy.
+
 Do not complete anything or edit `t` twins yet. Each task has only one action in
 this barrier, so a single synchronized capture attributes every change. Stop and
 report if the phone does not offer an action or displays an unexpected shape.
@@ -237,3 +243,56 @@ two existing throwaway lists, backup confirmation, named sync pair and two retur
 rounds. Bind account/collection IDs, versions, timezone, config and shared lock
 identity privately. No new lists, account/global mode changes, unrelated tasks or
 test-list deletion are included. Preserve remote edits and both conflict versions.
+
+## Local checkpoint after baseline 300
+
+Baseline phone actions are complete. In 300, fields StartDate is absent in both
+live and history; live Due advances to December 4 with completion anchoring.
+Exactly one new history and one edited original were observed; twins/unrelated
+resources remain unchanged.
+
+Allowlisted synthetic-only fixture export: `fixtures/phase0/v1/plan8-rfra` (28
+resources over 11 partial snapshots; no full production collection copied).
+Regression assertions are in existing `edit_fields`, `edit_complete`, `gate` and
+TUI `write` suites. Field/anchor/interval writers and all three completions match
+the phone. Removal explicitly compares the two retained inactive fields against
+the phone's zeros; acceptance of Twydo's retained fields is still pending.
+
+A candidate TUI test exposed that a passing generic from-completion operation row
+would admit daily-after-completion reshapes and other uncaptured edits. A failing
+core gate regression reproduced it. A shape guard now confines edits to standalone
+open monthly interval-1 field edits, date-only monthly interval 1 → 2 changes, and
+date-only plain interval-1 monthly/weekly recurrence transitions without ends,
+starts or alarms. Ordinary weekly/interval-2 field edits remain refused. TUI
+candidate checks cover date key → undo → redo, repeat card transition, and atomic
+mixed-save refusal retaining entered text. The shipping matrix is unchanged.
+
+Return round 1 begins with all five `t` twins: fields replays the captured ordinary
+edits, ending date-only December 9 with no Start; interval becomes every 2 months
+after completion; anchor becomes monthly after completion; direct becomes monthly
+after completion; offset Due becomes December 9 retaining Start December 5. Capture
+each local operation before upload. Phone should inspect each and set the same
+synthetic followup note on all five before one sync. No completion in this first
+barrier; preserve the remaining anchor transitions for their named barriers.
+
+### Validation and interrupted return preflight
+
+Local validation passed: `mise run test` (823 Rust tests, 49 Python tests and
+documentation links), `mise run lint`, fixture privacy scan and diff checks.
+Review found and regressions fixed two candidate-scope gaps: the card's full
+Repeat spec now permits the same interval-1 → 2 change as the CLI; custom
+zero-offset and RELATED=END alarms are refused by inspecting the original
+component's exact automatic-alarm properties. The guard follows operation-row
+checks so missing-evidence refusals retain their existing messages. No shipping
+matrix verdict changed.
+
+Return barrier 310 has **not run**: its fresh normal sync reported two non-session
+collections emptied on the server and requested an explicit deletion decision.
+No force-delete was used, no candidate config was installed, and no `t` twin was
+edited. Preserve local copies and the private sync log. User clarification was
+requested; do not infer consent to delete local data or broaden this session.
+Resume only after reconciling this sync condition safely. Private session pointers
+remain in `/tmp/twydo-rfra-session-path` and `/tmp/twydo-rfra-current-path`; the
+prepared return script is `/tmp/twydo-rfra-return1.py` and must not be replayed
+without checking whether it has already started. Baselines through 300 must not
+be repeated.

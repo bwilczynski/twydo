@@ -145,6 +145,13 @@ from-completion tasks, project repeat changes, empty-project-to-checklist conver
 alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
+The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) now has phone
+baselines for standalone monthly from-completion edits and monthly/weekly anchor
+changes. Fixture and candidate TUI tests cover those shapes; Twydo-to-phone return
+checks are pending. Their shipping operation rows remain unverified. A passing
+custom matrix cannot widen these edits to daily/yearly rules, endings, families,
+ordinary weekly/interval-2 field edits or custom alarms.
+
 A pure repeat set/removal/reshape needs the repeat rows of both its source and destination
 cases. Interval-only edits still need ordinary edit evidence; mixed saves need both. Newly
 verified daily/yearly transitions do not establish changing count/date ends, completion anchors,

@@ -1395,3 +1395,187 @@ mod recurrence_phone_captures {
         }
     }
 }
+
+/// Phone edits to existing completion-anchored tasks. A dropped anchor, stale date/time
+/// metadata, duplicate alarm or overwritten series identity must fail these comparisons.
+#[test]
+fn existing_from_completion_field_edits_match_phone() {
+    let steps: &[(&str, &str, Change)] = &[
+        (
+            "202-seeded-after-upload-A",
+            "210-phone-first-actions-A",
+            Change::Summary("RFRA fields p edited".into()),
+        ),
+        (
+            "210-phone-first-actions-A",
+            "220-phone-second-actions-A",
+            Change::Description(Some("RFRA notes".into())),
+        ),
+        (
+            "220-phone-second-actions-A",
+            "230-phone-third-actions-A",
+            Change::Description(None),
+        ),
+        (
+            "230-phone-third-actions-A",
+            "240-phone-fourth-actions-A",
+            Change::Due(Some(Due::Date(date(2026, 12, 9)))),
+        ),
+        (
+            "240-phone-fourth-actions-A",
+            "250-phone-time-added-A",
+            Change::Due(Some(Due::Time(
+                date(2026, 12, 9).and_hms_opt(9, 0, 0).unwrap(),
+            ))),
+        ),
+        (
+            "250-phone-time-added-A",
+            "260-phone-time-changed-A",
+            Change::Due(Some(Due::Time(
+                date(2026, 12, 9).and_hms_opt(11, 0, 0).unwrap(),
+            ))),
+        ),
+        (
+            "260-phone-time-changed-A",
+            "270-phone-time-removed-A",
+            Change::Due(Some(Due::Date(date(2026, 12, 9)))),
+        ),
+        (
+            "270-phone-time-removed-A",
+            "280-phone-start-and-completions-A",
+            Change::Start(Some(date(2026, 12, 7))),
+        ),
+        (
+            "280-phone-start-and-completions-A",
+            "290-phone-start-changed-A",
+            Change::Start(Some(date(2026, 12, 8))),
+        ),
+    ];
+    for (from, to, change) in steps {
+        check_after_done_edit(from, to, "fields", change.clone());
+    }
+}
+
+fn check_after_done_edit(from: &str, to: &str, case: &str, change: Change) {
+    let uid = format!("twydo-p8-rfra-{case}-p");
+    let mut got = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
+    let mut want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
+    let before_meta =
+        MetaJson::parse(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    apply_changes(&mut got, &[change], dtstamp(&want)).unwrap();
+    let after_meta = MetaJson::parse(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    if let Some(ruid) = before_meta.get_str("RUID").filter(|v| !v.is_empty()) {
+        assert_eq!(
+            after_meta.get_str("RUID"),
+            Some(ruid),
+            "existing series identity preserved"
+        );
+    }
+    // The phone assigns its first-receipt creation timestamp to a seeded resource.
+    // This is not an editable field. Every recurrence/date/alarm field remains compared.
+    for cal in [&mut got, &mut want] {
+        cal.root
+            .children_named_mut("VTODO")
+            .next()
+            .unwrap()
+            .remove_props("CREATED");
+    }
+    assert_eq!(
+        repeat_lines(&got),
+        repeat_lines(&want),
+        "{case}: {from} -> {to}"
+    );
+}
+
+#[test]
+fn existing_from_completion_interval_edit_matches_phone() {
+    check_after_done_edit(
+        "202-seeded-after-upload-A",
+        "210-phone-first-actions-A",
+        "interval",
+        Change::RepeatInterval(2),
+    );
+}
+
+#[test]
+fn completion_anchor_and_class_changes_match_phone() {
+    for (from, to, rule) in [
+        (
+            "202-seeded-after-upload-A",
+            "210-phone-first-actions-A",
+            "monthly after done",
+        ),
+        (
+            "210-phone-first-actions-A",
+            "220-phone-second-actions-A",
+            "weekly after done",
+        ),
+        (
+            "220-phone-second-actions-A",
+            "230-phone-third-actions-A",
+            "weekly",
+        ),
+    ] {
+        check_after_done_edit(from, to, "anchor", Change::Repeat(Some(spec(rule))));
+    }
+}
+
+#[test]
+fn setting_completion_anchor_on_plain_task_matches_phone() {
+    check_after_done_edit(
+        "202-seeded-after-upload-A",
+        "210-phone-first-actions-A",
+        "direct",
+        Change::Repeat(Some(spec("monthly after done"))),
+    );
+}
+
+/// Inactive repeat codes differ between historical 2Do removals (retained) and this
+/// phone capture (zeroed). Keep the difference explicit; phone acceptance of Twydo's
+/// retained values remains required before granting a repeat-operation verdict.
+#[test]
+fn removing_completion_related_repeat_preserves_series_and_only_differs_in_inactive_codes() {
+    for (case, from, to) in [
+        (
+            "direct",
+            "210-phone-first-actions-A",
+            "220-phone-second-actions-A",
+        ),
+        (
+            "anchor",
+            "230-phone-third-actions-A",
+            "240-phone-fourth-actions-A",
+        ),
+    ] {
+        let uid = format!("twydo-p8-rfra-{case}-p");
+        let mut got = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
+        let mut want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
+        let before = MetaJson::parse(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        apply_changes(&mut got, &[Change::Repeat(None)], dtstamp(&want)).unwrap();
+        let t = got.root.children_named_mut("VTODO").next().unwrap();
+        assert!(t.prop("RRULE").is_none());
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut meta = MetaJson::parse(&p.value).unwrap();
+        let phone = MetaJson::parse(&todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        assert_eq!(meta.get_i64("RecurrenceType"), Some(0));
+        assert_eq!(meta.get_str("RUID"), before.get_str("RUID"));
+        for key in ["RecurrenceValue", "RecurrenceFrom"] {
+            assert_eq!(meta.get_i64(key), before.get_i64(key));
+            assert_eq!(phone.get_i64(key), Some(0));
+            meta.set_i64(key, 0);
+        }
+        p.set_value(&meta.encode());
+        for cal in [&mut got, &mut want] {
+            cal.root
+                .children_named_mut("VTODO")
+                .next()
+                .unwrap()
+                .remove_props("CREATED");
+        }
+        assert_eq!(
+            repeat_lines(&got),
+            repeat_lines(&want),
+            "{case}: removal apart from two inactive codes"
+        );
+    }
+}
