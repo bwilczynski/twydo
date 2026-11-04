@@ -1,8 +1,10 @@
 # RF/RA bounded capture checklist
 
-Status: local preparation; device scope awaiting approval. Continues the
+Status: user approved proceeding and confirmed current backup / 2Do 3.91.
+Minimum evidence set reduced to five pairs; ten tasks seeded and synced.
+Preflight and seed sync passed; preexisting local resource bytes unchanged. Continues the
 [Plan 8 checkpoint](../../superpowers/plans/2026-11-04-plan-8-editing-completeness.md).
-No production reads, writes or sync are authorized by this document.
+Authorization comes from the conversation; the scope remains bounded below.
 
 ## Scope and reused evidence
 
@@ -66,21 +68,48 @@ Each suffix below denotes an independent pair: `twydo-p8-rfra-<suffix>-p` (phone
 baseline) and `twydo-p8-rfra-<suffix>-t` (Twydo twin). Bind filenames and collection
 IDs in a private manifest, collision-check before seed, and stop on any collision.
 
-| Suffix | Starting state | Captured actions, one barrier after each |
+The minimum set is **five twin pairs (10 tasks)**. Independent fields share a
+single sequential pair, with a capture after each action. Separate tasks are
+needed only where changing recurrence or completing a task would destroy the
+starting state needed by another comparison. The earlier 18-task offline draft
+is superseded and must not be seeded.
+
+| Suffix | Starting state and exact sequence | Why this pair exists |
 |---|---|---|
-| title | Monthly after done, date-only | Change title |
-| notes | Same | Set notes; clear notes |
-| due | Same | Change due date; set 09:00; change to 11:00; remove time |
-| start | Same | Set start two days before due; change to one day before due; clear start |
-| interval | Same | Monthly after done → every 2 months after done |
-| anchor | Monthly from due | Monthly after done → weekly after done → weekly from due → none |
-| direct | Plain dated task | Set monthly after done → none |
-| complete | Monthly after done | Change due to a date distinct from completion day; complete |
-| offset | Monthly after done, start two days before due | Change due retaining offset; complete |
+| fields | Monthly after done, date-only: change title; set/clear notes; change due date; set 09:00; change to 11:00; remove time; set/change/clear start; complete | Proves ordinary writers preserve recurrence and identity. Final completion proves the edited due date did not become the completion anchor. Separate per-action captures attribute metadata changes without separate tasks. |
+| interval | Monthly after done → every 2 months after done; complete | Interval changes write distinct recurrence metadata; completion proves the new interval is executed, not merely displayed. |
+| anchor | Monthly from due → monthly after done → weekly after done → weekly from due → none | Tests both anchor directions and class change on an existing series, including preservation of its nonempty RUID. Final removal covers due-anchored removal only. |
+| direct | Plain dated task → monthly after done → none | Tests establishing recurrence/identity on an existing plain task and removing recurrence while still after-completion anchored. Anchor's final removal cannot prove this. Prior R14 evidence is reused for setting; this pair supplies the missing phone return and removal sequence. |
+| offset | Monthly after done with start two days before due: change due; complete | Proves an edited resource with a retained start offset advances correctly. Fields clears its start before completion, so cannot supply this evidence. |
 
 Choose exact future dates from the actual approved session date and record them
 before seed. Complete phone/Twydo twins on the same local day. A day rollover
 invalidates comparison and requires rescheduling, not assumed equivalence.
+
+## RFRA-00 seeded checkpoint
+
+Ten tasks are uploaded in the existing synthetic capture A list. Their visible
+names are `RFRA <suffix> p` / `RFRA <suffix> t`; UIDs follow the pattern above.
+All are due 2026-12-07; offset starts 2026-12-05. The prepared source used
+verified-mode creation, followed by `seed_fixture.py` identity rewriting. No
+candidate gate or normal configuration was changed. Backup, manifests, before/
+after captures and logs remain outside git. Seed validation found no unresolved
+conflicts or prepared journal entries; upload succeeded and preexisting local
+files remained byte-identical. No phone edits have been captured for RF/RA yet.
+
+First phone barrier (edit only `p` twins, then sync and report):
+
+1. `RFRA fields p`: change title to `RFRA fields p edited` only.
+2. `RFRA interval p`: change monthly after completion to every 2 months after completion.
+3. `RFRA anchor p`: change monthly from due to monthly after completion.
+4. `RFRA direct p`: set monthly after completion.
+5. `RFRA offset p`: change Due to 2026-12-09; leave Start untouched manually.
+   Capture whether 2Do retains December 5 or shifts it automatically; do not
+   compensate for its behavior before capture.
+
+Do not complete anything or edit `t` twins yet. Each task has only one action in
+this barrier, so a single synchronized capture attributes every change. Stop and
+report if the phone does not offer an action or displays an unexpected shape.
 
 ## Fixed capture barriers and phone return rounds
 
@@ -96,9 +125,10 @@ actions above, not an open-ended request to explore the app.
 3. Return round 1: pull and validate latest phone state before any local write;
    Twydo performs corresponding `-t` actions with `RFRA-T-<suffix>-<action>`
    snapshots. Upload only approved targets. Phone inspects each resulting shape,
-   then edits its notes; capture `RFRA-RETURN-1`. Intermediate anchor transitions
+   then edits its notes (use a distinct synthetic marker and preserve the state
+   needed by the next comparison); capture `RFRA-RETURN-1`. Intermediate anchor transitions
    must each be inspected/acted on before Twydo proceeds to the next transition.
-4. Return round 2: after another pull/validation, complete the edited `complete`,
+4. Return round 2: after another pull/validation, complete the edited `fields`,
    `offset` and `interval` twins on the phone and capture `RFRA-RETURN-2`, including
    live resources and every new history resource. Compare completion anchor,
    due/start delta, RUID and fresh history identities against phone baselines.
