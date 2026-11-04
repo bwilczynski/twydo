@@ -107,7 +107,7 @@ pub fn member_copy(
             write_meta(todo, Some(&orig), &m);
         }
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
-        Meta::Tokens => return Err(unsupported("this task's 2Do metadata format is read-only")),
+        Meta::Tokens => return Err(unsupported(super::READ_ONLY)),
         Meta::Absent => {}
     }
     set_related_to(todo, parent_uid)?;
@@ -163,7 +163,7 @@ pub fn drop_member_dates(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), E
         Meta::Json(m) => m.get_i64("duetime").is_some() || m.get_i64("StartDate").is_some(),
         Meta::Absent => false,
         Meta::Tokens | Meta::UnreadableJson => {
-            return Err(unsupported("this task's 2Do metadata format is read-only"));
+            return Err(unsupported(super::READ_ONLY));
         }
     };
     if timed {

@@ -127,6 +127,9 @@ pub enum EditError {
     Unsupported(String),
 }
 
+/// Why a write that needs `<2Do Meta>` JSON is refused on token or no metadata.
+pub(crate) const READ_ONLY: &str = "this task's 2Do metadata format is read-only";
+
 fn unsupported(msg: impl Into<String>) -> EditError {
     EditError::Unsupported(msg.into())
 }
@@ -215,7 +218,7 @@ pub fn moved_copy(
         }
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
         Meta::Tokens if parent.is_some() => {
-            return Err(unsupported("this task's 2Do metadata format is read-only"));
+            return Err(unsupported(READ_ONLY));
         }
         Meta::Absent | Meta::Tokens => {}
     }
@@ -489,7 +492,7 @@ fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditE
         }
         Meta::Absent => None,
         Meta::Tokens | Meta::UnreadableJson => {
-            return Err(unsupported("this task's 2Do metadata format is read-only"));
+            return Err(unsupported(READ_ONLY));
         }
     };
     let mut m = orig.clone().unwrap_or_else(default_task_meta);
@@ -572,10 +575,11 @@ fn end_date_stamp(u: &IcalDateTime) -> i64 {
 /// - Remove (`None`): `RRULE` goes and `RecurrenceType` becomes 0; `RecurrenceValue`,
 ///   `RecurrenceFrom` and `RUID` stay, as 2Do leaves them (R09).
 fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), EditError> {
+    // 2Do keeps the repeat's codes in the JSON metadata too; without it they would go stale.
     let json = match meta_of(todo) {
         Meta::Json(m) => Some(m),
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
-        Meta::Absent | Meta::Tokens => None,
+        Meta::Absent | Meta::Tokens => return Err(unsupported(READ_ONLY)),
     };
     let Some(spec) = spec else {
         todo.remove_props("RRULE");
@@ -644,11 +648,7 @@ fn set_kind(todo: &mut Component, kind: TaskKind) -> Result<(), EditError> {
     let orig = match meta_of(todo) {
         Meta::Json(m) => m,
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
-        Meta::Absent | Meta::Tokens => {
-            return Err(unsupported(
-                "changing the type of this task is not supported",
-            ));
-        }
+        Meta::Absent | Meta::Tokens => return Err(unsupported(READ_ONLY)),
     };
     let uid = todo
         .prop("UID")
