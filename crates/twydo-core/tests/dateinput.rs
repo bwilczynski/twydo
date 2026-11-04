@@ -214,3 +214,18 @@ fn floating_wall_time_survives_dst_gap() {
     };
     assert_eq!(input_text(&zoned, NY), "2027-03-14 02:30");
 }
+
+/// Unit and ordinal suffixes in other scripts are errors too, never a split inside a
+/// character.
+#[test]
+fn non_ascii_suffix_is_an_error_not_a_panic() {
+    for bad in [
+        "2週", "週", "3日", "2😀", "😀", "1ą", "15ę", "2週 5pm", "5😀pm",
+    ] {
+        assert_eq!(
+            parse(bad, today()),
+            Err(format!("can't read date \"{bad}\"")),
+            "{bad}"
+        );
+    }
+}
