@@ -10,7 +10,8 @@
 //!
 //! Every repeat kind Twydo can create completes (see [`next_due`]): a date-only or
 //! floating-time `DUE` (the time is kept), from the due date or from completion, with an
-//! optional `COUNT` or `UNTIL` end (session B, `plan7-twydo-list1/03-phone-act`). A JSON
+//! optional `COUNT` or `UNTIL` end (session B, `plan7-twydo-list1/03-phone-act`); each kind's
+//! result equals the phone's own completion (session C, `plan7-twydo-list2`). A JSON
 //! `StartDate` moves by as many days as the due date (H11, gap session round 04), and a JSON
 //! `uid` naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
@@ -261,7 +262,9 @@ fn until_date(u: &IcalDateTime) -> NaiveDate {
 }
 
 /// The next due date of a repeat whose current due date is `due`. `from` is the day a
-/// from-completion rule counts from (see [`completion_base`]); `None` counts from `due`.
+/// from-completion rule counts from: the completion day, whatever the task's start date
+/// (session C, `FS`: due Dec 7 with start Dec 20, completed Nov 4 -> Dec 4); `None` counts
+/// from `due`.
 /// `Ok(None)`: the rule has ended (`COUNT=1`, or the next date is after `UNTIL`), so
 /// completing finishes the series.
 ///
@@ -293,19 +296,21 @@ pub fn next_due(
     Ok((!ended).then_some(next))
 }
 
-/// The day a from-completion repeat counts from: the completion day, or the task's 2Do start
-/// date (JSON `StartDate`, UTC midnight) if that is later (reference 01 §6).
-pub fn completion_base(today: NaiveDate, start_secs: Option<i64>) -> NaiveDate {
-    start_secs
-        .filter(|s| *s > 0 && s % 86_400 == 0)
-        .and_then(|s| DateTime::from_timestamp(s, 0))
-        .map(|t| t.date_naive())
-        .map_or(today, |start| start.max(today))
+/// 2Do's own `RecurrenceValue` for "last" in the Nth-weekday class (`0x104`-`0x10A`). Twydo
+/// writes -1 (shown right by the phone, session B); the phone writes 6 and rewrites -1 to 6
+/// when it completes such a task (session C, `LF`; session A's `R09` trace).
+const LAST_ORDINAL_2DO: i64 = 6;
+
+/// Whether `rule` is the last-weekday-of-the-month shape (`BYDAY=-1<day>`).
+fn is_last_weekday(rule: &RRule) -> bool {
+    rule.freq == Freq::Monthly && matches!(rule.by_day.as_slice(), [(Some(-1), _)])
 }
 
 /// The JSON repeat fields must describe the same rule as `RRULE`: the codes Twydo and the
-/// phone write for it ([`twodo_codes`]), from the due date (1) or from completion (2), and the
-/// matching end. Returns whether the rule repeats from completion.
+/// phone write for it ([`twodo_codes`]; for "last" in the Nth-weekday class also the phone's
+/// own 6), from the due date (1) or from completion (2), and the matching end: an `UNTIL`'s
+/// day must be the UTC day of JSON `RecurrenceEndDate`. Returns whether the rule repeats
+/// from completion.
 fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
     let refuse = |key: &str, got: Option<i64>| {
         unsupported(format!(
@@ -320,11 +325,14 @@ fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
         _ => return Err(refuse("RecurrenceFrom", from)),
     };
     let (kind, value) = twodo_codes(rule);
-    for (key, want) in [("RecurrenceType", kind), ("RecurrenceValue", value)] {
-        let got = m.get_i64(key);
-        if got != Some(want) {
-            return Err(refuse(key, got));
-        }
+    let kind_got = m.get_i64("RecurrenceType");
+    if kind_got != Some(kind) {
+        return Err(refuse("RecurrenceType", kind_got));
+    }
+    let value_got = m.get_i64("RecurrenceValue");
+    let phone_last = is_last_weekday(rule) && value_got == Some(LAST_ORDINAL_2DO);
+    if value_got != Some(value) && !phone_last {
+        return Err(refuse("RecurrenceValue", value_got));
     }
     let end = m.get_i64("RecurrenceEndType");
     let end_ok = match &rule.end {
@@ -336,6 +344,15 @@ fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
     };
     if !end_ok {
         return Err(refuse("RecurrenceEndType", end));
+    }
+    if let End::Until(u) = &rule.end {
+        let secs = m.get_i64("RecurrenceEndDate");
+        let day = secs
+            .and_then(|s| DateTime::from_timestamp(s, 0))
+            .map(|t| t.date_naive());
+        if day != Some(until_date(u)) {
+            return Err(refuse("RecurrenceEndDate", secs));
+        }
     }
     Ok(from_completion)
 }
@@ -357,7 +374,8 @@ fn with_count(raw: &str, n: u32) -> String {
 ///
 /// - Live: `DUE` and its `DTSTART` mirror move to [`next_due`] (a floating time keeps its
 ///   time), JSON `StartDate` by as many days; a `COUNT` and JSON `RecurrenceEndRepetitions`
-///   count down by one (`CT`, session B); stamps touched.
+///   count down by one (`CT`, session B); a last-weekday rule's `RecurrenceValue` becomes
+///   2Do's own 6 (`LF`, session C); stamps touched.
 /// - Copy: cloned from `cal`; `UID` = `copy_uid`, stamps touched, completed (`STATUS`,
 ///   `PERCENT-COMPLETE`, `COMPLETED`), `RRULE` removed, JSON `RecurrenceValue`,
 ///   `RecurrenceType`, `RecurrenceFrom` and the end keys = 0 (`RecurrenceEndDate` removed),
@@ -436,7 +454,7 @@ pub fn complete_recurring(
                 .ok_or_else(|| unsupported("2Do start date is out of range"))?,
         ),
     };
-    let from = from_completion.then(|| completion_base(today, meta.get_i64("StartDate")));
+    let from = from_completion.then_some(today);
 
     let Some(next_date) = next_due(due_date, &rule, from)? else {
         // The series ends with this occurrence: the task itself is done.
@@ -461,6 +479,10 @@ pub fn complete_recurring(
             "StartDate",
             next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
         );
+    }
+    // The phone writes its own "last" code when it completes (session C, `LF`).
+    if is_last_weekday(&rule) {
+        live_meta.set_i64("RecurrenceValue", LAST_ORDINAL_2DO);
     }
     if let End::Count(n) = rule.end {
         let left = n - 1;

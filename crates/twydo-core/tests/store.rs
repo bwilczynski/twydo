@@ -89,7 +89,8 @@ fn complete_recurring_writes_copy_and_advances_live() {
 }
 
 /// Task 14: completing the last occurrence of a counted series (`COUNT=1`) completes the
-/// task in place: one write, no history copy. TO CONFIRM in Task 15 (session C).
+/// task in place: one write, no history copy, as the phone did with `C1a` (session C,
+/// `plan7-twydo-list2/01-phone-complete`).
 #[test]
 fn completing_the_last_occurrence_completes_in_place() {
     let env = Env::new(WriteMode::Test, FIXTURE);

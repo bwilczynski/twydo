@@ -715,9 +715,9 @@ fn next_due_month_day_29_31() {
         next(date(2026, 12, 31), "FREQ=MONTHLY", None),
         Some(date(2027, 1, 31))
     );
-    // TO CONFIRM in Task 15 (session C): what 2Do does after Jan 31 is unknown. Twydo adds a
-    // calendar month and keeps the last day of a shorter month (the port recommendation's
-    // reading, as Apple's calendar arithmetic does): Feb 28, Feb 29 in a leap year.
+    // Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `M31a`): the phone adds
+    // a calendar month and keeps the last day of a shorter month: Jan 31 -> Feb 28 (Feb 29
+    // in a leap year, by the same arithmetic).
     assert_eq!(
         next(date(2027, 1, 31), "FREQ=MONTHLY", None),
         Some(date(2027, 2, 28))
@@ -730,9 +730,9 @@ fn next_due_month_day_29_31() {
         next(date(2026, 12, 31), "FREQ=MONTHLY;INTERVAL=2", None),
         Some(date(2027, 2, 28))
     );
-    // TO CONFIRM in Task 15 (session C): Twydo does not remember the day. The next date is
-    // computed from the current due alone, so after a short month the day drifts (Feb 28 ->
-    // Mar 28, not Mar 31). 2Do may do the same, as it keeps no other day than the due date.
+    // Confirmed by session C (`plan7-twydo-list2/04-phone-m31-again`, `M31a` again): 2Do
+    // keeps no memory of the 31st. The next date comes from the current due alone, so after
+    // a short month the day drifts: Feb 28 -> Mar 28, not Mar 31.
     assert_eq!(
         next(date(2027, 2, 28), "FREQ=MONTHLY", None),
         Some(date(2027, 3, 28))
@@ -770,9 +770,9 @@ fn next_due_nth_weekday() {
 
 #[test]
 fn next_due_feb_29() {
-    // TO CONFIRM in Task 15 (session C): 2Do moves the due by a calendar year (01 §6), so
-    // a yearly task on 29 Feb lands on 28 Feb in a common year (not 2032-02-29), and then
-    // stays on the 28th (stateless, as monthly on the 31st).
+    // Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `Y29a`): 2Do moves the
+    // due by a calendar year, so 29 Feb lands on 28 Feb in a common year (not 2032-02-29),
+    // and then stays on the 28th (stateless, as monthly on the 31st).
     assert_eq!(
         next(date(2028, 2, 29), "FREQ=YEARLY", None),
         Some(date(2029, 2, 28))
@@ -922,7 +922,8 @@ fn count_counts_down() {
 }
 
 /// Complete `cal` where the series ends: the task itself is completed in place, no copy.
-/// TO CONFIRM in Task 15 (session C): no capture shows 2Do's last completion yet.
+/// Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `C1a` and `UNa`): `RRULE`,
+/// due, start and metadata kept, no history copy.
 fn check_series_ends(cal: &Calendar, rrule: &str, due: &str) {
     let before = cal.clone();
     let (live, copy) =
@@ -981,8 +982,9 @@ fn until_ends_after_the_date() {
         t.prop("X-2DOAPP-METADATA"),
         todo(&cal).prop("X-2DOAPP-METADATA")
     );
-    // TO CONFIRM in Task 15 (session C): the copy drops the end as `CT`'s copy does
-    // (`RecurrenceEndType` 0); its `RecurrenceEndDate` is assumed to go with it.
+    // The copy drops the end as `CT`'s copy does (`RecurrenceEndType` 0), and its
+    // `RecurrenceEndDate` with it. Not confirmed: session C's `UN` ended at once (no copy),
+    // and no capture yet shows the phone's copy of an "until" series that goes on.
     let m = MetaJson::parse(&todo(&copy).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(m.get_i64("RecurrenceEndType"), Some(0));
     assert_eq!(m.get_i64("RecurrenceEndDate"), None);
@@ -1023,6 +1025,363 @@ fn every_kind_completes_with_its_metadata() {
         assert!(
             unsupported(&err).contains("RecurrenceType"),
             "{rule}: {err:?}"
+        );
+    }
+}
+
+// ---- Session C: Twydo's completion of each `b` twin against the phone's of its `a` twin ----
+
+const C: &str = "plan7-twydo-list2";
+
+/// A twin pair seeded by Twydo in `00-seed`: the phone completed `a` (`01-phone-complete`),
+/// leaving the history copy `a_copy` (none when the series ended).
+struct Twin {
+    name: &'static str,
+    a: &'static str,
+    b: &'static str,
+    a_copy: Option<&'static str>,
+    live_due: &'static str,
+}
+
+const TWINS: &[Twin] = &[
+    Twin {
+        name: "D1",
+        a: "49124a81ed184ba5a3534aefa0562edf",
+        b: "028468cf600f4c86ae21fa2f95d4ecd5",
+        a_copy: Some("505e89478cb641b3a5aade4da8612abc"),
+        live_due: "20261208",
+    },
+    Twin {
+        name: "D3",
+        a: "66388acfb2ca4f51addeac12e3cda557",
+        b: "79fa6a89c59a41d1ab739f8713a09add",
+        a_copy: Some("ad70a14151234631a2dea472cb2cf6b8"),
+        live_due: "20261210",
+    },
+    Twin {
+        name: "W1",
+        a: "b8e9aaed8ac947ccaf63b0adc19ed40f",
+        b: "025bac248a7a41079785640ee3aa7ed9",
+        a_copy: Some("c90011ca3342437cb46b68f680c3ffc0"),
+        live_due: "20261214",
+    },
+    Twin {
+        name: "W2",
+        a: "87ba1b9478bb468987cde48fff10396f",
+        b: "9a198bf958b049aab2b21ea1da78d28a",
+        a_copy: Some("9fd9934d4ba74e9882d3be399a7597d9"),
+        live_due: "20261221",
+    },
+    Twin {
+        name: "WD",
+        a: "f185e284a0b5440ca955c04fcb82a8b8",
+        b: "9f4b28de4b9d4bc895137fa09bb684e3",
+        a_copy: Some("361f78d162f849309d3f961170a0c0f5"),
+        live_due: "20261210",
+    },
+    Twin {
+        name: "WK",
+        a: "03543b2fcd0d4966aeab92b1a1b8de49",
+        b: "8de07cc8ffa14dcc84c99e3d5523a9d3",
+        a_copy: Some("36b876e2f8c9448997a475959fd767ec"),
+        live_due: "20261208",
+    },
+    Twin {
+        name: "N2",
+        a: "0c6980e28e1d4b0ea8b1d7ed1edb5d34",
+        b: "200243c3e116428e8eb384093bd6d3a4",
+        a_copy: Some("5515f69e2ff9486197e3bc2d8eac7b19"),
+        live_due: "20270112",
+    },
+    Twin {
+        name: "LF",
+        a: "5ba7f6d622684798af5b5653f6e93c76",
+        b: "51669367831c4dfdb821d9ae4596dd73",
+        a_copy: Some("15f65ba21ff84ef792dbdccc811c031c"),
+        live_due: "20270129",
+    },
+    Twin {
+        name: "M31",
+        a: "7c5d9635a8f2474bb61fc4a8bbebc74c",
+        b: "1cb424ee6131495faec30b2c6427beb1",
+        a_copy: Some("4617b532dd6b40fc9f700437232ffcea"),
+        live_due: "20270228",
+    },
+    Twin {
+        name: "Y29",
+        a: "a8de681d08c44d8dbebdf2bc370b1f67",
+        b: "f1558b658fc247349b07f78cf2efcfa0",
+        a_copy: Some("68993a9a84694087aa67f84274c1af8a"),
+        live_due: "20290228",
+    },
+    Twin {
+        name: "FC",
+        a: "167f5dec42cd4562b346cc8b968c6603",
+        b: "bbf4f5271e584311a20d756bad8b2448",
+        a_copy: Some("b735a627d799456badc2a59049345ee9"),
+        live_due: "20261204",
+    },
+    Twin {
+        name: "FS",
+        a: "58a9e9a947c24e5c8d5cbf48d340a934",
+        b: "18bf7119d60f4187a5fa3ddfe7f29b1b",
+        a_copy: Some("7aff4d3d04ae4f7f83e724031d6673e0"),
+        live_due: "20261204",
+    },
+    Twin {
+        name: "C1",
+        a: "85949c5b1d0343f98d9fa1e3217b3a46",
+        b: "37192f1b5e3e47adb5dd371e2c723e37",
+        a_copy: None,
+        live_due: "20261207",
+    },
+    Twin {
+        name: "UN",
+        a: "7e2bab7a104e480aac9354b0bcaf88bf",
+        b: "b43659e5f58646f1b81a14eb6e6aacf2",
+        a_copy: None,
+        live_due: "20261207",
+    },
+    Twin {
+        name: "OR",
+        a: "e06f35c27a8b46a39ecbf511efbb35dc",
+        b: "d81cd1f904fc45a4a7b83f3925c8ca70",
+        a_copy: Some("3dc7801dbe7d4aea8be235ff50ca7cb2"),
+        live_due: "20261210",
+    },
+];
+
+/// `M31a`'s second completion on the phone (`04-phone-m31-again`): Feb 28 -> Mar 28.
+const M31A_COPY2: &str = "379987b8da2a468587693054f97688d1";
+
+fn twin(name: &str) -> &'static Twin {
+    TWINS.iter().find(|t| t.name == name).unwrap()
+}
+
+/// `cal`'s lines made comparable between twins and devices: the `a` UID mapped to the `b`
+/// one (UID, RUID), `SUMMARY:<name>a` to `<name>b`, the phone's layout lines left out, the
+/// stamps and COMPLETED blanked (Twydo uses one `now`; checked apart), the live task's CREATED
+/// (the twins were seeded seconds apart) and the copy's CREATED (the phone gives the copy the
+/// time it first received the task) set to `created`, and the metadata line's value set
+/// aside: its JSON is compared as data, as the phone re-serialises it in its own key order.
+fn twin_lines(cal: &Calendar, t: &Twin, created: &str) -> (Vec<Line>, MetaJson) {
+    let mut meta = None;
+    let mut out = Vec::new();
+    for mut l in without_layout(lines(cal)) {
+        l.3 = l.3.replace(t.a, t.b);
+        match l.1.as_str() {
+            "SUMMARY" if l.3 == format!("{}a", t.name) => l.3 = format!("{}b", t.name),
+            "DTSTAMP" | "LAST-MODIFIED" | "COMPLETED" => l.3 = String::from("<stamp>"),
+            "CREATED" => l.3 = created.to_string(),
+            "X-2DOAPP-METADATA" => {
+                meta = MetaJson::parse(&l.3);
+                l.3 = String::from("<meta>");
+            }
+            _ => {}
+        }
+        out.push(l);
+    }
+    (sorted(out), meta.expect("2Do metadata"))
+}
+
+/// Complete `input` (the `b` twin) at the phone's live stamp of `step`, and compare live and
+/// copy with the phone's `a` result there. Returns Twydo's live result.
+fn check_twin_step(
+    t: &Twin,
+    input: &[u8],
+    step: &str,
+    a_copy: Option<&str>,
+    live_due: &str,
+) -> Vec<u8> {
+    let ctx = format!("{} {step}", t.name);
+    let cal = parse(input).unwrap();
+    let created = todo(&cal).prop("CREATED").unwrap().value.clone();
+    let want_live = parse(&fixture(C, step, t.a)).unwrap();
+    let now = dtstamp(&want_live);
+    let copy_uid = a_copy.unwrap_or("0123456789abcdef0123456789abcdef");
+    let (live, copy) = complete_recurring(&cal, now, now.date_naive(), copy_uid).unwrap();
+
+    let got = parse(&serialize(&live)).unwrap();
+    assert_eq!(
+        todo(&got).prop("DUE").unwrap().value,
+        live_due,
+        "{ctx}: due"
+    );
+    assert_eq!(
+        twin_lines(&got, t, &created),
+        twin_lines(&want_live, t, &created),
+        "{ctx}: live"
+    );
+    let completed = todo(&got).prop("COMPLETED").map(|p| p.value.clone());
+    let done = todo(&want_live).prop("COMPLETED").is_some();
+    assert_eq!(completed, done.then(|| stamp(now)), "{ctx}: live COMPLETED");
+
+    match (a_copy, copy) {
+        (None, None) => {}
+        (Some(a_copy), Some(copy)) => {
+            let want = parse(&fixture(C, step, a_copy)).unwrap();
+            let got = parse(&serialize(&copy)).unwrap();
+            assert_eq!(
+                twin_lines(&got, t, &created),
+                twin_lines(&want, t, &created),
+                "{ctx}: copy"
+            );
+            assert_eq!(
+                todo(&got).prop("COMPLETED").unwrap().value,
+                stamp(now),
+                "{ctx}"
+            );
+        }
+        (want, got) => panic!("{ctx}: copy expected {want:?}, got {:?}", got.is_some()),
+    }
+    serialize(&live)
+}
+
+fn check_twin(name: &str) {
+    let t = twin(name);
+    // The twins were seeded alike: same lines but for the mapped ones.
+    let a = parse(&fixture(C, "00-seed", t.a)).unwrap();
+    let input = fixture(C, "00-seed", t.b);
+    let b = parse(&input).unwrap();
+    let created = todo(&b).prop("CREATED").unwrap().value.clone();
+    assert_eq!(
+        twin_lines(&a, t, &created),
+        twin_lines(&b, t, &created),
+        "{name}: seeds"
+    );
+    check_twin_step(t, &input, "01-phone-complete", t.a_copy, t.live_due);
+}
+
+#[test]
+fn twin_daily_matches_the_phone() {
+    check_twin("D1");
+}
+
+#[test]
+fn twin_every_3_days_matches_the_phone() {
+    check_twin("D3");
+}
+
+#[test]
+fn twin_weekly_matches_the_phone() {
+    check_twin("W1");
+}
+
+#[test]
+fn twin_every_2_weeks_matches_the_phone() {
+    check_twin("W2");
+}
+
+#[test]
+fn twin_mon_thu_matches_the_phone() {
+    check_twin("WD");
+}
+
+#[test]
+fn twin_workdays_matches_the_phone() {
+    check_twin("WK");
+}
+
+#[test]
+fn twin_2nd_tuesday_matches_the_phone() {
+    check_twin("N2");
+}
+
+#[test]
+fn twin_last_friday_matches_the_phone() {
+    check_twin("LF");
+}
+
+#[test]
+fn twin_yearly_on_29_feb_matches_the_phone() {
+    check_twin("Y29");
+}
+
+#[test]
+fn twin_from_completion_matches_the_phone() {
+    check_twin("FC");
+}
+
+/// From completion with a start date (Dec 20) later than the completion day (Nov 4): the
+/// phone counts from the completion day all the same (due Dec 7 -> Dec 4), and moves the start
+/// by as many days as the due (Dec 20 -> Dec 17).
+#[test]
+fn twin_from_completion_with_a_later_start_matches_the_phone() {
+    check_twin("FS");
+}
+
+#[test]
+fn twin_count_last_occurrence_matches_the_phone() {
+    check_twin("C1");
+}
+
+#[test]
+fn twin_until_last_occurrence_matches_the_phone() {
+    check_twin("UN");
+}
+
+#[test]
+fn twin_due_off_its_rule_matches_the_phone() {
+    check_twin("OR");
+}
+
+/// Monthly on the 31st, completed twice: Jan 31 -> Feb 28 (`01`), then Feb 28 -> Mar 28
+/// (`04-phone-m31-again`): 2Do keeps no memory of the 31st.
+#[test]
+fn twin_monthly_on_the_31st_matches_the_phone_twice() {
+    let t = twin("M31");
+    let input = fixture(C, "00-seed", t.b);
+    let once = check_twin_step(t, &input, "01-phone-complete", t.a_copy, "20270228");
+    check_twin_step(t, &once, "04-phone-m31-again", Some(M31A_COPY2), "20270328");
+}
+
+/// 2Do's own code for "last" in the Nth-weekday class is `RecurrenceValue` 6 (the phone
+/// rewrote `LFa`'s -1, Twydo's code, to 6 when it completed it; session A's `R09` trace shows
+/// 6 too). Twydo completes such a task, from the phone's result: Jan 29 -> Feb 26 (2027).
+#[test]
+fn last_weekday_with_the_phones_code_completes() {
+    let t = twin("LF");
+    let cal = parse(&fixture(C, "01-phone-complete", t.a)).unwrap();
+    let m = MetaJson::parse(&todo(&cal).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(m.get_i64("RecurrenceValue"), Some(6));
+    let (live, _) = advance(&cal, now(), "0123456789abcdef0123456789abcdef");
+    assert_eq!(todo(&live).prop("DUE").unwrap().value, "20270226");
+    let m = MetaJson::parse(&todo(&live).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(m.get_i64("RecurrenceValue"), Some(6));
+    // Any other ordinal code is still refused for a last-weekday rule.
+    let mut odd = cal.clone();
+    set_meta(&mut odd, "RecurrenceValue", 7);
+    let err = complete_recurring(&odd, now(), today(), "0123456789abcdef0123456789abcdef");
+    assert!(unsupported(&err.unwrap_err()).contains("RecurrenceValue"));
+}
+
+/// JSON `RecurrenceEndDate` (2Do writes noon UTC of the end day: `UNa`/`UNb` 1797768000 =
+/// 2026-12-20 12:00 UTC for `UNTIL=20261220`) must name the RRULE's UNTIL day.
+#[test]
+fn until_must_match_the_json_end_date() {
+    let t = twin("UN");
+    let seed = parse(&fixture(C, "00-seed", t.b)).unwrap();
+    let copy = "0123456789abcdef0123456789abcdef";
+    // Another time on the same UTC day is the same end.
+    let mut same_day = seed.clone();
+    set_meta(&mut same_day, "RecurrenceEndDate", 1_797_724_800);
+    complete_recurring(&same_day, now(), today(), copy).unwrap();
+    // A day later (2026-12-21 12:00 UTC), or none at all, is refused.
+    let mut other = seed.clone();
+    set_meta(&mut other, "RecurrenceEndDate", 1_797_854_400);
+    let mut missing = seed.clone();
+    {
+        let t = missing.root.children_named_mut("VTODO").next().unwrap();
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut m = MetaJson::parse(&p.value).unwrap();
+        m.remove("RecurrenceEndDate");
+        p.set_value(&m.encode());
+    }
+    for (name, cal) in [("other day", other), ("missing", missing)] {
+        let err = complete_recurring(&cal, now(), today(), copy).unwrap_err();
+        assert!(
+            unsupported(&err).contains("RecurrenceEndDate"),
+            "{name}: {err:?}"
         );
     }
 }

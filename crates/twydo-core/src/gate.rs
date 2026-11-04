@@ -60,7 +60,7 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, NewTask, Op, completion_base, next_due};
+use crate::edit::{Change, Due, NewTask, Op, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{parse_rrule, rule_class};
@@ -833,10 +833,7 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
     let raw = t.rrule.as_deref().unwrap_or_default();
     let rule = parse_rrule(raw).or_else(|e| blocked(format!("unreadable repeat rule: {e}")))?;
     let meta = json_meta(t);
-    let start_secs = meta.as_ref().and_then(|m| m.get_i64("StartDate"));
-    let from = t
-        .from_completion
-        .then(|| completion_base(today, start_secs));
+    let from = t.from_completion.then_some(today);
     let next = next_due(due, &rule, from).or_else(|e| blocked(e.to_string()))?;
     let has_start = t.start.is_some()
         || meta
