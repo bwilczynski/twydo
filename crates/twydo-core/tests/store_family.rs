@@ -934,3 +934,287 @@ fn creating_an_item_refused_when_its_parent_changed() {
     }
     assert_eq!(env.files(), before);
 }
+
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::recurrence::*;
+    use crate::common::{Env, completed, dtstamp, fixture, todo};
+    use std::collections::BTreeMap;
+    use std::fs;
+    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit;
+    use twydo_core::edit::{Change, Op};
+    use twydo_core::ical::{parse, serialize};
+    use twydo_core::model::meta_edit::MetaJson;
+    use twydo_core::store::Store;
+    use twydo_core::store::journal::{Journal, Stage};
+
+    #[test]
+    fn recurring_checklist_family_completion_matches_both_phone_occurrences_and_undo() {
+        for (from, to) in [(SET, ADVANCE), (END, REOPEN)] {
+            let before_phone = step_files(from);
+            let after_phone = step_files(to);
+            let copies: BTreeMap<_, _> = after_phone
+                .iter()
+                .filter(|(id, c)| {
+                    !before_phone.contains_key(*id)
+                        && todo(c).prop("SUMMARY").unwrap().value.starts_with("FCa")
+                })
+                .map(|(uid, c)| (todo(c).prop("SUMMARY").unwrap().value.clone(), uid.clone()))
+                .collect();
+            assert_eq!(copies.len(), 4);
+            let now = completed(&after_phone[&copies["FCa"]]);
+            let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{from}"));
+            let mut store = env.store(candidate());
+            let before = env.files();
+            store
+                .apply(&env.snap(), &Op::Complete { uid: FC.into() }, now)
+                .unwrap();
+            let after = env.files();
+            let journal = env.journal();
+            assert_eq!(journal.len(), 1);
+            let entry = &journal[0];
+            assert_eq!(
+                entry.writes.len(),
+                8,
+                "four history copies and four live updates"
+            );
+            let ids: BTreeMap<_, _> = entry
+                .writes
+                .iter()
+                .filter(|w| w.before.is_none())
+                .map(|w| {
+                    let c = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+                    (
+                        todo(&c).prop("UID").unwrap().value.clone(),
+                        copies[&todo(&c).prop("SUMMARY").unwrap().value].clone(),
+                    )
+                })
+                .collect();
+            for write in &entry.writes {
+                let got = parse(&after[&write.path]).unwrap();
+                let ours = &todo(&got).prop("UID").unwrap().value;
+                let theirs = ids.get(ours).unwrap_or(ours);
+                same(
+                    &format!("checklist {to} {theirs}"),
+                    &got,
+                    &after_phone[theirs],
+                    &ids,
+                );
+                stamped(&got, now);
+                let title = &todo(&got).prop("SUMMARY").unwrap().value;
+                let seeds = step_files(SEED);
+                let source_uid = seeds
+                    .iter()
+                    .find(|(_, c)| &todo(c).prop("SUMMARY").unwrap().value == title)
+                    .unwrap()
+                    .0;
+                preserved_created(&before_phone[source_uid], &got);
+            }
+            for (path, bytes) in &before {
+                if !entry.writes.iter().any(|w| &w.path == path) {
+                    assert_eq!(&after[path], bytes);
+                }
+            }
+            store.undo_last(now).unwrap();
+            assert_eq!(
+                env.files(),
+                before,
+                "family undo restores exact source bytes"
+            );
+            store.redo_last(now).unwrap();
+            assert_eq!(env.files(), after, "redo reuses history identities");
+
+            // Interrupt after two history creates: recovery must finish all eight resources,
+            // not generate a second family or expose half of the reset indefinitely.
+            let recovering = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{from}"));
+            drop(recovering.store(candidate()));
+            let mut interrupted = entry.clone();
+            interrupted.stage = Stage::Prepared;
+            Journal::open(&recovering.state)
+                .unwrap()
+                .prepare(&interrupted)
+                .unwrap();
+            for write in entry.writes.iter().take(2) {
+                fs::write(
+                    recovering.vdir.join(&write.path),
+                    write.after.as_ref().unwrap(),
+                )
+                .unwrap();
+            }
+            let (_, report) = Store::open_with(&recovering.cfg, candidate()).unwrap();
+            assert!(report.stuck.is_empty());
+            assert_eq!(
+                recovering.files(),
+                after,
+                "recovery uses the recorded copy identities"
+            );
+        }
+    }
+
+    #[test]
+    fn recurring_checklist_refuses_uncaptured_item_shapes_without_partial_history() {
+        for case in [
+            "start-only",
+            "metadata-start-only",
+            "metadata-time-only",
+            "cancelled",
+            "timed",
+        ] {
+            let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{SET}"));
+            let mut store = env.store(candidate());
+            let snap = env.snap();
+            let child = snap.children(snap.find(FC).unwrap())[0];
+            let path = &snap.tasks[child].path;
+            let mut input = parse(&fs::read(path).unwrap()).unwrap();
+            let now = dtstamp(&input);
+            if case == "cancelled" {
+                input
+                    .root
+                    .children_named_mut("VTODO")
+                    .next()
+                    .unwrap()
+                    .prop_mut("STATUS")
+                    .unwrap()
+                    .set_value("CANCELLED");
+            } else if case.ends_with("only") {
+                let t = input.root.children_named_mut("VTODO").next().unwrap();
+                t.remove_props("DUE");
+                if case != "start-only" {
+                    t.remove_props("DTSTART");
+                    let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                    let mut m = MetaJson::parse(&p.value).unwrap();
+                    let key = if case == "metadata-start-only" {
+                        "StartDate"
+                    } else {
+                        "duetime"
+                    };
+                    m.set_i64(key, 1_795_262_400);
+                    p.set_value(&m.encode());
+                }
+            } else {
+                edit::apply_changes(
+                    &mut input,
+                    &[Change::Due(Some(edit::Due::Time(now.naive_utc())))],
+                    now,
+                )
+                .unwrap();
+            }
+            fs::write(path, serialize(&input)).unwrap();
+            let before = env.files();
+            assert!(
+                store
+                    .apply(&env.snap(), &Op::Complete { uid: FC.into() }, now)
+                    .is_err(),
+                "{case}"
+            );
+            assert_eq!(env.files(), before, "{case}");
+            assert!(env.journal().is_empty(), "{case}");
+        }
+    }
+
+    #[test]
+    fn checklist_repeat_removal_matches_capture_and_needs_both_family_repeat_rows() {
+        const BEFORE: &str = "150-fresh-sync-before-checklist-removal";
+        const AFTER: &str = "151-twydo-checklist-repeat-removed";
+        const UPLOADED: &str = "152-twydo-checklist-removal-upload";
+        let before = step_files(BEFORE);
+        let want = step_files(AFTER);
+        let uid = before
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+            })
+            .unwrap()
+            .0
+            .clone();
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+        let op = Op::Edit {
+            uid: uid.clone(),
+            changes: vec![Change::Repeat(None)],
+        };
+        let now = dtstamp(&want[&uid]);
+        let mut matrix = Matrix::embedded().clone();
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+        assert!(
+            twydo_core::gate::check(
+                &env.snap(),
+                &matrix,
+                WriteMode::Verified,
+                &op,
+                now.date_naive()
+            )
+            .is_err(),
+            "the destination plain-checklist repeat row must pass too"
+        );
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+        let mut store = env.store(matrix);
+        let original = env.files();
+        store.apply(&env.snap(), &op, now).unwrap();
+        let changed = env.files();
+        let journal = env.journal();
+        assert_eq!(journal.len(), 1);
+        assert_eq!(journal[0].writes.len(), 1);
+        let target = format!("list1/{uid}.ics");
+        for (path, bytes) in &original {
+            if path != &target {
+                assert_eq!(&changed[path], bytes, "only the parent is edited");
+            }
+        }
+        assert_eq!(
+            original.keys().collect::<Vec<_>>(),
+            changed.keys().collect::<Vec<_>>()
+        );
+        let got = parse(&changed[&target]).unwrap();
+        same(
+            "FCb weekly repeat removal",
+            &got,
+            &want[&uid],
+            &BTreeMap::new(),
+        );
+        stamped(&got, now);
+        preserved_created(&before[&uid], &got);
+        store.undo_last(now).unwrap();
+        assert_eq!(env.files(), original, "repeat removal is one undo step");
+        store.redo_last(now).unwrap();
+        assert_eq!(env.files(), changed, "redo restores the same parent bytes");
+        assert_eq!(
+            before.keys().collect::<Vec<_>>(),
+            want.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            want.keys().collect::<Vec<_>>(),
+            step_files(UPLOADED).keys().collect::<Vec<_>>()
+        );
+        for id in before.keys() {
+            assert_eq!(
+                fixture(SCENARIO, "144-phone-removal-and-history-followup", id),
+                fixture(SCENARIO, BEFORE, id),
+                "fresh sync preserves {id}"
+            );
+            if id != &uid {
+                assert_eq!(
+                    fixture(SCENARIO, BEFORE, id),
+                    fixture(SCENARIO, AFTER, id),
+                    "checklist removal leaves {id} unchanged"
+                );
+            }
+            assert_eq!(
+                fixture(SCENARIO, AFTER, id),
+                fixture(SCENARIO, UPLOADED, id),
+                "clean upload preserves {id}"
+            );
+        }
+    }
+}

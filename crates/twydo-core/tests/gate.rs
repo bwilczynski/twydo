@@ -1,6 +1,8 @@
 //! The write gate: matrix-driven policy with exact reasons. All content is synthetic
 //! (`tests/data/gate/`); matrices are built from TOML strings here.
 
+mod common;
+
 use std::path::Path;
 
 use chrono::NaiveDate;
@@ -2342,4 +2344,143 @@ fn embedded_edge_records_match_existing_completion_captures() {
         );
     }
     assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Unverified);
+}
+
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::recurrence::*;
+    use crate::common::{Env, dtstamp, todo};
+    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit::{Change, Op};
+
+    #[test]
+    fn captured_until_reopen_is_gated_by_its_specific_operation_row() {
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{END}"));
+        let snap = env.snap();
+        for (uid, case) in [(U1, "ended-until-daily"), (U2, "ended-until-monthly")] {
+            let op = Op::Reopen { uid: uid.into() };
+            let mut matrix = candidate();
+            assert!(
+                twydo_core::gate::check(
+                    &snap,
+                    &matrix,
+                    WriteMode::Verified,
+                    &op,
+                    dtstamp(&cal(END, uid)).date_naive()
+                )
+                .is_ok()
+            );
+            matrix
+                .operation
+                .iter_mut()
+                .find(|r| r.case == case && r.op == "reopen")
+                .unwrap()
+                .twydo_to_iphone = Verdict::Unverified;
+            assert!(
+                twydo_core::gate::check(
+                    &snap,
+                    &matrix,
+                    WriteMode::Verified,
+                    &op,
+                    dtstamp(&cal(END, uid)).date_naive()
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn phone_baselines_do_not_enable_unchecked_embedded_writes() {
+        for (step, uid, op) in [
+            (SET, FC, Op::Complete { uid: FC.into() }),
+            (SEED, U1, Op::Complete { uid: U1.into() }),
+            (END, U1, Op::Reopen { uid: U1.into() }),
+        ] {
+            let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
+            let mut store = env.store(Matrix::embedded().clone());
+            let before = env.files();
+            assert!(
+                store
+                    .apply(&env.snap(), &op, dtstamp(&cal(step, uid)))
+                    .is_err()
+            );
+            assert_eq!(env.files(), before);
+            assert!(env.journal().is_empty());
+        }
+    }
+
+    #[test]
+    fn checklist_repeat_only_reshape_uses_repeat_evidence_and_mixed_edits_still_need_edit() {
+        const STEP: &str = "120-phone-second-round-followup";
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{STEP}"));
+        let snap = env.snap();
+        let uid = step_files(STEP)
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+            })
+            .unwrap()
+            .0
+            .clone();
+        let mut matrix = Matrix::embedded().clone();
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+        assert!(matrix.operation("recurring-checklist", "edit").is_none());
+        let now = dtstamp(&cal(STEP, &uid));
+        let change = Change::Repeat(
+            twydo_core::repeatinput::parse("weekly", now.date_naive(), &[]).unwrap(),
+        );
+        let op = Op::Edit {
+            uid: uid.clone(),
+            changes: vec![change.clone()],
+        };
+        assert!(
+            twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
+                .is_ok(),
+            "a pure reshape needs its dedicated repeat row, not an ordinary-edit row"
+        );
+        for changes in [
+            vec![
+                change.clone(),
+                Change::Description(Some("Synthetic mixed edit".into())),
+            ],
+            vec![
+                change,
+                Change::Summary("Synthetic renamed checklist".into()),
+            ],
+            vec![Change::Repeat(
+                twydo_core::repeatinput::parse("2m", now.date_naive(), &[]).unwrap(),
+            )],
+        ] {
+            let op = Op::Edit {
+                uid: uid.clone(),
+                changes,
+            };
+            let before = env.files();
+            let mut store = env.store(matrix.clone());
+            let result = store.apply(&snap, &op, now);
+            assert!(
+                result.is_err(),
+                "mixed changes and interval-only edits still need edit evidence"
+            );
+            assert_eq!(env.files(), before, "refused saves write nothing");
+            assert!(env.journal().is_empty());
+        }
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Unverified;
+        assert!(
+            twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
+                .is_err(),
+            "unverified repeat changes remain refused"
+        );
+    }
 }

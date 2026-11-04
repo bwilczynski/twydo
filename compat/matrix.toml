@@ -1154,7 +1154,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan8-tui-a"]
-notes = "Plan 7 captured daily setting. Plan 8 batch 1, RD: set daily, interval 3, reshape to weekly and back, then remove; each intermediate phone state captured and matched by plan8_batch1.rs repeat_setting_reshaping_and_removal_match_each_phone_step. The phone's private RUID on initial setting differs from the exported UID; Twydo uses its known UID when empty, preserves existing nonempty RUIDs. Fixed Twydo output still awaits device round trip."
+notes = "Plan 7 captured daily setting. Plan 8 batch 1, RD: set daily, interval 3, reshape to weekly and back, then remove; each intermediate phone state captured and matched by edit_fields.rs repeat_setting_reshaping_and_removal_match_each_phone_step. The phone's private RUID on initial setting differs from the exported UID; Twydo uses its known UID when empty, preserves existing nonempty RUIDs. Fixed Twydo output still awaits device round trip."
 
 [[operation]]
 case = "weekly"
@@ -1187,7 +1187,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan8-tui-a"]
-notes = "Plan 8 batch 1, RY: set yearly, interval 2, reshape to monthly and back, then remove; every intermediate state is captured and compared by plan8_batch1.rs. Due dates and existing nonempty RUIDs stay; initial setting has the same explicit private-RUID distinction as RD. Fixed Twydo output still awaits device round trip."
+notes = "Plan 8 batch 1, RY: set yearly, interval 2, reshape to monthly and back, then remove; every intermediate state is captured and compared by edit_fields.rs. Due dates and existing nonempty RUIDs stay; initial setting has the same explicit private-RUID distinction as RD. Fixed Twydo output still awaits device round trip."
 
 [[operation]]
 case = "from-completion"
@@ -1264,7 +1264,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent"]
-notes = "Plan 8 FC: monthly parent completes with mixed-state items, then with every item done. Parent and children get history copies; done-item timestamps retained; live items reopen and lose inherited DUE/DTSTART only after copying. Completing all items does not complete the parent. plan8_batch1.rs compares both family completions and tests undo/redo/interrupted recovery. Ends, from-completion and cancelled checklist items stay refused. Fixed Twydo output awaits device round trip."
+notes = "Plan 8 FC: monthly parent completes with mixed-state items, then with every item done. Parent and children get history copies; done-item timestamps retained; live items reopen and lose inherited DUE/DTSTART only after copying. Completing all items does not complete the parent. store_family.rs compares both family completions and tests undo/redo/interrupted recovery. Ends, from-completion and cancelled checklist items stay refused. Fixed Twydo output awaits device round trip."
 
 [[operation]]
 case = "ended-until-daily"

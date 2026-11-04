@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "153-phone-checklist-removal-followup"
+device = "iphone"
+action = "User confirmed FCb remains non-recurring checklist due February 10 with open items after Twydo repeat removal, then changed note z to ok and synced."
+captured_at = "2026-11-04T16:12:43Z"

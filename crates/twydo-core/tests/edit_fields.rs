@@ -1,6 +1,8 @@
 //! Field edits against the iPhone captures: each edit must change exactly the lines 2Do
 //! changed, to the same values, and keep every other line's bytes.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -1024,4 +1026,332 @@ fn interval_of_a_weekday_set_repeat_is_refused() {
     }
     let mut cal = parse(&input).unwrap();
     apply_changes(&mut cal, &[Change::RepeatInterval(1)], now()).unwrap();
+}
+
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::recurrence::*;
+    use crate::common::{completed, dtstamp, fixture, todo};
+    use std::collections::BTreeMap;
+    use twydo_core::edit;
+    use twydo_core::edit::Change;
+    use twydo_core::ical::Calendar;
+    use twydo_core::model::meta_edit::MetaJson;
+
+    #[test]
+    fn repeat_setting_reshaping_and_removal_match_each_phone_step() {
+        for (uid, changes) in [
+            (
+                RD,
+                vec![
+                    (SEED, SET, "daily"),
+                    (SET, ADVANCE, "3d"),
+                    (ADVANCE, END, "weekly"),
+                    (END, REOPEN, "daily"),
+                    (REOPEN, REMOVE, "none"),
+                ],
+            ),
+            (
+                RY,
+                vec![
+                    (SEED, SET, "yearly"),
+                    (SET, ADVANCE, "2y"),
+                    (ADVANCE, END, "monthly"),
+                    (END, REOPEN, "yearly"),
+                    (REOPEN, REMOVE, "none"),
+                ],
+            ),
+            (
+                FC,
+                vec![
+                    (SEED, SET, "monthly"),
+                    (REOPEN, REMOVE, "weekly"),
+                    (REMOVE, HISTORY, "none"),
+                ],
+            ),
+        ] {
+            for (from, to, text) in changes {
+                let before = cal(from, uid);
+                let want = cal(to, uid);
+                let now = dtstamp(&want);
+                let repeat = twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap();
+                let mut got = before.clone();
+                edit::apply_changes(&mut got, &[Change::Repeat(repeat)], now).unwrap();
+                let mut ids = BTreeMap::new();
+                if from == SEED && uid != FC {
+                    // For plain Twydo-created tasks the phone assigns its private series ID.
+                    // Twydo must use its known UID, not fabricate that opaque phone ID.
+                    let get = |c: &Calendar| {
+                        MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+                    };
+                    assert_eq!(get(&before).get_str("RUID"), Some(""));
+                    assert_eq!(get(&got).get_str("RUID"), Some(uid));
+                    ids.insert(
+                        uid.to_string(),
+                        get(&want).get_str("RUID").unwrap().to_string(),
+                    );
+                    // Map only the RUID, not the resource identity itself.
+                    let t = got.root.children_named_mut("VTODO").next().unwrap();
+                    let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                    let mut meta = MetaJson::parse(&p.value).unwrap();
+                    meta.set_str("RUID", ids.get(uid).unwrap());
+                    p.set_value(&meta.encode());
+                    ids.clear();
+                }
+                same(&format!("{uid} {from} -> {to}"), &got, &want, &ids);
+                stamped(&got, now);
+                preserved_created(&before, &got);
+            }
+        }
+    }
+
+    #[test]
+    fn twydo_uploads_and_phone_followups_match_the_writers() {
+        const LOCAL: &str = "070-twydo-first-transitions";
+        const UPLOADED: &str = "071-twydo-first-upload";
+        const PHONE: &str = "080-phone-check-twydo-first";
+        let seeds = step_files(SEED);
+        let uid = |title: &str| {
+            seeds
+                .iter()
+                .find(|(_, c)| todo(c).prop("SUMMARY").unwrap().value == title)
+                .unwrap()
+                .0
+                .clone()
+        };
+        for (from, to, edits, copy_count) in [
+            (
+                HISTORY,
+                LOCAL,
+                [("FCb", "monthly"), ("RDb", "daily"), ("RYb", "yearly")],
+                1,
+            ),
+            (
+                UPLOADED,
+                PHONE,
+                [("FCb", "note-x"), ("RDb", "3d"), ("RYb", "2y")],
+                1,
+            ),
+            (
+                "112-twydo-second-round-upload",
+                "120-phone-second-round-followup",
+                [("FCb", "note-y"), ("RDb", "daily"), ("RYb", "yearly")],
+                0,
+            ),
+        ] {
+            for (title, text) in edits {
+                let id = uid(title);
+                let before = cal(from, &id);
+                let want = cal(to, &id);
+                let now = dtstamp(&want);
+                let change = if let Some(note) = text.strip_prefix("note-") {
+                    Change::Description(Some(note.into()))
+                } else {
+                    Change::Repeat(
+                        twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap(),
+                    )
+                };
+                let mut got = before.clone();
+                edit::apply_changes(&mut got, &[change], now).unwrap();
+                same(
+                    &format!("{title} {from} -> {to}"),
+                    &got,
+                    &want,
+                    &BTreeMap::new(),
+                );
+                stamped(&got, now);
+                preserved_created(&before, &got);
+            }
+            let before_files = step_files(from);
+            let after_files = step_files(to);
+            for title in ["U1b", "U2b"] {
+                let id = uid(title);
+                let copies: Vec<_> = after_files
+                    .iter()
+                    .filter(|(id, c)| {
+                        !before_files.contains_key(*id)
+                            && todo(c).prop("SUMMARY").unwrap().value == title
+                    })
+                    .collect();
+                assert_eq!(copies.len(), copy_count, "{title} {to}: history count");
+                let now = copies
+                    .first()
+                    .map_or_else(|| completed(&after_files[&id]), |(_, c)| completed(c));
+                let copy_id = copies
+                    .first()
+                    .map_or("0123456789abcdef0123456789abcdef", |(id, _)| id.as_str());
+                let (live, copy) =
+                    edit::complete_recurring(&before_files[&id], now, now.date_naive(), copy_id)
+                        .unwrap();
+                same(
+                    &format!("{title} {to} live"),
+                    &live,
+                    &after_files[&id],
+                    &BTreeMap::new(),
+                );
+                match (copy, copies.first()) {
+                    (Some(got), Some((_, want))) => same(
+                        &format!("{title} {to} history"),
+                        &got,
+                        want,
+                        &BTreeMap::new(),
+                    ),
+                    (None, None) => {}
+                    _ => panic!("{title} {to}: incorrect history creation"),
+                }
+                stamped(&live, now);
+                preserved_created(&before_files[&id], &live);
+            }
+        }
+        let local = step_files(LOCAL);
+        let uploaded = step_files(UPLOADED);
+        assert_eq!(
+            local.keys().collect::<Vec<_>>(),
+            uploaded.keys().collect::<Vec<_>>()
+        );
+        for id in local.keys() {
+            assert_eq!(
+                fixture(SCENARIO, LOCAL, id),
+                fixture(SCENARIO, UPLOADED, id),
+                "upload preserves {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn phone_accepts_repeat_removals_and_history_reopen_with_explicit_inactive_metadata_cleanup() {
+        const BEFORE: &str = "143-twydo-removal-and-history-upload";
+        const AFTER: &str = "144-phone-removal-and-history-followup";
+        let before = step_files(BEFORE);
+        let want = step_files(AFTER);
+        let uid = |title: &str, due: &str| {
+            before
+                .iter()
+                .find(|(_, c)| {
+                    let t = todo(c);
+                    t.prop("SUMMARY").unwrap().value == title && t.prop("DUE").unwrap().value == due
+                })
+                .unwrap()
+                .0
+                .clone()
+        };
+        let mut expected_changed = std::collections::BTreeSet::new();
+        for (title, due, note) in [
+            ("FCb", "20270210", "z"),
+            ("RDb", "20261207", "x"),
+            ("RYb", "20261207", "x"),
+        ] {
+            let id = uid(title, due);
+            expected_changed.insert(id.clone());
+            let source = &before[&id];
+            let now = dtstamp(&want[&id]);
+            let mut got = source.clone();
+            edit::apply_changes(&mut got, &[Change::Description(Some(note.into()))], now).unwrap();
+            stamped(&got, now);
+            preserved_created(source, &got);
+            if title != "FCb" {
+                // Twydo preserves inactive metadata on an unrelated note edit. The phone
+                // accepts its repeat removal, then explicitly cleans these two old fields.
+                let read = |c: &Calendar| {
+                    MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+                };
+                for key in ["RecurrenceValue", "RecurrenceFrom"] {
+                    assert_eq!(read(source).get_i64(key), Some(1));
+                    assert_eq!(read(&got).get_i64(key), Some(1));
+                    assert_eq!(read(&want[&id]).get_i64(key), Some(0));
+                }
+                let t = got.root.children_named_mut("VTODO").next().unwrap();
+                let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut m = MetaJson::parse(&p.value).unwrap();
+                m.set_i64("RecurrenceValue", 0);
+                m.set_i64("RecurrenceFrom", 0);
+                p.set_value(&m.encode());
+            }
+            // Every other metadata key/property, including RUID, due and absent RRULE,
+            // remains in the full comparison; there is no blanket metadata exclusion.
+            same(
+                &format!("phone note after repeat removal {title}"),
+                &got,
+                &want[&id],
+                &BTreeMap::new(),
+            );
+        }
+        for (title, due) in [("U1b", "20261118"), ("U2b", "20270107")] {
+            let id = uid(title, due);
+            expected_changed.insert(id.clone());
+            let mut got = before[&id].clone();
+            let now = completed(&want[&id]);
+            edit::complete_one_time(&mut got, now).unwrap();
+            same(
+                &format!("phone recompletes reopened history {title}"),
+                &got,
+                &want[&id],
+                &BTreeMap::new(),
+            );
+            stamped(&got, now);
+            preserved_created(&before[&id], &got);
+        }
+        assert_eq!(
+            before.keys().collect::<Vec<_>>(),
+            want.keys().collect::<Vec<_>>()
+        );
+        let changed: std::collections::BTreeSet<_> = before
+            .keys()
+            .filter(|id| fixture(SCENARIO, BEFORE, id) != fixture(SCENARIO, AFTER, id))
+            .cloned()
+            .collect();
+        assert_eq!(
+            changed, expected_changed,
+            "only three note edits and two history completions"
+        );
+    }
+
+    #[test]
+    fn phone_note_after_checklist_repeat_removal_preserves_all_recurrence_metadata() {
+        const BEFORE: &str = "152-twydo-checklist-removal-upload";
+        const AFTER: &str = "153-phone-checklist-removal-followup";
+        let before = step_files(BEFORE);
+        let want = step_files(AFTER);
+        let uid = before
+            .iter()
+            .find(|(_, c)| {
+                let t = todo(c);
+                t.prop("SUMMARY").unwrap().value == "FCb"
+                    && t.prop("DUE").unwrap().value == "20270210"
+            })
+            .unwrap()
+            .0
+            .clone();
+        let now = dtstamp(&want[&uid]);
+        let mut got = before[&uid].clone();
+        edit::apply_changes(&mut got, &[Change::Description(Some("ok".into()))], now).unwrap();
+        same(
+            "phone note after checklist repeat removal",
+            &got,
+            &want[&uid],
+            &BTreeMap::new(),
+        );
+        stamped(&got, now);
+        preserved_created(&before[&uid], &got);
+        let read = |c: &Calendar| {
+            MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+        };
+        assert_eq!(
+            read(&before[&uid]),
+            read(&want[&uid]),
+            "checklist note edit keeps inactive fields too"
+        );
+        assert!(todo(&want[&uid]).prop("RRULE").is_none());
+        assert_eq!(
+            before.keys().collect::<Vec<_>>(),
+            want.keys().collect::<Vec<_>>()
+        );
+        for id in before.keys().filter(|id| **id != uid) {
+            assert_eq!(
+                fixture(SCENARIO, BEFORE, id),
+                fixture(SCENARIO, AFTER, id),
+                "final phone note edit leaves {id} unchanged"
+            );
+        }
+    }
 }

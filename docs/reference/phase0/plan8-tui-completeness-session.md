@@ -73,6 +73,27 @@ No server commands are supplied for blind execution: bind and validate the agree
 first. A live-account alternative cannot guarantee unrelated data stays unchanged if the
 user edits it during the session; reconcile any difference, never restore it over their edits.
 
+## Regression test map
+
+Batch 1 has **five logical cases**: RD (daily repeat edits), RY (yearly repeat edits), FC
+(checklist repeat/reset), U1 (daily until) and U2 (monthly until). The `a` resources are phone
+baselines; `b` resources are Twydo counterparts. Numbered directories are intermediate snapshots
+of those same cases, not additional independent scenarios. Phone returns through step 153 are
+complete; compatibility enablement is reviewed separately from collecting the captures.
+
+| Behavior proved | Regression suite |
+|---|---|
+| Repeat set/change/removal, note preservation and explicit phone metadata cleanup | [edit_fields.rs](../../../crates/twydo-core/tests/edit_fields.rs) |
+| Until continuation/boundary/end, final-original and history-copy reopen | [edit_complete.rs](../../../crates/twydo-core/tests/edit_complete.rs) |
+| Checklist history/reset, child dates, recovery and parent-only repeat removal | [store_family.rs](../../../crates/twydo-core/tests/store_family.rs) |
+| Whole-resource writer replay, journal counts, unchanged neighbors and upload preservation | [store.rs](../../../crates/twydo-core/tests/store.rs) |
+| Effective verified permissions and refused neighboring shapes/mixed saves | [gate.rs](../../../crates/twydo-core/tests/gate.rs) |
+| Exact bytes through parse/serialize for every captured resource | [ical_roundtrip.rs](../../../crates/twydo-core/tests/ical_roundtrip.rs) |
+
+Shared identities, fixture loading and exact property/JSON comparison helpers live in
+[common/recurrence.rs](../../../crates/twydo-core/tests/common/recurrence.rs). There is no separate
+session-named test target. The chronological results below are provenance, not the test index.
+
 ## 4. Evidence ledger and capture protocol
 
 Prepare an external manifest **before the user starts tapping**. Each row has:
@@ -481,7 +502,7 @@ twins and unrelated production bytes remain unchanged.
 - Privacy scan passed, and every captured SUMMARY matches the approved synthetic seed manifest.
   Both scenarios are copied into the worktree for tests, not staged/committed yet. No private
   manifests, production exports, backups, URLs or account identifiers were copied.
-- `crates/twydo-core/tests/plan8_batch1.rs` compares all repeat transitions, until continuation /
+- [behavior-based regressions](#regression-test-map) compares all repeat transitions, until continuation /
   inclusive boundary / ending / reopen / re-execution, history-copy reopen and both checklist
   family completions against the phone. Modification stamps are asserted separately; creation
   time differences and the phone's private initial RUID are explicitly scoped, not discarded
@@ -539,7 +560,7 @@ twins, other synthetic resources and unrelated production bytes remain unchanged
 - **U1b / U2b:** the phone completed Twydo's advanced originals onto November 20 / March 7
   inclusive. Both stay open with rule/end metadata intact and gain one completed history
   copy each, due November 19 / February 7 respectively.
-- `plan8_batch1.rs` now compares the captured initial Twydo writes and phone follow-ups with
+- [behavior-based regressions](#regression-test-map) now compares the captured initial Twydo writes and phone follow-ups with
   the writers, including full recurrence/identity/end metadata. The 070 pre-upload and 071
   post-upload resources are also asserted byte-identical. Privacy scans passed before the
   synthetic captures entered the repository.
@@ -569,7 +590,7 @@ bytes. Privacy scans passed before copying these synthetic captures into the rep
   retains its earlier completion timestamp.
 - **U1b / U2b:** final originals complete in place, due November 20 / March 7, retaining RRULE
   and all end metadata. No additional until history copies are created.
-- `plan8_batch1.rs` replays these operations through the store against the captured output,
+- [behavior-based regressions](#regression-test-map) replays these operations through the store against the captured output,
   checks the 8/1/1-resource journal entries, and asserts exact upload preservation. Existing
   checklist tests cover undo/redo/recovery and refusal of uncaptured scheduling shapes.
 
@@ -591,7 +612,7 @@ other synthetic resources and unrelated production bytes remain unchanged.
 - **U1b / U2b:** the phone reopens Twydo's completed final originals in place, keeping
   November 20 / March 7 due, RRULE, series identity and all end metadata. Neither is completed
   again yet, and no earlier history copy is reopened.
-- `plan8_batch1.rs` replays all five phone actions through the candidate store, compares every
+- [behavior-based regressions](#regression-test-map) replays all five phone actions through the candidate store, compares every
   resource with the capture, checks one-resource journal entries and unchanged parent bytes.
   The embedded verified matrix is unchanged; the candidate replay is not a device test of
   Twydo's own ended-series reopen writer.
@@ -626,7 +647,7 @@ only the scratch matrix overrides `mod:until.execute`. Normal configuration rema
   a twins, earlier history, other synthetic resources and unrelated production bytes remain
   unchanged. Privacy scans passed before the synthetic captures entered the repository.
 
-`plan8_batch1.rs` replays the whole round through the candidate store, compares every resource
+[behavior-based regressions](#regression-test-map) replays the whole round through the candidate store, compares every resource
 at both intermediate states under explicit generated-history identity mappings, verifies the
 five initial journal entries (8/1/1/1/1 resources) plus two single-resource reopen entries,
 and asserts exact upload preservation. Actual phone inspection/follow-up is still pending;
@@ -648,7 +669,7 @@ unchanged. Privacy scans passed before copying these synthetic captures into the
 - **U1b / U2b:** completing Twydo-reopened final originals ends them in place again, due
   November 20 / March 7, retaining RRULE and all end metadata, without extra history. This
   provides the post-reopen phone execution check for Twydo's narrow ended-until reopen writer.
-- `plan8_batch1.rs` extends the writer/capture comparison to these phone return edits and
+- [behavior-based regressions](#regression-test-map) extends the writer/capture comparison to these phone return edits and
   final completions, preserving completion instants and comparing recurrence/identity/end
   metadata. Embedded matrix verdicts are unchanged at this evidence checkpoint.
 
@@ -802,3 +823,20 @@ unrelated bytes, checks one-step undo/redo, and verifies exact preflight/upload 
 Actual phone inspection and a subsequent note edit of FCb are still required. No capability
 verdict is promoted merely from local validation/upload, and no further production writer
 operation or list cleanup is authorized by this round.
+
+### 153 — final phone check of checklist repeat removal passed
+
+The final phone return is present: FCb note is `ok`. Normal sync succeeds with clean list
+status and no unresolved conflicts. `153-phone-checklist-removal-followup` contains 40
+resources in A, zero in B; exactly FCb changed, with no creations/deletions. The phone retains
+the non-recurring checklist type, February 10 due, open parent/items and original identities.
+All a twins, items, other synthetic resources and unrelated production bytes remain unchanged.
+Privacy scans passed before copying the synthetic capture into the repository.
+
+The phone's note edit preserves the checklist's entire JSON metadata, including its inactive
+recurrence fields; unlike the plain RDb/RYb note saves at 144, it does not reset the inactive
+values/from. The regression compares every property/JSON key, modification/completion handling,
+stable creation fields and exact untouched resource bytes. This completes the requested phone
+rounds for batch 1, not the broader Plan 8 surface. Local evidence/capability review, effective
+gate tests, as-is documentation and verified-mode TUI acceptance remain; no further production
+writer operation or list cleanup is authorized by this phone response.

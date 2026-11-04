@@ -1,3 +1,5 @@
+mod common;
+
 use twydo_core::ical::{ParseError, parse, serialize};
 
 fn data(name: &str) -> Vec<u8> {
@@ -146,4 +148,50 @@ fn roundtrip_plan7_phone_captures() {
         }
     }
     assert!(n > 100, "expected the plan 7 captures, found {n}");
+}
+
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::fixture;
+    use crate::common::recurrence::*;
+    use twydo_core::ical::serialize;
+
+    #[test]
+    fn recurrence_phone_captures_roundtrip_byte_exactly() {
+        for step in [
+            SEED,
+            SET,
+            ADVANCE,
+            END,
+            REOPEN,
+            REMOVE,
+            HISTORY,
+            "070-twydo-first-transitions",
+            "071-twydo-first-upload",
+            "080-phone-check-twydo-first",
+            "090-twydo-checklist-reset-and-until-end",
+            "091-twydo-reset-and-end-upload",
+            "100-phone-items-and-ended-reopen",
+            "110-twydo-second-reset-reshape-and-end",
+            "111-twydo-ended-originals-reopened",
+            "112-twydo-second-round-upload",
+            "120-phone-second-round-followup",
+            "130-twydo-repeat-removal-and-history-reopen",
+            "131-phone-versions-kept-after-conflict",
+            "140-fresh-sync-before-writer",
+            "141-prepared-repeat-and-history-states",
+            "142-twydo-repeat-removal-and-history-reopen",
+            "143-twydo-removal-and-history-upload",
+            "144-phone-removal-and-history-followup",
+            "150-fresh-sync-before-checklist-removal",
+            "151-twydo-checklist-repeat-removed",
+            "152-twydo-checklist-removal-upload",
+            "153-phone-checklist-removal-followup",
+        ] {
+            let files = step_files(step);
+            for (uid, c) in files {
+                assert_eq!(serialize(&c), fixture(SCENARIO, step, &uid));
+            }
+        }
+    }
 }
