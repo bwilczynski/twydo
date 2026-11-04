@@ -1064,9 +1064,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "task-to-project"
@@ -1075,9 +1075,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/03b-phone-item-under-converted", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "checklist-to-project"
@@ -1086,9 +1086,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "project-to-checklist"
@@ -1130,9 +1130,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/04-phone-convert-empty", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. twydo_* and iphone_to_twydo columns: not verified yet. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "one-time"
@@ -1141,9 +1141,9 @@ iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
+iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
+notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. twydo_* columns: not verified yet (Plan 7 Task 13). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
 case = "daily"

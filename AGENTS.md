@@ -52,10 +52,11 @@ app replacing 2Do for one user, plan by plan.
    verification of Twydo's own writes, is done (session B, "Results B" in the capture page): verified
    mode now creates checklists, projects, recurring projects and items, and creates every repeat
    kind except the three 2Do 3.91 misreads (last day, last weekday, Nth weekend day; rule `edit` =
-   `fail`, never written). Setting or reshaping a repeat and converting a type stay refused in
-   verified mode only for their `iphone_to_twydo` column. **Follow-up:** completing daily,
+   `fail`, never written). Type changes are allowed (task to checklist/project, checklist to
+   project, empty parent to task); setting, removing or reshaping a repeat stays refused (the
+   new kind's `repeat`/`edit` rows lack `iphone_to_twydo`). **Follow-up:** completing daily,
    weekly and Nth-weekday repeats (the gate refuses them; their `execute` verdicts are
-   unverified), and verifying `iphone_to_twydo` for `repeat` and `convert`.
+   unverified), and verifying the remaining `repeat` rows and empty project to checklist.
    Next on the roadmap: that follow-up, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
