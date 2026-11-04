@@ -620,6 +620,13 @@ fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), Edi
         return Err(unsupported("a repeating task needs a due date"));
     }
     let value = complete::rule_text(&spec.rule);
+    // The ending before this edit: an unchanged count or until keeps its end keys (the count
+    // may have advanced, so `RecurrenceEndRepetitionsOrig` is not the current COUNT).
+    let old_end = todo
+        .prop("RRULE")
+        .and_then(|p| parse_rrule(&p.value).ok())
+        .map(|r| r.end);
+    let end_unchanged = old_end.as_ref() == Some(&spec.rule.end);
     match todo.prop_mut("RRULE") {
         Some(p) => {
             if p.value != value {
@@ -642,6 +649,7 @@ fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), Edi
             m.set_str("RUID", &uid);
         }
         match &spec.rule.end {
+            End::Count(_) | End::Until(_) if end_unchanged => {}
             End::Never => {
                 m.set_i64("RecurrenceEndType", 0);
                 m.set_i64("RecurrenceEndRepetitions", 0);

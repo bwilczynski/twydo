@@ -346,3 +346,56 @@ fn an_item_of_a_checklist_with_dates_does_not_crash() {
     };
     assert!(new_task(&t, A, None, now()).is_ok());
 }
+
+fn end_keys(cal: &Calendar) -> (Option<i64>, Option<i64>, Option<i64>, String) {
+    let todo = cal.root.children_named("VTODO").next().unwrap();
+    let m = MetaJson::parse(&todo.prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    (
+        m.get_i64("RecurrenceEndType"),
+        m.get_i64("RecurrenceEndRepetitions"),
+        m.get_i64("RecurrenceEndRepetitionsOrig"),
+        todo.prop("RRULE").unwrap().value.clone(),
+    )
+}
+
+#[test]
+fn repeat_edit_on_an_advanced_count_keeps_the_original_count() {
+    let t = NewTask {
+        repeat: Some(repeat_spec("monthly 3 times")),
+        ..nt("T")
+    };
+    let created = new_task(&t, A, None, now()).unwrap();
+    let (mut live, _copy) = twydo_core::edit::complete_recurring(
+        &created,
+        now(),
+        now().date_naive(),
+        "ffffffffffffffffffffffffffffffff",
+    )
+    .unwrap();
+    let (ty, reps, orig, rule) = end_keys(&live);
+    assert_eq!((ty, reps, orig), (Some(2), Some(2), Some(3)), "{rule}");
+
+    // Interval-only change: the ending condition is unchanged, so the original count stays.
+    apply_changes(
+        &mut live,
+        &[Change::Repeat(Some(repeat_spec("2m 2 times")))],
+        now(),
+    )
+    .unwrap();
+    let (ty, reps, orig, rule) = end_keys(&live);
+    assert_eq!((ty, reps, orig), (Some(2), Some(2), Some(3)), "{rule}");
+    assert!(
+        rule.contains("COUNT=2") && rule.contains("INTERVAL=2"),
+        "{rule}"
+    );
+
+    // A different count is a new ending: both reset.
+    apply_changes(
+        &mut live,
+        &[Change::Repeat(Some(repeat_spec("2m 5 times")))],
+        now(),
+    )
+    .unwrap();
+    let (ty, reps, orig, rule) = end_keys(&live);
+    assert_eq!((ty, reps, orig), (Some(2), Some(5), Some(5)), "{rule}");
+}
