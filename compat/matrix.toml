@@ -1203,13 +1203,13 @@ notes = "Setting a repeat from the completion date: Plan 7 capture (docs/referen
 [[operation]]
 case = "checklist"
 op = "repeat"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Setting, changing or removing a repeat on a checklist or its item. Not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/001-after-upload", "fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/060-remove-checklist-repeat-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/151-twydo-checklist-repeat-removed", "fixtures/phase0/v1/plan8-tui-a/153-phone-checklist-removal-followup"]
+notes = "Plan 8 FC: monthly setting on an existing plain checklist and removal of its weekly repeat accepted and edited on the phone, through 153. Gate limits checklist repeat transitions to plain date-only interval-1 monthly/weekly/none with no end/from-completion/start/alerts. Ordinary recurring-checklist edit/create remains unverified."
 
 [[operation]]
 case = "project"
@@ -1243,6 +1243,28 @@ twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = []
 notes = "Setting, changing or removing the repeat of an item of a project. Not captured. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+
+[[operation]]
+case = "recurring-checklist"
+op = "repeat"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup", "fixtures/phase0/v1/plan8-tui-a/151-twydo-checklist-repeat-removed", "fixtures/phase0/v1/plan8-tui-a/153-phone-checklist-removal-followup"]
+notes = "Plan 8 FC: clean monthly-to-weekly reshape and weekly removal accepted and edited on the phone in 141-144/151-153. Only plain date-only interval-1 monthly/weekly/none, due anchored, no ends or offsets. No interval, daily/yearly/Nth, family end/from-completion or type conversion inference."
+
+[[operation]]
+case = "recurring-checklist"
+op = "complete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+notes = "Plan 8 FC: monthly parent completes with mixed/all-done items; phone accepts both resets and acts on the output. History parent/child IDs are new, earlier item completion times retained, live inherited dates removed after copying. Gate limits parent completion to plain interval-1 date-only monthly day1-28, due anchored, no end/start/alerts/delay/cancelled items. Recovery/undo/redo/atomic-refusal tested; other checklist rules remain refused."
 
 [[edge_case]]
 id = "monthly-15th-three-months-late"

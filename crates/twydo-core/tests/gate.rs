@@ -308,7 +308,7 @@ fn create_item_under_plain_task_is_refused() {
     assert_eq!(at("nope"), blocked("no task with UID nope"));
     assert_eq!(
         at("gate-monthly-checklist"),
-        blocked("repeating checklists are not verified yet")
+        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
     // An item is a task, in its parent's list.
     let op = Op::Create(NewTask {
@@ -355,7 +355,7 @@ fn checklist_item_with_date_is_refused() {
             "{n:?}"
         );
     }
-    // A new checklist cannot repeat.
+    // A repeating checklist needs its own create verdict, not the plain checklist's.
     let op = Op::Create(NewTask {
         kind: twydo_core::model::TaskKind::Checklist,
         due: Some(Due::Date(date(2026, 11, 9))),
@@ -364,7 +364,7 @@ fn checklist_item_with_date_is_refused() {
     });
     assert_eq!(
         check(&s, &m, WriteMode::Test, &op, today()),
-        blocked("repeating checklists are not verified yet")
+        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
 }
 
@@ -601,7 +601,7 @@ fn convert_needs_convert_row() {
         ),
         Ok(())
     );
-    // A repeating task cannot become a checklist; an item cannot become a parent.
+    // A repeating task needs the recurring checklist's edit verdict; items cannot be parents.
     let m = rows(&[("task-to-checklist", "convert")], "pass");
     assert_eq!(
         check(
@@ -611,7 +611,7 @@ fn convert_needs_convert_row() {
             &kind("gate-monthly", Checklist),
             today()
         ),
-        blocked("repeating checklists are not verified yet")
+        blocked("edit for recurring-checklist tasks is not verified yet (iphone_baseline)")
     );
     assert_eq!(
         check(
@@ -862,6 +862,14 @@ fn family_cases() {
     );
     // A completed project without RRULE (like a recurring project's copy) is a plain project.
     assert_eq!(at("gate-done-project"), cs("one-time", Some("project")));
+    assert_eq!(
+        at("gate-monthly-checklist"),
+        cs("monthly", Some("recurring-checklist"))
+    );
+    assert_eq!(
+        at("gate-monthly-checklist-item"),
+        cs("one-time", Some("recurring-checklist"))
+    );
 }
 
 const NESTED: &str = "nested projects and checklists are not verified yet";
@@ -875,16 +883,8 @@ fn family_refusals() {
         ("gate-nested-child", NESTED),
         ("gate-nested-grandchild", NESTED),
         (
-            "gate-monthly-checklist",
-            "repeating checklists are not verified yet",
-        ),
-        (
-            "gate-monthly-checklist-item",
-            "repeating checklists are not verified yet",
-        ),
-        (
             "gate-checklist-repeating-item",
-            "repeating checklists are not verified yet",
+            "checklist items take their date from the checklist",
         ),
         (
             "gate-recurring-repeating-child",
@@ -1037,7 +1037,7 @@ fn parent_op_refused_when_child_has_no_case() {
             &complete("gate-checklist-mixed"),
             today()
         ),
-        blocked("repeating checklists are not verified yet")
+        blocked("checklist items take their date from the checklist")
     );
     assert_eq!(
         check(
@@ -2333,20 +2333,136 @@ fn embedded_edge_records_match_existing_completion_captures() {
     assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Unverified);
 }
 
+// Native phone round trips; see the capture log's regression-test map.
+mod recurrence_phone_captures {
+    use crate::common::recurrence::*;
+    use crate::common::{Env, dtstamp, todo};
+    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit::{Change, Op};
+
+    #[test]
+    fn baseline_only_matrix_does_not_enable_unchecked_writes() {
+        for (step, uid, op) in [(SET, FC, Op::Complete { uid: FC.into() })] {
+            let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
+            let mut matrix = Matrix::embedded().clone();
+            matrix
+                .rule
+                .iter_mut()
+                .find(|r| r.class == "mod:until")
+                .unwrap()
+                .execute = Verdict::Unverified;
+            for case in ["recurring-checklist", "ended-until-daily"] {
+                for row in matrix.operation.iter_mut().filter(|r| r.case == case) {
+                    row.twydo_to_iphone = Verdict::Unverified;
+                }
+            }
+            let mut store = env.store(matrix);
+            let before = env.files();
+            assert!(
+                store
+                    .apply(&env.snap(), &op, dtstamp(&cal(step, uid)))
+                    .is_err()
+            );
+            assert_eq!(env.files(), before);
+            assert!(env.journal().is_empty());
+        }
+    }
+
+    #[test]
+    fn checklist_repeat_only_reshape_uses_repeat_evidence_and_mixed_edits_still_need_edit() {
+        const STEP: &str = "120-phone-second-round-followup";
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{STEP}"));
+        let snap = env.snap();
+        let uid = step_files(STEP)
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+            })
+            .unwrap()
+            .0
+            .clone();
+        let mut matrix = Matrix::embedded().clone();
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Pass;
+        assert!(matrix.operation("recurring-checklist", "edit").is_none());
+        let now = dtstamp(&cal(STEP, &uid));
+        let change = Change::Repeat(
+            twydo_core::repeatinput::parse("weekly", now.date_naive(), &[]).unwrap(),
+        );
+        let op = Op::Edit {
+            uid: uid.clone(),
+            changes: vec![change.clone()],
+        };
+        assert!(
+            twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
+                .is_ok(),
+            "a pure reshape needs its dedicated repeat row, not an ordinary-edit row"
+        );
+        for changes in [
+            vec![
+                change.clone(),
+                Change::Description(Some("Synthetic mixed edit".into())),
+            ],
+            vec![
+                change,
+                Change::Summary("Synthetic renamed checklist".into()),
+            ],
+            vec![Change::Repeat(
+                twydo_core::repeatinput::parse("2m", now.date_naive(), &[]).unwrap(),
+            )],
+        ] {
+            let op = Op::Edit {
+                uid: uid.clone(),
+                changes,
+            };
+            let before = env.files();
+            let mut store = env.store(matrix.clone());
+            let result = store.apply(&snap, &op, now);
+            assert!(
+                result.is_err(),
+                "mixed changes and interval-only edits still need edit evidence"
+            );
+            assert_eq!(env.files(), before, "refused saves write nothing");
+            assert!(env.journal().is_empty());
+        }
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Unverified;
+        assert!(
+            twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
+                .is_err(),
+            "unverified repeat changes remain refused"
+        );
+    }
+}
+
 // Effective permissions for captured recurrence shapes, including uncaptured neighbors.
 mod verified_recurrence_shapes {
     use crate::common::Env;
-    use chrono::{TimeZone, Utc};
+    use chrono::{Duration, TimeZone, Utc};
     use twydo_core::compat::Matrix;
     use twydo_core::config::WriteMode;
     use twydo_core::edit::{Change, Op};
     use twydo_core::gate;
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::meta_edit::MetaJson;
+    use twydo_core::model::{Alarm, Trigger};
 
+    const FC: &str = "61ed74be3ba34212ab7476b698de1263";
     const RD: &str = "db95528b16fb4aa2b6a47e56a0a1000b";
     const RY: &str = "033d6526b6ba46999f3f510edecf888b";
     const SEED: &str = "001-after-upload";
     const SET: &str = "010-first-phone-actions";
     const BOUNDARY: &str = "020-boundary-and-checklist-complete";
+    const END: &str = "030-end-series-and-items";
     const REOPEN: &str = "040-reopen-ended-and-complete-parent";
 
     fn env(step: &str) -> Env {
@@ -2363,7 +2479,9 @@ mod verified_recurrence_shapes {
             )],
         }
     }
-
+    fn promoted() -> Matrix {
+        Matrix::embedded().clone()
+    }
     #[test]
     fn embedded_verified_operations_match_supported_phone_shapes() {
         let mut cases = Vec::new();
@@ -2374,8 +2492,14 @@ mod verified_recurrence_shapes {
             (SEED, RY, "yearly"),
             (BOUNDARY, RY, "monthly"),
             (REOPEN, RY, "none"),
+            (SEED, FC, "monthly"),
+            (SET, FC, "weekly"),
+            (SET, FC, "none"),
         ] {
             cases.push((step, repeat(uid, rule), 1));
+        }
+        for step in [SET, END] {
+            cases.push((step, Op::Complete { uid: FC.into() }, 8));
         }
         for (step, op, writes) in cases {
             let e = env(step);
@@ -2384,6 +2508,111 @@ mod verified_recurrence_shapes {
                 .apply(&e.snap(), &op, now())
                 .unwrap_or_else(|err| panic!("{step} {op:?}: {err}"));
             assert_eq!(e.journal()[0].writes.len(), writes, "{step} {op:?}");
+        }
+    }
+    #[test]
+    fn promoted_until_and_checklist_verdicts_do_not_admit_uncaptured_contexts() {
+        for (uid, step, op) in [(FC, SET, Op::Complete { uid: FC.into() })] {
+            for shape in ["timed", "start", "alarm", "start-delay", "interval"] {
+                let e = env(step);
+                let mut snap = e.snap();
+                let i = snap.find(uid).unwrap();
+                let t = &mut snap.tasks[i];
+                match shape {
+                    "timed" => t.due = Some(IcalDateTime::Floating(now().naive_utc())),
+                    "start" => t.start = Some(IcalDateTime::Date(now().date_naive())),
+                    "alarm" => t.alarms.push(Alarm {
+                        trigger: Trigger::Relative {
+                            offset: Duration::minutes(-5),
+                            related_end: true,
+                        },
+                        index: 0,
+                    }),
+                    "start-delay" => {
+                        let mut m = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
+                        m.set_i64("StartDayDelay", 1);
+                        t.meta.raw = Some(m.encode());
+                    }
+                    "interval" => {
+                        t.rrule = Some(
+                            t.rrule
+                                .as_ref()
+                                .unwrap()
+                                .replace("FREQ=", "INTERVAL=2;FREQ="),
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+                assert!(
+                    gate::check(
+                        &snap,
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {shape}"
+                );
+            }
+        }
+        for (uid, step) in [(FC, SET)] {
+            for (text, raw) in [
+                ("weekly until", "FREQ=WEEKLY;UNTIL=20261120"),
+                ("yearly until", "FREQ=YEARLY;UNTIL=20281120"),
+                ("interval until", "FREQ=DAILY;INTERVAL=2;UNTIL=20261120"),
+            ] {
+                let e = env(step);
+                let mut snap = e.snap();
+                let i = snap.find(uid).unwrap();
+                snap.tasks[i].rrule = Some(raw.into());
+                let op = if step == END {
+                    Op::Reopen { uid: uid.into() }
+                } else {
+                    Op::Complete { uid: uid.into() }
+                };
+                assert!(
+                    gate::check(
+                        &snap,
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {step} {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn checklist_repeat_permissions_cover_only_the_captured_rules() {
+        for step in [SEED, SET] {
+            for text in [
+                "daily",
+                "yearly",
+                "2w",
+                "2m",
+                "2nd tue",
+                "monthly after done",
+                "monthly 3 times",
+                "monthly until 2027-03-10",
+            ] {
+                let e = env(step);
+                let op = repeat(FC, text);
+                assert!(
+                    gate::check(
+                        &e.snap(),
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{step} {text}"
+                );
+            }
         }
     }
     #[test]
@@ -2410,5 +2639,35 @@ mod verified_recurrence_shapes {
                 );
             }
         }
+    }
+    #[test]
+    fn review_regression_plain_checklist_mixed_repeat_save_needs_destination_edit() {
+        let e = env(SEED);
+        let mut op = repeat(FC, "monthly");
+        if let Op::Edit { changes, .. } = &mut op {
+            changes.push(Change::Summary("Synthetic renamed checklist".into()));
+        }
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        assert!(store.apply(&e.snap(), &op, now()).is_err());
+        assert_eq!(e.files(), before);
+        assert!(e.journal().is_empty());
+    }
+
+    #[test]
+    fn weekly_checklist_completion_and_offset_history_remain_refused() {
+        let e = env("050-remove-repeat-and-refinish");
+        let snap = e.snap();
+        assert!(
+            gate::check(
+                &snap,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Complete { uid: FC.into() },
+                now().date_naive()
+            )
+            .is_err(),
+            "phone-captured weekly checklist still lacks completion evidence"
+        );
     }
 }

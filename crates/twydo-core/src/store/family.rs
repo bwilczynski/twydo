@@ -169,7 +169,14 @@ impl Store {
             match complete_recurring(&p.cal, now, today, &copy_uid)? {
                 (live, Some(copy)) => {
                     return plan_recurring_complete(
-                        parent_uid, p, children, live, copy_uid, copy, now,
+                        parent_uid,
+                        p,
+                        children,
+                        live,
+                        copy_uid,
+                        copy,
+                        snap.tasks[idx].kind == TaskKind::Checklist,
+                        now,
                     );
                 }
                 // The last occurrence of an ending series: the project is completed in place
@@ -324,9 +331,11 @@ impl Store {
     }
 }
 
-/// A repeating project's completion (H6): a completed copy of the parent and a copy of every
+/// A repeating parent's completion (H6, Plan 8): a completed copy of the parent and a copy of every
 /// child under it (an open child's completed now, a completed one's keeping its time), then
-/// the advanced parent and its completed children reopened. Open children are untouched.
+/// the advanced parent and its completed children reopened. A checklist also drops live
+/// inherited item dates after copying them to history; a project's open children are untouched.
+#[allow(clippy::too_many_arguments)]
 fn plan_recurring_complete(
     parent_uid: String,
     p: Target,
@@ -334,6 +343,7 @@ fn plan_recurring_complete(
     live: ical::Calendar,
     copy_uid: String,
     copy: ical::Calendar,
+    checklist: bool,
     now: DateTime<Utc>,
 ) -> Result<Plan, WriteError> {
     let mut writes = vec![create(&p.collection, &copy_uid, &copy)?];
@@ -349,9 +359,17 @@ fn plan_recurring_complete(
         let cal = member_copy(&c.target.cal, &child_copy, &copy_uid, now, now)?;
         writes.push(create(&c.target.collection, &child_copy, &cal)?);
         uids.push(child_copy);
-        if c.status == Status::Completed {
+        let drop_dates =
+            checklist && crate::edit::family::member_has_inherited_dates(&c.target.cal)?;
+        if c.status == Status::Completed || drop_dates {
             let mut cal = c.target.cal.clone();
-            reopen_member(&mut cal, now)?;
+            if c.status == Status::Completed {
+                reopen_member(&mut cal, now)?;
+            }
+            if drop_dates {
+                // Copy first: history retains the old inherited dates, live items lose them.
+                drop_member_dates(&mut cal, now)?;
+            }
             uids.push(c.uid);
             updates.push(c.target.update(&cal)?);
         } else {

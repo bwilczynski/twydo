@@ -20,12 +20,12 @@
 //!    checklist item a due or start date, is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `daily`, `weekly`, `monthly`,
 //!    `yearly`, or `from-completion` for any rule repeated from completion) and family case
-//!    (`checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
+//!    (`checklist`, `recurring-checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
 //!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
 //!    does not match the task's kind (0 task, 1 checklist, 2 project; a parent without
 //!    `@tasktype` counts as a task) refuses with "this 2Do task type is not verified yet";
-//!    then a broken parent link ("broken parent link"), nested families, repeating
-//!    checklists, a repeating child of a repeating project, children of a plain task, or the
+//!    then a broken parent link ("broken parent link"), nested families, independently repeating
+//!    checklist items, a repeating child of a repeating project, children of a plain task, or the
 //!    repeat refusals of the own case.
 //!
 //!    A create has the cases of the new task: its own case from its repeat, and the family
@@ -60,7 +60,7 @@
 
 use std::fmt;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
@@ -91,7 +91,6 @@ fn blocked<T>(reason: impl Into<String>) -> Result<T, Blocked> {
 }
 
 const NESTED: &str = "nested projects and checklists are not verified yet";
-const REPEATING_CHECKLIST: &str = "repeating checklists are not verified yet";
 const CHILD_RECURRENCE: &str = "a repeating task inside a repeating project is not verified yet \
                                 (project-child-own-recurrence)";
 const NO_DUE: &str = "a repeating task needs a due date";
@@ -206,6 +205,13 @@ pub fn check(
     let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
 
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && new_repeat(changes).is_some()
+        && (snap.tasks[i].kind == TaskKind::Checklist
+            || after.is_some_and(|a| matches!(a.family, Some("checklist" | "recurring-checklist"))))
+    {
+        checklist_repeat_shape(&snap.tasks[i], changes)?;
+    }
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
         && reshaped
         && (matches!(cases.own, "daily" | "yearly")
             || after.is_some_and(|a| matches!(a.own, "daily" | "yearly")))
@@ -281,11 +287,46 @@ pub fn check(
                 .as_deref()
                 .and_then(|r| parse_rrule(r).ok())
                 .is_some_and(|r| r.end != End::Never);
-            if cases.family == Some("recurring-project")
-                && task.rrule.is_some()
+            if matches!(
+                cases.family,
+                Some("recurring-project" | "recurring-checklist")
+            ) && task.rrule.is_some()
                 && (ends || task.from_completion)
             {
-                return blocked(PROJECT_END);
+                return blocked(if cases.family == Some("recurring-checklist") {
+                    "completing a recurring checklist that ends or repeats from completion is not verified yet"
+                } else {
+                    PROJECT_END
+                });
+            }
+            if cases.family == Some("recurring-checklist")
+                && snap
+                    .children(i)
+                    .iter()
+                    .any(|&c| snap.tasks[c].status == Status::Cancelled)
+            {
+                return blocked(
+                    "completing a recurring checklist with cancelled items is not verified yet",
+                );
+            }
+            if cases.family == Some("recurring-checklist")
+                && (!captured_schedule(task)
+                    || !task
+                        .rrule
+                        .as_deref()
+                        .and_then(|r| parse_rrule(r).ok())
+                        .is_some_and(|r| {
+                            plain_rule(&r, &[Freq::Monthly])
+                                && r.end == End::Never
+                                && task
+                                    .due
+                                    .as_ref()
+                                    .is_some_and(|d| d.local_date(snap.tz()).day() <= 28)
+                        }))
+            {
+                return blocked(
+                    "only plain monthly, date-only checklist completion is verified yet",
+                );
             }
             if execute != Verdict::Pass {
                 return not_verified();
@@ -314,13 +355,13 @@ pub fn check(
 pub struct Cases {
     /// `one-time`, `daily`, `weekly`, `monthly`, `yearly` or `from-completion`.
     pub own: &'static str,
-    /// `checklist`, `project`, `recurring-project` or `project-recurring-child`.
+    /// `checklist`, `recurring-checklist`, `project`, `recurring-project` or `project-recurring-child`.
     pub family: Option<&'static str>,
 }
 
 /// The matrix cases of the task at `idx`, or why it has none. Only the shapes the Plan 6
 /// iPhone sessions captured have cases: one level of children under a typed checklist or
-/// project, no repeating checklist or independently repeating checklist item or
+/// project, recurring checklists included; no independently repeating checklist item or
 /// repeating child of a repeating project.
 pub fn task_cases(snap: &Snapshot, idx: usize) -> Result<Cases, Blocked> {
     if !known_task_type(&snap.tasks[idx]) {
@@ -401,7 +442,8 @@ fn family_case(
     own_repeats: bool,
 ) -> Result<&'static str, Blocked> {
     Ok(match head {
-        TaskKind::Checklist if head_repeats || own_repeats => return blocked(REPEATING_CHECKLIST),
+        TaskKind::Checklist if item && own_repeats => return blocked(ITEM_DATES),
+        TaskKind::Checklist if head_repeats => "recurring-checklist",
         TaskKind::Checklist => "checklist",
         _ if !item && head_repeats => "recurring-project",
         _ if !item => "project",
@@ -923,6 +965,20 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
     }
 }
 
+/// Scheduling context observed in Plan 8 batch 1. Offset evidence from other task/family
+/// shapes must not widen the newly enabled checklist/UNTIL operations.
+fn captured_schedule(t: &Task) -> bool {
+    matches!(t.due, Some(IcalDateTime::Date(_)))
+        && t.start.is_none()
+        && t.alarms.is_empty()
+        && !t.from_completion
+        && json_meta(t).is_some_and(|m| {
+            m.get_i64("StartDate").is_none()
+                && m.get_i64("duetime").is_none()
+                && m.get_i64("StartDayDelay").unwrap_or(0) == 0
+        })
+}
+
 fn plain_rule(r: &RRule, freqs: &[Freq]) -> bool {
     freqs.contains(&r.freq)
         && r.interval == 1
@@ -957,6 +1013,37 @@ fn plain_repeat_transition(t: &Task, changes: &[Change]) -> Result<(), Blocked> 
     {
         return blocked(
             "daily/yearly repeat changes are verified only between plain due-anchored rules without an end",
+        );
+    }
+    Ok(())
+}
+
+fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
+    let valid = |r: &RRule, from_completion: bool| {
+        !from_completion
+            && plain_rule(r, &[Freq::Weekly, Freq::Monthly])
+            && r.end == End::Never
+            && (r.freq != Freq::Monthly
+                || matches!(t.due, Some(IcalDateTime::Date(d)) if d.day() <= 28))
+    };
+    let old_ok = t
+        .rrule
+        .as_deref()
+        .is_none_or(|raw| parse_rrule(raw).is_ok_and(|r| valid(&r, t.from_completion)));
+    let new_ok = new_repeat(changes)
+        .flatten()
+        .is_none_or(|r| valid(&r.rule, r.from_completion));
+    if t.kind != TaskKind::Checklist
+        || t.status != Status::Open
+        || !captured_schedule(t)
+        || !old_ok
+        || !new_ok
+        || changes
+            .iter()
+            .any(|c| matches!(c, Change::Kind(k) if *k != TaskKind::Checklist))
+    {
+        return blocked(
+            "checklist repeat changes are verified only for plain date-only monthly/weekly rules without an end",
         );
     }
     Ok(())

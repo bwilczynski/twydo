@@ -1028,7 +1028,7 @@ fn interval_of_a_weekday_set_repeat_is_refused() {
     apply_changes(&mut cal, &[Change::RepeatInterval(1)], now()).unwrap();
 }
 
-// Captured plain recurrence edits.
+// Captured plain recurrence edits and checklist recurrence.
 mod recurrence_phone_captures {
     use crate::common::recurrence::*;
     use crate::common::{dtstamp, fixture, todo};
@@ -1059,6 +1059,14 @@ mod recurrence_phone_captures {
                     (ADVANCE, END, "monthly"),
                     (END, REOPEN, "yearly"),
                     (REOPEN, REMOVE, "none"),
+                ],
+            ),
+            (
+                FC,
+                vec![
+                    (SEED, SET, "monthly"),
+                    (REOPEN, REMOVE, "weekly"),
+                    (REMOVE, HISTORY, "none"),
                 ],
             ),
         ] {
@@ -1111,12 +1119,22 @@ mod recurrence_phone_captures {
                 .clone()
         };
         for (from, to, edits, _copy_count) in [
-            (HISTORY, LOCAL, [("RDb", "daily"), ("RYb", "yearly")], 1),
-            (LOCAL, PHONE, [("RDb", "3d"), ("RYb", "2y")], 1),
+            (
+                HISTORY,
+                LOCAL,
+                [("FCb", "monthly"), ("RDb", "daily"), ("RYb", "yearly")],
+                1,
+            ),
+            (
+                LOCAL,
+                PHONE,
+                [("FCb", "note-x"), ("RDb", "3d"), ("RYb", "2y")],
+                1,
+            ),
             (
                 "111-twydo-ended-originals-reopened",
                 "120-phone-second-round-followup",
-                [("RDb", "daily"), ("RYb", "yearly")],
+                [("FCb", "note-y"), ("RDb", "daily"), ("RYb", "yearly")],
                 0,
             ),
         ] {
@@ -1164,7 +1182,11 @@ mod recurrence_phone_captures {
                 .clone()
         };
         let mut expected_changed = std::collections::BTreeSet::new();
-        for (title, due, note) in [("RDb", "20261207", "x"), ("RYb", "20261207", "x")] {
+        for (title, due, note) in [
+            ("FCb", "20270210", "z"),
+            ("RDb", "20261207", "x"),
+            ("RYb", "20261207", "x"),
+        ] {
             let id = uid(title, due);
             expected_changed.insert(id.clone());
             let source = &before[&id];
@@ -1215,6 +1237,54 @@ mod recurrence_phone_captures {
         );
     }
 
+    #[test]
+    fn phone_note_after_checklist_repeat_removal_preserves_all_recurrence_metadata() {
+        const BEFORE: &str = "151-twydo-checklist-repeat-removed";
+        const AFTER: &str = "153-phone-checklist-removal-followup";
+        let before = step_files(BEFORE);
+        let want = step_files(AFTER);
+        let uid = before
+            .iter()
+            .find(|(_, c)| {
+                let t = todo(c);
+                t.prop("SUMMARY").unwrap().value == "FCb"
+                    && t.prop("DUE").unwrap().value == "20270210"
+            })
+            .unwrap()
+            .0
+            .clone();
+        let now = dtstamp(&want[&uid]);
+        let mut got = before[&uid].clone();
+        edit::apply_changes(&mut got, &[Change::Description(Some("ok".into()))], now).unwrap();
+        same(
+            "phone note after checklist repeat removal",
+            &got,
+            &want[&uid],
+            &BTreeMap::new(),
+        );
+        stamped(&got, now);
+        preserved_created(&before[&uid], &got);
+        let read = |c: &Calendar| {
+            MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+        };
+        assert_eq!(
+            read(&before[&uid]),
+            read(&want[&uid]),
+            "checklist note edit keeps inactive fields too"
+        );
+        assert!(todo(&want[&uid]).prop("RRULE").is_none());
+        assert_eq!(
+            before.keys().collect::<Vec<_>>(),
+            want.keys().collect::<Vec<_>>()
+        );
+        for id in before.keys().filter(|id| **id != uid) {
+            assert_eq!(
+                fixture(SCENARIO, BEFORE, id),
+                fixture(SCENARIO, AFTER, id),
+                "final phone note edit leaves {id} unchanged"
+            );
+        }
+    }
     #[test]
     fn plain_repeat_transitions_preserve_existing_due_start_and_alarm_bytes() {
         let mut got = cal(SET, RD);
