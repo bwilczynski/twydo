@@ -88,20 +88,17 @@ fn complete_recurring_writes_copy_and_advances_live() {
     );
 }
 
-/// Task 14: completing the last occurrence of a counted series (`COUNT=1`) completes the
-/// task in place: one write, no history copy, as the phone did with `C1a` (session C,
-/// `plan7-twydo-list2/01-phone-complete`).
-#[test]
-fn completing_the_last_occurrence_completes_in_place() {
-    let env = Env::new(WriteMode::Test, FIXTURE);
-    let mut m = matrix("unverified", "unverified");
+/// The monthly task `E` as the last occurrence of a counted series (`COUNT=1`), and a matrix
+/// where `mod:count` passes.
+fn last_occurrence(env: &Env, twydo: &str, edge: &str) -> Store {
+    let mut m = matrix(twydo, edge);
     let count = Matrix::from_toml_str(
         "matrix_version = 1\n[[rule]]\nclass = \"mod:count\"\npreserve = \"pass\"\n\
          execute = \"pass\"\nedit = \"pass\"\n",
     )
     .unwrap();
     m.rule.extend(count.rule);
-    let mut store = env.store(m);
+    let store = env.store(m);
     let path = env.file(E);
     let text = fs::read_to_string(&path)
         .unwrap()
@@ -117,6 +114,16 @@ fn completing_the_last_occurrence_completes_in_place() {
         p.set_value(&meta.encode());
     }
     fs::write(&path, twydo_core::ical::serialize(&cal)).unwrap();
+    store
+}
+
+/// Task 14: completing the last occurrence of a counted series (`COUNT=1`) completes the
+/// task in place: one write, no history copy, as the phone did with `C1a` (session C,
+/// `plan7-twydo-list2/01-phone-complete`).
+#[test]
+fn completing_the_last_occurrence_completes_in_place() {
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let mut store = last_occurrence(&env, "unverified", "unverified");
 
     let before = env.files();
     store.apply(&env.snap(), &complete(E), now()).unwrap();
@@ -129,6 +136,55 @@ fn completing_the_last_occurrence_completes_in_place() {
     let e = &env.journal()[0];
     assert_eq!(e.kind, "complete");
     assert_eq!(e.writes.len(), 1);
+}
+
+/// Undoing the in-place end of a series is a repeat completion's undo too: verified mode
+/// needs the `reopen-undo-before-after-sync` edge case, as for copy-and-advance.
+#[test]
+fn undo_of_the_last_occurrence_needs_edge_case_in_verified_mode() {
+    let env = Env::new(WriteMode::Verified, FIXTURE);
+    let mut store = last_occurrence(&env, "pass", "unverified");
+    store.apply(&env.snap(), &complete(E), now()).unwrap();
+    let applied = env.files();
+    match store.undo_last(later()) {
+        Err(WriteError::Blocked(b)) => {
+            assert!(
+                b.to_string().contains("reopen-undo-before-after-sync"),
+                "{b}"
+            )
+        }
+        other => panic!("expected Blocked, got {other:?}"),
+    }
+    assert_eq!(env.files(), applied);
+
+    let env = Env::new(WriteMode::Verified, FIXTURE);
+    let mut store = last_occurrence(&env, "pass", "pass");
+    let before = env.files();
+    store.apply(&env.snap(), &complete(E), now()).unwrap();
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+}
+
+/// The last occurrence completed in place keeps its `RRULE`. No capture shows what 2Do does
+/// when it is reopened, so Twydo refuses and points at undo, in every write mode.
+#[test]
+fn reopening_the_last_occurrence_is_refused() {
+    for mode in [WriteMode::Test, WriteMode::Verified] {
+        let env = Env::new(mode, FIXTURE);
+        let mut store = last_occurrence(&env, "pass", "pass");
+        store.apply(&env.snap(), &complete(E), now()).unwrap();
+        let done = env.files();
+        let err = store
+            .apply(&env.snap(), &Op::Reopen { uid: E.into() }, later())
+            .unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "reopening the last occurrence of an ended repeat is not supported; use undo"
+            ),
+            "{mode:?}: {err}"
+        );
+        assert_eq!(env.files(), done);
+    }
 }
 
 #[test]

@@ -230,9 +230,29 @@ fn create(collection: &str, uid: &str, cal: &Calendar) -> Result<Write, WriteErr
 }
 
 /// A completion of a repeating task or project: history copies are created and the live
-/// task advanced.
+/// task advanced, or, for the last occurrence of an ending series, a repeating task is
+/// completed in place (its `RRULE` kept).
 fn is_repeat_completion(e: &Entry) -> bool {
-    e.kind == "complete" && e.writes.iter().any(|w| w.before.is_none())
+    e.kind == "complete"
+        && e.writes
+            .iter()
+            .any(|w| w.before.is_none() || ends_repeat_in_place(w))
+}
+
+/// A write that turns an open repeating task into a completed one.
+fn ends_repeat_in_place(w: &Write) -> bool {
+    let todo = |text: &Option<String>| {
+        let cal = crate::ical::parse(text.as_deref()?.as_bytes()).ok()?;
+        cal.root.children_named("VTODO").next().cloned()
+    };
+    let completed = |t: &crate::ical::Component| {
+        t.prop("STATUS")
+            .is_some_and(|p| p.value.trim().eq_ignore_ascii_case("COMPLETED"))
+    };
+    match (todo(&w.before), todo(&w.after)) {
+        (Some(b), Some(a)) => b.prop("RRULE").is_some() && !completed(&b) && completed(&a),
+        _ => false,
+    }
 }
 
 fn no_entry(id: &str) -> WriteError {
