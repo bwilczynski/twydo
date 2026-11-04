@@ -43,7 +43,9 @@
 //!    repeat change, the `edit` rows of the cases it leaves too; for a `Change::Repeat`
 //!    that sets, removes or reshapes the repeat (another class, from completion or end:
 //!    anything but a new interval of the same rule, which Plan 4 verified as an edit), the
-//!    `repeat` rows of the own and family cases before and after; and for a type change the
+//!    `repeat` rows of the own and family cases before and after. A repeat-only reshape
+//!    needs these rows instead of ordinary `edit` rows; a mixed field save still needs both.
+//!    For a type change, the
 //!    `convert` row of its before and after types (none when the type stays). A row whose
 //!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
@@ -228,15 +230,18 @@ pub fn check(
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
 
-    // Rule 3: matrix rows for every case the op touches.
-    let name = op_name(op);
+    // Rule 3: a pure repeat reshape uses its dedicated evidence. Ordinary fields mixed
+    // into the save, and interval-only changes, still require the ordinary edit rows.
+    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
+    let repeat_only = reshaped
+        && matches!(op, Op::Edit { changes, .. } if changes.iter().all(|c| matches!(c, Change::Repeat(_))));
+    let name = if repeat_only { "repeat" } else { op_name(op) };
     for c in op_cases(snap, target, cases, op) {
         operation_row(m, mode, c, name)?;
     }
     // The case an edit leaves needs its `edit` row, except when the repeat is reshaped: the
     // new case is then checked against its `repeat` row instead (a weekly repeat set on a
     // plain task says nothing about editing existing weekly tasks).
-    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
     if let Some(a) = after
         && !reshaped
     {

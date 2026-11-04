@@ -174,6 +174,11 @@ checks are pending, so verified-mode capabilities above have **not** been expand
 mode, only the captured date-only top-level daily/plain-monthly until-ended reopen shapes can
 use the new dedicated rows; count-ended and family-ended reopening remain refused.
 
+A save that only sets, removes or reshapes a repeat uses the dedicated repeat-change
+verdicts for its old and new task/family cases. An interval-only change still uses edit
+verdicts; a save combining a repeat change with title, notes, dates or type needs both kinds
+of evidence. This keeps repeat verification separate from ordinary field editing.
+
 The candidate recurring-checklist writer copies the completed family before resetting live
 items and removing their inherited due dates. It refuses independent item start dates and
 due times, including start-only items without a due date. Local tests cover atomic refusal,

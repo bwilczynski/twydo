@@ -1009,3 +1009,75 @@ fn second_checklist_reset_reshape_and_twydo_ended_reopen_match_captures() {
         );
     }
 }
+
+#[test]
+fn checklist_repeat_only_reshape_uses_repeat_evidence_and_mixed_edits_still_need_edit() {
+    const STEP: &str = "120-phone-second-round-followup";
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{STEP}"));
+    let snap = env.snap();
+    let uid = step_files(STEP)
+        .iter()
+        .find(|(_, c)| {
+            todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+        })
+        .unwrap()
+        .0
+        .clone();
+    let mut matrix = Matrix::embedded().clone();
+    matrix
+        .operation
+        .iter_mut()
+        .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+        .unwrap()
+        .twydo_to_iphone = Verdict::Pass;
+    assert!(matrix.operation("recurring-checklist", "edit").is_none());
+    let now = dtstamp(&cal(STEP, &uid));
+    let change =
+        Change::Repeat(twydo_core::repeatinput::parse("weekly", now.date_naive(), &[]).unwrap());
+    let op = Op::Edit {
+        uid: uid.clone(),
+        changes: vec![change.clone()],
+    };
+    assert!(
+        twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive()).is_ok(),
+        "a pure reshape needs its dedicated repeat row, not an ordinary-edit row"
+    );
+    for changes in [
+        vec![
+            change.clone(),
+            Change::Description(Some("Synthetic mixed edit".into())),
+        ],
+        vec![
+            change,
+            Change::Summary("Synthetic renamed checklist".into()),
+        ],
+        vec![Change::Repeat(
+            twydo_core::repeatinput::parse("2m", now.date_naive(), &[]).unwrap(),
+        )],
+    ] {
+        let op = Op::Edit {
+            uid: uid.clone(),
+            changes,
+        };
+        let before = env.files();
+        let mut store = env.store(matrix.clone());
+        let result = store.apply(&snap, &op, now);
+        assert!(
+            result.is_err(),
+            "mixed changes and interval-only edits still need edit evidence"
+        );
+        assert_eq!(env.files(), before, "refused saves write nothing");
+        assert!(env.journal().is_empty());
+    }
+    matrix
+        .operation
+        .iter_mut()
+        .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+        .unwrap()
+        .twydo_to_iphone = Verdict::Unverified;
+    assert!(
+        twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
+            .is_err(),
+        "unverified repeat changes remain refused"
+    );
+}
