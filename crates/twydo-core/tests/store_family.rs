@@ -801,7 +801,8 @@ fn weekly_recurring_project_advances() {
 }
 
 /// Task 14: the last occurrence of a counted recurring project completes the project and its
-/// open items in place, as a plain project (H5); no copies. TO CONFIRM in Task 15 (session C).
+/// open items in place, as a plain project (H5); no copies. Session C confirmed the in-place
+/// end for single tasks (`C1a`, `UNa`), not yet for a recurring project.
 #[test]
 fn last_occurrence_of_recurring_project_completes_the_family() {
     let (env, mut store) = reshaped_r(
