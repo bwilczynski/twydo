@@ -1,0 +1,5 @@
+scenario = "plan7-twydo-list1"
+step = "03-phone-act"
+device = "iphone"
+action = "add item y to K2; complete M31, W1, FC, CT, RP (confirmed)"
+captured_at = "2026-11-04T06:53:23Z"
