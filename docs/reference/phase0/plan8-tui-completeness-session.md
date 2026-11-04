@@ -687,3 +687,33 @@ instead of the local retained 1. No conflict was automatically resolved, and no 
 capture exists yet. Both versions remain preserved privately. The user was asked whether
 those phone changes were performed earlier and which versions to retain. No matrix verdict
 is promoted while upload/device inspection is pending.
+
+### 131 — user chooses the phone versions; conflicts cleared
+
+The user clarified that they had already performed the proposed changes on the phone before
+reporting synced. Those changes reached the server before the desktop's equivalent writes;
+the writer preflight had compared stale local 120 bytes without pulling that additional phone
+round first. This caused the five both-changed conflicts. Before future writer rounds, pull
+and validate the latest phone state; distinguish a report of completed phone changes from
+approval for Twydo to perform them. Stop on an unexpected transition instead of repeating it.
+
+The user explicitly chose **phone versions**. Only the five bound synthetic conflicts were
+resolved, keeping remote, with both preserved version files retained unchanged. Choice
+recording used a private verified-mode configuration with the same shared vdir/state/lock and
+no after-edit sync, then one normal-config sync applied the choices. The synthetic list's
+sync status is now clean, all five conflicts are resolved, and no resource was created or
+deleted. All other synthetic and unrelated production bytes, and the normal configuration,
+remain unchanged.
+
+`131-phone-versions-kept-after-conflict` has 40 resources in A, zero in B. It records the
+phone/server versions, **not** a successful upload/phone check of Twydo's 130 candidate output:
+FCb weekly due February 10 with note `y`, RDb/RYb without repeat due December 7, and the first
+U1b/U2b history copies open due November 18 / January 7. The ended originals stay completed.
+The phone's inactive `RecurrenceValue`/`RecurrenceFrom` values on RDb/RYb are 0/0; local 130
+retained 1/1. This difference is preserved as evidence, not normalized or silently ignored.
+Privacy scans passed before copying the synthetic capture into the repository.
+
+Candidate 130 output remains separately captured and replay-tested. Its repeat-removal and
+history-reopen Twydo → phone verdicts remain unverified, and checklist repeat removal and TUI
+acceptance are still pending. No extra writer round or list cleanup is authorized by choosing
+phone versions for these conflicts.

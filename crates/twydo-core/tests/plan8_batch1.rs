@@ -602,6 +602,7 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "112-twydo-second-round-upload",
         "120-phone-second-round-followup",
         "130-twydo-repeat-removal-and-history-reopen",
+        "131-phone-versions-kept-after-conflict",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
