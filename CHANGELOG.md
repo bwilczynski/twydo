@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/bwilczynski/twydo/compare/v0.1.1...v0.1.2) - 2026-11-04
+
+### Added
+
+- *(compat)* verify completing every repeat kind and editing daily and weekly tasks
+- *(compat)* allow weekly and monthly repeat changes in verified mode
+- *(compat)* allow type changes in verified mode
+- *(tui)* change a task's type with ct, cp and cc
+- *(tui)* add tasks and items inline with o, O and a
+- *(tui)* edit tasks in an in-place card with list, type and repeat
+- *(cli)* add items, kinds and repeats with tdo op
+- *(core)* gate new items, repeats and conversions; grouped save
+- *(core)* create projects, checklists, items and repeating tasks
+- *(core)* complete every repeat kind Twydo can create
+- *(core)* change a task's type between task, checklist and project
+- *(core)* set and remove repeat rules as 2Do writes them
+- *(core)* parse typed repeat rules
+
+### Fixed
+
+- *(compat)* keep completing until series unverified
+- *(gate)* say 2Do cannot show the repeat kinds it misreads, and follow the verified matrix
+- choosing the type a task already declares writes nothing
+- *(tui)* say that emptying a repeating task's repeat removes it
+- *(gate)* setting, removing or reshaping a repeat needs the repeat rows
+- *(core)* keep the original repeat count when a repeat edit leaves the ending unchanged
+- *(repeatinput)* split a short period on a character, not a byte
+- *(gate)* refuse an interval on a repeat on set weekdays
+- *(store)* hold the parent when creating an item
+- *(store)* rescan a task's items before changing its type
+- *(gate)* refuse changing the interval of an Nth-weekday repeat
+- *(gate)* say why reopening an ended series is refused before the matrix rows
+- *(gate)* refuse completing a recurring project that ends or repeats from completion
+- *(core)* write 2Do's own code 6 for a last-weekday repeat
+- *(store)* treat ending a series in place as a repeat completion
+- *(core)* complete every repeat kind as the phone does
+- *(gate)* check a reshaped repeat against its repeat row, and tidy the matrix and docs
+- *(core)* refuse writing a repeat without 2Do's JSON metadata
+- *(core)* close gate holes in repeats without a due, saves that move, and closed parents
+- *(core)* refuse creating parents, items and repeats until verified
+- *(core)* keep an existing series id when setting a repeat
+
 ## [0.1.1](https://github.com/bwilczynski/twydo/compare/v0.1.0...v0.1.1) - 2026-11-03
 
 ### Fixed
