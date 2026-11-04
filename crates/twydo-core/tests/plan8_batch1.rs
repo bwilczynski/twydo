@@ -600,6 +600,7 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "110-twydo-second-reset-reshape-and-end",
         "111-twydo-ended-originals-reopened",
         "112-twydo-second-round-upload",
+        "120-phone-second-round-followup",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -611,7 +612,7 @@ fn every_batch1_resource_roundtrips_byte_equal() {
 /// Exercise the same writers against the captured Twydo upload and the phone's subsequent
 /// edits/completions. The phone is acting on Twydo-created series identities here.
 #[test]
-fn first_twydo_upload_and_phone_followup_match_the_writers() {
+fn twydo_uploads_and_phone_followups_match_the_writers() {
     const LOCAL: &str = "070-twydo-first-transitions";
     const UPLOADED: &str = "071-twydo-first-upload";
     const PHONE: &str = "080-phone-check-twydo-first";
@@ -624,16 +625,24 @@ fn first_twydo_upload_and_phone_followup_match_the_writers() {
             .0
             .clone()
     };
-    for (from, to, edits) in [
+    for (from, to, edits, copy_count) in [
         (
             HISTORY,
             LOCAL,
             [("FCb", "monthly"), ("RDb", "daily"), ("RYb", "yearly")],
+            1,
         ),
         (
             UPLOADED,
             PHONE,
-            [("FCb", "note"), ("RDb", "3d"), ("RYb", "2y")],
+            [("FCb", "note-x"), ("RDb", "3d"), ("RYb", "2y")],
+            1,
+        ),
+        (
+            "112-twydo-second-round-upload",
+            "120-phone-second-round-followup",
+            [("FCb", "note-y"), ("RDb", "daily"), ("RYb", "yearly")],
+            0,
         ),
     ] {
         for (title, text) in edits {
@@ -641,8 +650,8 @@ fn first_twydo_upload_and_phone_followup_match_the_writers() {
             let before = cal(from, &id);
             let want = cal(to, &id);
             let now = dtstamp(&want);
-            let change = if text == "note" {
-                Change::Description(Some("x".into()))
+            let change = if let Some(note) = text.strip_prefix("note-") {
+                Change::Description(Some(note.into()))
             } else {
                 Change::Repeat(twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap())
             };
@@ -668,9 +677,13 @@ fn first_twydo_upload_and_phone_followup_match_the_writers() {
                         && todo(c).prop("SUMMARY").unwrap().value == title
                 })
                 .collect();
-            assert_eq!(copies.len(), 1, "{title}: one completed occurrence");
-            let (copy_id, want_copy) = copies[0];
-            let now = completed(want_copy);
+            assert_eq!(copies.len(), copy_count, "{title} {to}: history count");
+            let now = copies
+                .first()
+                .map_or_else(|| completed(&after_files[&id]), |(_, c)| completed(c));
+            let copy_id = copies
+                .first()
+                .map_or("0123456789abcdef0123456789abcdef", |(id, _)| id.as_str());
             let (live, copy) =
                 edit::complete_recurring(&before_files[&id], now, now.date_naive(), copy_id)
                     .unwrap();
@@ -680,12 +693,16 @@ fn first_twydo_upload_and_phone_followup_match_the_writers() {
                 &after_files[&id],
                 &BTreeMap::new(),
             );
-            same(
-                &format!("{title} {to} history"),
-                &copy.unwrap(),
-                want_copy,
-                &BTreeMap::new(),
-            );
+            match (copy, copies.first()) {
+                (Some(got), Some((_, want))) => same(
+                    &format!("{title} {to} history"),
+                    &got,
+                    want,
+                    &BTreeMap::new(),
+                ),
+                (None, None) => {}
+                _ => panic!("{title} {to}: incorrect history creation"),
+            }
             stamped(&live, now);
             preserved_created(&before_files[&id], &live);
         }

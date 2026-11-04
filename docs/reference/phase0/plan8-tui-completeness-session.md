@@ -631,3 +631,28 @@ at both intermediate states under explicit generated-history identity mappings, 
 five initial journal entries (8/1/1/1/1 resources) plus two single-resource reopen entries,
 and asserts exact upload preservation. Actual phone inspection/follow-up is still pending;
 no embedded operation/rule verdict is promoted by this local/upload checkpoint.
+
+### 120 — phone accepts the second reset, reshaped repeats and Twydo-ended reopen
+
+The user completed the requested inspection and follow-up: FCb note `x` → `y`, RDb weekly →
+daily, RYb monthly → yearly, and one completion each of Twydo-reopened U1b/U2b. Normal sync
+succeeded. Capture `120-phone-second-round-followup` has 40 resources in A, zero in B; exactly
+those five live originals changed, with no created/deleted resources. All a twins, checklist
+items, earlier history copies, other synthetic resources and unrelated production bytes remain
+unchanged. Privacy scans passed before copying these synthetic captures into the repository.
+
+- **FCb:** the phone accepts the second family reset and edits its note while retaining
+  monthly recurrence, February 10 due and open parent/items.
+- **RDb / RYb:** the phone accepts Twydo's weekly/monthly reshaping and switches back to
+  daily/yearly, preserving December 7 due and the Twydo-created series identities.
+- **U1b / U2b:** completing Twydo-reopened final originals ends them in place again, due
+  November 20 / March 7, retaining RRULE and all end metadata, without extra history. This
+  provides the post-reopen phone execution check for Twydo's narrow ended-until reopen writer.
+- `plan8_batch1.rs` extends the writer/capture comparison to these phone return edits and
+  final completions, preserving completion instants and comparing recurrence/identity/end
+  metadata. Embedded matrix verdicts are unchanged at this evidence checkpoint.
+
+Next proposed writer round: change FCb monthly → weekly, remove RDb/RYb repeats, and reopen
+only the earliest b-twin until history copies (U1b due November 18, U2b due January 7), leaving
+the ended originals completed. Obtain explicit approval before these new synthetic writes
+and sync. Checklist repeat removal and verified-mode TUI acceptance still follow.
