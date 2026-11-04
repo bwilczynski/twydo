@@ -212,7 +212,11 @@ mod tests {
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
         assert_eq!(m.operation.len(), 101);
+        // Verified in the Plan 7 session B: baseline and both Twydo round trips.
         let e = m.operation("from-completion", "create").unwrap();
+        assert_eq!(e.iphone_baseline, Verdict::Pass);
+        // Still unverified: a repeat on a checklist (no baseline at all).
+        let e = m.operation("checklist", "repeat").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Unverified);
         assert!(m.edge_case(&m.edge_case[0].id).is_some());
         assert!(m.operation("nope", "create").is_none());

@@ -180,6 +180,9 @@ pub fn check(
         (None, _) => unreachable!("only a create has no target"),
     };
 
+    // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
+    written_rule(snap, m, target, op)?;
+
     // Rule 3: matrix rows for every case the op touches.
     let name = op_name(op);
     for c in op_cases(snap, target, cases, op) {
@@ -207,9 +210,6 @@ pub fn check(
     {
         operation_row(m, mode, case, "convert")?;
     }
-
-    // Rule 4: a repeat rule Twydo writes or changes.
-    written_rule(snap, m, target, op)?;
 
     let Some(i) = target else {
         return Ok(());
@@ -547,16 +547,26 @@ fn written_rule(
         }
         _ => return Ok(()),
     };
-    let not_verified = |class: &str| blocked(format!("{class} repeats are not verified yet"));
-    if let Some(c) = old
-        && combined_verdicts(m, &c).2 != Verdict::Pass
-    {
-        return not_verified(&c);
+    // A `fail` verdict is not "not verified yet": the phone misreads the rule.
+    let refuse = |class: &str, edit: Verdict| {
+        if edit == Verdict::Fail {
+            blocked(format!(
+                "{class} repeats are not supported by 2Do on the iPhone"
+            ))
+        } else {
+            blocked(format!("{class} repeats are not verified yet"))
+        }
+    };
+    if let Some(c) = old {
+        let edit = combined_verdicts(m, &c).2;
+        if edit != Verdict::Pass {
+            return refuse(&c, edit);
+        }
     }
     if let Some(c) = new {
         let (preserve, _, edit) = combined_verdicts(m, &c);
         if preserve != Verdict::Pass || edit != Verdict::Pass {
-            return not_verified(&c);
+            return refuse(&c, edit);
         }
     }
     Ok(())

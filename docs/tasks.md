@@ -34,8 +34,9 @@ selector does:
   finish the items first.
 - Converting to the type it already has does nothing.
 
-In verified mode most conversions are refused until Twydo's own writes are checked on the phone
-([compatibility.md](compatibility.md#verified-mode)).
+Twydo's conversions were written and shown right on the iPhone, but in verified mode they are
+still refused (`… is not verified yet (iphone_to_twydo)`) until the phone's own changes to a
+converted task are checked too ([compatibility.md](compatibility.md#verified-mode)).
 
 To fill a parent, `a` adds an item (on a plain task it asks first whether to make it a project
 or a checklist). A checklist's items have no dates, repeat or alerts of their own.
@@ -77,16 +78,26 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 ## Repeats
 
 A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
-(`Every Mon`). 2Do can express many rules; Twydo reads all of them and can write all of them, but in the default verified mode
-it **edits only monthly tasks on a day from 1 to 28 and yearly tasks**, and of their repeat only
-the interval (every 2 months instead of every month), until the rest is checked against the
-iPhone. Setting a repeat on a task, removing one, or changing its kind, "from completion" or end
-is refused in verified mode, for example `changing the repeat rule of one-time tasks is not
-verified yet (twydo_to_iphone)`: the iPhone's own writes are captured, Twydo's are not checked on
-the phone yet. Other repeats (daily, weekly, on set weekdays, the 29th–31st, the
-last day of the month, "the second Tuesday", February 29, repeat from completion, repeats with an
-end) are shown, and a write to them, including setting one, is refused with the reason, for
-example `weekdays-set repeats are not verified yet`. `tdo check` lists the repeat kinds in your data and whether each is verified.
+(`Every Mon`). 2Do can express many rules and Twydo reads all of them. In the default verified
+mode, **creating** a task with any repeat but the three below is allowed (daily, weekly, on set
+weekdays, monthly on a day or the Nth weekday, yearly including February 29, repeat from
+completion, with an end by count or date), and so is creating a checklist, a project, a
+recurring project and their items. **Editing** the interval of an existing repeat is allowed for
+monthly (day 1 to 28) and yearly tasks. Setting a repeat on a task, removing one, or changing its
+kind, "from completion" or end is written correctly (the iPhone showed each right) but is still
+refused in verified mode, for example `changing the repeat rule of one-time tasks is not
+verified yet (iphone_to_twydo)`, until the phone's own changes to such a task are checked.
+
+**Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
+Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
+(the last day shows as plain monthly, the last weekday as "every workday", the weekend day as
+"every weekend day") and its picker cannot create them. Twydo shows them when it finds them, but
+refuses to write them in every mode, for example `months-last-day repeats are not supported by
+2Do on the iPhone`.
+
+**Completing** a daily, weekly or Nth-weekday repeat is not supported yet: the gate refuses it
+and nothing is written. Complete those on the iPhone for now. `tdo check` lists the repeat kinds
+in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
 
@@ -141,7 +152,8 @@ Modifiers, after any rule: `after done` (count from the completion date), `until
 - The field never names a day of the month: monthly and yearly repeats follow the due date, so
   set the day there.
 - `last day`, `last weekday` and `1st weekend day` can be typed, but the iPhone cannot create
-  them (it offers "last Monday" and so on instead), so they stay unverified.
+  them (it offers "last Monday" and so on instead), and Twydo refuses to write them (see
+  [Repeats](#repeats)).
 
 ## Views and date groups
 

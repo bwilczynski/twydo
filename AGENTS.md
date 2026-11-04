@@ -48,10 +48,15 @@ app replacing 2Do for one user, plan by plan.
    card, type changes `ct`/`cp`/`cc`, all repeat kinds; plan
    `docs/superpowers/plans/2026-11-03-plan-7-add-and-reshape.md`, design
    `docs/superpowers/specs/2026-11-03-tui-add-and-structure-design.md`, iPhone capture in
-   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)). **Still pending:**
-   the phone verification of Twydo's own writes (Plan 7 Task 13), so verified mode refuses most of
-   the new writes until it is done.
-   Next on the roadmap: that phone verification, then the design's later features (indent and
+   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)). Task 13, the phone
+   verification of Twydo's own writes, is done (session B, "Results B" in the capture page): verified
+   mode now creates checklists, projects, recurring projects and items, and creates every repeat
+   kind except the three 2Do 3.91 misreads (last day, last weekday, Nth weekend day; rule `edit` =
+   `fail`, never written). Setting or reshaping a repeat and converting a type stay refused in
+   verified mode only for their `iphone_to_twydo` column. **Follow-up:** completing daily,
+   weekly and Nth-weekday repeats (the gate refuses them; their `execute` verdicts are
+   unverified), and verifying `iphone_to_twydo` for `repeat` and `convert`.
+   Next on the roadmap: that follow-up, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
    parser), manual order `J`/`K`, or Plan 2 (notifier). Write the plan first.

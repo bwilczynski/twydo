@@ -34,9 +34,12 @@ the rest with a reason, so the phone never gets something it would misread.
   with the title); today the title goes in the row and dates and repeats in the card
 - Desktop notifications for alerts, and editing alerts
 - Manual ordering, and creating or renaming lists
-- Setting or removing a repeat, writing to repeats other than monthly and yearly (beyond their
-  interval), and adding projects, checklists and items,
-  in verified mode: Twydo can write them, but refuses until its writes are checked on the phone
+- Setting, removing or reshaping a repeat, and changing a task's type, in verified mode: Twydo
+  can write them, but refuses until the iPhone's reading of them is checked too
+- Completing daily, weekly and Nth-weekday repeats (Twydo refuses; monthly, yearly and from
+  completion work)
+- Repeats on the last day of the month, the last weekday and the Nth weekend day: the iPhone
+  (2Do 3.91) misreads them, so Twydo shows them but never writes them
 - Prebuilt releases (build from source for now)
 - macOS is expected to work but is not tested yet
 

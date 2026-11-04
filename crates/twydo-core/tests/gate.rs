@@ -265,19 +265,24 @@ fn create_item_needs_family_create_row() {
         check(&s, &m, WriteMode::Verified, &op, today()),
         blocked("create for project-recurring-child tasks is not verified yet (iphone_baseline)")
     );
-    // The shipped matrix has not verified Twydo's new items yet.
-    let got = check(
-        &s,
-        Matrix::embedded(),
-        WriteMode::Verified,
-        &Op::Create(item("gate-checklist")),
-        today(),
+    // The shipped matrix has verified Twydo's new items: an item of a checklist is allowed.
+    assert_eq!(
+        check(
+            &s,
+            Matrix::embedded(),
+            WriteMode::Verified,
+            &Op::Create(item("gate-checklist")),
+            today()
+        ),
+        Ok(())
     );
+    // A repeating item of a plain project is not verified yet.
+    let got = check(&s, Matrix::embedded(), WriteMode::Verified, &op, today());
     let Err(Blocked(why)) = got else {
         panic!("allowed: {got:?}")
     };
     assert!(
-        why.ends_with("is not verified yet (twydo_to_iphone)"),
+        why.starts_with("create for project-recurring-child tasks is not verified yet"),
         "{why}"
     );
 }
@@ -614,7 +619,8 @@ fn convert_needs_convert_row() {
         ),
         blocked(NESTED)
     );
-    // The embedded matrix carries the rows, unverified both ways for Twydo.
+    // The embedded matrix carries the rows: Twydo's write was verified, the phone acting on
+    // the result (`iphone_to_twydo`) was not.
     assert_eq!(
         check(
             &s,
@@ -623,7 +629,7 @@ fn convert_needs_convert_row() {
             &kind("gate-nodue", Checklist),
             today()
         ),
-        blocked("converting a task to a checklist is not verified yet (twydo_to_iphone)")
+        blocked("converting a task to a checklist is not verified yet (iphone_to_twydo)")
     );
     assert_eq!(
         check(
@@ -1779,13 +1785,13 @@ fn embedded_verified_refuses_repeat_writes_the_phone_never_checked() {
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
     let one_time =
-        "changing the repeat rule of one-time tasks is not verified yet (twydo_to_iphone)";
+        "changing the repeat rule of one-time tasks is not verified yet (iphone_to_twydo)";
     for text in ["monthly", "yearly", "3m"] {
         let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
         assert_eq!(at(&op), blocked(one_time), "{text}");
     }
     // Removing a monthly repeat, changing it to another class or from completion.
-    let monthly = "changing the repeat rule of monthly tasks is not verified yet (twydo_to_iphone)";
+    let monthly = "changing the repeat rule of monthly tasks is not verified yet (iphone_to_twydo)";
     for spec in [None, Some(repeat("yearly"))] {
         let op = edit("gate-monthly", vec![Change::Repeat(spec.clone())]);
         assert_eq!(at(&op), blocked(monthly), "{spec:?}");
@@ -1877,4 +1883,44 @@ fn repeat_rows_with_a_baseline_pass_in_test_mode() {
         ),
     );
     assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
+}
+
+/// The three kinds 2Do 3.91 on the iPhone misreads (rule `edit` = `fail`): Twydo reads them
+/// but never writes them, and the refusal says so rather than "not verified yet".
+#[test]
+fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
+    let s = snap();
+    let m = Matrix::embedded();
+    let due = Some(Due::Date(date(2026, 11, 10)));
+    for (text, class) in [
+        ("last day", "months-last-day"),
+        ("last weekday", "months-nth-workday"),
+        ("1st weekend day", "months-nth-weekend-day"),
+    ] {
+        let want = blocked(&format!(
+            "{class} repeats are not supported by 2Do on the iPhone"
+        ));
+        let create = Op::Create(NewTask {
+            due,
+            repeat: Some(repeat(text)),
+            ..NewTask::plain("inbox", "Synthetic repeat")
+        });
+        assert_eq!(
+            check(&s, m, WriteMode::Verified, &create, today()),
+            want,
+            "create {text}"
+        );
+        let set = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
+        assert_eq!(
+            check(&s, m, WriteMode::Verified, &set, today()),
+            want,
+            "edit {text}"
+        );
+    }
+    // A rule that is merely unverified keeps the old wording.
+    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
+    let Err(Blocked(why)) = check(&s, m, WriteMode::Verified, &op, today()) else {
+        panic!("allowed")
+    };
+    assert!(!why.contains("not supported by 2Do on the iPhone"), "{why}");
 }
