@@ -1252,15 +1252,15 @@ evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0
 
 [[edge_case]]
 id = "monthly-31st"
-observed = "Not run in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription) was available."
-verdict = "unverified"
-evidence = []
+observed = "Plan 7 session C, M31 twins: Jan 31 -> Feb 28 -> Mar 28, with a history copy each time; 2Do keeps no memory of the 31st. Twydo matches both phone completions (edit_complete.rs twin_monthly_on_the_31st_matches_the_phone_twice)."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
 
 [[edge_case]]
 id = "yearly-feb-29"
-observed = "Not run in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription) was available."
-verdict = "unverified"
-evidence = []
+observed = "Plan 7 session C, Y29 twins: yearly due 2028-02-29 advances to 2029-02-28 with a history copy. Twydo matches the phone (edit_complete.rs twin_yearly_on_29_feb_matches_the_phone)."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
 
 [[edge_case]]
 id = "missing-fifth-weekday"
@@ -1270,21 +1270,21 @@ evidence = []
 
 [[edge_case]]
 id = "from-completion-anchor"
-observed = "Not run in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription) was available."
-verdict = "unverified"
-evidence = []
+observed = "Plan 7 session C, FC/FS twins: monthly due Dec 7 completed Nov 4 advances to Dec 4, even with a later start Dec 20; start moves by the due-date delta to Dec 17. Twydo matches the phone (edit_complete.rs twin_from_completion_matches_the_phone and twin_from_completion_with_a_later_start_matches_the_phone). This does not verify zoned due times or other refused date shapes."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
 
 [[edge_case]]
 id = "end-after-n"
-observed = "Not run in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription) was available."
-verdict = "unverified"
-evidence = []
+observed = "Plan 7 session B, CT: COUNT=3 -> 2 and RecurrenceEndRepetitions counts down; the history copy's end fields are zeroed (edit_complete.rs count_counts_down). Session C, C1 twins: COUNT=1 completes in place, keeping RRULE and metadata, with no copy (twin_count_last_occurrence_matches_the_phone). Recurring project ends and reopening an ended series are not covered."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape", "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
 
 [[edge_case]]
 id = "end-on-date"
-observed = "Not run in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription) was available."
+observed = "Partially captured in Plan 7 session C, UN twins: the next monthly date was past the end, so the last occurrence completed in place with RRULE and metadata kept and no history copy (edit_complete.rs twin_until_last_occurrence_matches_the_phone). No capture covers continuation/history end fields or advancing exactly onto the end date; stays unverified, as does mod:until.execute."
 verdict = "unverified"
-evidence = []
+evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
 
 [[edge_case]]
 id = "parent-mixed-children"

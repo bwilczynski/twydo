@@ -2300,3 +2300,46 @@ fn interval_on_a_weekday_set_repeat_is_refused() {
         );
     }
 }
+
+/// Sessions B/C already supply fixture-comparison tests for these edges in edit_complete.rs.
+/// Keep the summary records aligned without promoting the only partially captured edges.
+#[test]
+fn embedded_edge_records_match_existing_completion_captures() {
+    use twydo_core::compat::Verdict;
+
+    let m = Matrix::embedded();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (id, evidence) in [
+        (
+            "monthly-31st",
+            "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again",
+        ),
+        (
+            "yearly-feb-29",
+            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
+        ),
+        (
+            "from-completion-anchor",
+            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
+        ),
+        (
+            "end-after-n",
+            "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act",
+        ),
+    ] {
+        let edge = m.edge_case(id).unwrap();
+        assert_eq!(edge.verdict, Verdict::Pass, "{id}");
+        assert!(edge.evidence.iter().any(|e| e == evidence), "{id}");
+        for path in &edge.evidence {
+            assert!(root.join(path).is_dir(), "{id}: {path}");
+        }
+    }
+    for id in ["end-on-date", "missing-fifth-weekday"] {
+        assert_eq!(
+            m.edge_case(id).unwrap().verdict,
+            Verdict::Unverified,
+            "{id}"
+        );
+    }
+    assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Unverified);
+}
