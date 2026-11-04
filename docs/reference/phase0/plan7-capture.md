@@ -298,22 +298,74 @@ Dates in 2026 unless given. Each kind is seeded as `<name>a` and `<name>b`.
 Where a `b` differs from its `a`, the phone's version wins: Twydo's rule is fixed with a test
 from the capture, and that kind stays refused until it matches.
 
-## Results C (summary; details added with Task 15's matrix changes)
+## Results C
 
 Session 2026-11-04, iPhone 2Do 3.91, fixtures in `fixtures/phase0/v1/plan7-twydo-list2/` (an
-extra step `04-phone-m31-again`: the phone's second completion of `M31a`, which round 01 missed).
-Twydo read every round with no warnings, nothing blocked. Production afterwards was
-byte-for-byte the backup taken before the session.
+extra step `04-phone-m31-again`: the phone's second completion of `M31a`, which round 01 missed;
+the user also checked `E1x`–`E4` there). Twydo read every round with no warnings, nothing
+blocked. Production afterwards was byte-for-byte the backup taken before the session.
 
-- Comparing each twin's next date, history copy, start date and end fields: Twydo's completion
-  matched the phone's for daily, every 3 days, weekly, every 2 weeks, Mon and Thu, work days,
-  2nd Tuesday, last Friday (Dec 25 → Jan 29), monthly on the 31st (Jan 31 → Feb 28 → Mar 28:
-  no memory of the 31st), yearly on 29 February (→ 2029-02-28), from completion, `1 times` and
-  `until` (the last occurrence is completed in place, `RRULE` kept, no copy), and a due date
-  off its rule (Mon/Thu due Wed Dec 9 → Thu Dec 10).
-- **From completion with a start date later than the completion day** (`FS`): the phone counts
-  from the completion day and ignores the start (due Dec 7 completed Nov 4 → Dec 4), and moves
-  the start by the same number of days (Dec 20 → Dec 17). Twydo counted from the start date;
-  fixed in Task 15.
-- Twydo's edits of existing daily and weekly tasks (`E1` due +1 day and renamed, `E2` every 2
-  weeks, `E3` weekly → monthly, `E4` repeat removed) showed right on the phone.
+**Twin comparison.** For each kind, a test completes the `b` twin as seeded (`00-seed`) with
+Twydo's code, at the phone's stamp, and compares the live task and the history copy with the
+phone's result for the `a` twin (`01-phone-complete`; `04-phone-m31-again` for `M31`'s second
+completion). Left out: the stamps (`DTSTAMP`, `LAST-MODIFIED`, `COMPLETED`, checked to be Twydo's
+`now`), `CREATED` (the twins were seeded seconds apart, and the phone gives a copy the time it
+first received the task), the `a`/`b` UID (also in `RUID`) and title, and the phone's layout
+lines (`PRODID`, `X-2DOAPP-SYNC-IMAGE`/`-AUDIO`, `X-2DOAPP-AUDIO-DURATION`). The phone also
+rewrites the property order and the JSON key order of a file it changes; lines are compared as a
+set and the JSON as data. Tests: `twin_*` in `crates/twydo-core/tests/edit_complete.rs`.
+
+| Twin | Rule | Phone's result (`a`) | Twydo (`b`) |
+|---|---|---|---|
+| `D1` | daily | Dec 7 → Dec 8, copy | equal |
+| `D3` | every 3 days | Dec 7 → Dec 10, copy | equal |
+| `W1` | weekly | Dec 7 → Dec 14, copy | equal |
+| `W2` | every 2 weeks | Dec 7 → Dec 21, copy | equal |
+| `WD` | Mon, Thu | Mon Dec 7 → Thu Dec 10, copy | equal |
+| `WK` | work days | Mon Dec 7 → Tue Dec 8, copy | equal |
+| `OR` | Mon, Thu, due Wed Dec 9 | → Thu Dec 10, copy | equal |
+| `N2` | 2nd Tuesday | Dec 8 → Jan 12, copy | equal |
+| `LF` | last Friday | Dec 25 → Jan 29, copy; JSON `RecurrenceValue` -1 → **6** | differed, fixed |
+| `M31` | monthly, due Jan 31 | → Feb 28 → Mar 28 (no memory of the 31st), a copy each | equal, both |
+| `Y29` | yearly, due 2028-02-29 | → 2029-02-28, copy | equal |
+| `FC` | monthly after done | due Dec 7, done Nov 4 → Dec 4, copy | equal |
+| `FS` | monthly after done, start Dec 20 | due → Dec 4, start → Dec 17, copy | differed, fixed |
+| `C1` | monthly, 1 time | completed in place: `RRULE`, due and JSON kept, no copy | equal |
+| `UN` | monthly until Dec 20 | completed in place (Jan 7 is past the end), no copy | equal |
+
+**Fixed in Task 15** (the phone wins):
+
+- **From completion with a later start date** (`FS`): the phone counts from the completion day
+  and ignores the start (due Dec 7 completed Nov 4 → Dec 4), and moves the start by as many
+  days as the due (Dec 20 → Dec 17). Twydo counted from the start date (Jan 20); it now counts
+  from the completion day, in `complete_recurring` and the gate alike.
+- **"Last" in the Nth-weekday class** (`LF`): Twydo writes `RecurrenceValue` -1 for a last
+  weekday (shown right by the phone, session B); the phone's own code is 6 (as in session A's
+  `R09` trace), and it rewrote -1 to 6 on the live task when it completed `LFa`. Twydo's
+  completion now writes 6 too, and accepts 6 when checking the metadata, so a last-weekday task
+  the phone completed once can be completed in Twydo. Creating one still writes -1.
+- Also from the Task 14 review: an `UNTIL` must name the UTC day of JSON `RecurrenceEndDate`
+  (2Do writes noon UTC of the end day), or completing is refused; and the undo of a completion
+  that ended a series in place counts as a repeat completion (the undo edge case applies), while
+  reopening such a task is refused with a pointer to undo, as no capture shows what 2Do does.
+
+**Not covered:** the phone's history copy of an "until" series that goes on (`UN` ended at
+once); Twydo drops `RecurrenceEndDate` from the copy as `CT`'s copy drops the count (session B).
+Reopening the last occurrence of an ended series. A recurring project's last occurrence.
+
+**Edits** (`03-twydo-edit`, checked on the phone in `04-phone-m31-again`): `E1` due +1 day and
+renamed `E1x`, `E2` every 2 weeks, `E3` weekly → monthly, `E4` repeat removed all showed right.
+
+**Matrix.** Rule `execute` = `pass` for `days`, `weeks`, `weekdays-set`, `months-day-29-31`,
+`months-nth-weekday`, `years-feb-29`, `mod:from-completion`, `mod:count` (with session B's `CT`
+for counting down) and `mod:until`, each citing the twins above. Operation rows: `daily` and
+`weekly` `complete` pass every column (the phone completed the `a` twins, Twydo read them back,
+and Twydo's `b` result equals the phone's own completion; the user saw no difference between the
+twins); `from-completion` `complete` gets `twydo_to_iphone` = `pass`; `daily` and `weekly`
+`edit` get `twydo_to_iphone` = `pass` (`E1`, `E2`). The `weekly` and `monthly` `repeat` rows
+already passed; their notes now cite `E3` and `E4`. In verified mode with the shipped matrix,
+completing every kind Twydo creates is allowed, as is editing existing daily and weekly tasks,
+weekly → monthly and removing a weekly repeat (`embedded_verified_completes_every_kind_session_c_verified`
+in `crates/twydo-core/tests/gate.rs`). Still refused: completing the three kinds the phone
+misreads, reshaping to daily, yearly or from completion, and editing an existing from-completion
+task.

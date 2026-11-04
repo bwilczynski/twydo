@@ -222,7 +222,7 @@ the rule and ends in `(kept)`, and saving leaves the rule alone unless you type 
 The status line says why, and nothing is written:
 
 - **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone, for
-  example `weekdays-set repeats are not verified yet`, or `changing the repeat rule of yearly
+  example `months-last-day repeats are not verified yet`, or `changing the repeat rule of yearly
   tasks is not verified yet (twydo_to_iphone)` for setting a yearly repeat. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… is not supported by 2Do on the iPhone`**: the repeat is one of the three kinds 2Do 3.91

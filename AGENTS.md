@@ -55,10 +55,19 @@ app replacing 2Do for one user, plan by plan.
    `fail`, never written). Type changes are allowed (task to checklist/project, checklist to
    project, empty parent to task); setting/removing/changing weekly and monthly repeats is allowed; daily, yearly,
    from-completion and project/checklist repeat changes stay refused (their `repeat` rows lack
-   verdicts). **Follow-up:** completing every repeat but monthly (day 1 to 28) and
-   yearly without an end (daily, weekly, weekdays, Nth weekday, 29th to 31st, 29 Feb, from
-   completion, count/until; their `execute` verdicts are unverified, so the gate refuses), and verifying the remaining `repeat` rows and empty project to checklist.
-   Next on the roadmap: that follow-up, then the design's later features (indent and
+   verdicts). Tasks 14 and 15 are done too (session C, "Results C" in the capture page): Twydo
+   completes every repeat kind it creates exactly as the phone does (twin byte-compares in
+   `crates/twydo-core/tests/edit_complete.rs`), so verified mode completes them all, and edits
+   existing daily and weekly tasks (weekly to monthly and weekly removal included).
+   **Follow-ups:** the remaining `repeat` rows (daily, yearly, from-completion, projects,
+   checklists), editing existing from-completion tasks, empty project to checklist; what 2Do does
+   when an ended series' last occurrence is reopened (Twydo refuses, undo works) and the phone's
+   history copy of an "until" series that goes on (Twydo drops `RecurrenceEndDate`, inferred from
+   `COUNT`); whether creating a last-weekday rule should write 2Do's `RecurrenceValue` 6 instead of
+   -1 (the phone rewrites it on completion; Twydo's completion now writes 6); the unused edge
+   cases `monthly-31st`, `yearly-feb-29`, `from-completion-anchor`, `end-after-n`, `end-on-date`
+   could cite session C.
+   Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
    parser), manual order `J`/`K`, or Plan 2 (notifier). Write the plan first.
