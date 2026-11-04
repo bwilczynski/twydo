@@ -231,7 +231,9 @@ git commit -m "docs(phase0): capture 2Do's repeat kinds, conversions and new ite
   `turning a project or checklist with items into a task is not verified yet`.
 - [ ] **Step 2: Run** `cargo test -p twydo-core --test edit_fields kind --test store_family kind` — FAIL.
 - [ ] **Step 3: Implement.** Tokens-format metadata (no JSON) is refused with
-  `changing the type of this task is not supported`.
+  `changing the type of this task is not supported` (since the final review:
+  `this task's 2Do metadata format is read-only`, the one message for every write that needs
+  JSON metadata, `set_repeat` included).
 - [ ] **Step 4: Run** — PASS.
 - [ ] **Step 5: Commit** `feat(core): convert between task, project and checklist`.
 

@@ -937,9 +937,37 @@ fn tokens_metadata_refused() {
         .set_value("@tasktype=0");
     let before = cal.clone();
     let err = apply_changes(&mut cal, &[Change::Kind(TaskKind::Project)], now()).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "changing the type of this task is not supported"
-    );
+    assert_eq!(err.to_string(), READ_ONLY);
     assert_eq!(cal, before);
+}
+
+const READ_ONLY: &str = "this task's 2Do metadata format is read-only";
+
+/// Writing a repeat updates 2Do's codes in the JSON metadata; with tokens or no metadata the
+/// rule would go stale beside them, so it is refused and nothing changes.
+#[test]
+fn repeat_refused_without_json_metadata() {
+    let base = parse(&fixture(P7, "02-phone-repeat-no-due", K1)).unwrap();
+    let mut tokens = base.clone();
+    let todo = tokens.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("X-2DOAPP-METADATA")
+        .unwrap()
+        .set_value("@tasktype=0");
+    let mut absent = base.clone();
+    let todo = absent.root.children_named_mut("VTODO").next().unwrap();
+    todo.remove_props("X-2DOAPP-METADATA");
+    for (what, cal) in [("tokens", tokens), ("absent", absent)] {
+        for change in [
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 7)))),
+                Change::Repeat(Some(spec("weekly"))),
+            ],
+            vec![Change::Repeat(None)],
+        ] {
+            let mut c = cal.clone();
+            let err = apply_changes(&mut c, &change, now()).unwrap_err();
+            assert_eq!(err.to_string(), READ_ONLY, "{what} {change:?}");
+            assert_eq!(c, cal, "{what}");
+        }
+    }
 }
