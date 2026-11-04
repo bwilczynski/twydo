@@ -761,13 +761,15 @@ fn codes_follow_the_2do_table() {
     assert_eq!(codes("FREQ=WEEKLY;BYDAY=MO,TH"), (72, 1));
     assert_eq!(codes("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"), (124, 1));
     assert_eq!(codes("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO"), (64, 2));
-    // Nth weekday of the month: 0x104 Monday .. 0x10A Sunday, value = the ordinal.
+    // Nth weekday of the month: 0x104 Monday .. 0x10A Sunday, value = the ordinal; "last" is
+    // 6, the phone's own code (session A `R09`, session C `LF`), not -1.
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=1MO"), (0x104, 1));
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=2TU"), (0x105, 2));
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=3WE"), (0x106, 3));
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=4TH"), (0x107, 4));
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=5FR"), (0x108, 5));
-    assert_eq!(codes("FREQ=MONTHLY;BYDAY=-1SA"), (0x109, -1));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=-1SA"), (0x109, 6));
+    assert_eq!(codes("FREQ=MONTHLY;BYDAY=-1FR"), (0x108, 6));
     assert_eq!(codes("FREQ=MONTHLY;BYDAY=1SU"), (0x10A, 1));
     // Last day of the month, every N months.
     assert_eq!(codes("FREQ=MONTHLY;BYMONTHDAY=-1"), (0x10B, 1));

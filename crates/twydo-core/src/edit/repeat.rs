@@ -32,6 +32,9 @@ fn is_set(by_day: &[(Option<i8>, Weekday)], set: &[Weekday]) -> bool {
     by_day.len() == set.len() && set.iter().all(|w| by_day.iter().any(|(_, d)| d == w))
 }
 
+/// 2Do's `RecurrenceValue` for "last" in the Nth-weekday class (`0x104`-`0x10A`).
+pub const LAST_ORDINAL: i64 = 6;
+
 /// `(RecurrenceType, RecurrenceValue)` for `r`. A rule 2Do has no code for (such as a plain
 /// `FREQ=MONTHLY` with `BYMONTHDAY=5`) falls back to its plain every-N-units code.
 pub fn twodo_codes(r: &RRule) -> (i64, i64) {
@@ -46,7 +49,9 @@ pub fn twodo_codes(r: &RRule) -> (i64, i64) {
             if r.by_month_day == [-1] {
                 (0x10B, interval)
             } else if let [(Some(n), w)] = r.by_day[..] {
-                (0x104 + i64::from(w.num_days_from_monday()), i64::from(n))
+                // "Last" is 6, the phone's own code (session A `R09`, session C `LF`).
+                let n = if n == -1 { LAST_ORDINAL } else { i64::from(n) };
+                (0x104 + i64::from(w.num_days_from_monday()), n)
             } else if is_set(&r.by_day, &WEEKDAYS) && !r.by_set_pos.is_empty() {
                 (0x10C, pos)
             } else if is_set(&r.by_day, &WEEKEND) && !r.by_set_pos.is_empty() {
