@@ -19,7 +19,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. In the gate this does not unlock editing existing daily or weekly tasks: their task-level edit rows are unverified, so those edits stay refused."
 
 [[rule]]
 class = "weeks"
@@ -27,7 +27,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. In the gate this does not unlock editing existing daily or weekly tasks: their task-level edit rows are unverified, so those edits stay refused."
 
 [[rule]]
 class = "weekdays-set"
@@ -35,7 +35,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. In the gate this does not unlock editing existing daily or weekly tasks: their task-level edit rows are unverified, so those edits stay refused."
 
 [[rule]]
 class = "months-day-1-28"
@@ -51,7 +51,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-last-day"
@@ -67,7 +67,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-nth-workday"
@@ -99,7 +99,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). Only preserve is verified; execute and edit were not exercised. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: not exercised (Twydo cannot complete this class yet; unverified). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "unrecognized"
@@ -115,7 +115,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: the modifier is kept byte-for-byte when Twydo reads and rewrites a task (Plan 7 Twydo creates, fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create). execute: not exercised (unverified). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:count"
@@ -123,7 +123,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: the modifier is kept byte-for-byte when Twydo reads and rewrites a task (Plan 7 Twydo creates, fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create). execute: not exercised (unverified). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:until"
@@ -131,7 +131,7 @@ preserve = "pass"
 execute = "unverified"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit: Plan 7 session B, Twydo wrote it and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+notes = "preserve: the modifier is kept byte-for-byte when Twydo reads and rewrites a task (Plan 7 Twydo creates, fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create). execute: not exercised (unverified). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[operation]]
 case = "one-time"
@@ -934,7 +934,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
+notes = "Plan 7 captured only setting the repeat, not creating a task with it. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
 case = "daily"
@@ -1000,7 +1000,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
-notes = "Not captured yet (Plan 7 captured only setting the repeat). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
+notes = "Plan 7 captured only setting the repeat, not creating a task with it. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
 case = "weekly"
@@ -1165,7 +1165,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
-notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. Changing or removing a weekly repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
+notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. The pass rests on setting weekly on one-time tasks; changing or removing a weekly repeat was not captured and stays refused only because the weekly edit row (an existing weekly task) is unverified. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "monthly"

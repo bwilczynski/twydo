@@ -73,8 +73,9 @@ reading the iPhone's). Reading is never refused: every task is shown.
 To see what is allowed for one task: `tdo op check <uid>` prints each operation with `ok` or the
 reason. To see it for your whole data: `tdo check`.
 
-`[writes] mode = "test"` relaxes the check: it drops the requirement that Twydo's own writes were
-checked on the phone, but still needs the phone's baseline, the rule verdicts and the safety
+`[writes] mode = "test"` relaxes the check: it drops the `twydo_to_iphone` and `iphone_to_twydo`
+columns of the operation rows and the checklist item-dates edge case (both apply only in verified
+mode), but still needs the phone's baseline (`iphone_baseline`), the rule verdicts and the safety
 rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
 separate test account, and must never point at your real data: an unverified write can produce
 something 2Do on the iPhone reads differently. See [config.md](config.md).
@@ -88,7 +89,7 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 | Yearly repeat | ✅ | ✅ | ✅ | — | — | ✅ |
 | Daily repeat | ✅ | — | — | — | — | — |
 | Weekly repeat | ✅ | — | — | — | — | — |
-| Repeat from completion | ✅ | — | ✅ | — | — | — |
+| Repeat from completion | ✅ | — | — | — | — | — |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
