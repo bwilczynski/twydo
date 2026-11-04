@@ -739,3 +739,93 @@ fn interrupted_family_save_is_rolled_forward() {
         .unwrap();
     assert_eq!(got.stage, Stage::Applied);
 }
+
+/// `R` with `from` -> `to` in its text and `meta` set in its JSON metadata, and a matrix
+/// where the weekly case and the rule rows `rules` pass too.
+fn reshaped_r(from: &str, to: &str, meta: &[(&str, i64)], rules: &[&str]) -> (Env, Store) {
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let mut cases = CASES.to_vec();
+    cases.push("weekly");
+    let mut m = common::matrix(
+        &cases,
+        "unverified",
+        &[
+            ("start-due-alarm-offsets", "pass"),
+            ("monthly-15th-three-months-late", "pass"),
+        ],
+    );
+    for class in rules {
+        let extra = Matrix::from_toml_str(&format!(
+            "matrix_version = 1\n[[rule]]\nclass = \"{class}\"\npreserve = \"pass\"\n\
+             execute = \"pass\"\nedit = \"pass\"\n"
+        ))
+        .unwrap();
+        m.rule.extend(extra.rule);
+    }
+    let store = env.store(m);
+    let path = env.file(R);
+    let text = fs::read_to_string(&path).unwrap().replace(from, to);
+    let mut cal = parse(text.as_bytes()).unwrap();
+    {
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut json = twydo_core::model::meta_edit::MetaJson::parse(&p.value).unwrap();
+        for (k, v) in meta {
+            json.set_i64(k, *v);
+        }
+        p.set_value(&json.encode());
+    }
+    fs::write(&path, twydo_core::ical::serialize(&cal)).unwrap();
+    (env, store)
+}
+
+/// Task 14: a recurring project with a new repeat kind advances through the same next date.
+#[test]
+fn weekly_recurring_project_advances() {
+    let (env, mut store) = reshaped_r(
+        "RRULE:FREQ=MONTHLY",
+        "RRULE:FREQ=WEEKLY",
+        &[("RecurrenceType", 257)],
+        &["weeks"],
+    );
+    let before = env.files();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: R.into() }, now())
+        .unwrap();
+    let after = env.files();
+    assert_eq!(after.len(), before.len() + 4);
+    assert_eq!(
+        value(&todo_of(&after[&key(R)]), "DUE").as_deref(),
+        Some("20261222")
+    );
+}
+
+/// Task 14: the last occurrence of a counted recurring project completes the project and its
+/// open items in place, as a plain project (H5); no copies. TO CONFIRM in Task 15 (session C).
+#[test]
+fn last_occurrence_of_recurring_project_completes_the_family() {
+    let (env, mut store) = reshaped_r(
+        "RRULE:FREQ=MONTHLY",
+        "RRULE:FREQ=MONTHLY;COUNT=1",
+        &[
+            ("RecurrenceEndType", 2),
+            ("RecurrenceEndRepetitions", 1),
+            ("RecurrenceEndRepetitionsOrig", 1),
+        ],
+        &["mod:count"],
+    );
+    let before = env.files();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: R.into() }, now())
+        .unwrap();
+    let after = env.files();
+    assert_eq!(after.len(), before.len(), "no copies");
+    let r = todo_of(&after[&key(R)]);
+    assert_eq!(value(&r, "STATUS").as_deref(), Some("COMPLETED"));
+    assert_eq!(value(&r, "DUE").as_deref(), Some("20261215"));
+    assert_eq!(value(&r, "RRULE").as_deref(), Some("FREQ=MONTHLY;COUNT=1"));
+    assert_eq!(status(&after, R2), "COMPLETED");
+    // The items already completed keep their files.
+    assert_eq!(after[&key(R1)], before[&key(R1)]);
+    assert_eq!(after[&key(R3)], before[&key(R3)]);
+}

@@ -20,7 +20,9 @@ pub mod create;
 pub mod family;
 pub mod repeat;
 
-pub use complete::{complete_one_time, complete_recurring, next_due, reopen_one_time};
+pub use complete::{
+    complete_one_time, complete_recurring, completion_base, next_due, reopen_one_time,
+};
 pub use create::{file_name, new_task, new_uid};
 pub use family::{complete_member, drop_member_dates, member_copy, reopen_member};
 

@@ -60,7 +60,7 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, NewTask, Op, next_due};
+use crate::edit::{Change, Due, NewTask, Op, completion_base, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{parse_rrule, rule_class};
@@ -810,7 +810,8 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
 }
 
 /// Rule 5: the repeating completions `complete_recurring` was built for: a date-only or
-/// floating due, a rule [`next_due`] accepts, a JSON `StartDate` (if any) on a UTC midnight
+/// floating due, a rule [`next_due`] accepts (every kind Twydo creates; the rule's `execute`
+/// verdict, checked before, still decides), a JSON `StartDate` (if any) on a UTC midnight
 /// after 1970, no absolute alert and no start-day delay. A due
 /// time, start date or relative alerts need the `start-due-alarm-offsets` edge case to pass;
 /// a next due on or before `today` (a missed occurrence) needs `monthly-15th-three-months-late`.
@@ -831,8 +832,12 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
     };
     let raw = t.rrule.as_deref().unwrap_or_default();
     let rule = parse_rrule(raw).or_else(|e| blocked(format!("unreadable repeat rule: {e}")))?;
-    let next = next_due(due, &rule).or_else(|e| blocked(e.to_string()))?;
     let meta = json_meta(t);
+    let start_secs = meta.as_ref().and_then(|m| m.get_i64("StartDate"));
+    let from = t
+        .from_completion
+        .then(|| completion_base(today, start_secs));
+    let next = next_due(due, &rule, from).or_else(|e| blocked(e.to_string()))?;
     let has_start = t.start.is_some()
         || meta
             .as_ref()
@@ -863,7 +868,8 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
     {
         return blocked("completing a repeating task with a start-day delay is not verified yet");
     }
-    if next <= today && !passes("monthly-15th-three-months-late") {
+    // The last occurrence of an ending series has no next date.
+    if next.is_some_and(|n| n <= today) && !passes("monthly-15th-three-months-late") {
         return blocked(
             "completing a repeating task after a missed occurrence is not verified yet \
              (monthly-15th-three-months-late)",

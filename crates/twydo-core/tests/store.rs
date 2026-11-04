@@ -88,6 +88,48 @@ fn complete_recurring_writes_copy_and_advances_live() {
     );
 }
 
+/// Task 14: completing the last occurrence of a counted series (`COUNT=1`) completes the
+/// task in place: one write, no history copy. TO CONFIRM in Task 15 (session C).
+#[test]
+fn completing_the_last_occurrence_completes_in_place() {
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let mut m = matrix("unverified", "unverified");
+    let count = Matrix::from_toml_str(
+        "matrix_version = 1\n[[rule]]\nclass = \"mod:count\"\npreserve = \"pass\"\n\
+         execute = \"pass\"\nedit = \"pass\"\n",
+    )
+    .unwrap();
+    m.rule.extend(count.rule);
+    let mut store = env.store(m);
+    let path = env.file(E);
+    let text = fs::read_to_string(&path)
+        .unwrap()
+        .replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=MONTHLY;COUNT=1");
+    let mut cal = parse(text.as_bytes()).unwrap();
+    {
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut meta = MetaJson::parse(&p.value).unwrap();
+        meta.set_i64("RecurrenceEndType", 2);
+        meta.set_i64("RecurrenceEndRepetitions", 1);
+        meta.set_i64("RecurrenceEndRepetitionsOrig", 1);
+        p.set_value(&meta.encode());
+    }
+    fs::write(&path, twydo_core::ical::serialize(&cal)).unwrap();
+
+    let before = env.files();
+    store.apply(&env.snap(), &complete(E), now()).unwrap();
+    let after = env.files();
+    assert_eq!(after.len(), before.len(), "no history copy");
+    let live = todo_of(&after[&format!("list1/{E}.ics")]);
+    assert_eq!(value(&live, "STATUS"), "COMPLETED");
+    assert_eq!(value(&live, "RRULE"), "FREQ=MONTHLY;COUNT=1");
+    assert_eq!(value(&live, "DUE"), "20261210");
+    let e = &env.journal()[0];
+    assert_eq!(e.kind, "complete");
+    assert_eq!(e.writes.len(), 1);
+}
+
 #[test]
 fn unchanged_resources_untouched() {
     let (env, mut store) = test_env();

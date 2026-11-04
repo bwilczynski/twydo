@@ -147,7 +147,10 @@ A class can carry `+from-completion` (repeat from the completion date) and `+cou
 - a **history copy**: the task as it was, with a new UID, completed, without `RRULE`, its JSON
   repeat fields set to 0 and `RUID` pointing at the series;
 - the **live task**, same UID, with `DUE` (and its `DTSTART` copy and `StartDate`) moved to the
-  next occurrence.
+  next occurrence, and a `COUNT` (with JSON `RecurrenceEndRepetitions`) one lower.
+
+The copy's JSON end fields are 0 too. When the series ends (`COUNT=1`, or the next date is after
+`UNTIL`), there is no copy: the task itself is completed, its `RRULE` kept.
 
 Completing a repeating project also copies each of its items under the project's history copy.
 

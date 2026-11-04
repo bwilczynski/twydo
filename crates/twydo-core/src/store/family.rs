@@ -157,11 +157,24 @@ impl Store {
     ) -> Result<Plan, WriteError> {
         let parent_uid = snap.tasks[idx].uid.clone();
         let children = self.children(snap, idx)?;
-        if p.repeats {
-            return plan_recurring_complete(parent_uid, p, children, now);
-        }
-        let mut cal = p.cal.clone();
-        complete_one_time(&mut cal, now)?;
+        let cal = if p.repeats {
+            let copy_uid = new_uid();
+            let today = now.with_timezone(&snap.tz()).date_naive();
+            match complete_recurring(&p.cal, now, today, &copy_uid)? {
+                (live, Some(copy)) => {
+                    return plan_recurring_complete(
+                        parent_uid, p, children, live, copy_uid, copy, now,
+                    );
+                }
+                // The last occurrence of an ending series: the project is completed in place
+                // with its open children, as a plain project is.
+                (done, None) => done,
+            }
+        } else {
+            let mut cal = p.cal.clone();
+            complete_one_time(&mut cal, now)?;
+            cal
+        };
         let mut uids = vec![parent_uid];
         let mut writes = vec![p.update(&cal)?];
         let mut holds = Vec::new();
@@ -312,10 +325,11 @@ fn plan_recurring_complete(
     parent_uid: String,
     p: Target,
     children: Vec<Child>,
+    live: ical::Calendar,
+    copy_uid: String,
+    copy: ical::Calendar,
     now: DateTime<Utc>,
 ) -> Result<Plan, WriteError> {
-    let copy_uid = new_uid();
-    let (live, copy) = complete_recurring(&p.cal, now, &copy_uid)?;
     let mut writes = vec![create(&p.collection, &copy_uid, &copy)?];
     let mut uids = vec![parent_uid, copy_uid.clone()];
     let mut updates = vec![p.update(&live)?];

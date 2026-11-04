@@ -1976,3 +1976,41 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
     };
     assert!(!why.contains("not supported by 2Do on the iPhone"), "{why}");
 }
+
+/// Task 14: the gate lets every repeat kind Twydo can create through to completion once its
+/// rule's `execute` verdict and the case's `complete` row pass; the real matrix keeps them
+/// unverified, so verified mode still refuses.
+#[test]
+fn new_repeat_kinds_complete_when_their_verdicts_pass() {
+    let s = snap();
+    let m = cases(
+        &["one-time", "monthly", "weekly", "date-only", "start-date"],
+        "pass",
+        "pass",
+        &["months-day-29-31", "weeks"],
+    );
+    // Monthly on the 31st: Oct 31 -> Nov 30 (no longer refused as a clamp).
+    for mode in [WriteMode::Test, WriteMode::Verified] {
+        assert_eq!(
+            check(&s, &m, mode, &complete("gate-monthly-31"), today()),
+            Ok(()),
+            "{mode:?}"
+        );
+        assert_eq!(
+            check(&s, &m, mode, &complete("gate-weekly"), today()),
+            Ok(()),
+            "{mode:?}"
+        );
+    }
+    let real = Matrix::embedded();
+    assert_eq!(
+        check(
+            &s,
+            real,
+            WriteMode::Verified,
+            &complete("gate-monthly-31"),
+            today()
+        ),
+        blocked("months-day-29-31 repeats are not verified yet")
+    );
+}
