@@ -50,7 +50,8 @@
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
 //!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
-//! 5. the verified shape of a repeating completion;
+//! 5. the verified shape of a repeating completion; a completed repeating task (the last
+//!    occurrence of an ended series, completed in place) is not reopened (use undo);
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
 //!    rule 3 (so the write mode applies).
 
@@ -60,7 +61,7 @@ use chrono::NaiveDate;
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
-use crate::edit::{Change, Due, NewTask, Op, next_due};
+use crate::edit::{Change, Due, NewTask, Op, REOPEN_ENDED, next_due};
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{parse_rrule, rule_class};
@@ -248,6 +249,15 @@ pub fn check(
             }
             recurring_complete_shape(task, m, today)?;
         }
+    }
+
+    // Rule 5b: the last occurrence of an ended series, completed in place, keeps its RRULE;
+    // reopening it is not supported (undo restores it).
+    if let Op::Reopen { .. } = op
+        && task.status == Status::Completed
+        && task.rrule.is_some()
+    {
+        return blocked(REOPEN_ENDED);
     }
 
     // Rule 6: a history copy left by completing a repeat.

@@ -115,13 +115,22 @@ pub fn complete_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), E
     Ok(())
 }
 
+/// Why a completed repeating task (the last occurrence of an ended series, completed in
+/// place) is not reopened: no capture shows what 2Do does with it.
+pub const REOPEN_ENDED: &str =
+    "reopening the last occurrence of an ended repeat is not supported; use undo";
+
 /// Reopen a completed task that does not repeat (H4 as captured). Also reopens a repeat's
 /// history copy, which has no `RRULE`. All or nothing.
 pub fn reopen_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError> {
     let mut work = cal.clone();
     let todo = the_todo(&mut work)?;
     if todo.prop("RRULE").is_some() {
-        return Err(unsupported("reopening a repeating task is not supported"));
+        return Err(unsupported(if state(todo) == State::Completed {
+            REOPEN_ENDED
+        } else {
+            "reopening a repeating task is not supported"
+        }));
     }
     match state(todo) {
         State::Completed => {}
