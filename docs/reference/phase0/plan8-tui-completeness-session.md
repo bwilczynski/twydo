@@ -576,3 +576,28 @@ bytes. Privacy scans passed before copying these synthetic captures into the rep
 Await actual phone inspection of the fixed checklist reset and final originals before claiming
 this device round trip. Later phone follow-ups and Twydo-ended reopen still need their planned
 checks. No operation/rule verdict is promoted merely because local validation/upload passed.
+
+### 100 — phone follow-up after the fixed checklist reset and until endings
+
+The user confirmed the 091 phone inspection, then completed FCb's three live items individually
+and reopened the ended originals U1b/U2b. They reported checked and synced. Normal sync succeeded;
+`100-phone-items-and-ended-reopen` has 36 resources in A, zero in B, with no creations/removals.
+Only those three items and two ended originals changed. All a twins, earlier history copies,
+other synthetic resources and unrelated production bytes remain unchanged.
+
+- **FCb:** all three items are completed, without native dates; their parent remains open,
+  monthly, due January 10 with note `x`, byte-unchanged. This is a phone action on the
+  fixed writer's reset items and confirms manual final-parent completion is still required.
+- **U1b / U2b:** the phone reopens Twydo's completed final originals in place, keeping
+  November 20 / March 7 due, RRULE, series identity and all end metadata. Neither is completed
+  again yet, and no earlier history copy is reopened.
+- `plan8_batch1.rs` replays all five phone actions through the candidate store, compares every
+  resource with the capture, checks one-resource journal entries and unchanged parent bytes.
+  The embedded verified matrix is unchanged; the candidate replay is not a device test of
+  Twydo's own ended-series reopen writer.
+
+Next proposed writer round: complete the all-done FCb parent again, reshape RDb/RYb to
+weekly/monthly, and complete then reopen U1b/U2b with the fixed writer, capturing the
+intermediate completed state before reopen. Obtain explicit approval for these new writes
+and sync before running them. Device rechecks and the remaining repeat-removal/reshape
+steps still precede any broad capability promotion.

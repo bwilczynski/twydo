@@ -596,6 +596,7 @@ fn every_batch1_resource_roundtrips_byte_equal() {
         "080-phone-check-twydo-first",
         "090-twydo-checklist-reset-and-until-end",
         "091-twydo-reset-and-end-upload",
+        "100-phone-items-and-ended-reopen",
     ] {
         let files = step_files(step);
         for (uid, c) in files {
@@ -738,10 +739,10 @@ fn fixed_checklist_reset_and_until_end_match_preupload_capture() {
             .unwrap();
     }
     let journal = env.journal();
-    assert_eq!(
-        journal.iter().map(|e| e.writes.len()).collect::<Vec<_>>(),
-        [8, 1, 1]
-    );
+    // Operations captured within one second can be journal-listed in identity order.
+    let mut write_counts: Vec<_> = journal.iter().map(|e| e.writes.len()).collect();
+    write_counts.sort_unstable();
+    assert_eq!(write_counts, [1, 1, 8]);
     let ids: BTreeMap<_, _> = journal
         .iter()
         .flat_map(|e| &e.writes)
@@ -779,4 +780,87 @@ fn fixed_checklist_reset_and_until_end_match_preupload_capture() {
             "upload preserves {id}"
         );
     }
+}
+
+#[test]
+fn phone_item_completion_and_ended_reopen_after_twydo_reset_match_store() {
+    const BEFORE: &str = "091-twydo-reset-and-end-upload";
+    const AFTER: &str = "100-phone-items-and-ended-reopen";
+    let before = step_files(BEFORE);
+    let want = step_files(AFTER);
+    let uid = |title: &str| {
+        before
+            .iter()
+            .find(|(_, c)| {
+                todo(c).prop("SUMMARY").unwrap().value == title
+                    && if title.starts_with("FCb-") {
+                        todo(c).prop("STATUS").unwrap().value == "NEEDS-ACTION"
+                    } else {
+                        todo(c).prop("RRULE").is_some()
+                    }
+            })
+            .unwrap()
+            .0
+            .clone()
+    };
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
+    let mut store = env.store(candidate());
+    for title in ["FCb-1", "FCb-2", "FCb-3", "U1b", "U2b"] {
+        let id = uid(title);
+        let op = if title.starts_with("FCb-") {
+            Op::Complete { uid: id.clone() }
+        } else {
+            Op::Reopen { uid: id.clone() }
+        };
+        // The phone may stamp several item edits together at sync time. Replay each
+        // completion at its recorded COMPLETED instant, keeping that field exact.
+        let now = if title.starts_with("FCb-") {
+            completed(&want[&id])
+        } else {
+            dtstamp(&want[&id])
+        };
+        store.apply(&env.snap(), &op, now).unwrap();
+        let got = env.files();
+        stamped(&parse(&got[&format!("list1/{id}.ics")]).unwrap(), now);
+    }
+    assert_eq!(
+        env.journal()
+            .iter()
+            .map(|e| e.writes.len())
+            .collect::<Vec<_>>(),
+        [1, 1, 1, 1, 1]
+    );
+    let files = env.files();
+    let tasks: Vec<_> = files
+        .iter()
+        .filter(|(path, _)| path.ends_with(".ics"))
+        .collect();
+    assert_eq!(
+        tasks.len(),
+        want.len(),
+        "no extra history or missing resources"
+    );
+    for (_, bytes) in tasks {
+        let got = parse(bytes).unwrap();
+        let id = &todo(&got).prop("UID").unwrap().value;
+        same(
+            &format!("phone follow-up {id}"),
+            &got,
+            &want[id],
+            &BTreeMap::new(),
+        );
+        preserved_created(&before[id], &got);
+    }
+    let parent = before
+        .iter()
+        .find(|(_, c)| {
+            todo(c).prop("SUMMARY").unwrap().value == "FCb" && todo(c).prop("RRULE").is_some()
+        })
+        .unwrap()
+        .0;
+    assert_eq!(
+        fixture(SCENARIO, BEFORE, parent),
+        fixture(SCENARIO, AFTER, parent),
+        "completing all items leaves the parent byte-unchanged"
+    );
 }
