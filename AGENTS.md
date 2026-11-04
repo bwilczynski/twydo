@@ -78,9 +78,12 @@ app replacing 2Do for one user, plan by plan.
    phone baselines, a local implementation checkpoint, final phone round trips and verified-mode
    TUI acceptance. The user approved two synthetic-only production throwaway lists, confirmed
    a fresh 2Do backup and 2Do 3.91, and batch 1 phone baselines (steps 000–060) are captured.
-   See the session Results: local checklist-reset and narrow until-ended reopen writers/tests
-   are implemented; new Twydo-to-iPhone verdicts and `mod:until.execute` stay unverified until
-   final device rechecks. Private session state/backups are outside git. Do not touch other
+   Batch 1 phone rounds are complete through step 153. Eight guarded operation rows and
+   narrow date-only daily/plain-monthly `mod:until.execute` now pass, with behavior-based
+   core tests and offline verified-mode TUI key/writer acceptance. See the session regression
+   map/local closeout and `docs/compatibility.md` for exact scopes; later Plan 8 batches remain
+   unfinished. The conflicted 130 attempt was resolved using the user's phone versions; clean
+   141–144/151–153 captures supply the final repeat-change/removal/history evidence. Private session state/backups are outside git. Do not touch other
    data, change accounts/global write mode, or delete the test lists without the agreed consent.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),

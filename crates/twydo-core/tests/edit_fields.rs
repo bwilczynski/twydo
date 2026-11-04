@@ -1354,4 +1354,44 @@ mod recurrence_phone_captures {
             );
         }
     }
+    #[test]
+    fn plain_repeat_transitions_preserve_existing_due_start_and_alarm_bytes() {
+        let mut got = cal(SET, RD);
+        let now = dtstamp(&got);
+        edit::apply_changes(
+            &mut got,
+            &[
+                Change::Due(Some(edit::Due::Time(now.naive_utc()))),
+                Change::Start(Some(now.date_naive())),
+            ],
+            now,
+        )
+        .unwrap();
+        for text in ["weekly", "yearly", "none"] {
+            let before = got.clone();
+            let repeat = twydo_core::repeatinput::parse(text, now.date_naive(), &[]).unwrap();
+            edit::apply_changes(&mut got, &[Change::Repeat(repeat)], now).unwrap();
+            for key in ["DUE", "DTSTART"] {
+                assert_eq!(
+                    todo(&before).prop(key),
+                    todo(&got).prop(key),
+                    "{text} {key}"
+                );
+            }
+            assert_eq!(
+                todo(&before).children_named("VALARM").collect::<Vec<_>>(),
+                todo(&got).children_named("VALARM").collect::<Vec<_>>()
+            );
+            let read = |c: &Calendar| {
+                MetaJson::parse(&todo(c).prop("X-2DOAPP-METADATA").unwrap().value).unwrap()
+            };
+            for key in ["duetime", "StartDate", "StartDayDelay"] {
+                assert_eq!(
+                    read(&before).get_i64(key),
+                    read(&got).get_i64(key),
+                    "{text} {key}"
+                );
+            }
+        }
+    }
 }

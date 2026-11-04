@@ -60,7 +60,7 @@
 
 use std::fmt;
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 
 use crate::compat::{Matrix, Verdict, combined_verdicts};
 use crate::config::WriteMode;
@@ -69,7 +69,7 @@ use crate::edit::{
 };
 use crate::ical::value::IcalDateTime;
 use crate::model::meta_edit::MetaJson;
-use crate::model::repeat::{End, parse_rrule, rule_class};
+use crate::model::repeat::{End, Freq, RRule, parse_rrule, rule_class};
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::repeatinput::RepeatSpec;
 use crate::views::{Snapshot, declared_kind, task_rule_class};
@@ -215,6 +215,7 @@ pub fn check(
             || snap.parent(i).is_some()
             || !snap.children(i).is_empty()
             || !ended
+            || !captured_until(snap, i)
         {
             return blocked(REOPEN_ENDED);
         }
@@ -230,9 +231,25 @@ pub fn check(
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
 
+    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
+
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && new_repeat(changes).is_some()
+        && (snap.tasks[i].kind == TaskKind::Checklist
+            || after.is_some_and(|a| matches!(a.family, Some("checklist" | "recurring-checklist"))))
+    {
+        checklist_repeat_shape(&snap.tasks[i], changes)?;
+    }
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && reshaped
+        && (matches!(cases.own, "daily" | "yearly")
+            || after.is_some_and(|a| matches!(a.own, "daily" | "yearly")))
+    {
+        plain_repeat_transition(&snap.tasks[i], changes)?;
+    }
+
     // Rule 3: a pure repeat reshape uses its dedicated evidence. Ordinary fields mixed
     // into the save, and interval-only changes, still require the ordinary edit rows.
-    let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
     let repeat_only = reshaped
         && matches!(op, Op::Edit { changes, .. } if changes.iter().all(|c| matches!(c, Change::Repeat(_))));
     let name = if repeat_only { "repeat" } else { op_name(op) };
@@ -243,7 +260,7 @@ pub fn check(
     // new case is then checked against its `repeat` row instead (a weekly repeat set on a
     // plain task says nothing about editing existing weekly tasks).
     if let Some(a) = after
-        && !reshaped
+        && (!reshaped || !repeat_only)
     {
         for c in std::iter::once(a.own).chain(a.family) {
             operation_row(m, mode, c, "edit")?;
@@ -321,6 +338,36 @@ pub fn check(
                     "completing a recurring checklist with cancelled items is not verified yet",
                 );
             }
+            if cases.family == Some("recurring-checklist")
+                && (!captured_schedule(task)
+                    || !task
+                        .rrule
+                        .as_deref()
+                        .and_then(|r| parse_rrule(r).ok())
+                        .is_some_and(|r| {
+                            plain_rule(&r, &[Freq::Monthly])
+                                && r.end == End::Never
+                                && task
+                                    .due
+                                    .as_ref()
+                                    .is_some_and(|d| d.local_date(snap.tz()).day() <= 28)
+                        }))
+            {
+                return blocked(
+                    "only plain monthly, date-only checklist completion is verified yet",
+                );
+            }
+            if task
+                .rrule
+                .as_deref()
+                .and_then(|r| parse_rrule(r).ok())
+                .is_some_and(|r| matches!(r.end, End::Until(_)))
+                && !captured_until(snap, i)
+            {
+                return blocked(
+                    "until completion is verified only for top-level date-only daily/plain-monthly tasks without starts or alerts",
+                );
+            }
             if execute != Verdict::Pass {
                 return not_verified();
             }
@@ -332,6 +379,16 @@ pub fn check(
     if let Op::Reopen { .. } = op
         && is_history_copy(task)
     {
+        if m.operation("history-copy", "reopen").is_some()
+            && (task.kind != TaskKind::Task
+                || snap.parent(i).is_some()
+                || !snap.children(i).is_empty()
+                || !captured_schedule(task))
+        {
+            return blocked(
+                "history reopening is verified only for top-level date-only task copies without starts or alerts",
+            );
+        }
         let reopen_ok = if m.operation("history-copy", "reopen").is_some() {
             operation_row(m, mode, "history-copy", "reopen").is_ok()
         } else {
@@ -962,6 +1019,109 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
         Some((col, _)) => blocked(format!("{what} is not verified yet ({col})")),
         None => Ok(()),
     }
+}
+
+/// Scheduling context observed in Plan 8 batch 1. Offset evidence from other task/family
+/// shapes must not widen the newly enabled checklist/UNTIL operations.
+fn captured_schedule(t: &Task) -> bool {
+    matches!(t.due, Some(IcalDateTime::Date(_)))
+        && t.start.is_none()
+        && t.alarms.is_empty()
+        && !t.from_completion
+        && json_meta(t).is_some_and(|m| {
+            m.get_i64("StartDate").is_none()
+                && m.get_i64("duetime").is_none()
+                && m.get_i64("StartDayDelay").unwrap_or(0) == 0
+        })
+}
+
+fn plain_rule(r: &RRule, freqs: &[Freq]) -> bool {
+    freqs.contains(&r.freq)
+        && r.interval == 1
+        && r.by_day.is_empty()
+        && r.by_month_day.is_empty()
+        && r.by_month.is_empty()
+        && r.by_set_pos.is_empty()
+        && r.unknown.is_empty()
+}
+
+fn captured_until(snap: &Snapshot, i: usize) -> bool {
+    let t = &snap.tasks[i];
+    t.kind == TaskKind::Task
+        && snap.parent(i).is_none()
+        && snap.children(i).is_empty()
+        && captured_schedule(t)
+        && matches!(
+            task_rule_class(t, snap).as_deref(),
+            Some("days+until" | "months-day-1-28+until")
+        )
+        && t.rrule
+            .as_deref()
+            .and_then(|r| parse_rrule(r).ok())
+            .is_some_and(|r| {
+                plain_rule(&r, &[Freq::Daily, Freq::Monthly])
+                    && matches!(r.end, End::Until(IcalDateTime::Date(_)))
+            })
+}
+
+/// Daily/yearly repeat-change evidence composes with the existing plain weekly/monthly
+/// writer. It does not establish changing endings, completion anchors or weekday shapes.
+fn plain_repeat_transition(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
+    let valid = |r: &RRule, from_completion: bool| {
+        let mut shape = r.clone();
+        shape.interval = 1; // Existing interval encoding is separately verified.
+        !from_completion
+            && r.end == End::Never
+            && plain_rule(
+                &shape,
+                &[Freq::Daily, Freq::Weekly, Freq::Monthly, Freq::Yearly],
+            )
+    };
+    if t.status != Status::Open
+        || !t
+            .rrule
+            .as_deref()
+            .is_none_or(|raw| parse_rrule(raw).is_ok_and(|r| valid(&r, t.from_completion)))
+        || !new_repeat(changes)
+            .flatten()
+            .is_none_or(|r| valid(&r.rule, r.from_completion))
+    {
+        return blocked(
+            "daily/yearly repeat changes are verified only between plain due-anchored rules without an end",
+        );
+    }
+    Ok(())
+}
+
+fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
+    let valid = |r: &RRule, from_completion: bool| {
+        !from_completion
+            && plain_rule(r, &[Freq::Weekly, Freq::Monthly])
+            && r.end == End::Never
+            && (r.freq != Freq::Monthly
+                || matches!(t.due, Some(IcalDateTime::Date(d)) if d.day() <= 28))
+    };
+    let old_ok = t
+        .rrule
+        .as_deref()
+        .is_none_or(|raw| parse_rrule(raw).is_ok_and(|r| valid(&r, t.from_completion)));
+    let new_ok = new_repeat(changes)
+        .flatten()
+        .is_none_or(|r| valid(&r.rule, r.from_completion));
+    if t.kind != TaskKind::Checklist
+        || t.status != Status::Open
+        || !captured_schedule(t)
+        || !old_ok
+        || !new_ok
+        || changes
+            .iter()
+            .any(|c| matches!(c, Change::Kind(k) if *k != TaskKind::Checklist))
+    {
+        return blocked(
+            "checklist repeat changes are verified only for plain date-only monthly/weekly rules without an end",
+        );
+    }
+    Ok(())
 }
 
 /// Rule 5: the repeating completions `complete_recurring` was built for: a date-only or

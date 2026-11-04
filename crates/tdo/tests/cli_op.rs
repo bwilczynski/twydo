@@ -632,7 +632,7 @@ fn edit_repeat_bad_text_exits_2() {
 }
 
 /// Setting or removing a repeat needs the `repeat` rows: this matrix has none, and the shipped
-/// one has verified weekly and monthly repeats but not yearly ones.
+/// one enables plain daily/weekly/monthly/yearly changes, but not completion-anchor changes.
 #[test]
 fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
@@ -649,7 +649,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
         err(&o)
     );
     assert_eq!(fs::read(file_of(&env)).unwrap(), before);
-    // The shipped matrix (verified mode) refuses a yearly repeat, still unverified.
+    // The shipped matrix still refuses an uncaptured completion-anchor transition.
     let env = Env::new("verified");
     let o = env.tdo(&[
         "op",
@@ -658,13 +658,11 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
         "--due",
         "2026-12-05",
         "--repeat",
-        "yearly",
+        "monthly after done",
     ]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(
-        err(&o).contains(
-            "changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)"
-        ),
+        err(&o).contains("from-completion") && err(&o).contains("not verified"),
         "{}",
         err(&o)
     );
@@ -675,6 +673,13 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let o = env.tdo(&args);
     assert!(o.status.success(), "{}", err(&o));
     assert_ne!(fs::read(file_of(&env)).unwrap(), before);
+    let o = env.tdo(&["op", "edit", TASK_A, "--repeat", "yearly"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(
+        String::from_utf8(fs::read(file_of(&env)).unwrap())
+            .unwrap()
+            .contains("RRULE:FREQ=YEARLY")
+    );
     let o = env.tdo(&["op", "edit", TASK_E, "--no-repeat"]);
     assert!(o.status.success(), "{}", err(&o));
 }

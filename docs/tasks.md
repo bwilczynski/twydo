@@ -76,6 +76,13 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 - Moving or deleting **one item on its own**, and reopening an item of a completed parent, are
   refused (not verified yet).
 
+A **recurring checklist** has narrower verified support: plain monthly day 1–28, interval 1,
+date-only, due anchored, no end/start/alerts/delay. Completing it copies the parent/items to
+history, preserves prior item completion times, then reopens live items and removes inherited
+date copies. It still needs its own final tick. Cancelled items and independent item starts or
+times are refused. Direct recurring-checklist creation, other rules and ordinary field edits
+remain unverified; pure monthly/weekly repeat changes are covered separately below.
+
 ## Repeats
 
 A repeating task shows ↺ and its rule (`weekly`, `monthly`, …); the Details pane spells it out
@@ -94,12 +101,13 @@ weekdays (`mon thu`, `workdays`) repeats every week only and takes no interval, 
 mode: Twydo could not complete it (`an interval is not supported on a repeat on set
 weekdays`). Existing
 "from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
-yet (iphone_baseline)`). **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
-removing a weekly or monthly repeat, changing a weekly repeat to monthly or a monthly one to
-weekly, and giving a monthly repeat an end by count are allowed. Setting, removing or changing a
-daily, yearly or "from completion" repeat, and any repeat change on a project or checklist, is
-still refused, for example `changing the repeat rule of yearly tasks is not verified yet
-(twydo_to_iphone)`.
+yet (iphone_baseline)`). **Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can be set,
+removed or changed between those classes. Newly verified daily/yearly transitions are due
+anchored and have no end or weekday selector; they do not enable end/anchor/Nth-rule changes.
+The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
+can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
+start, alerts or completion anchor. Ordinary recurring-checklist edits, interval changes,
+other checklist rules and project/from-completion repeat changes remain refused.
 
 **Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
 Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
@@ -108,12 +116,13 @@ Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, mis
 refuses to write them in every mode, for example `months-last-day repeats are not supported by
 2Do on the iPhone`.
 
-**Completing** works for every repeat kind Twydo creates but one: daily, weekly, set weekdays,
+**Completing** supports the previously verified kinds: daily, weekly, set weekdays,
 monthly on any day, the Nth or last weekday, yearly including 29 February, from completion, and
 with an end by count. Each was checked against the iPhone: the phone completed one copy of a
-task, Twydo an identical copy, and the two results were the same, byte for byte. A repeat with
-an **end date** (`until`) is still refused in verified mode (`months-day-1-28+until repeats are
-not verified yet`): only its last occurrence was checked, not an occurrence that moves on.
+task, Twydo an identical copy, and the two results were the same, byte for byte. An **end date** (`until`) is supported for top-level plain daily/monthly day 1–28 tasks with
+interval 1, date-only due/end, a due-date anchor, and no children/start/alerts/delay. Other until
+shapes remain refused. The [compatibility page](compatibility.md#what-is-verified-today) lists
+the exact newly verified operations and remaining family restrictions.
 `tdo check` lists the repeat kinds in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
@@ -136,14 +145,12 @@ How the next occurrence is found:
 - **A repeat from completion** counts from the day you complete it, whatever its due or start
   date: a monthly task due December 7 completed on November 4 moves to December 4, and a start
   date of December 20 moves by the same 3 days back, to December 17.
-- **An end by count** counts down with each completion (`COUNT=3` becomes `COUNT=2`). Completing
-  the last occurrence, or one whose next date would be after the end date (in `test` mode, see
-  above), completes the task itself in place, as 2Do does: no copy is added, and the task stays in Done with its repeat,
-  due date and end. Undo brings it back; reopening it (`x` on it, `tdo op reopen`) is refused
-  in verified mode until its Twydo → phone check passes. Plan 8 has captured the phone reopening
-  date-only daily/plain-monthly until-ended originals in place with the repeat/end/due kept;
-  those narrow shapes have a candidate writer and dedicated gate rows. Other ended-series
-  shapes still say `reopening the last occurrence of an ended repeat is not supported; use undo`.
+- **An end by count** counts down with each completion (`COUNT=3` becomes `COUNT=2`).
+  The last count occurrence, or a supported until occurrence whose next date would be after
+  the inclusive end, completes in place: no new history copy, and rule/due/end stay in Done.
+  Undo restores it. The captured top-level date-only interval-1 daily/plain-monthly until
+  originals can also be reopened in place; count-ended, family-ended and other shapes still
+  say `reopening the last occurrence of an ended repeat is not supported; use undo`.
 
 - **One interval per completion.** Missed occurrences are not skipped: a monthly task due
   August 15 and completed in November moves to September 15, still overdue. Complete it once per

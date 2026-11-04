@@ -1478,6 +1478,9 @@ mod recurrence_phone_captures {
     fn ended_until_reopen_refuses_uncaptured_or_inconsistent_shapes_atomically() {
         for case in [
             "count",
+            "interval",
+            "native-start",
+            "metadata-start",
             "yearly",
             "open",
             "not-final",
@@ -1491,6 +1494,11 @@ mod recurrence_phone_captures {
             let mut input = cal(END, U1);
             let t = input.root.children_named_mut("VTODO").next().unwrap();
             match case {
+                "interval" => t
+                    .prop_mut("RRULE")
+                    .unwrap()
+                    .set_value("FREQ=DAILY;INTERVAL=2;UNTIL=20261120"),
+                "native-start" => t.prop_mut("DTSTART").unwrap().set_value("20261119"),
                 "count" => t.prop_mut("RRULE").unwrap().set_value("FREQ=DAILY;COUNT=1"),
                 "yearly" => t
                     .prop_mut("RRULE")
@@ -1514,6 +1522,7 @@ mod recurrence_phone_captures {
                     let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
                     let mut m = MetaJson::parse(&p.value).unwrap();
                     match case {
+                        "metadata-start" => m.set_i64("StartDate", 1_795_132_800),
                         "metadata-parent" => m.set_str("parentuid", "some-parent"),
                         "from-completion" => m.set_i64("RecurrenceFrom", 2),
                         "wrong-end" => m.set_i64("RecurrenceEndDate", 1_795_262_400),

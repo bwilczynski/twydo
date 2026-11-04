@@ -1,8 +1,8 @@
 # Plan 8: close the task-editing compatibility gaps
 
-Date: 2026-11-04. Status: batch 1 phone baselines captured; local implementation and final
-Twydo → phone checks in progress. See the session results for exact coverage; later batches
-remain pending.
+Date: 2026-11-04. Status: batch 1 phone rounds complete through 153; eight scoped operation
+rows and narrow until execution enabled. Later device batches/full TUI surface remain pending.
+See the session's regression map and local closeout for exact enabled/refused shapes.
 
 ## Goal and boundaries
 

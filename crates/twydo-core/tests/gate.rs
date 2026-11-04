@@ -1831,36 +1831,24 @@ fn embedded_verified_allows_the_repeat_writes_the_phone_checked() {
     }
 }
 
-/// What the phone never checked stays refused: setting or reshaping yearly, daily and
-/// from-completion repeats, and repeats on a project.
+/// Daily/yearly repeat transitions now pass; uncaptured anchor/family changes stay refused.
 #[test]
-fn embedded_verified_refuses_the_repeat_writes_the_phone_never_checked() {
+fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let s = snap();
     let m = Matrix::embedded();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // An existing weekly task made yearly: the yearly `repeat` row has no Twydo evidence.
-    let op = edit("gate-weekly", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
-    // Yearly, daily and from completion.
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of daily tasks is not verified yet (twydo_to_iphone)")
-    );
-    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("yearly")))]);
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (twydo_to_iphone)")
-    );
+    for (uid, text) in [
+        ("gate-weekly", "yearly"),
+        ("gate-date", "yearly"),
+        ("gate-date", "daily"),
+        ("gate-monthly", "yearly"),
+    ] {
+        assert_eq!(
+            at(&edit(uid, vec![Change::Repeat(Some(repeat(text)))])),
+            Ok(())
+        );
+    }
     let op = edit(
         "gate-monthly",
         vec![Change::Repeat(Some(repeat("monthly after done")))],
@@ -1979,8 +1967,11 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
             "test edit {text}"
         );
     }
-    // A rule that is merely unverified keeps the old wording.
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("daily")))]);
+    // A context that is merely unverified keeps the old wording.
+    let op = edit(
+        "gate-date",
+        vec![Change::Repeat(Some(repeat("monthly after done")))],
+    );
     let Err(Blocked(why)) = check(&s, m, WriteMode::Verified, &op, today()) else {
         panic!("allowed")
     };
@@ -2103,13 +2094,9 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
         let uid = by_title(&s, "c", &format!("{kind}b"));
         assert_eq!(at(&complete(&uid)), Ok(()), "{kind}");
     }
-    // Until: only the ending case (UN) was captured, not a series that goes on, so the
-    // modifier's `execute` stays unverified.
+    // Plan 8 also verifies this top-level date-only monthly UNTIL shape.
     let uid = by_title(&s, "c", "UNb");
-    assert_eq!(
-        at(&complete(&uid)),
-        blocked("months-day-1-28+until repeats are not verified yet")
-    );
+    assert_eq!(at(&complete(&uid)), Ok(()));
     // Session C's edits (03-twydo-edit), which the phone showed right.
     let e = |t: &str| by_title(&s, "c", t);
     let due = Change::Due(Some(Due::Date(date(2026, 12, 8))));
@@ -2135,15 +2122,11 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
             "{title}"
         );
     }
-    // Reshaping to yearly or daily, or to from completion: no Twydo evidence.
-    for (text, case) in [("yearly", "yearly"), ("daily", "daily")] {
-        let op = edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))]);
+    // Plain daily/yearly reshaping is now covered by Plan 8.
+    for text in ["yearly", "daily"] {
         assert_eq!(
-            at(&op),
-            blocked(&format!(
-                "changing the repeat rule of {case} tasks is not verified yet (twydo_to_iphone)"
-            )),
-            "{text}"
+            at(&edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))])),
+            Ok(())
         );
     }
     let op = edit(
@@ -2336,14 +2319,12 @@ fn embedded_edge_records_match_existing_completion_captures() {
             assert!(root.join(path).is_dir(), "{id}: {path}");
         }
     }
-    for id in ["end-on-date", "missing-fifth-weekday"] {
-        assert_eq!(
-            m.edge_case(id).unwrap().verdict,
-            Verdict::Unverified,
-            "{id}"
-        );
-    }
-    assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Unverified);
+    assert_eq!(
+        m.edge_case("missing-fifth-weekday").unwrap().verdict,
+        Verdict::Unverified
+    );
+    assert_eq!(m.edge_case("end-on-date").unwrap().verdict, Verdict::Pass);
+    assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Pass);
 }
 
 // Native phone round trips; see the capture log's regression-test map.
@@ -2391,14 +2372,26 @@ mod recurrence_phone_captures {
     }
 
     #[test]
-    fn phone_baselines_do_not_enable_unchecked_embedded_writes() {
+    fn baseline_only_matrix_does_not_enable_unchecked_writes() {
         for (step, uid, op) in [
             (SET, FC, Op::Complete { uid: FC.into() }),
             (SEED, U1, Op::Complete { uid: U1.into() }),
             (END, U1, Op::Reopen { uid: U1.into() }),
         ] {
             let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
-            let mut store = env.store(Matrix::embedded().clone());
+            let mut matrix = Matrix::embedded().clone();
+            matrix
+                .rule
+                .iter_mut()
+                .find(|r| r.class == "mod:until")
+                .unwrap()
+                .execute = Verdict::Unverified;
+            for case in ["recurring-checklist", "ended-until-daily"] {
+                for row in matrix.operation.iter_mut().filter(|r| r.case == case) {
+                    row.twydo_to_iphone = Verdict::Unverified;
+                }
+            }
+            let mut store = env.store(matrix);
             let before = env.files();
             assert!(
                 store
@@ -2481,6 +2474,350 @@ mod recurrence_phone_captures {
             twydo_core::gate::check(&snap, &matrix, WriteMode::Verified, &op, now.date_naive())
                 .is_err(),
             "unverified repeat changes remain refused"
+        );
+    }
+}
+
+// Effective permissions for captured recurrence shapes, including uncaptured neighbors.
+mod verified_recurrence_shapes {
+    use crate::common::Env;
+    use chrono::{Duration, TimeZone, Utc};
+    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit::{Change, Op};
+    use twydo_core::gate;
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::meta_edit::MetaJson;
+    use twydo_core::model::{Alarm, Trigger};
+
+    const FC: &str = "61ed74be3ba34212ab7476b698de1263";
+    const U1: &str = "91fb1d1636754afda633eb2bda234417";
+    const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
+    const RD: &str = "db95528b16fb4aa2b6a47e56a0a1000b";
+    const RY: &str = "033d6526b6ba46999f3f510edecf888b";
+    const SEED: &str = "001-after-upload";
+    const SET: &str = "010-first-phone-actions";
+    const BOUNDARY: &str = "020-boundary-and-checklist-complete";
+    const END: &str = "030-end-series-and-items";
+    const REOPEN: &str = "040-reopen-ended-and-complete-parent";
+
+    fn env(step: &str) -> Env {
+        Env::new(WriteMode::Verified, &format!("plan8-tui-a/{step}"))
+    }
+    fn now() -> chrono::DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 4, 18, 0, 0).unwrap()
+    }
+    fn repeat(uid: &str, text: &str) -> Op {
+        Op::Edit {
+            uid: uid.into(),
+            changes: vec![Change::Repeat(
+                twydo_core::repeatinput::parse(text, now().date_naive(), &[]).unwrap(),
+            )],
+        }
+    }
+    fn promoted() -> Matrix {
+        let mut m = Matrix::embedded().clone();
+        for (case, op) in [
+            ("daily", "repeat"),
+            ("yearly", "repeat"),
+            ("checklist", "repeat"),
+            ("recurring-checklist", "repeat"),
+            ("recurring-checklist", "complete"),
+            ("ended-until-daily", "reopen"),
+            ("ended-until-monthly", "reopen"),
+            ("history-copy", "reopen"),
+        ] {
+            m.operation
+                .iter_mut()
+                .find(|r| r.case == case && r.op == op)
+                .unwrap()
+                .twydo_to_iphone = Verdict::Pass;
+        }
+        m.rule
+            .iter_mut()
+            .find(|r| r.class == "mod:until")
+            .unwrap()
+            .execute = Verdict::Pass;
+        m
+    }
+
+    #[test]
+    fn embedded_verified_operations_match_supported_phone_shapes() {
+        let mut cases = Vec::new();
+        for (step, uid, rule) in [
+            (SEED, RD, "daily"),
+            (SET, RD, "weekly"),
+            (REOPEN, RD, "none"),
+            (SEED, RY, "yearly"),
+            (BOUNDARY, RY, "monthly"),
+            (REOPEN, RY, "none"),
+            (SEED, FC, "monthly"),
+            (SET, FC, "weekly"),
+            (SET, FC, "none"),
+        ] {
+            cases.push((step, repeat(uid, rule), 1));
+        }
+        for step in [SET, END] {
+            cases.push((step, Op::Complete { uid: FC.into() }, 8));
+        }
+        for (step, uid, writes) in [
+            (SEED, U1, 2),
+            (SET, U1, 2),
+            (BOUNDARY, U1, 1),
+            (SEED, U2, 2),
+            (SET, U2, 2),
+            (BOUNDARY, U2, 1),
+        ] {
+            cases.push((step, Op::Complete { uid: uid.into() }, writes));
+        }
+        for uid in [U1, U2] {
+            cases.push((END, Op::Reopen { uid: uid.into() }, 1));
+        }
+        cases.push((
+            "050-remove-repeat-and-refinish",
+            Op::Reopen {
+                uid: "7435cbd64d9443888f9eb8ebc84518f4".into(),
+            },
+            1,
+        ));
+        for (step, op, writes) in cases {
+            let e = env(step);
+            let mut store = e.store(Matrix::embedded().clone());
+            store
+                .apply(&e.snap(), &op, now())
+                .unwrap_or_else(|err| panic!("{step} {op:?}: {err}"));
+            assert_eq!(e.journal()[0].writes.len(), writes, "{step} {op:?}");
+        }
+    }
+
+    #[test]
+    fn promoted_until_and_checklist_verdicts_do_not_admit_uncaptured_contexts() {
+        for (uid, step, op) in [
+            (U1, SET, Op::Complete { uid: U1.into() }),
+            (FC, SET, Op::Complete { uid: FC.into() }),
+            (U1, END, Op::Reopen { uid: U1.into() }),
+        ] {
+            for shape in ["timed", "start", "alarm", "start-delay", "interval"] {
+                let e = env(step);
+                let mut snap = e.snap();
+                let i = snap.find(uid).unwrap();
+                let t = &mut snap.tasks[i];
+                match shape {
+                    "timed" => t.due = Some(IcalDateTime::Floating(now().naive_utc())),
+                    "start" => t.start = Some(IcalDateTime::Date(now().date_naive())),
+                    "alarm" => t.alarms.push(Alarm {
+                        trigger: Trigger::Relative {
+                            offset: Duration::minutes(-5),
+                            related_end: true,
+                        },
+                        index: 0,
+                    }),
+                    "start-delay" => {
+                        let mut m = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
+                        m.set_i64("StartDayDelay", 1);
+                        t.meta.raw = Some(m.encode());
+                    }
+                    "interval" => {
+                        t.rrule = Some(
+                            t.rrule
+                                .as_ref()
+                                .unwrap()
+                                .replace("FREQ=", "INTERVAL=2;FREQ="),
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+                assert!(
+                    gate::check(
+                        &snap,
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {shape}"
+                );
+            }
+        }
+        for (uid, step) in [(U1, SET), (FC, SET), (U1, END)] {
+            for (text, raw) in [
+                ("weekly until", "FREQ=WEEKLY;UNTIL=20261120"),
+                ("yearly until", "FREQ=YEARLY;UNTIL=20281120"),
+                ("interval until", "FREQ=DAILY;INTERVAL=2;UNTIL=20261120"),
+            ] {
+                let e = env(step);
+                let mut snap = e.snap();
+                let i = snap.find(uid).unwrap();
+                snap.tasks[i].rrule = Some(raw.into());
+                let op = if step == END {
+                    Op::Reopen { uid: uid.into() }
+                } else {
+                    Op::Complete { uid: uid.into() }
+                };
+                assert!(
+                    gate::check(
+                        &snap,
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {step} {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn checklist_repeat_permissions_cover_only_the_captured_rules() {
+        for step in [SEED, SET] {
+            for text in [
+                "daily",
+                "yearly",
+                "2w",
+                "2m",
+                "2nd tue",
+                "monthly after done",
+                "monthly 3 times",
+                "monthly until 2027-03-10",
+            ] {
+                let e = env(step);
+                let op = repeat(FC, text);
+                assert!(
+                    gate::check(
+                        &e.snap(),
+                        &promoted(),
+                        WriteMode::Verified,
+                        &op,
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{step} {text}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn newly_verified_daily_yearly_changes_do_not_enable_end_or_ordinal_edits() {
+        for uid in [RD, RY] {
+            for text in [
+                "daily 3 times",
+                "yearly until 2028-12-07",
+                "mon thu",
+                "2nd tue",
+                "monthly after done",
+            ] {
+                let e = env(SET);
+                assert!(
+                    gate::check(
+                        &e.snap(),
+                        Matrix::embedded(),
+                        WriteMode::Verified,
+                        &repeat(uid, text),
+                        now().date_naive()
+                    )
+                    .is_err(),
+                    "{uid} {text}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn review_regression_plain_checklist_mixed_repeat_save_needs_destination_edit() {
+        let e = env(SEED);
+        let mut op = repeat(FC, "monthly");
+        if let Op::Edit { changes, .. } = &mut op {
+            changes.push(Change::Summary("Synthetic renamed checklist".into()));
+        }
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        assert!(store.apply(&e.snap(), &op, now()).is_err());
+        assert_eq!(e.files(), before);
+        assert!(e.journal().is_empty());
+    }
+
+    #[test]
+    fn review_regression_existing_until_interval_apis_remain_equivalent() {
+        let e = env(SEED);
+        for op in [
+            repeat(U1, "2d until 2026-11-20"),
+            Op::Edit {
+                uid: U1.into(),
+                changes: vec![Change::RepeatInterval(2)],
+            },
+        ] {
+            assert!(
+                gate::check(
+                    &e.snap(),
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_ok(),
+                "{op:?}"
+            );
+        }
+    }
+    #[test]
+    fn weekly_checklist_completion_and_offset_history_remain_refused() {
+        let e = env("050-remove-repeat-and-refinish");
+        let snap = e.snap();
+        assert!(
+            gate::check(
+                &snap,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Complete { uid: FC.into() },
+                now().date_naive()
+            )
+            .is_err(),
+            "phone-captured weekly checklist still lacks completion evidence"
+        );
+        let history = "7435cbd64d9443888f9eb8ebc84518f4";
+        for shape in ["timed", "start", "alarm"] {
+            let mut snap = e.snap();
+            let i = snap.find(history).unwrap();
+            match shape {
+                "timed" => snap.tasks[i].due = Some(IcalDateTime::Floating(now().naive_utc())),
+                "start" => snap.tasks[i].start = Some(IcalDateTime::Date(now().date_naive())),
+                _ => snap.tasks[i].alarms.push(Alarm {
+                    trigger: Trigger::Relative {
+                        offset: Duration::minutes(-5),
+                        related_end: true,
+                    },
+                    index: 0,
+                }),
+            }
+            assert!(
+                gate::check(
+                    &snap,
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &Op::Reopen {
+                        uid: history.into()
+                    },
+                    now().date_naive()
+                )
+                .is_err(),
+                "{shape}"
+            );
+        }
+        let family = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        assert!(
+            gate::check(
+                &family.snap(),
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Reopen {
+                    uid: "14b5a37a52224e8c959b5002e2275fc9".into()
+                },
+                now().date_naive()
+            )
+            .is_err(),
+            "the top-level history row does not enable recurring-family history"
         );
     }
 }

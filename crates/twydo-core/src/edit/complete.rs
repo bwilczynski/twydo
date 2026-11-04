@@ -130,12 +130,20 @@ pub fn reopen_ended_until(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), 
     if state(todo) != State::Completed
         || todo.prop("RELATED-TO").is_some()
         || todo.props_named("RRULE").count() != 1
+        || has_own_dtstart(todo)
+        || todo.children_named("VALARM").next().is_some()
     {
         return Err(refuse());
     }
     let raw = todo.prop("RRULE").ok_or_else(refuse)?;
     let rule = parse_rrule(&raw.value).map_err(|_| refuse())?;
     if !matches!(rule.freq, Freq::Daily | Freq::Monthly)
+        || rule.interval != 1
+        || !rule.by_day.is_empty()
+        || !rule.by_month_day.is_empty()
+        || !rule.by_month.is_empty()
+        || !rule.by_set_pos.is_empty()
+        || !rule.unknown.is_empty()
         || !matches!(rule.end, End::Until(IcalDateTime::Date(_)))
     {
         return Err(refuse());
@@ -147,7 +155,11 @@ pub fn reopen_ended_until(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), 
     let Meta::Json(meta) = meta_of(todo) else {
         return Err(refuse());
     };
-    if meta.task_type() != 0
+    if (rule.freq == Freq::Monthly && due.day() > 28)
+        || meta.get_i64("StartDate").is_some()
+        || meta.get_i64("duetime").is_some()
+        || meta.get_i64("StartDayDelay").unwrap_or(0) != 0
+        || meta.task_type() != 0
         || meta.get_str("parentuid").is_some_and(|p| !p.is_empty())
         || check_repeat_meta(&meta, &rule)?
         || next_due(due, &rule, None)?.is_some()

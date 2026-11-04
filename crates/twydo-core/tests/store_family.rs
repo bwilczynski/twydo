@@ -1142,6 +1142,12 @@ mod recurrence_phone_captures {
             .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
             .unwrap()
             .twydo_to_iphone = Verdict::Pass;
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "checklist" && r.op == "repeat")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Unverified;
         assert!(
             twydo_core::gate::check(
                 &env.snap(),

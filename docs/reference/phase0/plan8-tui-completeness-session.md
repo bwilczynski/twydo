@@ -1,8 +1,9 @@
 # Plan 8 iPhone session: finish the existing TUI write surface
 
-Status: **batch 1 phone baselines captured; local implementation checkpoint; final Twydo →
-phone verification pending**. Execution requires the recorded
-user approval below; this document itself does not authorize access.
+Status: **batch 1 phone rounds complete through 153; eight scoped operation rows and until
+execution enabled, with local verified-mode TUI regression coverage**. Later Plan 8 batches
+and full-surface TUI acceptance remain open. Execution requires the recorded user approval;
+this document itself does not authorize access.
 
 ## 1. Outcome
 
@@ -840,3 +841,60 @@ stable creation fields and exact untouched resource bytes. This completes the re
 rounds for batch 1, not the broader Plan 8 surface. Local evidence/capability review, effective
 gate tests, as-is documentation and verified-mode TUI acceptance remain; no further production
 writer operation or list cleanup is authorized by this phone response.
+
+
+### Local closeout — enabled capabilities and explicit remaining scope
+
+Batch 1's **five logical cases** (RD, RY, FC, U1, U2) now support **eight newly passing
+operation rows**, plus the narrowly guarded `mod:until.execute` verdict and `end-on-date`
+summary edge. These are capability groups, not a count of snapshots or individual taps:
+
+| Passing operation | Captured acceptance used |
+|---|---|
+| `daily.repeat` | 070/080 setting, 110/120 reshaping, clean 141–144 removal |
+| `yearly.repeat` | Same barriers for RY |
+| `checklist.repeat` | 070/080 monthly setting; 151–153 weekly removal |
+| `recurring-checklist.repeat` | Clean 141–144 monthly→weekly and 151–153 removal |
+| `recurring-checklist.complete` | 090/100 mixed-state and 110/120 all-done monthly resets |
+| `ended-until-daily.reopen` | 110 completed, 111 Twydo-reopened, 120 phone re-execution |
+| `ended-until-monthly.reopen` | Same barriers for U2 |
+| `history-copy.reopen` | Clean 141–144 retry; ended originals untouched |
+
+Until execution uses 070/080 continuation/boundary and 090/100/111/120 final/reopen evidence.
+The conflicted 130 attempt and the kept-phone 131 versions are explicitly excluded as writer
+acceptance. Mac columns remain unverified. All provenance paths name synthetic captures.
+
+The gate enforces the demonstrated shapes, independently of other passing rows/offset edges:
+plain due-anchored no-end daily/yearly transitions (ordinary interval support retained),
+date-only plain interval-1 monthly/weekly checklist repeat changes, monthly day1–28 checklist
+completion/reset, top-level date-only interval-1 daily/plain-monthly until execution/reopen,
+and top-level non-recurring date-only history copies without children/start/alerts/delay.
+Ordinary recurring-checklist edits/create, weekly/yearly checklist completion, count/family/
+yearly/timed until reopen, family/offset history reopen and untested end/anchor/ordinal changes
+remain refused. A mixed save also needs its destination's edit evidence and stays atomic.
+
+Pure repeat edits compose with already verified due/start/alert representations because the
+writer changes only recurrence metadata and preserves those schedule fields bytewise; local
+preservation tests cover that equivalence. Completion does not receive that generalization:
+it advances dates/copies history and therefore retains the strict captured-shape guards.
+
+Regression assertions now live in the existing behavior suites listed in the test map; shared
+fixture/comparison helpers are under `common/recurrence.rs`. Offline TUI acceptance in
+`crates/tdo/tests/write.rs` drives actual keys/card saves through the shipped verified matrix
+and real writer, including checklist repeat removal, until/checklist completion, ended/history
+reopening, one-step undo/redo and mixed-save refusal with retained typing. It uses temporary
+synthetic vdirs and no network/production writes. It is the newly enabled batch's local
+acceptance, not completion of every row of Block T or every later Plan 8 batch.
+
+The broader existing-TUI goal remains open: other repeat/end/anchor shapes, project/item
+operations, lifecycle moves/deletes and native date/alert branches still need their planned
+baselines/fixes/checks. No additional production writes, account/config changes or test-list
+cleanup are authorized by this closeout.
+
+Local validation after enablement: `mise run test` passes all 813 Rust tests, 49 Python tests
+and documentation links; `mise run lint` passes. Independent review identified a mixed-save
+destination-edit gap and an interval-API regression; both were reproduced with failing tests,
+fixed, and included in the green full run. The matrix diff changes exactly the eight named
+`twydo_to_iphone` operation verdicts, scoped until execution and its end-date summary edge;
+all baseline/read-back/Mac operation columns are unchanged. Test organization is the separate
+commit `9afa123`; enablement is committed separately.
