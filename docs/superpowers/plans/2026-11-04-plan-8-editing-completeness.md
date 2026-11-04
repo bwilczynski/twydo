@@ -49,6 +49,10 @@ sync now selects only the two capture collections through the existing runner,
 without forced deletion or normal-config changes. Barrier 310's fourteen Twydo
 edits are uploaded; five-task phone inspection/note followup is pending. All
 non-target resource bytes, including the other lists' local copies, are preserved.
+Phone return 320 is captured: five note edits preserved complete recurrence/date/
+identity metadata. Barrier 330 is uploaded (anchor weekly after completion; direct
+repeat removed). Next phone batch checks those two and completes the three edited
+monthly twins. Follow the RF/RA checklist; do not repeat the completed returns.
 
 Continue current Task 2 / session cases **RF and RA**. Target `from-completion.edit` and
 `from-completion.repeat`; ordinary completion is already verified. Leave its move/delete,

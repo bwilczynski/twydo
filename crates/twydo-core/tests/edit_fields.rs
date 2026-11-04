@@ -1579,3 +1579,23 @@ fn removing_completion_related_repeat_preserves_series_and_only_differs_in_inact
         );
     }
 }
+
+#[test]
+fn phone_note_followups_preserve_twydo_written_from_completion_tasks() {
+    use common::recurrence::{preserved_created, same};
+    use std::collections::BTreeMap;
+    for case in ["fields", "interval", "anchor", "direct", "offset"] {
+        let uid = format!("twydo-p8-rfra-{case}-t");
+        let before = parse(&fixture("plan8-rfra", "310-twydo-edited-twins", &uid)).unwrap();
+        let want = parse(&fixture("plan8-rfra", "320-phone-note-followups", &uid)).unwrap();
+        let mut got = before.clone();
+        apply_changes(
+            &mut got,
+            &[Change::Description(Some("RFRA return 1".into()))],
+            dtstamp(&want),
+        )
+        .unwrap();
+        preserved_created(&before, &got);
+        same(case, &got, &want, &BTreeMap::new());
+    }
+}

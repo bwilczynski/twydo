@@ -320,3 +320,28 @@ direct (monthly after completion, Due December 7), offset (monthly after complet
 Due December 9, Start December 5). Set Notes to `RFRA return 1` on all five `t`
 tasks, then sync once. Do not complete them or change their repeats yet. Capture
 this phone return before the next recurrence transition barrier.
+
+### Phone return 320 captured; next transitions 330 uploaded
+
+All five inspected `t` twins returned with exactly the requested `RFRA return 1`
+notes. Complete JSON metadata, UID, DUE, DTSTART, RRULE and STATUS remained
+unchanged. Source and phone followup fixtures are exported as partial steps 310
+and 320; `phone_note_followups_preserve_twydo_written_from_completion_tasks` in
+`edit_fields.rs` compares the actual phone rewrites without ignoring identities
+or recurrence fields. First capture analysis had to normalize CRLF before JSON
+decoding; the preserved capture was reanalyzed, not resynced or replayed.
+
+Fresh scoped sync then validated 320 before two writer operations: anchor `t`
+monthly after completion → weekly after completion, and direct `t` repeat removal.
+Both were captured and uploaded at 330. Exactly those two target files changed;
+normal config and all other resources remained unchanged relative to the fresh
+preflight. Full-pair preflight earlier may have pulled ordinary remote updates;
+do not compare later unrelated resources against the old seed as a restoration
+target or overwrite those updates.
+
+Next combined phone batch: inspect anchor `t` as weekly after completion and
+direct `t` as non-recurring; set Notes to `RFRA return 2` on both. Complete fields
+`t`, interval `t` and offset `t` once each. Sync once, then capture all five live
+resources and the three new histories before further writes. Two subsequent
+anchor barriers remain: weekly after completion → weekly from due, then removal,
+each with phone action/readback before proceeding. No new examples are needed.
