@@ -595,3 +595,21 @@ fn new_item_saves_only_the_fields_it_shows() {
         }))
     );
 }
+
+#[test]
+fn emptying_the_repeat_of_a_repeating_task_says_it_removes_it() {
+    let mut f = form("Water plants");
+    focus(&mut f, Field::Repeat);
+    f.key(ctrl('u'));
+    let removes = Some("→ none (removes the repeat)");
+    assert_eq!(f.preview(Field::Repeat, today(), &WD).as_deref(), removes);
+    assert_eq!(changes(&f), Ok(vec![Change::Repeat(None)]));
+    type_str(&mut f, "none");
+    assert_eq!(f.preview(Field::Repeat, today(), &WD).as_deref(), removes);
+    // Unfocused, the cue stays.
+    let mut g = form("Water plants");
+    focus(&mut g, Field::Repeat);
+    g.key(ctrl('u'));
+    focus(&mut g, Field::Notes);
+    assert_eq!(g.preview(Field::Repeat, today(), &WD).as_deref(), removes);
+}

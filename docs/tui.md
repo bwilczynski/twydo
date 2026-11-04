@@ -206,7 +206,8 @@ Repeat takes a rule, then any modifiers:
 
 The field takes no day of the month: monthly and yearly repeats follow the due date, so set the
 day in Due. While the field is empty, the text beside it lists examples; otherwise it shows the
-rule in 2Do's words (`→ The second Tue of each month · from due date`). A task that repeats
+rule in 2Do's words (`→ The second Tue of each month · from due date`). On a task that repeats,
+an emptied field (or `none`) reads `→ none (removes the repeat)`: saving removes the rule. A task that repeats
 starts with its rule in this syntax, so changing it is editing text. A repeat needs a due date:
 set one on a task without a due date and it becomes due today (the preview ends in
 `· due today`).
@@ -221,7 +222,8 @@ the rule and ends in `(kept)`, and saving leaves the rule alone unless you type 
 The status line says why, and nothing is written:
 
 - **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone, for
-  example `weekdays-set repeats are not verified yet`. See
+  example `weekdays-set repeats are not verified yet`, or `changing the repeat rule of one-time
+  tasks is not verified yet (twydo_to_iphone)` for setting a repeat. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
   view reloads; an open card switches to the synced version, so you see the new data before
