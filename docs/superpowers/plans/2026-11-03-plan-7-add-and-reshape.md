@@ -39,7 +39,10 @@ rest (compatibility gate, preservation, journal).
 - Key spellings and messages are fixed by the spec: `o`, `O`, `a`, `Tab`, `i`, `r`, `ct`/`cp`/`cc`;
   `New task in <list> · Enter save  Tab more  Esc cancel`;
   `Add items: make it a (p)roject or (c)hecklist?`;
-  `Items lose their dates and repeats. Convert? (y/n)`; `Added "<title>" to <list>`.
+  `Items lose their dates and repeats. Convert? (y/n)`; `Added "<title>" to <list>`. (The
+  `Convert? (y/n)` question is superseded by the Plan 7 capture,
+  `docs/reference/phase0/plan7-capture.md`: the iPhone cannot convert a project with items, so
+  the gate refuses it permanently and nothing asks.)
 
 ## Review Focus
 
