@@ -509,6 +509,10 @@ fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditE
     Ok(())
 }
 
+/// Why the interval of an Nth-weekday repeat does not change.
+pub const NTH_WEEKDAY_INTERVAL: &str =
+    "changing the interval of an Nth-weekday repeat is not supported";
+
 /// `RRULE` `INTERVAL=n` (appended, or replaced in place; removed for 1) and JSON
 /// `RecurrenceValue` = n (`rule-*/03-edit`).
 fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
@@ -523,7 +527,13 @@ fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
     let rrule = todo
         .prop_mut("RRULE")
         .ok_or_else(|| unsupported("task does not repeat"))?;
-    parse_rrule(&rrule.value).map_err(|e| unsupported(format!("unreadable repeat rule: {e}")))?;
+    let rule = parse_rrule(&rrule.value)
+        .map_err(|e| unsupported(format!("unreadable repeat rule: {e}")))?;
+    // 2Do keeps the ordinal of an Nth-weekday rule in `RecurrenceValue` and has no interval
+    // for it (01 §6), so a new interval would overwrite the ordinal.
+    if rule.by_day.iter().any(|(n, _)| n.is_some()) {
+        return Err(unsupported(NTH_WEEKDAY_INTERVAL));
+    }
     let interval = format!("INTERVAL={n}");
     let mut parts: Vec<String> = Vec::new();
     let mut found = false;

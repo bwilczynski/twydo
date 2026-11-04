@@ -2218,3 +2218,32 @@ fn embedded_verified_refuses_completing_a_recurring_project_with_an_end_or_from_
         }
     }
 }
+
+/// An Nth-weekday repeat has no interval in 2Do (`RecurrenceValue` is the ordinal), so
+/// changing its interval is refused in every mode, by `RepeatInterval` or by an interval-only
+/// `Change::Repeat`. Setting the same rule again passes.
+#[test]
+fn interval_of_an_nth_weekday_repeat_is_refused() {
+    let (_tmp, s) = session_snap();
+    let m = Matrix::embedded();
+    let uid = by_title(&s, "c", "N2b");
+    let why = blocked("changing the interval of an Nth-weekday repeat is not supported");
+    let mut every_2 = repeat("2nd tue");
+    every_2.rule.interval = 2;
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        for changes in [
+            vec![Change::RepeatInterval(2)],
+            vec![Change::RepeatInterval(1)],
+            vec![Change::Repeat(Some(every_2.clone()))],
+        ] {
+            let op = edit(&uid, changes.clone());
+            assert_eq!(
+                check(&s, m, mode, &op, today()),
+                why,
+                "{mode:?} {changes:?}"
+            );
+        }
+        let same = edit(&uid, vec![Change::Repeat(Some(repeat("2nd tue")))]);
+        assert_eq!(check(&s, m, mode, &same, today()), Ok(()), "{mode:?}");
+    }
+}

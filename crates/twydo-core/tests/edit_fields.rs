@@ -973,3 +973,28 @@ fn repeat_refused_without_json_metadata() {
         }
     }
 }
+
+/// An Nth-weekday repeat keeps its ordinal in JSON `RecurrenceValue` (2Do has no interval for
+/// it), so a new interval would overwrite the ordinal: refused, nothing changed (`N2b`, 2nd
+/// Tuesday, session C seed).
+#[test]
+fn interval_of_an_nth_weekday_repeat_is_refused() {
+    let input = fixture(
+        "plan7-twydo-list2",
+        "00-seed",
+        "200243c3e116428e8eb384093bd6d3a4",
+    );
+    for n in [1, 2] {
+        let mut cal = parse(&input).unwrap();
+        let before = cal.clone();
+        let err = apply_changes(&mut cal, &[Change::RepeatInterval(n)], now()).unwrap_err();
+        match err {
+            EditError::Unsupported(m) => assert_eq!(
+                m, "changing the interval of an Nth-weekday repeat is not supported",
+                "{n}"
+            ),
+            e => panic!("{n}: {e:?}"),
+        }
+        assert_eq!(cal, before);
+    }
+}
