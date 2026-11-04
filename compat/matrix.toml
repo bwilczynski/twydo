@@ -128,10 +128,10 @@ notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14
 [[rule]]
 class = "mod:until"
 preserve = "pass"
-execute = "unverified"
+execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14-R16 in fixtures/phase0/v1/plan7-list1/01-phone-repeat) round-trip byte for byte (tests/ical_roundtrip.rs, roundtrip_plan7_phone_captures). execute: unverified. Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2) captured only the ending case: UN (monthly until Dec 20, due Dec 7) was completed in place by the phone (RRULE and metadata kept, no history copy), and Twydo's completion of its twin UNb equals that byte for byte (crates/twydo-core/tests/edit_complete.rs twin_until_last_occurrence_matches_the_phone). No capture shows the phone completing an until series that goes on (its history copy's end fields, e.g. RecurrenceEndDate, are unknown), so completing until series stays refused. edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+notes = "Plan 8 U1/U2 establish continuation/history end fields, inclusive boundary, final in-place completion and post-reopen execution in both directions. Execution is guarded to top-level plain interval-1 date-only daily or monthly day1-28, due anchored, no children/start/alerts/delay. Other UNTIL contexts stay refused even where offset/base-rule verdicts pass. Preserve/edit evidence from Plan 7 remains; this is not family/timed/from-completion UNTIL enablement."
 
 [[operation]]
 case = "one-time"
@@ -1266,6 +1266,39 @@ iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
 notes = "Plan 8 FC: monthly parent completes with mixed/all-done items; phone accepts both resets and acts on the output. History parent/child IDs are new, earlier item completion times retained, live inherited dates removed after copying. Gate limits parent completion to plain interval-1 date-only monthly day1-28, due anchored, no end/start/alerts/delay/cancelled items. Recovery/undo/redo/atomic-refusal tested; other checklist rules remain refused."
 
+[[operation]]
+case = "ended-until-daily"
+op = "reopen"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+notes = "Plan 8 U1: Twydo reopens the final original, phone reads and completes it again in place without extra history. Only top-level interval-1 date-only plain daily UNTIL, due anchored, no children/start/alerts/delay. Count/family/yearly/timed/offset shapes remain refused."
+
+[[operation]]
+case = "ended-until-monthly"
+op = "reopen"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+notes = "Plan 8 U2: Twydo reopens the final original, phone reads and completes it again in place. Only top-level interval-1 date-only plain monthly day1-28 UNTIL, due anchored, no children/start/alerts/delay. Other ended-series shapes remain refused."
+
+[[operation]]
+case = "history-copy"
+op = "reopen"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/060-remove-checklist-repeat-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+notes = "Plan 8 clean retry 141-144: Twydo reopens earliest daily/monthly UNTIL history copies (no RRULE), phone reads/completes them, ended originals remain byte-unchanged. Original rule class is absent from the copy; this row names the non-recurring RUID-linked history operation. Only top-level date-only non-recurring task copies without children/start/alerts/delay are enabled; family/offset history remains refused. Conflicted 130 does not count as acceptance."
+
 [[edge_case]]
 id = "monthly-15th-three-months-late"
 observed = "Plan 6 iPhone session: a monthly task due 2026-08-15 completed on 2026-11-02 advanced one interval to 2026-09-15 (still past), then to 2026-10-15; each completion added a history copy. 2Do never skips missed occurrences."
@@ -1304,9 +1337,9 @@ evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape", "fixtures/p
 
 [[edge_case]]
 id = "end-on-date"
-observed = "Partially captured in Plan 7 session C, UN twins: the next monthly date was past the end, so the last occurrence completed in place with RRULE and metadata kept and no history copy (edit_complete.rs twin_until_last_occurrence_matches_the_phone). No capture covers continuation/history end fields or advancing exactly onto the end date; stays unverified, as does mod:until.execute."
-verdict = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
+observed = "Plan 8 U1/U2: date-only daily/plain-monthly UNTIL continues with end fields cleared only on history, advances exactly onto the inclusive end, then completes in place; final originals reopen and end again without extra history. Captured in both directions. Gate retains the exact standalone date-only interval-1 no-offset scope; other UNTIL shapes remain refused."
+verdict = "pass"
+evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
 
 [[edge_case]]
 id = "parent-mixed-children"

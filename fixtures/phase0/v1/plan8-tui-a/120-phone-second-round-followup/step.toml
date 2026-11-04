@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "120-phone-second-round-followup"
+device = "iphone"
+action = "User confirmed second fixed-writer round: FCb note y; RDb daily; RYb yearly; completed Twydo-reopened U1b/U2b final originals once."
+captured_at = "2026-11-04T15:15:01Z"

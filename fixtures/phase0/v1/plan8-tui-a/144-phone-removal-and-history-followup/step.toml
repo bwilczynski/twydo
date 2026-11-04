@@ -1,0 +1,5 @@
+scenario = "plan8-tui-a"
+step = "144-phone-removal-and-history-followup"
+device = "iphone"
+action = "User confirmed clean writer retry: FCb note z; add note x to non-recurring RDb/RYb; complete the two Twydo-reopened earliest history copies once, leaving ended originals and a twins unchanged."
+captured_at = "2026-11-04T16:03:29Z"

@@ -204,6 +204,11 @@ Repeat takes a rule, then any modifiers:
 | `1st weekday`, `last weekend day` | on that workday (Monday to Friday) or weekend day of each month |
 | modifiers: `after done`, `until 2027-06-01`, `10 times` | from the completion date; until a date; that many times |
 
+Verified mode now supports plain daily/yearly repeat changes, captured monthly/weekly checklist
+repeat changes, monthly checklist completion/reset, and narrowly scoped until completion and
+reopening. The [compatibility table](compatibility.md#what-is-verified-today) gives the exact
+shapes. Ordinary recurring-checklist field edits and mixed saves requiring them stay refused.
+
 The field takes no day of the month: monthly and yearly repeats follow the due date, so set the
 day in Due. While the field is empty, the text beside it lists examples; otherwise it shows the
 rule in 2Do's words (`→ The second Tue of each month · from due date`). On a task that repeats,
@@ -221,9 +226,8 @@ the rule and ends in `(kept)`, and saving leaves the rule alone unless you type 
 
 The status line says why, and nothing is written:
 
-- **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone, for
-  example `months-last-day repeats are not verified yet`, or `changing the repeat rule of yearly
-  tasks is not verified yet (twydo_to_iphone)` for setting a yearly repeat. See
+- **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone,
+  for example an ordinary edit of a recurring checklist or a project repeat change. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… is not supported by 2Do on the iPhone`**: the repeat is one of the three kinds 2Do 3.91
   misreads (last day, last weekday, Nth weekend day). Twydo never writes them; pick another repeat.

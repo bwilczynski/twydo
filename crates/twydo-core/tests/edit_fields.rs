@@ -1028,10 +1028,10 @@ fn interval_of_a_weekday_set_repeat_is_refused() {
     apply_changes(&mut cal, &[Change::RepeatInterval(1)], now()).unwrap();
 }
 
-// Captured plain recurrence edits and checklist recurrence.
+// Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
     use crate::common::recurrence::*;
-    use crate::common::{dtstamp, fixture, todo};
+    use crate::common::{completed, dtstamp, fixture, todo};
     use std::collections::BTreeMap;
     use twydo_core::edit;
     use twydo_core::edit::Change;
@@ -1118,7 +1118,7 @@ mod recurrence_phone_captures {
                 .0
                 .clone()
         };
-        for (from, to, edits, _copy_count) in [
+        for (from, to, edits, copy_count) in [
             (
                 HISTORY,
                 LOCAL,
@@ -1160,6 +1160,46 @@ mod recurrence_phone_captures {
                 );
                 stamped(&got, now);
                 preserved_created(&before, &got);
+            }
+            let before_files = step_files(from);
+            let after_files = step_files(to);
+            for title in ["U1b", "U2b"] {
+                let id = uid(title);
+                let copies: Vec<_> = after_files
+                    .iter()
+                    .filter(|(id, c)| {
+                        !before_files.contains_key(*id)
+                            && todo(c).prop("SUMMARY").unwrap().value == title
+                    })
+                    .collect();
+                assert_eq!(copies.len(), copy_count, "{title} {to}: history count");
+                let now = copies
+                    .first()
+                    .map_or_else(|| completed(&after_files[&id]), |(_, c)| completed(c));
+                let copy_id = copies
+                    .first()
+                    .map_or("0123456789abcdef0123456789abcdef", |(id, _)| id.as_str());
+                let (live, copy) =
+                    edit::complete_recurring(&before_files[&id], now, now.date_naive(), copy_id)
+                        .unwrap();
+                same(
+                    &format!("{title} {to} live"),
+                    &live,
+                    &after_files[&id],
+                    &BTreeMap::new(),
+                );
+                match (copy, copies.first()) {
+                    (Some(got), Some((_, want))) => same(
+                        &format!("{title} {to} history"),
+                        &got,
+                        want,
+                        &BTreeMap::new(),
+                    ),
+                    (None, None) => {}
+                    _ => panic!("{title} {to}: incorrect history creation"),
+                }
+                stamped(&live, now);
+                preserved_created(&before_files[&id], &live);
             }
         }
     }
@@ -1222,6 +1262,21 @@ mod recurrence_phone_captures {
                 &BTreeMap::new(),
             );
         }
+        for (title, due) in [("U1b", "20261118"), ("U2b", "20270107")] {
+            let id = uid(title, due);
+            expected_changed.insert(id.clone());
+            let mut got = before[&id].clone();
+            let now = completed(&want[&id]);
+            edit::complete_one_time(&mut got, now).unwrap();
+            same(
+                &format!("phone recompletes reopened history {title}"),
+                &got,
+                &want[&id],
+                &BTreeMap::new(),
+            );
+            stamped(&got, now);
+            preserved_created(&before[&id], &got);
+        }
         assert_eq!(
             before.keys().collect::<Vec<_>>(),
             want.keys().collect::<Vec<_>>()
@@ -1233,7 +1288,7 @@ mod recurrence_phone_captures {
             .collect();
         assert_eq!(
             changed, expected_changed,
-            "only stage-owned phone note edits"
+            "only three note edits and two history completions"
         );
     }
 

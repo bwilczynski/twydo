@@ -22,7 +22,7 @@ pub mod repeat;
 
 pub use complete::{
     REOPEN_ENDED, complete_one_time, complete_recurring, interval_refusal, next_due,
-    reopen_one_time,
+    reopen_ended_until, reopen_one_time,
 };
 pub use create::{file_name, new_task, new_uid};
 pub use family::{complete_member, drop_member_dates, member_copy, reopen_member};

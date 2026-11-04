@@ -204,20 +204,22 @@ mod tests {
             }
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
-        assert_eq!(m.operation.len(), 103);
+        assert_eq!(m.operation.len(), 106);
         assert_eq!(m.edge_case.len(), 12);
     }
 
     #[test]
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
-        assert_eq!(m.operation.len(), 103);
+        assert_eq!(m.operation.len(), 106);
         // Verified in the Plan 7 session B: baseline and both Twydo round trips.
         let e = m.operation("from-completion", "create").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Pass);
-        // Scoped checklist repeat changes are verified in this stack.
+        // Plan 8 completed both Twydo/phone directions; Mac remains unverified.
         let e = m.operation("checklist", "repeat").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Pass);
+        assert_eq!(e.twydo_to_iphone, Verdict::Pass);
+        assert_eq!(e.mac_to_iphone, Verdict::Unverified);
         assert!(m.edge_case(&m.edge_case[0].id).is_some());
         assert!(m.operation("nope", "create").is_none());
     }
@@ -233,9 +235,18 @@ mod tests {
         assert_eq!(preserve, Verdict::Unverified);
         assert_eq!(execute, Verdict::Unverified);
         assert_eq!(edit, Verdict::Fail);
-        // A modifier worse than its class wins: until's `execute` is unverified.
+        // Until now passes within the gate's captured shape boundary.
+        assert_eq!(combined_verdicts(m, "months-day-1-28+until"), (p, p, p));
+        // A custom matrix can still make a modifier worse than its base class.
+        let mut restricted = m.clone();
+        restricted
+            .rule
+            .iter_mut()
+            .find(|r| r.class == "mod:until")
+            .unwrap()
+            .execute = Verdict::Unverified;
         assert_eq!(
-            combined_verdicts(m, "months-day-1-28+until"),
+            combined_verdicts(&restricted, "months-day-1-28+until"),
             (p, Verdict::Unverified, p)
         );
     }
