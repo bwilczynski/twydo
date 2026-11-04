@@ -305,10 +305,9 @@ pub fn next_due(
     Ok((!ended).then_some(next))
 }
 
-/// 2Do's own `RecurrenceValue` for "last" in the Nth-weekday class (`0x104`-`0x10A`). Twydo
-/// writes -1 (shown right by the phone, session B); the phone writes 6 and rewrites -1 to 6
-/// when it completes such a task (session C, `LF`; session A's `R09` trace).
-const LAST_ORDINAL_2DO: i64 = 6;
+/// What Twydo wrote for "last" in the Nth-weekday class before session C showed the phone's
+/// own 6 ([`super::repeat::LAST_ORDINAL`]); files written then still carry it.
+const OLD_LAST_ORDINAL: i64 = -1;
 
 /// Whether `rule` is the last-weekday-of-the-month shape (`BYDAY=-1<day>`).
 fn is_last_weekday(rule: &RRule) -> bool {
@@ -316,8 +315,8 @@ fn is_last_weekday(rule: &RRule) -> bool {
 }
 
 /// The JSON repeat fields must describe the same rule as `RRULE`: the codes Twydo and the
-/// phone write for it ([`twodo_codes`]; for "last" in the Nth-weekday class also the phone's
-/// own 6), from the due date (1) or from completion (2), and the matching end: an `UNTIL`'s
+/// phone write for it ([`twodo_codes`]; for "last" in the Nth-weekday class also the -1 older
+/// Twydo files carry), from the due date (1) or from completion (2), and the matching end: an `UNTIL`'s
 /// day must be the UTC day of JSON `RecurrenceEndDate`. Returns whether the rule repeats
 /// from completion.
 fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
@@ -339,8 +338,8 @@ fn check_repeat_meta(m: &MetaJson, rule: &RRule) -> Result<bool, EditError> {
         return Err(refuse("RecurrenceType", kind_got));
     }
     let value_got = m.get_i64("RecurrenceValue");
-    let phone_last = is_last_weekday(rule) && value_got == Some(LAST_ORDINAL_2DO);
-    if value_got != Some(value) && !phone_last {
+    let old_last = is_last_weekday(rule) && value_got == Some(OLD_LAST_ORDINAL);
+    if value_got != Some(value) && !old_last {
         return Err(refuse("RecurrenceValue", value_got));
     }
     let end = m.get_i64("RecurrenceEndType");
@@ -383,8 +382,8 @@ fn with_count(raw: &str, n: u32) -> String {
 ///
 /// - Live: `DUE` and its `DTSTART` mirror move to [`next_due`] (a floating time keeps its
 ///   time), JSON `StartDate` by as many days; a `COUNT` and JSON `RecurrenceEndRepetitions`
-///   count down by one (`CT`, session B); a last-weekday rule's `RecurrenceValue` becomes
-///   2Do's own 6 (`LF`, session C); stamps touched.
+///   count down by one (`CT`, session B); `RecurrenceValue` is written as [`twodo_codes`]
+///   gives it (an older -1 for "last" becomes 6, `LF`, session C); stamps touched.
 /// - Copy: cloned from `cal`; `UID` = `copy_uid`, stamps touched, completed (`STATUS`,
 ///   `PERCENT-COMPLETE`, `COMPLETED`), `RRULE` removed, JSON `RecurrenceValue`,
 ///   `RecurrenceType`, `RecurrenceFrom` and the end keys = 0 (`RecurrenceEndDate` removed),
@@ -489,10 +488,9 @@ pub fn complete_recurring(
             next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
         );
     }
-    // The phone writes its own "last" code when it completes (session C, `LF`).
-    if is_last_weekday(&rule) {
-        live_meta.set_i64("RecurrenceValue", LAST_ORDINAL_2DO);
-    }
+    // The codes as 2Do writes them: the phone rewrites an older -1 for "last" to 6 when it
+    // completes (session C, `LF`); every other code is already this one.
+    live_meta.set_i64("RecurrenceValue", twodo_codes(&rule).1);
     if let End::Count(n) = rule.end {
         let left = n - 1;
         if let Some(p) = todo.prop_mut("RRULE") {

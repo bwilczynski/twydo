@@ -1003,7 +1003,7 @@ fn every_kind_completes_with_its_metadata() {
         ("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", 124, 1, "20261208"),
         // A due off the rule (Mon Dec 7) moves to the rule's next day: 2nd Tue Dec 8.
         ("FREQ=MONTHLY;BYDAY=2TU", 261, 2, "20261208"),
-        ("FREQ=MONTHLY;BYDAY=-1FR", 264, -1, "20261225"),
+        ("FREQ=MONTHLY;BYDAY=-1FR", 264, 6, "20261225"),
         ("FREQ=YEARLY", 259, 1, "20271207"),
     ];
     for (rule, kind, value, due) in cases {
@@ -1336,8 +1336,10 @@ fn twin_monthly_on_the_31st_matches_the_phone_twice() {
 }
 
 /// 2Do's own code for "last" in the Nth-weekday class is `RecurrenceValue` 6 (the phone
-/// rewrote `LFa`'s -1, Twydo's code, to 6 when it completed it; session A's `R09` trace shows
-/// 6 too). Twydo completes such a task, from the phone's result: Jan 29 -> Feb 26 (2027).
+/// rewrote `LFa`'s -1, what Twydo wrote before session C, to 6 when it completed it; session
+/// A's `R09` trace shows 6 too). Twydo completes such a task, from the phone's result: Jan 29
+/// -> Feb 26 (2027). Files Twydo wrote with -1 still complete (`twin_last_friday_*`), and the
+/// completion writes 6.
 #[test]
 fn last_weekday_with_the_phones_code_completes() {
     let t = twin("LF");
