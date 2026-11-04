@@ -632,7 +632,7 @@ fn edit_repeat_bad_text_exits_2() {
 }
 
 /// Setting or removing a repeat needs the `repeat` rows: this matrix has none, and the shipped
-/// one enables plain daily/weekly/monthly/yearly changes, but not completion-anchor changes.
+/// one enables plain daily/weekly/monthly/yearly and scoped completion-anchor changes.
 #[test]
 fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
@@ -649,7 +649,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
         err(&o)
     );
     assert_eq!(fs::read(file_of(&env)).unwrap(), before);
-    // The shipped matrix still refuses an uncaptured completion-anchor transition.
+    // A due change mixed with establishing completion anchoring is outside RF/RA scope.
     let env = Env::new("verified");
     let o = env.tdo(&[
         "op",
@@ -662,7 +662,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
     ]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(
-        err(&o).contains("from-completion") && err(&o).contains("not verified"),
+        err(&o).contains("from-completion") && err(&o).contains("captured"),
         "{}",
         err(&o)
     );
@@ -700,4 +700,28 @@ fn edit_kind_same_as_declared_writes_nothing() {
     assert!(o.status.success(), "{}", err(&o));
     let after = fs::read_to_string(&file).unwrap();
     assert!(after.contains("SUMMARY:Synthetic A"), "{after}");
+}
+
+#[test]
+fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_permissions() {
+    let env = Env::new("verified");
+    let uid = "twydo-p8-rfra-fields-p";
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload-A")
+        .join(format!("{uid}.ics"));
+    let target = env.vdir().join(format!("list1/{uid}.ics"));
+    fs::copy(source, &target).unwrap();
+    for args in [
+        vec!["op", "edit", uid, "--notes", "CLI verified"],
+        vec!["op", "edit", uid, "--repeat", "every 2 months after done"],
+    ] {
+        let o = env.tdo(&args);
+        assert!(o.status.success(), "{}", err(&o));
+    }
+    let before = fs::read(&target).unwrap();
+    assert!(String::from_utf8_lossy(&before).contains("RRULE:FREQ=MONTHLY;INTERVAL=2"));
+    let o = env.tdo(&["op", "edit", uid, "--notes", "must not save"]);
+    assert_eq!(o.status.code(), Some(1));
+    assert!(err(&o).contains("captured"), "{}", err(&o));
+    assert_eq!(fs::read(target).unwrap(), before);
 }
