@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 use twydo_core::compat::{Matrix, OperationEntry, Verdict};
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{self, Change, Op};
-use twydo_core::ical::{Calendar, parse, serialize};
+use twydo_core::ical::{Calendar, Property, parse, serialize};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::store::Store;
 use twydo_core::store::journal::{Journal, Stage};
@@ -211,6 +211,59 @@ fn repeat_setting_reshaping_and_removal_match_each_phone_step() {
 }
 
 #[test]
+fn until_continuation_inclusive_boundary_end_reopen_and_recompletion_match_phone() {
+    for uid in [U1, U2] {
+        let mut input = cal(SEED, uid);
+        for (from, to) in [
+            (SEED, SET),
+            (SET, ADVANCE),
+            (ADVANCE, END),
+            (REOPEN, REMOVE),
+        ] {
+            if from == REOPEN {
+                let want = cal(REOPEN, uid);
+                let now = dtstamp(&want);
+                edit::reopen_ended_until(&mut input, now).unwrap();
+                same("ended until reopen", &input, &want, &BTreeMap::new());
+                stamped(&input, now);
+            }
+            let before_files = step_files(from);
+            let after_files = step_files(to);
+            let copies: Vec<_> = after_files
+                .iter()
+                .filter(|(id, c)| {
+                    !before_files.contains_key(*id)
+                        && todo(c).prop("SUMMARY").unwrap().value
+                            == todo(&input).prop("SUMMARY").unwrap().value
+                })
+                .collect();
+            let want = cal(to, uid);
+            let now = copies
+                .first()
+                .map_or_else(|| completed(&want), |(_, c)| completed(c));
+            let copy_uid = copies
+                .first()
+                .map_or("0123456789abcdef0123456789abcdef", |(id, _)| id.as_str());
+            let (live, copy) =
+                edit::complete_recurring(&input, now, now.date_naive(), copy_uid).unwrap();
+            same(&format!("{uid} {to} live"), &live, &want, &BTreeMap::new());
+            stamped(&live, now);
+            preserved_created(&input, &live);
+            match (copies.first(), copy) {
+                (Some((_, want)), Some(got)) => {
+                    same("until history", &got, want, &BTreeMap::new());
+                    stamped(&got, now);
+                    preserved_created(&input, &got);
+                }
+                (None, None) => {}
+                _ => panic!("wrong history-copy count for {uid} {to}"),
+            }
+            input = live;
+        }
+    }
+}
+
+#[test]
 fn reopening_until_history_does_not_reopen_the_ended_original() {
     for (uid, history_uid) in [
         (U1, "7435cbd64d9443888f9eb8ebc84518f4"),
@@ -332,6 +385,42 @@ fn recurring_checklist_family_completion_matches_both_phone_occurrences_and_undo
 }
 
 #[test]
+fn captured_until_reopen_is_gated_by_its_specific_operation_row() {
+    let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{END}"));
+    let snap = env.snap();
+    for (uid, case) in [(U1, "ended-until-daily"), (U2, "ended-until-monthly")] {
+        let op = Op::Reopen { uid: uid.into() };
+        let mut matrix = candidate();
+        assert!(
+            twydo_core::gate::check(
+                &snap,
+                &matrix,
+                WriteMode::Verified,
+                &op,
+                dtstamp(&cal(END, uid)).date_naive()
+            )
+            .is_ok()
+        );
+        matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == case && r.op == "reopen")
+            .unwrap()
+            .twydo_to_iphone = Verdict::Unverified;
+        assert!(
+            twydo_core::gate::check(
+                &snap,
+                &matrix,
+                WriteMode::Verified,
+                &op,
+                dtstamp(&cal(END, uid)).date_naive()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn phone_baselines_do_not_enable_unchecked_embedded_writes() {
     for (step, uid, op) in [
         (SET, FC, Op::Complete { uid: FC.into() }),
@@ -348,6 +437,86 @@ fn phone_baselines_do_not_enable_unchecked_embedded_writes() {
         );
         assert_eq!(env.files(), before);
         assert!(env.journal().is_empty());
+    }
+}
+
+#[test]
+fn ended_until_reopen_store_is_journalled_and_undoable() {
+    for uid in [U1, U2] {
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{END}"));
+        let mut store = env.store(candidate());
+        let before = env.files();
+        let want = cal(REOPEN, uid);
+        store
+            .apply(&env.snap(), &Op::Reopen { uid: uid.into() }, dtstamp(&want))
+            .unwrap();
+        let after = env.files();
+        same(
+            "store ended reopen",
+            &parse(&after[&format!("list1/{uid}.ics")]).unwrap(),
+            &want,
+            &BTreeMap::new(),
+        );
+        assert_eq!(env.journal()[0].writes.len(), 1);
+        store.undo_last(dtstamp(&want)).unwrap();
+        assert_eq!(env.files(), before);
+        store.redo_last(dtstamp(&want)).unwrap();
+        assert_eq!(env.files(), after);
+    }
+}
+
+#[test]
+fn ended_until_reopen_refuses_uncaptured_or_inconsistent_shapes_atomically() {
+    for case in [
+        "count",
+        "yearly",
+        "open",
+        "not-final",
+        "timed",
+        "parent",
+        "metadata-parent",
+        "from-completion",
+        "wrong-end",
+        "duplicate-rule",
+    ] {
+        let mut input = cal(END, U1);
+        let t = input.root.children_named_mut("VTODO").next().unwrap();
+        match case {
+            "count" => t.prop_mut("RRULE").unwrap().set_value("FREQ=DAILY;COUNT=1"),
+            "yearly" => t
+                .prop_mut("RRULE")
+                .unwrap()
+                .set_value("FREQ=YEARLY;UNTIL=20261120"),
+            "open" => t.prop_mut("STATUS").unwrap().set_value("NEEDS-ACTION"),
+            "not-final" => t.prop_mut("DUE").unwrap().set_value("20261119"),
+            "timed" => {
+                t.prop_mut("DUE").unwrap().set_params(Vec::new());
+                t.prop_mut("DUE").unwrap().set_value("20261120T090000");
+            }
+            "parent" => t.insert_prop(
+                Property::new("RELATED-TO", Vec::new(), "some-parent"),
+                Some("UID"),
+            ),
+            "duplicate-rule" => t.insert_prop(
+                Property::new("RRULE", Vec::new(), "FREQ=DAILY;UNTIL=20261120"),
+                Some("DUE"),
+            ),
+            _ => {
+                let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut m = MetaJson::parse(&p.value).unwrap();
+                match case {
+                    "metadata-parent" => m.set_str("parentuid", "some-parent"),
+                    "from-completion" => m.set_i64("RecurrenceFrom", 2),
+                    "wrong-end" => m.set_i64("RecurrenceEndDate", 1_795_262_400),
+                    _ => unreachable!(),
+                }
+                p.set_value(&m.encode());
+            }
+        }
+        let before = input.clone();
+        let now = dtstamp(&input);
+        assert!(edit::reopen_ended_until(&mut input, now).is_err(), "{case}");
+        assert_eq!(input, before, "{case}: no partial edit");
     }
 }
 

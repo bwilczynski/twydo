@@ -115,10 +115,50 @@ pub fn complete_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), E
     Ok(())
 }
 
-/// Why a completed repeating task (the last occurrence of an ended series, completed in
-/// place) is not reopened: no capture shows what 2Do does with it.
+/// Why an uncaptured ended-series shape is not reopened. The narrowly captured UNTIL cases
+/// use [`reopen_ended_until`]; count/family/other shapes still need their own evidence.
 pub const REOPEN_ENDED: &str =
     "reopening the last occurrence of an ended repeat is not supported; use undo";
+
+/// Reopen the captured final occurrence of a date-only, due-anchored daily/monthly UNTIL
+/// series (Plan 8, steps 030 -> 040). Only completion state and stamps change. COUNT ends,
+/// families and other rule/date representations still need their own evidence.
+pub fn reopen_ended_until(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), EditError> {
+    let mut work = cal.clone();
+    let todo = the_todo(&mut work)?;
+    let refuse = || unsupported(REOPEN_ENDED);
+    if state(todo) != State::Completed
+        || todo.prop("RELATED-TO").is_some()
+        || todo.props_named("RRULE").count() != 1
+    {
+        return Err(refuse());
+    }
+    let raw = todo.prop("RRULE").ok_or_else(refuse)?;
+    let rule = parse_rrule(&raw.value).map_err(|_| refuse())?;
+    if !matches!(rule.freq, Freq::Daily | Freq::Monthly)
+        || !matches!(rule.end, End::Until(IcalDateTime::Date(_)))
+    {
+        return Err(refuse());
+    }
+    let due = todo.prop("DUE").ok_or_else(refuse)?;
+    let IcalDateTime::Date(due) = parse_date_time(due).map_err(|_| refuse())? else {
+        return Err(refuse());
+    };
+    let Meta::Json(meta) = meta_of(todo) else {
+        return Err(refuse());
+    };
+    if meta.task_type() != 0
+        || meta.get_str("parentuid").is_some_and(|p| !p.is_empty())
+        || check_repeat_meta(&meta, &rule)?
+        || next_due(due, &rule, None)?.is_some()
+    {
+        return Err(refuse());
+    }
+    mark_open(todo);
+    touch(todo, now);
+    *cal = work;
+    Ok(())
+}
 
 /// Reopen a completed task that does not repeat (H4 as captured). Also reopens a repeat's
 /// history copy, which has no `RRULE`. All or nothing.

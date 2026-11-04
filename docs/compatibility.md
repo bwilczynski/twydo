@@ -167,6 +167,13 @@ item inside a repeating project (creating one included); nested projects and che
 deleting or reopening a single item on its own; editing alerts. Converting a project that has
 items is not supported by 2Do at all.
 
+Plan 8 batch 1 now supplies phone baselines for repeating-checklist rule changes and completion,
+daily/yearly rule changes/removal, until continuation/boundary/end and history/final-occurrence
+reopening. Local tests compare Twydo's output with those captures, but the new Twydo → iPhone
+checks are pending, so verified-mode capabilities above have **not** been expanded. In `test`
+mode, only the captured date-only top-level daily/plain-monthly until-ended reopen shapes can
+use the new dedicated rows; count-ended and family-ended reopening remain refused.
+
 The candidate recurring-checklist writer copies the completed family before resetting live
 items and removing their inherited due dates. It refuses independent item start dates and
 due times, including start-only items without a due date. Local tests cover atomic refusal,

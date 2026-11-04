@@ -140,8 +140,10 @@ How the next occurrence is found:
   the last occurrence, or one whose next date would be after the end date (in `test` mode, see
   above), completes the task itself in place, as 2Do does: no copy is added, and the task stays in Done with its repeat,
   due date and end. Undo brings it back; reopening it (`x` on it, `tdo op reopen`) is refused
-  (`reopening the last occurrence of an ended repeat is not supported; use undo`), as no capture
-  shows what 2Do does then.
+  in verified mode until its Twydo → phone check passes. Plan 8 has captured the phone reopening
+  date-only daily/plain-monthly until-ended originals in place with the repeat/end/due kept;
+  those narrow shapes have a candidate writer and dedicated gate rows. Other ended-series
+  shapes still say `reopening the last occurrence of an ended repeat is not supported; use undo`.
 
 - **One interval per completion.** Missed occurrences are not skipped: a monthly task due
   August 15 and completed in November moves to September 15, still overdue. Complete it once per
