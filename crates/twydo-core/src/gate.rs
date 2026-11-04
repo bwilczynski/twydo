@@ -41,12 +41,15 @@
 //!    keep a repeating item);
 //! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
 //!    attribute cases (with rule 6, the only rules the write mode changes); for a type or
-//!    repeat change, the `edit` rows of the cases it leaves too, and for a type change the
+//!    repeat change, the `edit` rows of the cases it leaves too; for a `Change::Repeat`
+//!    that sets, removes or reshapes the repeat (another class, from completion or end:
+//!    anything but a new interval of the same rule, which Plan 4 verified as an edit), the
+//!    `repeat` rows of the own and family cases before and after; and for a type change the
 //!    `convert` row of its before and after types (none when the type stays). A row whose
 //!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
 //! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
 //!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
-//!    removing a rule needs the old class's edit verdict;
+//!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
 //! 5. the verified shape of a repeating completion;
 //! 6. reopening a repeat's history copy: the monthly or yearly `reopen` row, checked as in
 //!    rule 3 (so the write mode applies).
@@ -185,6 +188,18 @@ pub fn check(
     if let Some(a) = after {
         for c in std::iter::once(a.own).chain(a.family) {
             operation_row(m, mode, c, "edit")?;
+        }
+    }
+    if let (Some(i), Op::Edit { changes, .. }, Some(a)) = (target, op, after)
+        && reshapes_repeat(snap, i, changes)
+    {
+        let before = std::iter::once(cases.own).chain(cases.family);
+        let mut seen = Vec::new();
+        for c in before.chain(std::iter::once(a.own)).chain(a.family) {
+            if !seen.contains(&c) {
+                seen.push(c);
+                operation_row(m, mode, c, "repeat")?;
+            }
         }
     }
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
@@ -442,6 +457,26 @@ fn due_after(snap: &Snapshot, idx: usize, changes: &[Change]) -> Option<Due> {
         let d = snap.tasks[idx].due.as_ref()?;
         Some(Due::Date(d.local_date(snap.tz())))
     })
+}
+
+/// Whether `changes` set, remove or reshape the task's repeat: anything but a new interval
+/// of the same rule (same class, from completion and end). Plan 4 verified interval edits
+/// only; everything else needs the `repeat` rows.
+fn reshapes_repeat(snap: &Snapshot, idx: usize, changes: &[Change]) -> bool {
+    let Some(new) = new_repeat(changes) else {
+        return false;
+    };
+    let task = &snap.tasks[idx];
+    let (Some(new), Some(raw)) = (new, task.rrule.as_deref()) else {
+        return true;
+    };
+    let Ok(mut old) = parse_rrule(raw) else {
+        return true;
+    };
+    let due = due_after(snap, idx, changes);
+    let same_class = task_rule_class(task, snap).as_deref() == Some(&new_class(new, due.as_ref()));
+    old.interval = new.rule.interval;
+    !(same_class && old == new.rule)
 }
 
 /// The matrix class of a rule Twydo writes, anchored on the due date it will have.
@@ -756,6 +791,7 @@ fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<()
     }
     let what = match op {
         "convert" => format!("converting {}", convert_label(case)),
+        "repeat" => format!("changing the repeat rule of {case} tasks"),
         _ => format!("{op} for {case} tasks"),
     };
     match columns.into_iter().find(|(_, v)| *v != Verdict::Pass) {

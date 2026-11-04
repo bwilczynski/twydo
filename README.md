@@ -34,7 +34,8 @@ the rest with a reason, so the phone never gets something it would misread.
   with the title); today the title goes in the row and dates and repeats in the card
 - Desktop notifications for alerts, and editing alerts
 - Manual ordering, and creating or renaming lists
-- Writing to repeats other than monthly and yearly, and adding projects, checklists and items,
+- Setting or removing a repeat, writing to repeats other than monthly and yearly (beyond their
+  interval), and adding projects, checklists and items,
   in verified mode: Twydo can write them, but refuses until its writes are checked on the phone
 - Prebuilt releases (build from source for now)
 - macOS is expected to work but is not tested yet
