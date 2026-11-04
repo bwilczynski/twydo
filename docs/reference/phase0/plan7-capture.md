@@ -342,30 +342,47 @@ set and the JSON as data. Tests: `twin_*` in `crates/twydo-core/tests/edit_compl
 - **"Last" in the Nth-weekday class** (`LF`): Twydo writes `RecurrenceValue` -1 for a last
   weekday (shown right by the phone, session B); the phone's own code is 6 (as in session A's
   `R09` trace), and it rewrote -1 to 6 on the live task when it completed `LFa`. Twydo's
-  completion now writes 6 too, and accepts 6 when checking the metadata, so a last-weekday task
-  the phone completed once can be completed in Twydo. Creating one still writes -1.
+  completion now writes 6 too, and so does creating or reshaping such a rule; -1 is still
+  accepted from older files, and 6 from the phone, so a last-weekday task the phone completed
+  once can be completed in Twydo.
 - Also from the Task 14 review: an `UNTIL` must name the UTC day of JSON `RecurrenceEndDate`
   (2Do writes noon UTC of the end day), or completing is refused; and the undo of a completion
   that ended a series in place counts as a repeat completion (the undo edge case applies), while
-  reopening such a task is refused with a pointer to undo, as no capture shows what 2Do does.
+  reopening such a task is refused with a pointer to undo (before any matrix row), as no
+  capture shows what 2Do does.
+- Also from the review of this task: completing a recurring project whose rule ends (count or
+  until) or repeats from completion is refused (not captured for families), and changing the
+  interval of an Nth-weekday repeat is refused (2Do keeps the ordinal where the interval would
+  go, so the interval write would overwrite it).
 
-**Not covered:** the phone's history copy of an "until" series that goes on (`UN` ended at
-once); Twydo drops `RecurrenceEndDate` from the copy as `CT`'s copy drops the count (session B).
-Reopening the last occurrence of an ended series. A recurring project's last occurrence.
+**Not covered:** an "until" series that goes on (`UN` ended at once), so `mod:until` `execute`
+stays unverified; Twydo would drop `RecurrenceEndDate` from the copy as `CT`'s copy drops the
+count (session B), an inference. Reopening the last occurrence of an ended series. Recurring
+projects that end or repeat from completion.
+
+**The `b` twins on the phone.** Round 02 ran Twydo's completion as it was before these fixes:
+`FSb` got due 2027-01-20 (counted from its start date) and `LFb` kept `RecurrenceValue` -1. The
+user's look at the `b` twins is evidence for the kinds whose code did not change; for `FS` and
+`LF` the evidence is the byte comparison of the fixed code with the phone's own completion.
 
 **Edits** (`03-twydo-edit`, checked on the phone in `04-phone-m31-again`): `E1` due +1 day and
 renamed `E1x`, `E2` every 2 weeks, `E3` weekly → monthly, `E4` repeat removed all showed right.
 
 **Matrix.** Rule `execute` = `pass` for `days`, `weeks`, `weekdays-set`, `months-day-29-31`,
-`months-nth-weekday`, `years-feb-29`, `mod:from-completion`, `mod:count` (with session B's `CT`
-for counting down) and `mod:until`, each citing the twins above. Operation rows: `daily` and
-`weekly` `complete` pass every column (the phone completed the `a` twins, Twydo read them back,
-and Twydo's `b` result equals the phone's own completion; the user saw no difference between the
-twins); `from-completion` `complete` gets `twydo_to_iphone` = `pass`; `daily` and `weekly`
-`edit` get `twydo_to_iphone` = `pass` (`E1`, `E2`). The `weekly` and `monthly` `repeat` rows
-already passed; their notes now cite `E3` and `E4`. In verified mode with the shipped matrix,
-completing every kind Twydo creates is allowed, as is editing existing daily and weekly tasks,
-weekly → monthly and removing a weekly repeat (`embedded_verified_completes_every_kind_session_c_verified`
-in `crates/twydo-core/tests/gate.rs`). Still refused: completing the three kinds the phone
-misreads, reshaping to daily, yearly or from completion, and editing an existing from-completion
-task.
+`months-nth-weekday`, `years-feb-29`, `mod:from-completion` and `mod:count` (with session B's
+`CT` for counting down), each citing the twins above; `mod:until` stays `unverified` (only its
+ending case `UN` was captured). Operation rows: `daily` and `weekly` `complete` pass every column
+(the phone completed the `a` twins, Twydo read them back, Twydo's result equals the phone's own
+completion byte for byte, and the user saw no difference between the twins, whose code these
+fixes did not change); `from-completion` `complete` gets `twydo_to_iphone` = `pass`, resting on
+the fixed code's byte equality with the phone's own completion of `FCa` and `FSa` (not on the
+user's look at round 02, which ran the old code); `daily` and `weekly` `edit` get
+`twydo_to_iphone` = `pass` (`E1` daily due and title, `E2` plain weekly interval, generalised to
+every task of the case). The `weekly` and `monthly` `repeat` rows already passed; their notes
+now cite `E3` and `E4`. In verified mode with the shipped matrix, completing every kind Twydo
+creates but an end date is allowed, as is editing existing daily and weekly tasks, weekly →
+monthly and removing a weekly repeat (`embedded_verified_completes_every_kind_session_c_verified`
+in `crates/twydo-core/tests/gate.rs`). Still refused: completing a repeat with an end date, the
+three kinds the phone misreads, and a recurring project that ends or repeats from completion;
+reshaping to daily, yearly or from completion; editing an existing from-completion task;
+changing an Nth-weekday repeat's interval.

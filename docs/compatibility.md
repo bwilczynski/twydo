@@ -97,17 +97,21 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 
 "—" means not verified yet. The Complete column is the matrix row, but the gate also needs
 the repeat rule's own `execute` verdict. Since Plan 7 session C every repeat kind Twydo creates
-passes it: daily, weekly, on set weekdays, monthly on any day (the 29th to 31st included), the
-Nth or last weekday, yearly (29 February included), from completion, and repeats with an end by
-count or date. The phone completed one copy of each kind and Twydo an identical copy, and
+passes it but an end date: daily, weekly, on set weekdays, monthly on any day (the 29th to 31st
+included), the Nth or last weekday, yearly (29 February included), from completion, and repeats
+with an end by count. A repeat with an end date (`mod:until`) stays unverified: only its last
+occurrence was captured, not one that moves on. A recurring project whose repeat ends or counts
+from completion is refused to complete in every mode (not captured for families). The phone
+completed one copy of each kind and Twydo an identical copy, and
 Twydo's result equals the phone's byte for byte (see
 [`plan7-capture.md`](reference/phase0/plan7-capture.md), session C). For a repeating
 task, "Edit" covers the due date, title and other fields, and changing the repeat's interval,
 not setting, removing or reshaping the repeat (the `repeat` rows). Interval-only changes are
 allowed within a class whose rule `edit` verdict passes and whose task row `edit` passes: daily,
 weekly, monthly and yearly tasks. The same interval encoding is accepted as verified for the
-29th to 31st, Nth weekday, 29 February, and repeats with an end, so those can change interval
-when their task's `edit` row passes. Editing an existing "from completion" task stays refused
+29th to 31st, 29 February, and repeats with an end, so those can change interval when their
+task's `edit` row passes. An Nth-weekday repeat's interval is never changed: 2Do keeps its
+ordinal where the interval would go. Editing an existing "from completion" task stays refused
 (its `edit` row has no baseline). The gate also covers creating items, projects, checklists and
 repeats, setting and removing a repeat, and converting a task's type (`convert` cases for task to
 checklist, task to project, checklist to project and empty parent to task; `daily` and `weekly`
@@ -142,7 +146,9 @@ Verified behaviour that is easy to get wrong, each checked on the iPhone:
 
 Not verified yet, so refused for writing in verified mode: setting, removing or changing a
 daily, yearly or "from completion" repeat, and any repeat change on a project or checklist; converting an empty project to a checklist; editing an existing "from completion"
-task; reopening a repeating task itself (the last occurrence of an ended series: use undo);
+task; completing a repeat with an end date; completing a recurring project that ends or
+repeats from completion; changing the interval of an Nth-weekday repeat (not supported by 2Do);
+reopening a repeating task itself (the last occurrence of an ended series: use undo);
 repeating checklists; a repeating
 item inside a repeating project (creating one included); nested projects and checklists; moving,
 deleting or reopening a single item on its own; editing alerts. Converting a project that has

@@ -86,8 +86,10 @@ completion, with an end by count or date), and so is creating a checklist, a pro
 recurring project and their items. **Editing** an
 existing repeating task: daily, weekly, monthly and yearly tasks can be edited (the due date,
 title, other fields, and the interval: every 2 weeks instead of every week). The same interval
-change is accepted for the monthly kinds on the 29th to 31st and on the Nth weekday, for
-February 29 and for repeats with an end, which share the same interval encoding. Existing
+change is accepted for monthly on the 29th to 31st, for February 29 and for repeats with an
+end, which share the same interval encoding. The interval of an Nth-weekday repeat (`2nd tue`,
+`last fri`) does not change: 2Do has none for it and keeps the ordinal where the interval would
+go (`changing the interval of an Nth-weekday repeat is not supported`). Existing
 "from completion" tasks cannot be edited yet (`edit for from-completion tasks is not verified
 yet (iphone_baseline)`). **Setting or removing a repeat:** setting a weekly or monthly repeat on a plain task,
 removing a weekly or monthly repeat, changing a weekly repeat to monthly or a monthly one to
@@ -103,11 +105,13 @@ Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, mis
 refuses to write them in every mode, for example `months-last-day repeats are not supported by
 2Do on the iPhone`.
 
-**Completing** works for every repeat kind Twydo creates: daily, weekly, set weekdays, monthly
-on any day, the Nth or last weekday, yearly including 29 February, from completion, and with an
-end by count or date. Each was checked against the iPhone: the phone completed one copy of a
-task, Twydo an identical copy, and the two results were the same, byte for byte. `tdo check`
-lists the repeat kinds in your data and whether each is verified.
+**Completing** works for every repeat kind Twydo creates but one: daily, weekly, set weekdays,
+monthly on any day, the Nth or last weekday, yearly including 29 February, from completion, and
+with an end by count. Each was checked against the iPhone: the phone completed one copy of a
+task, Twydo an identical copy, and the two results were the same, byte for byte. A repeat with
+an **end date** (`until`) is still refused in verified mode (`months-day-1-28+until repeats are
+not verified yet`): only its last occurrence was checked, not an occurrence that moves on.
+`tdo check` lists the repeat kinds in your data and whether each is verified.
 
 **Completing a repeating task** does two things, as 2Do does:
 
@@ -130,8 +134,8 @@ How the next occurrence is found:
   date: a monthly task due December 7 completed on November 4 moves to December 4, and a start
   date of December 20 moves by the same 3 days back, to December 17.
 - **An end by count** counts down with each completion (`COUNT=3` becomes `COUNT=2`). Completing
-  the last occurrence, or one whose next date would be after the end date, completes the task
-  itself in place, as 2Do does: no copy is added, and the task stays in Done with its repeat,
+  the last occurrence, or one whose next date would be after the end date (in `test` mode, see
+  above), completes the task itself in place, as 2Do does: no copy is added, and the task stays in Done with its repeat,
   due date and end. Undo brings it back; reopening it (`x` on it, `tdo op reopen`) is refused
   (`reopening the last occurrence of an ended repeat is not supported; use undo`), as no capture
   shows what 2Do does then.
@@ -153,6 +157,9 @@ been synced to the phone.
 moves the project to its next occurrence, adds a completed copy of the project with a completed
 copy of every item under it (items that were already done keep their own completion time), and
 reopens all the live items. The **items' dates do not move** with the project, as in 2Do.
+Completing a recurring project whose repeat has an end (count or date) or counts from
+completion is refused in every mode (`completing a recurring project that ends or repeats from
+completion is not verified yet`): 2Do's behaviour was captured for plain repeats only.
 
 The edit card (`r` on any task, or `i` then the Repeat field) sets, changes or removes a repeat:
 you type the rule, such as `monthly`, `2nd tue` or `mon thu after done`

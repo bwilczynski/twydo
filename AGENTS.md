@@ -57,16 +57,17 @@ app replacing 2Do for one user, plan by plan.
    from-completion and project/checklist repeat changes stay refused (their `repeat` rows lack
    verdicts). Tasks 14 and 15 are done too (session C, "Results C" in the capture page): Twydo
    completes every repeat kind it creates exactly as the phone does (twin byte-compares in
-   `crates/twydo-core/tests/edit_complete.rs`), so verified mode completes them all, and edits
-   existing daily and weekly tasks (weekly to monthly and weekly removal included).
-   **Follow-ups:** the remaining `repeat` rows (daily, yearly, from-completion, projects,
-   checklists), editing existing from-completion tasks, empty project to checklist; what 2Do does
-   when an ended series' last occurrence is reopened (Twydo refuses, undo works) and the phone's
-   history copy of an "until" series that goes on (Twydo drops `RecurrenceEndDate`, inferred from
-   `COUNT`); whether creating a last-weekday rule should write 2Do's `RecurrenceValue` 6 instead of
-   -1 (the phone rewrites it on completion; Twydo's completion now writes 6); the unused edge
-   cases `monthly-31st`, `yearly-feb-29`, `from-completion-anchor`, `end-after-n`, `end-on-date`
-   could cite session C.
+   `crates/twydo-core/tests/edit_complete.rs`), so verified mode completes them all but an end
+   date (`mod:until` `execute` stays unverified), and edits existing daily and weekly tasks
+   (weekly to monthly and weekly removal included). A last-weekday rule is written with 2Do's
+   own `RecurrenceValue` 6 (-1 still read). Refused on purpose: completing a recurring project
+   that ends or repeats from completion, and changing an Nth-weekday repeat's interval.
+   **Follow-ups:** an "until" series that goes on (the phone's completion and history copy);
+   the remaining `repeat` rows (daily, yearly, from-completion, projects, checklists); editing
+   existing from-completion tasks; empty project to checklist; what 2Do does when an ended
+   series' last occurrence is reopened (Twydo refuses, undo works); recurring projects that end
+   or repeat from completion; the unused edge cases `monthly-31st`, `yearly-feb-29`,
+   `from-completion-anchor`, `end-after-n`, `end-on-date` could cite session C.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
