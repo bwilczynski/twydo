@@ -2133,3 +2133,38 @@ fn c_is_ignored_under_overlay() {
     a.handle_key(key('c'));
     assert_eq!(a.handle_key(key('p')), Outcome::Continue);
 }
+
+/// A plain task with an item shows as a project but its file declares a task: `ct` would
+/// write only new stamps, so it says so instead; `cp` writes the declared type.
+#[test]
+fn ct_on_an_untyped_parent_writes_nothing() {
+    let mut rep = report();
+    let d = rep
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Call the dentist")
+        .unwrap();
+    let (dentist, list) = (d.uid.clone(), d.collection.clone());
+    let other = rep
+        .tasks
+        .iter_mut()
+        .find(|t| t.parent.is_none() && t.uid != dentist && t.collection == list)
+        .unwrap();
+    other.parent = Some(dentist.clone());
+    let snap = snapshot_of(rep);
+    let i = snap.find(&dentist).unwrap();
+    assert_eq!(snap.tasks[i].kind, TaskKind::Project, "shown as a project");
+    let mut a = App::new(snap, now());
+    in_all(&mut a, "Call the dentist");
+    a.handle_key(key('c'));
+    assert_eq!(a.handle_key(key('t')), Outcome::Continue);
+    assert_eq!(
+        a.message.as_deref(),
+        Some("\"Call the dentist\" is already a task")
+    );
+    a.handle_key(key('c'));
+    assert_eq!(
+        write_op(a.handle_key(key('p'))),
+        kind_save(&dentist, TaskKind::Project)
+    );
+}

@@ -66,7 +66,7 @@ use crate::model::meta_edit::MetaJson;
 use crate::model::repeat::{parse_rrule, rule_class};
 use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::repeatinput::RepeatSpec;
-use crate::views::{Snapshot, UNTYPED_PARENT, task_rule_class};
+use crate::views::{Snapshot, declared_kind, task_rule_class};
 
 /// Why the gate refused an operation. `Display` is the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -560,16 +560,6 @@ fn written_rule(
         }
     }
     Ok(())
-}
-
-/// The kind the task's file declares: `Snapshot::new` shows a parent without `@tasktype` as
-/// a project, but it is still a plain task.
-fn declared_kind(t: &Task) -> TaskKind {
-    if t.warnings.iter().any(|w| w == UNTYPED_PARENT) {
-        TaskKind::Task
-    } else {
-        t.kind
-    }
 }
 
 /// A readable JSON `TaskType` must be 0, 1 or 2 and match the declared kind (0 task,

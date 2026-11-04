@@ -99,7 +99,7 @@ repeat classes). The iPhone baselines for these were captured (see
 on the phone yet, so in verified mode most of them are refused until they are. `tdo op add` creates plain tasks by default; `--kind task|project|checklist`,
 `--parent UID` (an item under a checklist or project) and `--repeat TEXT` (a rule in words such as `weekly`, `2w`,
 `mon thu`; without `--due` the task is due today, as in 2Do) create the other shapes, and
-`tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task. The gate still decides: a
+`tdo op edit UID` takes `--repeat TEXT`, `--no-repeat` and `--kind` to reshape a task (`--kind` naming the type the file already has writes nothing). The gate still decides: a
 combination whose matrix row is not verified is refused (exit 1), and repeat text that does not parse exits 2.
 Dates with and without a time, start dates, and 2Do's automatic alert are handled as described in [tasks.md](tasks.md).
 

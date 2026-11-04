@@ -18,7 +18,7 @@ use crate::model::{Status, Task, TaskKind};
 use crate::vdir::{Collection, LoadReport};
 
 const BROKEN_PARENT: &str = "broken parent link";
-pub(crate) const UNTYPED_PARENT: &str = "parent type not encoded; shown as project";
+const UNTYPED_PARENT: &str = "parent type not encoded; shown as project";
 const UNSUPPORTED_REPEAT: &str = "unsupported repeat rule";
 
 /// Loaded tasks plus the parent/child structure derived from `RELATED-TO`.
@@ -151,6 +151,16 @@ impl Snapshot {
     fn is_item(&self, idx: usize) -> bool {
         self.parent(idx)
             .is_some_and(|p| self.tasks[p].kind == TaskKind::Checklist)
+    }
+}
+
+/// The kind the task's file declares. The snapshot shows a parent without `@tasktype` as a
+/// project, but its file still says it is a plain task: writing a type compares with this.
+pub fn declared_kind(t: &Task) -> TaskKind {
+    if t.warnings.iter().any(|w| w == UNTYPED_PARENT) {
+        TaskKind::Task
+    } else {
+        t.kind
     }
 }
 
