@@ -1,0 +1,5 @@
+scenario = "plan7-twydo-list2"
+step = "04-phone-m31-again"
+device = "iphone"
+action = "phone completes M31a a second time; checks E1x-E4"
+captured_at = "2026-11-04T09:23:31Z"
