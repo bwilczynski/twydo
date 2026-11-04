@@ -11,7 +11,8 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
-use twydo_core::edit::Op;
+use twydo_core::edit::{Change, NewTask, Op};
+use twydo_core::model::TaskKind;
 use twydo_core::ical::{Component, parse};
 use twydo_core::store::journal::{Journal, Stage};
 use twydo_core::store::{Store, WriteError};
@@ -825,4 +826,76 @@ fn completing_a_recurring_project_that_ends_is_refused() {
         "{err}"
     );
     assert_eq!(env.files(), before);
+}
+
+/// Verified mode with the embedded matrix and a new empty project "Synthetic project" in
+/// list2, created through the store. Returns its UID and file.
+fn verified_with_empty_project() -> (Env, Store, String, std::path::PathBuf) {
+    let env = Env::new(WriteMode::Verified, FIXTURE);
+    let mut store = env.store(Matrix::embedded().clone());
+    let op = Op::Create(NewTask {
+        kind: TaskKind::Project,
+        ..NewTask::plain("list2", "Synthetic project")
+    });
+    store.apply(&env.snap(), &op, now()).unwrap();
+    let snap = env.snap();
+    let t = snap
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Synthetic project")
+        .unwrap();
+    let (uid, path) = (t.uid.clone(), t.path.clone());
+    (env, store, uid, path)
+}
+
+/// An item of `parent` in list2, as a sync would deliver it: the file of a task created by a
+/// second store, with RELATED-TO the parent.
+fn item_of(env: &Env, store: &mut Store, parent: &str) -> std::path::PathBuf {
+    let before = env.files();
+    let op = Op::Create(NewTask {
+        parent: Some(parent.to_string()),
+        ..NewTask::plain("list2", "Synthetic item")
+    });
+    store.apply(&env.snap(), &op, now()).unwrap();
+    let after = env.files();
+    let (rel, _) = after
+        .iter()
+        .find(|(k, _)| !before.contains_key(*k))
+        .unwrap();
+    env.vdir.join(rel)
+}
+
+#[test]
+fn type_conversion_refused_when_an_item_joined_after_load() {
+    for changes in [
+        vec![Change::Kind(TaskKind::Task)],
+        vec![
+            Change::Summary("Renamed".into()),
+            Change::Kind(TaskKind::Task),
+        ],
+    ] {
+        for save in [false, true] {
+            let (env, mut store, uid, _) = verified_with_empty_project();
+            let snap = env.snap();
+            let item = item_of(&env, &mut store, &uid);
+            let before = env.files();
+            let op = if save {
+                Op::Save {
+                    uid: uid.clone(),
+                    changes: changes.clone(),
+                    to: None,
+                }
+            } else {
+                Op::Edit {
+                    uid: uid.clone(),
+                    changes: changes.clone(),
+                }
+            };
+            match store.apply(&snap, &op, later()) {
+                Err(WriteError::Stale(p)) => assert_eq!(p, item, "{op:?}"),
+                other => panic!("{op:?}: expected Stale, got {other:?}"),
+            }
+            assert_eq!(env.files(), before, "{op:?}");
+        }
+    }
 }
