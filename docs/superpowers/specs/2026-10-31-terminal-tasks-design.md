@@ -220,7 +220,14 @@ documented, inspectable auxiliary formats and do not become an alternative task 
   Use 01 §12 thresholds and context rules, with fixtures for precedence: overdue first; in Today,
   started tasks not otherwise overdue group as In Progress; remaining timed tasks due later today
   group as Later Today. Use local calendar days, not elapsed 24-hour intervals, across DST.
-- **Scheduled**: tasks with a future start date are hidden from lists and Today until they start.
+- **Scheduled**: tasks with a future start date stay out of Today and Next 3 Days until they
+  start. **Revised 2026-11-05 for issue #11:** All and ordinary lists always include future-start
+  tasks under Future and completed tasks under Done (newest completion first), omitting empty
+  sections. No visibility controls or preferences. Children in another active/future-start/
+  completed section appear separately; children in the same section retain expansion and
+  item ordering. Counts remain unfinished-only, including future-start tasks. The dedicated
+  Done view retains its completed total. See the
+  [list visibility design](2026-11-05-issue-11-list-visibility-design.md).
 - **Next 3 Days** (product decision): unfinished tasks due from the start of today through the
   end of the day after tomorrow: `[today, today + 3 calendar days)`. Exclude overdue, undated,
   archived, and future-start tasks. Project children qualify independently. This boundary is not
