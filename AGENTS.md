@@ -48,46 +48,15 @@ app replacing 2Do for one user, plan by plan.
    card, type changes `ct`/`cp`/`cc`, all repeat kinds; plan
    `docs/superpowers/plans/2026-11-03-plan-7-add-and-reshape.md`, design
    `docs/superpowers/specs/2026-11-03-tui-add-and-structure-design.md`, iPhone capture in
-   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)). Task 13, the phone
-   verification of Twydo's own writes, is done (session B, "Results B" in the capture page): verified
-   mode now creates checklists, projects, recurring projects and items, and creates every repeat
-   kind except the three 2Do 3.91 misreads (last day, last weekday, Nth weekend day; rule `edit` =
-   `fail`, never written). Type changes are allowed (task to checklist/project, checklist to
-   project, empty parent to task); setting/removing/changing weekly and monthly repeats is allowed; daily, yearly,
-   from-completion and project/checklist repeat changes stay refused (their `repeat` rows lack
-   verdicts). Tasks 14 and 15 are done too (session C, "Results C" in the capture page): Twydo
-   completes every repeat kind it creates exactly as the phone does (twin byte-compares in
-   `crates/twydo-core/tests/edit_complete.rs`), so verified mode completes them all but an end
-   date (`mod:until` `execute` stays unverified), and edits existing daily and weekly tasks
-   (weekly to monthly and weekly removal included). A last-weekday rule is written with 2Do's
-   own `RecurrenceValue` 6 (-1 still read). Refused on purpose: completing a recurring project
-   that ends or repeats from completion, and changing an Nth-weekday repeat's interval.
-   **Follow-ups:** an "until" series that goes on (the phone's completion and history copy);
-   the remaining `repeat` rows (daily, yearly, from-completion, projects, checklists); editing
-   existing from-completion tasks; empty project to checklist; what 2Do does when an ended
-   series' last occurrence is reopened (Twydo refuses, undo works); recurring projects that end
-   or repeat from completion. Plan 8 reconciles the unused edge records `monthly-31st`,
-   `yearly-feb-29`, `from-completion-anchor` and `end-after-n` from sessions B/C; `end-on-date`
-   records its partial session-C evidence and stays unverified.
-   **Current follow-up plan:** `docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md`
-   starts with a resume checkpoint: PR #26, completed batch 1, precise coverage counts,
-   and the next bounded RF/RA from-completion increment. Use that checkpoint to resume without
-   replaying the prior phone work; prepare a fixed checklist before requesting a new session.
-   The plan audits the remaining editing/lifecycle gaps and separates missing implementation from missing
-   phone evidence and permanent 2Do limits. Local audit/evidence cleanup is done; device rounds
-   need fresh user approval. Continue its first unfinished task; do not infer permission from past sessions.
-   The user requested coverage of **all existing TUI actions**, not only checklist/until gaps:
-   `docs/reference/phase0/plan8-tui-completeness-session.md` is the pending session plan, with
-   phone baselines, a local implementation checkpoint, final phone round trips and verified-mode
-   TUI acceptance. The user approved two synthetic-only production throwaway lists, confirmed
-   a fresh 2Do backup and 2Do 3.91, and batch 1 phone baselines (steps 000–060) are captured.
-   Batch 1 phone rounds are complete through step 153. Eight guarded operation rows and
-   narrow date-only daily/plain-monthly `mod:until.execute` now pass, with behavior-based
-   core tests and offline verified-mode TUI key/writer acceptance. See the session regression
-   map/local closeout and `docs/compatibility.md` for exact scopes; later Plan 8 batches remain
-   unfinished. The conflicted 130 attempt was resolved using the user's phone versions; clean
-   141–144/151–153 captures supply the final repeat-change/removal/history evidence. Private session state/backups are outside git. Do not touch other
-   data, change accounts/global write mode, or delete the test lists without the agreed consent.
+   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)).
+   **Current follow-up:** Plan 8's [resume checkpoint](docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+   and [session coverage ledger](docs/reference/phase0/plan8-tui-completeness-session.md) record
+   completed evidence and remaining work across all existing TUI actions. Batch 1 and RF/RA
+   phone rounds are complete; do not repeat them. See [compatibility](docs/compatibility.md)
+   for exact enabled and refused shapes, including date-only daily/plain-monthly until execution.
+   Prepare a bounded checklist and obtain fresh approval before additional device rounds. Private
+   session state and backups are outside git. Do not touch other data, change accounts or global
+   write mode, or delete the synthetic test lists without the agreed consent.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat

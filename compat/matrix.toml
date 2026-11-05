@@ -131,7 +131,7 @@ preserve = "pass"
 execute = "pass"
 edit = "pass"
 evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
-notes = "Plan 8 U1/U2 establish continuation/history end fields, inclusive boundary, final in-place completion and post-reopen execution in both directions. Execution is guarded to top-level plain interval-1 date-only daily or monthly day1-28, due anchored, no children/start/alerts/delay. Other UNTIL contexts stay refused even where offset/base-rule verdicts pass. Preserve/edit evidence from Plan 7 remains; this is not family/timed/from-completion UNTIL enablement."
+notes = "Plan 8 U1/U2 establish continuation/history end fields, inclusive boundary, final in-place completion and post-reopen execution in both directions. The execute pass is scoped by the compatibility gate to top-level plain interval-1 date-only daily or monthly day1-28, due anchored, no children/start/alerts/delay; the row verdict alone does not express this scope. Other UNTIL contexts stay refused even where offset/base-rule verdicts pass. Preserve/edit evidence from Plan 7 remains; this is not family/timed/from-completion UNTIL enablement."
 
 [[operation]]
 case = "one-time"

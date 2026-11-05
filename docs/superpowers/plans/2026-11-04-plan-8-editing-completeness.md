@@ -122,7 +122,7 @@ it does not mean the code is known to produce the right result.
   support (in particular type/repeat changes need JSON).
 - `monthly-31st`, `yearly-feb-29`, `from-completion-anchor` and `end-after-n` edge entries were
   stale despite sessions B/C and regression tests covering those behaviours. Task 1 reconciled
-  those records from existing evidence; `end-on-date` is only partially covered and stays open.
+  those records from existing evidence; `end-on-date` passes for the captured daily and plain-monthly date-only scope; other contexts remain unverified.
 
 ### Do not mistake matrix cells for effective capabilities
 
