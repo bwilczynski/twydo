@@ -1248,7 +1248,26 @@ fn captured_from_completion_edit(
         {
             return refuse();
         }
-        return Ok(());
+        // Each change involving completion anchoring needs its own phone twin.
+        // The direct task covers setting and removing monthly completion recurrence;
+        // the anchor task covers monthly due -> completion -> weekly completion -> due.
+        let before = old.as_ref().map(|r| (r.freq, t.from_completion));
+        let after = new_repeat(changes)
+            .flatten()
+            .map(|r| (r.rule.freq, r.from_completion));
+        return if before == after
+            || matches!(
+                (before, after),
+                (None, Some((Freq::Monthly, true)))
+                    | (Some((Freq::Monthly, false)), Some((Freq::Monthly, true)))
+                    | (Some((Freq::Monthly, true)), Some((Freq::Weekly, true)))
+                    | (Some((Freq::Weekly, true)), Some((Freq::Weekly, false)))
+                    | (Some((Freq::Monthly, true)), None)
+            ) {
+            Ok(())
+        } else {
+            refuse()
+        };
     }
     let Some(old) = old else {
         return refuse();

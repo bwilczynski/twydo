@@ -25,8 +25,8 @@ Twydo reads nested projects and checklists (a parent inside a parent) but does n
 selector does:
 
 - **Task to checklist or project**: the task keeps its title, dates, repeat and notes, and has no
-  items yet. Converting a repeating task to a checklist is refused (the recurring-checklist edit operation is not
-  verified).
+  items yet. Converting a repeating task to a checklist is refused because ordinary edits to recurring
+  checklists are not verified.
 - **Checklist with items to project**: the items stay, with their dates as they were.
 - **Empty project or checklist to task**: allowed.
 - **A project with items cannot be converted**, neither to a checklist nor to a task. The iPhone
@@ -111,10 +111,11 @@ removed or changed between those classes. Newly verified daily/yearly transition
 anchored and have no end or weekday selector; they do not enable end/anchor/Nth-rule changes.
 The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
 can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
-start, alerts or completion anchor. Ordinary recurring-checklist edits, interval changes,
+start, alerts or completion anchor; monthly rules require a due day of 28 or less. Ordinary recurring-checklist edits, interval changes,
 other checklist rules and project repeat changes remain refused. Standalone tasks can
-set/remove and switch between plain monthly/weekly rules anchored on due date or completion:
-interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;
+make the captured completion-anchored changes: plain or monthly due to monthly completion,
+monthly completion to weekly completion or no repeat, and weekly completion to weekly due.
+These require interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;
 mixing ordinary edits or a due change into the same repeat save stays refused. Daily/yearly,
 weekday-selector and family from-completion transitions remain unverified. A plain task
 still linked to another series (including reopened history) cannot acquire completion

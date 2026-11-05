@@ -2124,7 +2124,7 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
         );
     }
     // Plain daily/yearly reshaping is now covered by Plan 8.
-    for text in ["yearly", "daily", "monthly after done"] {
+    for text in ["yearly", "daily"] {
         assert_eq!(
             at(&edit(&e("E3"), vec![Change::Repeat(Some(repeat(text)))])),
             Ok(())
@@ -2868,7 +2868,7 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
     let list = dir.path().join("list");
     std::fs::create_dir(&list).unwrap();
     let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload-A/twydo-p8-rfra-fields-p.ics",
+        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload/twydo-p8-rfra-fields-p.ics",
     );
     std::fs::copy(seed, list.join("fields.ics")).unwrap();
     let m = Matrix::embedded().clone();
@@ -2876,7 +2876,7 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
     for (text, allowed) in [
         ("monthly after done", true),
         ("weekly after done", true),
-        ("weekly", true),
+        ("weekly", false),
         ("daily after done", false),
         ("yearly after done", false),
         ("monthly after done 3 times", false),
@@ -2920,9 +2920,64 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
 }
 
 #[test]
+fn verified_from_completion_repeat_changes_require_captured_transitions() {
+    let dir = tempfile::tempdir().unwrap();
+    let list = dir.path().join("list");
+    std::fs::create_dir(&list).unwrap();
+    let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload/twydo-p8-rfra-fields-p.ics",
+    );
+    std::fs::copy(seed, list.join("fields.ics")).unwrap();
+    let uid = "twydo-p8-rfra-fields-p";
+    for (old, from_completion, new, allowed) in [
+        (None, false, Some("monthly after done"), true),
+        (None, false, Some("weekly after done"), false),
+        (
+            Some("FREQ=MONTHLY"),
+            false,
+            Some("monthly after done"),
+            true,
+        ),
+        (
+            Some("FREQ=MONTHLY"),
+            false,
+            Some("weekly after done"),
+            false,
+        ),
+        (Some("FREQ=WEEKLY"), false, Some("weekly after done"), false),
+        (
+            Some("FREQ=WEEKLY"),
+            false,
+            Some("monthly after done"),
+            false,
+        ),
+        (Some("FREQ=MONTHLY"), true, Some("weekly after done"), true),
+        (Some("FREQ=MONTHLY"), true, Some("weekly"), false),
+        (Some("FREQ=MONTHLY"), true, None, true),
+        (Some("FREQ=WEEKLY"), true, Some("monthly after done"), false),
+        (Some("FREQ=WEEKLY"), true, Some("weekly"), true),
+        (Some("FREQ=WEEKLY"), true, None, false),
+    ] {
+        let mut s = load_snap(dir.path());
+        let i = s.find(uid).unwrap();
+        s.tasks[i].rrule = old.map(str::to_owned);
+        s.tasks[i].from_completion = from_completion;
+        let op = Op::Edit {
+            uid: uid.into(),
+            changes: vec![Change::Repeat(new.map(repeat))],
+        };
+        assert_eq!(
+            check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_ok(),
+            allowed,
+            "{old:?} from_completion={from_completion} -> {new:?}"
+        );
+    }
+}
+
+#[test]
 fn verified_from_completion_due_edits_refuse_custom_zero_offset_alarms_atomically() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/phase0/v1/plan8-rfra/250-phone-time-added-A/twydo-p8-rfra-fields-p.ics",
+        "../../fixtures/phase0/v1/plan8-rfra/250-phone-time-added/twydo-p8-rfra-fields-p.ics",
     );
     let original = std::fs::read_to_string(fixture).unwrap();
     let m = Matrix::embedded().clone();
@@ -3008,7 +3063,7 @@ fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_fore
     );
 
     let mut live = parse(
-        &std::fs::read(root.join("202-seeded-after-upload-A/twydo-p8-rfra-fields-p.ics")).unwrap(),
+        &std::fs::read(root.join("202-seeded-after-upload/twydo-p8-rfra-fields-p.ics")).unwrap(),
     )
     .unwrap();
     let p = live

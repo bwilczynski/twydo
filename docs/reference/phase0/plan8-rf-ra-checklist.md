@@ -1,9 +1,11 @@
-# RF/RA bounded capture checklist
+# RF/RA bounded capture session log
 
 Status: **RF/RA phone evidence complete through 380; scoped shipping verdicts enabled**.
 The user approved the bounded production scope and confirmed backup / 2Do 3.91.
 Five twin pairs supplied the minimum evidence set. No further phone actions or
-cleanup are authorized by this completed checklist.
+cleanup are authorized by this completed checklist. The numbered barriers below
+record instructions and status as they stood during the session; the closeout
+records the final result.
 
 ## Scope and reused evidence
 
@@ -25,12 +27,12 @@ RecurrenceValue and RecurrenceFrom (2 after done, 1 from due). It retains a
 nonempty RUID. Removal drops RRULE and sets RecurrenceType to zero, retaining
 inactive fields. Capture the phone's later normalization separately. Existing
 field writers must be compared for recurrence/identity preservation before
-ordinary field evidence can justify reuse. Both target matrix rows remain gated.
+ordinary field evidence could justify reuse. Both target matrix rows were initially gated.
 
-## Capabilities unlocked if verification passes
+## Planned capabilities and capture scope
 
-These are intended verified-mode capabilities, not capabilities enabled by this
-planning commit. Every row remains conditional on both-direction evidence.
+The table records the original capture plan. The completed scope and its limits
+are recorded in the closeout below and in the compatibility matrix.
 
 | User action | Exact intended scope |
 |---|---|
@@ -174,7 +176,7 @@ anchoring. Offset completion advanced Due to 2026-12-04 and Start to 2026-11-30,
 preserving the four-day gap left by the earlier Due edit. Exactly two completed
 non-recurring history resources appeared, one for each completed series. Only
 the three expected originals and those histories changed; twins and unrelated
-files remained unchanged. Full writer/identity comparisons remain pending.
+files remained unchanged. Full writer/identity comparisons followed at the local checkpoint.
 
 Remaining baseline barriers: (1) change fields Start from December 7 to December
 8, then capture; (2) clear fields Start and complete it once, then capture live
@@ -187,8 +189,8 @@ without losing the intermediate changed-start evidence.
 Capture 290: fields StartDate changed from 1796601600 (December 7) to
 1796688000 (December 8); monthly completion anchoring remained intact. Exactly
 one resource changed; both earlier histories, all twins and unrelated resources
-are unchanged. Final baseline batch pending: clear fields Start, then complete
-it once and sync; capture the live resource and its new history copy.
+are unchanged. The final baseline batch cleared fields Start and completed it once; step 300
+captured the live resource and its new history copy.
 
 Do not complete anything or edit `t` twins yet. Each task has only one action in
 this barrier, so a single synchronized capture attributes every change. Stop and
@@ -255,7 +257,7 @@ resources over 11 partial snapshots; no full production collection copied).
 Regression assertions are in existing `edit_fields`, `edit_complete`, `gate` and
 TUI `write` suites. Field/anchor/interval writers and all three completions match
 the phone. Removal explicitly compares the two retained inactive fields against
-the phone's zeros; acceptance of Twydo's retained fields is still pending.
+the phone's zeros; acceptance of Twydo's retained fields was subsequently confirmed at 340.
 
 A candidate TUI test exposed that a passing generic from-completion operation row
 would admit daily-after-completion reshapes and other uncaptured edits. A failing
@@ -313,7 +315,7 @@ confirm other resources, including the emptied-list local copies, are unchanged.
 The private baseline-only candidate matrix grants the captured edit baseline to
 the session process; shipping operation verdicts remain unverified.
 
-Phone barrier pending: inspect fields (monthly after completion, Due December 9,
+The next phone barrier was to inspect fields (monthly after completion, Due December 9,
 no Start), interval (every 2 months after completion, Due December 7), anchor and
 direct (monthly after completion, Due December 7), offset (monthly after completion,
 Due December 9, Start December 5). Set Notes to `RFRA return 1` on all five `t`
@@ -426,9 +428,9 @@ remain in `captured_from_completion_edit` / `captured_automatic_alarm`.
 Writer equivalence is bounded: ordinary field writers preserve the existing rule
 and identity in per-action phone comparisons; scalar interval and full card repeat
 specs both match the captured two-month rule/metadata; plain monthly/weekly repeat
-serialization is shared across anchor/class transitions, with both anchor switches,
-set/removal and retained inactive codes accepted by subsequent phone edits. This
-does not establish selectors, endings, arbitrary intervals, families or lifecycle
+serialization is shared across anchor/class transitions, with the captured anchor
+switches, class change, set/removal and retained inactive codes accepted by
+subsequent phone edits. This does not establish selectors, endings, arbitrary intervals, families or lifecycle
 operations. Tests now use the shipping matrix rather than a candidate override.
 
 Final review found that an open history copy could otherwise acquire recurrence
@@ -443,9 +445,10 @@ New regression assertions remain in existing `edit_fields`, `edit_complete`, `ga
 CLI `cli_op` and TUI `write` targets. All fixtures are allowlisted synthetic partial
 captures; the ambiguous reopened sequence is not used as clean evidence. Preserve
 all private versions and leave synthetic list/copy cleanup for separate consent.
-The matrix now contains 69 passing, 35 unverified and 2 unsupported operation rows;
+The matrix contains 76 passing, 28 unverified and 2 unsupported iPhone baseline
+operation rows; the Twydo-to-iPhone column has 72 passing and 34 unverified rows;
 these counts are not the remaining feature backlog. The next increment requires
-its own minimum checklist and fresh device approval; Plan 8 remains in progress; PR #26 stays draft.
+its own minimum checklist and fresh device approval; Plan 8 remains in progress.
 
 Final validation: `mise run test` passed 830 Rust tests, 49 Python tests and
 all documentation links; `mise run lint` passed Clippy and formatting. Fixture

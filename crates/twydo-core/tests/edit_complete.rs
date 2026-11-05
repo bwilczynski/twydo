@@ -1549,22 +1549,22 @@ fn edited_from_completion_tasks_advance_and_copy_history_like_phone() {
     for (case, from, to, clear_start, expected_due) in [
         (
             "interval-p",
-            "210-phone-first-actions-A",
-            "280-phone-start-and-completions-A",
+            "210-phone-first-actions",
+            "280-phone-start-and-completions",
             false,
             "20270104",
         ),
         (
             "offset-p",
-            "210-phone-first-actions-A",
-            "280-phone-start-and-completions-A",
+            "210-phone-first-actions",
+            "280-phone-start-and-completions",
             false,
             "20261204",
         ),
         (
             "fields-p",
-            "290-phone-start-changed-A",
-            "300-phone-fields-completed-A",
+            "290-phone-start-changed",
+            "300-phone-fields-completed",
             true,
             "20261204",
         ),

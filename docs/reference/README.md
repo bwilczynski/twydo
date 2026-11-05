@@ -7,11 +7,11 @@ where they and this folder disagree, `docs/` wins.
 | Folder | What it holds |
 |---|---|
 | [`2do/`](2do/README.md) | 2Do's behaviour and formats as observed: features and rules, data model, look and feel, keyboard shortcuts, the Dropbox sync format, and CalDAV sync with 2Do's `X-2DOAPP-*` metadata |
-| [`phase0/`](phase0/README.md) | The phase-0 compatibility gate checklist and the logs of every session run against a test iPhone (Plans 3–6 and the gap session). The verdicts they recorded live in [`compat/matrix.toml`](../../compat/matrix.toml) |
+| [`phase0/`](phase0/README.md) | The phase-0 compatibility gate checklist and the logs of every session run against a test iPhone (Plans 3–8 and the gap session). The verdicts they recorded live in [`compat/matrix.toml`](../../compat/matrix.toml) |
 | [`../superpowers/`](../superpowers/) | The design spec and the implementation plans |
 
 Current device session: [Plan 8 TUI completeness](phase0/plan8-tui-completeness-session.md).
-Batch 1 phone baselines are captured; Twydo device rechecks and later batches remain pending.
+Plan 8 batch 1 and RF/RA captures are complete; later batches remain pending.
 It reuses previous captures and covers the remaining existing TUI write actions.
 
 ## Tools used in those sessions
