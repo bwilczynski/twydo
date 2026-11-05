@@ -24,6 +24,7 @@ use crate::edit::{
 };
 use crate::gate::{self, Blocked};
 use crate::ical::{self, Calendar};
+use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
 use fsio::VdirLock;
 use journal::{
@@ -345,10 +346,20 @@ impl Store {
             }
             _ => None,
         };
+        let creating_item = matches!(op, Op::Create(_)) && member_parent.is_some();
         let durable_holds = member_parent.is_some_and(|p| {
-            snap.tasks[p].kind == crate::model::TaskKind::Checklist && snap.tasks[p].rrule.is_some()
+            creating_item
+                || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
+                    && snap.tasks[p].rrule.is_some())
         });
-        let family = self.family_of(snap, op)?;
+        let mut family = self.family_of(snap, op)?;
+        if creating_item && let Some(family) = family.as_mut() {
+            // Recovery may find our own create already on disk. It is a known member,
+            // while any additional sibling must still make the snapshot stale.
+            family
+                .loaded
+                .extend(plan.writes.iter().map(|w| w.path.clone()));
+        }
         let entry = Entry {
             format: FORMAT,
             id: new_op_id(now),
@@ -363,7 +374,7 @@ impl Store {
             } else {
                 Vec::new()
             },
-            family: if durable_holds && matches!(op, Op::Delete { .. }) {
+            family: if durable_holds && matches!(op, Op::Create(_) | Op::Delete { .. }) {
                 family.clone()
             } else {
                 None
@@ -707,13 +718,51 @@ impl Store {
                 {
                     inherited.due = Some(crate::edit::Due::Date(due));
                 }
-                let cal = new_task(&inherited, &uid, parent_json_uid.as_deref(), now)?;
+                let mut cal = new_task(&inherited, &uid, parent_json_uid.as_deref(), now)?;
+                if let Some(p) = n.parent.as_deref().and_then(|p| snap.find(p)) {
+                    let kids = snap.children(p);
+                    let count = i64::try_from(kids.len()).map_err(|_| {
+                        io_error(
+                            io::ErrorKind::InvalidData,
+                            "item order exceeds the supported range",
+                        )
+                    })?;
+                    let next = match kids
+                        .iter()
+                        .map(|&i| snap.tasks[i].meta.display_order())
+                        .max()
+                    {
+                        Some(max) => max.checked_add(1).ok_or_else(|| {
+                            io_error(
+                                io::ErrorKind::InvalidData,
+                                "item order exceeds the supported range",
+                            )
+                        })?,
+                        None => 0,
+                    };
+                    let todo = cal
+                        .root
+                        .children_named_mut("VTODO")
+                        .next()
+                        .expect("new task");
+                    let prop = todo
+                        .prop_mut("X-2DOAPP-METADATA")
+                        .expect("new task metadata");
+                    let mut meta = MetaJson::parse(&prop.value).expect("new task JSON");
+                    meta.set_i64("DisplayOrder", next.max(count));
+                    prop.set_value(&meta.encode());
+                }
                 let w = create(&n.collection, &uid, &cal)?;
                 let mut plan = one("create", &uid, w);
                 // The parent the gate checked must still be as loaded: not removed, nor
                 // turned into a task that cannot have items.
                 if let Some(p) = &n.parent {
                     plan.holds.push(self.target(snap, p)?.hold());
+                    let idx = snap.find(p).expect("parent checked by gate");
+                    for &i in snap.children(idx) {
+                        plan.holds
+                            .push(self.target(snap, &snap.tasks[i].uid)?.hold());
+                    }
                 }
                 plan
             }

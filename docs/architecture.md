@@ -152,10 +152,12 @@ target, and the directory is fsynced. Removals unlink and then fsync the directo
   retains sibling bytes) here. Apply, recovery, undo and redo require them to remain
   unchanged. They are never written or treated as sync mutations. Older entries
   without this field have no durable read dependencies.
-- `family` (optional): the collection, parent UID and loaded family paths for an individual
-  recurring-checklist item deletion. Under the vdir lock, a rescan rejects newly joined
+- `family` (optional): the collection, parent UID and loaded family paths for an item
+  creation or an individual recurring-checklist item deletion. Under the vdir lock, a rescan rejects newly joined
   members before applying, undoing, redoing or recovering the deletion. Byte dependencies
-  guard the original members; the deleted path may be absent for idempotent recovery.
+  guard the original members; an operation's own created/deleted path is included and may
+  be present/absent for idempotent recovery. Item creation records sibling byte dependencies
+  because its append position depends on the complete loaded sibling set.
   This guard is retained by inverse entries and is absent from older journal entries.
 
 Writes are ordered so that a completed occurrence is created before its live task advances: if
