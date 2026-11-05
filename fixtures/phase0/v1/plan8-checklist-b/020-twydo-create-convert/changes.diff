@@ -1,0 +1,32 @@
+added: 55180c631f304b44be543382c0b85b94.ics
+--- a/twydo-p8-c29-d.ics
++++ b/twydo-p8-c29-d.ics
+@@ -3,8 +3,8 @@
+ PRODID:-//Twydo//tdo 0.1.2//EN
+ CALSCALE:GREGORIAN
+ BEGIN:VTODO
+-DTSTAMP:20261105T085350Z
+-LAST-MODIFIED:20261105T085350Z
++DTSTAMP:20261105T094407Z
++LAST-MODIFIED:20261105T094407Z
+ UID:twydo-p8-c29-d
+ SEQUENCE:0
+ SUMMARY:d
+@@ -15,11 +15,11 @@
+ DUE;VALUE=DATE:20261210
+ RRULE:FREQ=MONTHLY
+ X-2DOAPP-METADATA;SHARE-SCOPE=GLOBAL:<2Do Meta>%7B%22RecurrenceValue%22%3A1
+- %2C%22RecurrenceEndRepetitionsOrig%22%3A0%2C%22RecurrenceEndRepetitions%22
+- %3A0%2C%22TaskDuration%22%3A0%2C%22TaskType%22%3A0%2C%22RecurrenceType%22%
+- 3A258%2C%22StartDayDelay%22%3A0%2C%22isExpandedToShowChildProjects%22%3A0%
+- 2C%22RecurrenceFrom%22%3A1%2C%22RecurrenceEndType%22%3A0%2C%22IsStarred%22
+- %3A0%2C%22RUID%22%3A%22twydo-p8-c29-d%22%2C%22DisplayOrder%22%3A0%7D</2Do 
+- Meta>\n
++ %2C%22RecurrenceEndRepetitionsOrig%22%3A0%2C%22uid%22%3A%22twydo-p8-c29-d%
++ 22%2C%22RecurrenceEndRepetitions%22%3A0%2C%22TaskType%22%3A1%2C%22TaskDura
++ tion%22%3A0%2C%22RecurrenceType%22%3A258%2C%22StartDayDelay%22%3A0%2C%22is
++ ExpandedToShowChildProjects%22%3A0%2C%22RecurrenceFrom%22%3A1%2C%22Recurre
++ nceEndType%22%3A0%2C%22IsStarred%22%3A0%2C%22RUID%22%3A%22twydo-p8-c29-d%2
++ 2%2C%22DisplayOrder%22%3A0%7D</2Do Meta>\n
+ END:VTODO
+ END:VCALENDAR

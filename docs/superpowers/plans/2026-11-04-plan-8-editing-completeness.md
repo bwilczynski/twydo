@@ -55,8 +55,10 @@ Private manifests/backups and all extra synthetic copies remain outside cleanup.
 The next approved bounded increment prioritizes issue #29: see the
 [bounded repeating-checklist checklist](../../reference/phase0/plan8-checklist-29-checklist.md).
 It includes individual checklist-item deletion, an empty-list preflight and two
-bounded phone rounds. The user approved that exact scope; fresh B-only sync
-confirms zero resources, with phone backup/empty-list confirmation pending.
+bounded phone rounds. The user approved that exact scope and confirmed backup/
+empty-list readiness. B-only baseline captures 000–012 and candidate writer/upload
+020–027 are complete. Next: C/D phone inspection and note z, then the remaining
+second-round actions from the checklist. No shipping verdict is promoted yet.
 No leftovers cleanup or broader device operations are authorized.
 
 Next: prepare a minimum bounded checklist for the remaining Task 2 work (repeat

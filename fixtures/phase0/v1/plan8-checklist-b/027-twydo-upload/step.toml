@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "027-twydo-upload"
+device = "twydo"
+action = "B-only scoped upload confirms all candidate bytes unchanged, all 16 journal operations synced, no conflicts. C/D open monthly due Jan 10 with z reopened and q absent. Phone return pending."
+captured_at = "2026-11-05T09:45:00Z"
