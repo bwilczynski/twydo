@@ -41,7 +41,8 @@ columns), or a third below 60 columns.
 Colours come from your terminal's 16-colour palette, so the TUI follows your terminal theme and
 re-colours live when it changes. Only the list bars use the lists' own (true) colours.
 
-The TUI reloads when files in the vdir change, for example after a sync, and every minute, so
+The TUI reloads when files in the vdir change, for example after a sync, and when a `:sync` it
+started finishes, even if no file change was reported. Every minute it moves its clock on, so
 "today" and the groups stay current.
 
 ## Keys
