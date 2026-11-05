@@ -39,6 +39,7 @@ fn group_title(g: DateGroup, today: NaiveDate) -> Option<String> {
         DateGroup::Next2Weeks => "NEXT 2 WEEKS".into(),
         DateGroup::Next30Days => "NEXT 30 DAYS".into(),
         DateGroup::Future => "FUTURE".into(),
+        DateGroup::Done => "DONE".into(),
         DateGroup::NoDueDate => "NO DUE DATE".into(),
         DateGroup::Scheduled => "SCHEDULED".into(),
         DateGroup::CompletedOn(d) if d == today => "TODAY".into(),
@@ -371,9 +372,12 @@ fn row_line(
     let right = (if hint_w > 0 { hint_w + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     let title_w = width.saturating_sub(left + right);
 
-    // Title, then a dimmed `↳ parent` on Today rows that sit away from their parent.
+    // Keep parent context for independently displayed Today rows and detached tree roots.
     let parent_hint = match (&app.view, r.parent_hint) {
         (View::Today, Some(p)) => Some(format!("  ↳ {}", app.snapshot.tasks[p].summary)),
+        (View::All | View::List(_), Some(p)) if r.depth == 0 => {
+            Some(format!("  ↳ {}", app.snapshot.tasks[p].summary))
+        }
         _ => None,
     };
     let budget = parent_hint

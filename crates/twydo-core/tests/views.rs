@@ -458,7 +458,7 @@ fn calendar_days_across_dst() {
 }
 
 #[test]
-fn scheduled_hidden_elsewhere() {
+fn scheduled_stays_out_of_special_active_views() {
     let s = snapshot(
         vec![
             TaskBuilder::new("later", "inbox")
@@ -476,13 +476,7 @@ fn scheduled_hidden_elsewhere() {
         ],
         &[("old", archived())],
     );
-    for v in [
-        View::Today,
-        View::All,
-        View::Next3Days,
-        View::Done,
-        View::List("inbox".to_string()),
-    ] {
+    for v in [View::Today, View::Next3Days, View::Done] {
         let r = build_view(&s, &v, now(), &no_expand());
         let u = uids(&s, &r);
         assert!(!u.contains(&"later".to_string()), "{v:?}: {u:?}");
@@ -559,15 +553,15 @@ fn counts_today_all() {
     let today = counts(&s, &View::Today, now());
     assert_eq!((today.due_or_overdue, today.total), (3, 3));
     let all = counts(&s, &View::All, now());
-    // 15 open − 1 future start − 3 checklist items = 11; due-or-overdue: renew-library,
+    // 15 open − 3 checklist items = 12; due-or-overdue: renew-library,
     // call-dentist, water-plants.
-    assert_eq!((all.due_or_overdue, all.total), (3, 11));
+    assert_eq!((all.due_or_overdue, all.total), (3, 12));
     // Collapsed: the 2 project children and 3 checklist items are not rows.
     let r = build_view(&s, &View::All, now(), &no_expand());
     assert_eq!(r.counts, all);
     assert_eq!(
         r.groups.iter().map(|(_, rows)| rows.len()).sum::<usize>(),
-        9
+        11
     );
     // Expanded: children nest at depth 1 right after their parent.
     let expanded: HashSet<String> = ["sv-bills-4", "sv-personal-2"]
@@ -576,7 +570,7 @@ fn counts_today_all() {
         .collect();
     let r = build_view(&s, &View::All, now(), &expanded);
     let rows = flat(&s, &r);
-    assert_eq!(rows.len(), 14);
+    assert_eq!(rows.len(), 16);
     let p = rows.iter().position(|(_, u, _)| u == "sv-bills-4").unwrap();
     assert_eq!(rows[p].2, 0);
     assert_eq!(rows[p + 1].2, 1);
@@ -964,7 +958,7 @@ fn list_view_opens_archived_and_ignores_show_in_all() {
 }
 
 #[test]
-fn child_of_ineligible_parent_shows_top_level_in_all() {
+fn active_child_of_future_parent_shows_top_level_in_all() {
     let s = snapshot(
         vec![
             TaskBuilder::new("proj", "inbox")
@@ -980,7 +974,8 @@ fn child_of_ineligible_parent_shows_top_level_in_all() {
     );
     let r = build_view(&s, &View::All, now(), &no_expand());
     let rows: Vec<_> = r.groups.iter().flat_map(|(_, rows)| rows).collect();
-    assert_eq!(rows.len(), 1);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].task, idx(&s, "proj"));
     assert_eq!(rows[0].task, idx(&s, "child"));
     assert_eq!(rows[0].depth, 0);
     assert_eq!(rows[0].parent_hint, Some(idx(&s, "proj")));
@@ -1139,4 +1134,203 @@ fn open_items_counts_open_children() {
     assert_eq!(s.open_items(idx(&s, "p")), 2);
     assert_eq!(s.open_items(idx(&s, "c1")), 0);
     assert_eq!(s.open_items(idx(&s, "alone")), 0);
+}
+
+#[test]
+fn all_and_lists_always_show_future_and_completed_without_inflating_counts() {
+    let mut cancelled = TaskBuilder::new("cancelled", "inbox").build();
+    cancelled.status = Status::Cancelled;
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("active", "inbox")
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("future", "inbox")
+                .start("2026-11-06")
+                .due("2026-11-03")
+                .build(),
+            TaskBuilder::new("older", "inbox")
+                .due("2026-11-01")
+                .completed_at("2026-11-02 12:00")
+                .build(),
+            TaskBuilder::new("newer", "inbox")
+                .start("2026-12-01")
+                .completed_at("2026-11-04 09:00")
+                .build(),
+            cancelled,
+        ],
+        &[],
+    );
+    for v in [View::All, View::List("inbox".into())] {
+        let r = build_view(&s, &v, now(), &no_expand());
+        assert_eq!(uids(&s, &r), ["active", "future", "newer", "older"]);
+        assert_eq!(r.groups[1].0, DateGroup::Future);
+        assert_eq!(r.groups.last().unwrap().0, DateGroup::Done);
+        assert_eq!(
+            r.groups
+                .last()
+                .unwrap()
+                .1
+                .iter()
+                .map(|r| s.tasks[r.task].uid.as_str())
+                .collect::<Vec<_>>(),
+            ["newer", "older"]
+        );
+        assert_eq!((r.counts.due_or_overdue, r.counts.total), (2, 2));
+        assert_eq!(counts(&s, &v, now()), r.counts);
+    }
+}
+
+#[test]
+fn list_sections_survive_non_date_sorts_and_empty_sections_are_omitted() {
+    for field in [SortField::Title, SortField::Creation] {
+        let s = snapshot(
+            vec![
+                TaskBuilder::new("z-active", "inbox").build(),
+                TaskBuilder::new("a-future", "inbox")
+                    .start("2026-11-06")
+                    .build(),
+                TaskBuilder::new("b-done", "inbox")
+                    .completed_at("2026-11-04 09:00")
+                    .build(),
+            ],
+            &[(
+                "inbox",
+                ListPrefs {
+                    sort: Sort {
+                        field,
+                        descending: true,
+                    },
+                    ..Default::default()
+                },
+            )],
+        );
+        let r = build_view(&s, &View::List("inbox".into()), now(), &no_expand());
+        assert_eq!(uids(&s, &r), ["z-active", "a-future", "b-done"]);
+        assert_eq!(r.groups.len(), 3);
+        assert_eq!(r.groups[0].0, DateGroup::Ungrouped);
+        assert_eq!(r.groups[1].0, DateGroup::Future);
+    }
+    let s = snapshot(vec![TaskBuilder::new("active", "inbox").build()], &[]);
+    let r = build_view(&s, &View::All, now(), &no_expand());
+    assert_eq!(r.groups.len(), 1);
+    assert_eq!(r.groups[0].0, DateGroup::NoDueDate);
+}
+
+#[test]
+fn family_sections_show_completed_and_future_children_once_even_when_collapsed() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("parent", "inbox")
+                .kind(TaskKind::Project)
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("active-child", "inbox")
+                .parent("parent")
+                .due("2026-11-05")
+                .build(),
+            TaskBuilder::new("future-child", "inbox")
+                .parent("parent")
+                .start("2026-11-06")
+                .build(),
+            TaskBuilder::new("done-child", "inbox")
+                .parent("parent")
+                .completed_at("2026-11-04 09:00")
+                .build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::All, now(), &no_expand());
+    assert_eq!(uids(&s, &r), ["parent", "future-child", "done-child"]);
+    let r = build_view(&s, &View::All, now(), &HashSet::from(["parent".into()]));
+    assert_eq!(
+        uids(&s, &r),
+        ["parent", "active-child", "future-child", "done-child"]
+    );
+    assert_eq!(r.groups[0].1[1].depth, 1);
+    assert_eq!(r.groups[1].1[0].depth, 0);
+    assert_eq!(r.groups[1].1[0].parent_hint, Some(idx(&s, "parent")));
+    assert_eq!(r.counts.total, 3);
+}
+
+#[test]
+fn newly_visible_rows_respect_all_exclusions_but_remain_in_direct_lists() {
+    for prefs in [
+        archived(),
+        ListPrefs {
+            hidden: true,
+            ..Default::default()
+        },
+        ListPrefs {
+            show_in_all: false,
+            ..Default::default()
+        },
+    ] {
+        let s = snapshot(
+            vec![
+                TaskBuilder::new("future", "excluded")
+                    .start("2026-11-06")
+                    .build(),
+                TaskBuilder::new("done", "excluded")
+                    .completed_at("2026-11-04 09:00")
+                    .build(),
+            ],
+            &[("excluded", prefs)],
+        );
+        assert!(
+            build_view(&s, &View::All, now(), &no_expand())
+                .groups
+                .is_empty()
+        );
+        assert_eq!(
+            uids(
+                &s,
+                &build_view(&s, &View::List("excluded".into()), now(), &no_expand())
+            ),
+            ["future", "done"]
+        );
+    }
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("done", "inbox")
+                .completed_at("2026-11-04 09:00")
+                .build(),
+        ],
+        &[(
+            "inbox",
+            ListPrefs {
+                show_in_done: false,
+                ..Default::default()
+            },
+        )],
+    );
+    assert_eq!(
+        uids(&s, &build_view(&s, &View::All, now(), &no_expand())),
+        ["done"]
+    );
+    assert!(
+        build_view(&s, &View::Done, now(), &no_expand())
+            .groups
+            .is_empty()
+    );
+}
+
+#[test]
+fn future_section_uses_due_order_across_scheduled_and_long_range_tasks() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("long-range", "inbox")
+                .due("2027-01-01")
+                .build(),
+            TaskBuilder::new("scheduled", "inbox")
+                .start("2026-11-05")
+                .due("2026-11-06")
+                .build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::All, now(), &no_expand());
+    assert_eq!(r.groups.len(), 1);
+    assert_eq!(r.groups[0].0, DateGroup::Future);
+    assert_eq!(uids(&s, &r), ["scheduled", "long-range"]);
 }
