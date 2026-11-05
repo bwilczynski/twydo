@@ -93,5 +93,6 @@ Tasks 1–2 execute inline; Task 3 stops before uploads for the explicitly requi
 Tasks 1–2 are implemented in focused commits; final 865 Rust tests, 49 Python tests,
 links, clippy and formatting pass. Independent review completed; its Important Details
 ordering finding was reproduced and fixed with a rendering regression. The legacy UID-tie
-minor is documented and deferred. Task 3 candidates are
-prepared privately (two Echo resources, position 4); no uploads are authorized yet.
+minor is documented and deferred. Task 3's two Echo uploads were separately approved,
+completed with create-only preconditions and verified against the server; all ten old
+resources were unchanged. Phone placement/rename return is pending. Do not repeat uploads.
