@@ -77,9 +77,9 @@ guards for create; include the created path in durable guards for idempotent rec
 
 - [x] Prepare the two exact candidate resources and a fresh read of their family dependencies
   privately, without uploading. Present exact scope for fresh approval.
-- [ ] Only after approval, upload the two new resources with creation preconditions; ask the
+- [x] Only after approval, upload the two new resources with creation preconditions; ask the
   user to inspect end placement and rename each Echo to ECHO, then capture the return.
-- [ ] Verify identities/links/order and unchanged siblings; add return assertions in existing
+- [x] Verify identities/links/order and unchanged siblings; add return assertions in existing
   suites, storing only changed/new files. Run relevant checks and commit evidence/docs.
   If blocked or mismatched, record the precise limitation; do not claim interoperability.
 
@@ -90,9 +90,11 @@ Tasks 1–2 execute inline; Task 3 stops before uploads for the explicitly requi
 
 ## Local checkpoint
 
-Tasks 1–2 are implemented in focused commits; final 865 Rust tests, 49 Python tests,
+All three tasks are complete in focused commits; final 867 Rust tests, 49 Python tests,
 links, clippy and formatting pass. Independent review completed; its Important Details
 ordering finding was reproduced and fixed with a rendering regression. The legacy UID-tie
 minor is documented and deferred. Task 3's two Echo uploads were separately approved,
 completed with create-only preconditions and verified against the server; all ten old
-resources were unchanged. Phone placement/rename return is pending. Do not repeat uploads.
+resources were unchanged. Both phone placement/rename returns passed with identical UID,
+parent links, creation time, metadata and position. Each return stores only its changed
+ECHO resource. Existing test families remain; no cleanup is authorized. Do not repeat uploads.

@@ -1,8 +1,9 @@
 # Issue 35: checklist ordering investigation
 
-Status: bounded baseline capture approved by the user on 2026-11-05; creation and append
-captured and phone display confirmed. Drag reorder is unavailable.
-User requested focused commits.
+Status: bounded checklist and project ordering check complete, 2026-11-05. Phone baselines,
+Twydo appends and subsequent phone edits captured; user confirmed end placement for both
+parents. Drag reorder is unavailable. Implementation and final verification are recorded below.
+User requested focused commits and no duplicate unchanged evidence resources.
 
 The user subsequently approved extending read-only capture to `Project Order 35` in the
 same collection and created/synced it. Evidence for that project includes only its own
@@ -12,9 +13,9 @@ barriers retain only changed/new resources and reference unchanged earlier captu
 ## Question and existing evidence
 
 Issue 35 reports inconsistent placement while adding checklist items. The user also observes
-different saved item order in Twydo and the iPhone app. Twydo currently sorts children using
-the view's sort and breaks ties by title; it does not interpret `DisplayOrder`. New task
-metadata sets that field to zero. All 750 child resource snapshots in the existing phase-0
+different saved item order in Twydo and the iPhone app. At the start, Twydo sorted children using
+the view's sort and breaks ties by title; it did not interpret `DisplayOrder`. New task
+metadata set that field to zero. All 750 child resource snapshots in the existing phase-0
 fixtures have zero there, so they do not establish reorder semantics or direction.
 
 Reuse existing checklist creation and parent-link evidence from
@@ -131,8 +132,7 @@ inference from its documented meaning, rather than a separately captured phone r
 Independently displayed project items retain their flat view's date sort. New checklist
 and project items receive an append position matching the phone's observed zero-based
 position. Equal/missing creation times fall back to UID; second-resolution timestamps
-cannot establish entry order on their own. Writer changes need a separately approved
-Twydo-to-phone check.
+cannot establish entry order on their own. The separately approved Twydo-to-phone writer check is recorded below.
 
 Local fixes are split into display ordering (`6b32a95`), guarded append creation (`8ceede6`)
 and the next input row's placement (`c3130b4`). New regressions were observed failing before
@@ -150,7 +150,8 @@ no normalization of old metadata is enabled by this investigation.
 Two candidate resources were generated privately through the candidate CLI in verified
 mode: one Echo under each synthetic parent, each with `DisplayOrder: 4`. The ten existing
 family resources remained byte-unchanged; automatic sync was disabled by omitting sync
-configuration in the isolated candidate environment. No candidates have been uploaded.
+configuration in the isolated candidate environment. At that checkpoint no candidates had
+been uploaded; the separately approved uploads and returns are recorded below.
 The candidate manifest, hashes, local config and journal remain outside git.
 
 Proposed bounded return: fresh-read the two known families, refuse stale dependencies,
@@ -177,7 +178,30 @@ Each scenario's `020-twydo-appended` delta stores only its new Echo resource at
 The writer revision is recorded in each step; the later Details-pane fix does not change
 the writer. Private manifests, receipts, dependency hashes and account paths stay outside git.
 
-Phone return pending: user syncs, checks both Echo items are last, renames each to ECHO
-and syncs. Do not repeat creation or upload. Store only changed/new return resources and
-reference earlier captures for unchanged members. This check does not authorize cleanup,
-completion, deletion, reorder experiments or any additional test tasks.
+### 030-phone-return: end placement and subsequent phone edits passed
+
+The user completed the agreed phone actions: confirmed Echo was last in both parents,
+renamed each to ECHO and synced. A read-only return capture found exactly the same twelve
+synthetic resources: both parents, eight original items and the two appended items.
+The ten pre-existing resources remained byte-unchanged. Each returned ECHO preserved its
+CalDAV UID, standard/JSON parent links, creation time and `DisplayOrder: 4`; its metadata
+was unchanged. The phone changed SUMMARY, PRODID and modification stamps, refolded/reordered
+properties and added its three ordinary sync/audio properties.
+
+Only the two renamed item resources are stored in the scenarios' `030-phone-return` deltas;
+their `step.toml` files reference `020-twydo-appended` and list the five unchanged family
+members. The diff reports unfolded logical properties; raw `.ics` bytes are preserved.
+No unchanged resources or other families were copied into either capture.
+
+Regression coverage uses `views` (all captured stages, stable sequence, identity/metadata
+and neighbor preservation), `ical_roundtrip` (exact bytes of every stored resource),
+`store_family` (append, races, undo/redo/recovery and copies), and the ordinary TUI key,
+writer and rendering suites. No new compatibility-matrix operation rows were enabled.
+
+The scoped writer return is complete. Do not repeat creation, uploads or phone edits.
+The synthetic test families stay in place; cleanup, completion, deletion, reorder experiments
+and additional test tasks are not authorized. Account and normal configuration are unchanged.
+
+Final closeout validation: 867 Rust tests, 49 Python tests, documentation links, clippy
+with warnings denied, formatting and whitespace checks pass. The independent review
+Important finding was fixed; the legacy UID-tie minor above remains documented.

@@ -1,7 +1,7 @@
 # Issue 35: checklist and project item order
 
-Status: approved for implementation by the user, 2026-11-05. Device uploads require
-separate approval after the local candidate is ready.
+Status: approved and implemented, 2026-11-05. The separately approved two-item writer
+return passed: both items displayed last and retained identity/order after phone edits.
 
 ## Intent and evidence
 
