@@ -21,6 +21,12 @@ the rest with a reason, so the phone never gets something it would misread.
 - Change dates with single keys (today, tomorrow, ±1 day, ±1 week) or type them (`fri 5pm`,
   `3d`, `15th`); edit titles, notes (in your `$EDITOR`) and a repeat's interval
 - Checklists, projects and recurring projects, acting on the whole family as 2Do does
+- Monthly repeating checklists: create directly or convert a monthly task, edit titles/notes,
+  add and tick items, save history and reset on the parent's manual tick, and delete an open
+  item while open siblings remain. Verified for every month, day 1–28, date only, from due,
+  without an end, start date, alerts or delay
+- Captured daily/yearly repeat changes and monthly from-completion edits; narrowly scoped
+  end-on-date completion and ended-series reopening ([exact scopes](docs/compatibility.md#what-is-verified-today))
 - Every repeat Twydo creates (daily, weekly, set weekdays, monthly on any day or the Nth
   weekday, yearly, from completion, ending after a count), including start dates, due times and
   missed occurrences, completed the way 2Do completes them
@@ -35,13 +41,11 @@ the rest with a reason, so the phone never gets something it would misread.
   with the title); today the title goes in the row and dates and repeats in the card
 - Desktop notifications for alerts, and editing alerts
 - Manual ordering, and creating or renaming lists
-- Setting or removing daily, yearly and from-completion repeats, and repeat changes on projects
-  and checklists, in verified mode: Twydo can write them, but refuses until they are checked on
-  the phone (weekly and monthly repeats, and type changes except empty project to checklist,
-  are allowed)
-- Completing a repeat that ends on a date, or a recurring project that ends or repeats from
-  completion; editing an existing from-completion task; reopening the last occurrence of an
-  ended repeat (undo works)
+- Project repeat changes and empty-project-to-checklist conversion; repeating-checklist
+  creation/completion outside the monthly scope above, ordinary schedule/type edits, and
+  deleting the last or a completed checklist item
+- Recurring projects that end or repeat from completion; from-completion edits, end-on-date
+  execution and ended-series reopening outside the [verified shapes](docs/compatibility.md#what-is-verified-today)
 - Repeats on the last day of the month, the last weekday and the Nth weekend day: the iPhone
   (2Do 3.91) misreads them, so Twydo shows them but never writes them
 - Prebuilt releases (build from source for now)
