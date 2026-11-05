@@ -503,6 +503,10 @@ twins and unrelated production bytes remain unchanged.
 
 ### Local implementation checkpoint B
 
+The verdict and scratch-matrix status in the following progress entries is historical;
+the [local closeout](#local-closeout--enabled-capabilities-and-explicit-remaining-scope)
+records the final enabled scope.
+
 - All original uncommitted files were verified as this session's work; no user changes were
   discarded. Work remains in the dedicated Herdr worktree; the original checkout is clean.
 - Privacy scan passed, and every captured SUMMARY matches the approved synthetic seed manifest.
