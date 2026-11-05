@@ -140,6 +140,22 @@ fn copy_tree(dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> io::Result<()> {
     sync_dir(dir)
 }
 
+/// Persist every directory entry bottom-up before publishing the backup. Syncing a
+/// child directory does not persist the entry naming it in its parent.
+fn sync_tree(dir: &Path) -> io::Result<()> {
+    for item in fs::read_dir(dir)? {
+        let item = item?;
+        let meta = item.file_type()?;
+        if meta.is_symlink() {
+            return Err(invalid("backup contains a symlink"));
+        }
+        if meta.is_dir() {
+            sync_tree(&item.path())?;
+        }
+    }
+    sync_dir(dir)
+}
+
 pub(crate) fn save(state: &Path, b: &Backup) -> io::Result<()> {
     write_atomic(
         &record(state, &b.id)?.join("backup.json"),
@@ -272,6 +288,9 @@ pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backu
         ));
     }
     private_dir(&root(&state))?;
+    // Persist the new `retired` entry in the state directory as well as the
+    // backup's entries within it.
+    sync_dir(&state)?;
     if fs::canonicalize(root(&state))?.starts_with(fs::canonicalize(&cfg.vdir)?) {
         return Err(invalid("backups must be outside the synchronized vdir"));
     }
@@ -323,6 +342,7 @@ pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backu
         &building.join("backup.json"),
         &serde_json::to_vec_pretty(&b).map_err(io::Error::other)?,
     )?;
+    sync_tree(&building)?;
     fs::rename(&building, record(&state, &id)?)?;
     sync_dir(&root(&state))?;
     resume_locked(&cfg.vdir, &state)?;
