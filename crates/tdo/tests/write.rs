@@ -1041,13 +1041,40 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
     let row = app.new_row.as_ref().expect("the next row opens");
     assert_eq!(row.anchor.as_deref(), Some(socks.as_str()));
 
+    // Every save uses the same second. Position metadata still keeps entry order,
+    // and the chain opens at the end even though the titles would sort differently.
+    save(&mut app, "Hat");
+    save(&mut app, "Able");
+    let p = app.snapshot.find("fam-p").unwrap();
+    let items: Vec<_> = app
+        .visible_rows()
+        .iter()
+        .filter(|r| app.snapshot.parent(r.task) == Some(p))
+        .map(|r| &app.snapshot.tasks[r.task])
+        .collect();
+    assert_eq!(
+        items.iter().map(|t| t.summary.as_str()).collect::<Vec<_>>(),
+        ["Synthetic one", "Synthetic two", "Socks", "Hat", "Able"]
+    );
+    assert_eq!(
+        items[2..]
+            .iter()
+            .map(|t| t.meta.display_order())
+            .collect::<Vec<_>>(),
+        [3, 4, 5]
+    );
+    assert_eq!(
+        app.new_row.as_ref().unwrap().anchor.as_deref(),
+        Some(items.last().unwrap().uid.as_str())
+    );
+
     fs::remove_file(env.vdir().join("list1/fam-p.ics")).unwrap();
     app.reload(env.snapshot());
-    save(&mut app, "Hat");
+    save(&mut app, "Gone");
     assert!(app.new_row.is_none(), "the row closes");
     assert_eq!(app.message.as_deref(), Some("no task with UID fam-p"));
     assert!(app.snapshot.find(&socks).is_some(), "the saved item stays");
-    assert!(!app.snapshot.tasks.iter().any(|t| t.summary == "Hat"));
+    assert!(!app.snapshot.tasks.iter().any(|t| t.summary == "Gone"));
 }
 
 /// Keyboard/card requests and the real writer together, using the shipped verified matrix.

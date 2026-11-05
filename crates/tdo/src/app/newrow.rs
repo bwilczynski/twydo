@@ -137,14 +137,18 @@ impl App {
     /// The item row at the end of parent `p`'s items, expanding it.
     fn open_item_row(&mut self, p: usize) {
         let uid = self.snapshot.tasks[p].uid.clone();
-        self.expanded.insert(uid.clone());
-        let last = self
-            .visible_rows()
+        self.expanded.insert(uid);
+        let anchor = self.last_item_anchor(p);
+        let target = self.item_target(p);
+        self.show_row(target, Some(anchor), true);
+    }
+
+    fn last_item_anchor(&self, p: usize) -> String {
+        self.visible_rows()
             .iter()
             .rfind(|r| self.snapshot.parent(r.task) == Some(p))
-            .map(|r| self.snapshot.tasks[r.task].uid.clone());
-        let target = self.item_target(p);
-        self.show_row(target, Some(last.unwrap_or(uid)), true);
+            .map(|r| self.snapshot.tasks[r.task].uid.clone())
+            .unwrap_or_else(|| self.snapshot.tasks[p].uid.clone())
     }
 
     fn show_row(&mut self, target: NewTarget, anchor: Option<String>, below: bool) {
@@ -261,7 +265,7 @@ impl App {
 
     /// After a successful create (the snapshot is already reloaded): put the cursor on the
     /// new task, or say where it went when the view does not show it. An open row (the
-    /// `Enter` chain) moves below the new item.
+    /// `Enter` chain) moves to the end of its parent's visible items.
     pub(super) fn follow_created(&mut self, added: Adding) {
         let t = &added.task;
         let uid = self
@@ -288,8 +292,15 @@ impl App {
             self.transient = Some((text.clone(), None));
             self.message = Some(text);
         }
+        let anchor = self
+            .new_row
+            .as_ref()
+            .and_then(|row| row.target.parent.as_deref())
+            .and_then(|parent| self.snapshot.find(parent))
+            .map(|p| self.last_item_anchor(p))
+            .unwrap_or(uid);
         if let Some(row) = self.new_row.as_mut() {
-            row.anchor = Some(uid);
+            row.anchor = Some(anchor);
             row.below = true;
         }
     }
