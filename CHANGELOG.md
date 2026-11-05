@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/bwilczynski/twydo/compare/v0.1.3...v0.1.4) - 2026-11-05
+
+### Added
+
+- confirm deleted lists and recover preserved tasks
+
+### Fixed
+
+- keep the sync message visible when the reload after it fails
+- refresh task lists after manual sync
+- sync backup directories before retiring lists
+- preserve retired lists and recover their local tasks safely
+
 ## [0.1.3](https://github.com/bwilczynski/twydo/compare/v0.1.2...v0.1.3) - 2026-11-05
 
 ### Added
