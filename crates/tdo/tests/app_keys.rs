@@ -1697,9 +1697,20 @@ fn enter_in_parent_chains_next_item() {
         Some(PACKING),
     )));
     a.write_finished(Ok("added".into()));
+    let parent = a.snapshot.find(PACKING).unwrap();
+    let last = a
+        .visible_rows()
+        .iter()
+        .rfind(|r| a.snapshot.parent(r.task) == Some(parent))
+        .map(|r| a.snapshot.tasks[r.task].uid.clone())
+        .unwrap();
+    assert_ne!(
+        last, "new-1",
+        "the timestamp-free reload sorts the saved item before existing items"
+    );
     let r = a.new_row.as_ref().expect("the next item's row opens");
     assert_eq!(r.title, "");
-    assert_eq!((r.below, r.anchor.as_deref()), (true, Some("new-1")));
+    assert_eq!((r.below, r.anchor.as_deref()), (true, Some(last.as_str())));
     assert_eq!(
         r.target,
         target("personal", Some((PACKING, TaskKind::Checklist)), false)

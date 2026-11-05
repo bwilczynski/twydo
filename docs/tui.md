@@ -112,7 +112,8 @@ On the row:
 - `Enter` saves. The cursor goes to the new task; when the view does not show it (a task
   without dates added in Scheduled, say), the status line says `Added "…" to Inbox` and the
   cursor stays. `Enter` on an empty row closes it.
-- Inside a project or checklist, `Enter` saves and opens the next item's row below it, so you
+- Inside a project or checklist, `Enter` saves and opens the next item's row at the end of
+  that parent's visible items, so you
   can type a whole checklist in one go. Each saved item is its own write and undo step.
 - `Tab` opens the [edit card](#the-edit-card) for the new task, keeping the title.
 - `Esc` closes the row and writes nothing. Items already saved by `Enter` stay.
