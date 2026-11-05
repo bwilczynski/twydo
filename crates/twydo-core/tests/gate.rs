@@ -2953,6 +2953,7 @@ fn verified_from_completion_repeat_changes_require_captured_transitions() {
         ),
         (Some("FREQ=MONTHLY"), true, Some("weekly after done"), true),
         (Some("FREQ=MONTHLY"), true, Some("weekly"), false),
+        (Some("FREQ=MONTHLY"), true, Some("monthly"), false),
         (Some("FREQ=MONTHLY"), true, None, true),
         (Some("FREQ=WEEKLY"), true, Some("monthly after done"), false),
         (Some("FREQ=WEEKLY"), true, Some("weekly"), true),
