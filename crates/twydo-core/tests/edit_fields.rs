@@ -1719,3 +1719,40 @@ fn checklist_phone_return_notes_preserve_created_converted_families() {
         );
     }
 }
+
+#[test]
+fn checklist_phone_edits_after_second_reset_preserve_family_links() {
+    const SCENARIO: &str = "plan8-checklist-b";
+    check(
+        SCENARIO,
+        "030-phone-parent-note-return",
+        "031-phone-reset-item-edits",
+        "ae9638c7a7064361aaa5ae35762e7499",
+        &[Change::Summary("x".into())],
+        &["SUMMARY"],
+    );
+    check(
+        SCENARIO,
+        "030-phone-parent-note-return",
+        "031-phone-reset-item-edits",
+        "86496b2daf5842d9bffddf99a875a528",
+        &[Change::Summary("x".into())],
+        &["SUMMARY"],
+    );
+    check(
+        SCENARIO,
+        "029-phone-second-family-reset",
+        "030-phone-parent-note-return",
+        "55180c631f304b44be543382c0b85b94",
+        &[Change::Description(Some("x".into()))],
+        &["DESCRIPTION"],
+    );
+    check(
+        SCENARIO,
+        "029-phone-second-family-reset",
+        "030-phone-parent-note-return",
+        "twydo-p8-c29-d",
+        &[Change::Description(Some("x".into()))],
+        &["DESCRIPTION"],
+    );
+}
