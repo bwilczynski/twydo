@@ -1334,3 +1334,63 @@ fn future_section_uses_due_order_across_scheduled_and_long_range_tasks() {
     assert_eq!(r.groups[0].0, DateGroup::Future);
     assert_eq!(uids(&s, &r), ["scheduled", "long-range"]);
 }
+
+#[test]
+fn list_done_sections_keep_only_thirty_local_calendar_days() {
+    let mut unknown = TaskBuilder::new("unknown-date", "inbox").build();
+    unknown.status = Status::Completed;
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("today", "inbox")
+                .completed_at("2026-11-04 09:00")
+                .build(),
+            TaskBuilder::new("first-day", "inbox")
+                .completed_at("2026-10-06 00:00")
+                .build(),
+            TaskBuilder::new("too-old", "inbox")
+                .completed_at("2026-10-05 23:59")
+                .build(),
+            TaskBuilder::new("tomorrow", "inbox")
+                .completed_at("2026-11-05 09:00")
+                .build(),
+            unknown,
+        ],
+        &[],
+    );
+    for view in [View::All, View::List("inbox".into())] {
+        let r = build_view(&s, &view, now(), &no_expand());
+        assert_eq!(uids(&s, &r), ["today", "first-day"]);
+        assert_eq!(r.counts.total, 0);
+        let tomorrow = now() + chrono::Duration::days(1);
+        let r = build_view(&s, &view, tomorrow, &no_expand());
+        assert_eq!(uids(&s, &r), ["tomorrow", "today"]);
+    }
+    let r = build_view(&s, &View::Done, now(), &no_expand());
+    assert_eq!(
+        uids(&s, &r),
+        ["tomorrow", "today", "first-day", "too-old", "unknown-date"]
+    );
+    assert_eq!(r.counts.total, 5);
+}
+
+#[test]
+fn expired_completed_parent_does_not_hide_recent_children() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("old-parent", "inbox")
+                .kind(TaskKind::Project)
+                .completed_at("2026-10-01 10:00")
+                .build(),
+            TaskBuilder::new("recent-child", "inbox")
+                .parent("old-parent")
+                .completed_at("2026-11-04 09:00")
+                .build(),
+        ],
+        &[],
+    );
+    for view in [View::All, View::List("inbox".into())] {
+        let r = build_view(&s, &view, now(), &no_expand());
+        assert_eq!(uids(&s, &r), ["recent-child"]);
+        assert_eq!(r.groups[0].1[0].parent_hint, Some(idx(&s, "old-parent")));
+    }
+}

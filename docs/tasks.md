@@ -228,14 +228,16 @@ Modifiers, after any rule: `after done` (count from the completion date), `until
 | View | Shows |
 |---|---|
 | **Today** | open tasks that are overdue, due today, or started (start date reached) |
-| **All** | open tasks (including future-start tasks) and completed tasks, from eligible lists not excluded from All |
+| **All** | open tasks (including future-start tasks) and tasks completed in the last 30 days, from eligible lists not excluded from All |
 | **Scheduled** | open tasks whose start date is in the future, sorted by start date under one Scheduled header |
 | **Done** | completed tasks, newest first, grouped by completion day |
 | **Next 3 Days** | open tasks due today, tomorrow or the day after (not overdue) |
-| **a list** | its open tasks (including future-start tasks) and completed tasks |
+| **a list** | its open tasks (including future-start tasks) and tasks completed in the last 30 days |
 
 All and ordinary lists always show future-start work under **Future** and completed work
-under **Done** at the bottom, newest completions first. Empty sections disappear. These
+under **Done** at the bottom for the last 30 calendar days including today, newest completions
+first. Older completions and items without a completion date remain in the dedicated Done
+view; nothing is deleted. Empty sections disappear. These
 sections also appear with title/creation sorting; there are no visibility toggles or settings.
 Completed tasks are excluded from Today, Scheduled and Next 3 Days. A list's `show_in_done`
 setting affects only the dedicated Done view, not its completed rows in All or its own list.

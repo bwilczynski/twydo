@@ -222,7 +222,8 @@ documented, inspectable auxiliary formats and do not become an alternative task 
   group as Later Today. Use local calendar days, not elapsed 24-hour intervals, across DST.
 - **Scheduled**: tasks with a future start date stay out of Today and Next 3 Days until they
   start. **Revised 2026-11-05 for issue #11:** All and ordinary lists always include future-start
-  tasks under Future and completed tasks under Done (newest completion first), omitting empty
+  tasks under Future and tasks completed in the last 30 local calendar days including today
+  under Done (newest completion first), omitting empty
   sections. No visibility controls or preferences. Children in another active/future-start/
   completed section appear separately; children in the same section retain expansion and
   item ordering. Counts remain unfinished-only, including future-start tasks. The dedicated

@@ -112,7 +112,9 @@ See [deleted lists and recovery](sync.md#deleted-lists-and-recovery) for storage
 ## Planned and completed work
 
 All and ordinary lists always include future-start tasks under **FUTURE** and completed tasks
-under **DONE** at the bottom. Empty sections are omitted, and Done rows sort newest completion
+under **DONE** at the bottom for the last 30 calendar days including today. Older completions
+and items without a completion date remain in the dedicated Done view; nothing is deleted.
+Empty sections are omitted, and Done rows sort newest completion
 first. These sections remain with title/creation sorting. There are no visibility controls.
 Today, Scheduled, Done and Next 3 Days keep their own membership rules.
 
