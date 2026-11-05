@@ -1,7 +1,8 @@
 # Issue 35: checklist ordering investigation
 
-Status: bounded baseline capture approved by the user on 2026-11-05; creation captured.
-Reorder and append captures pending. User requested focused commits.
+Status: bounded baseline capture approved by the user on 2026-11-05; creation and append
+captured and phone display confirmed. Drag reorder is unavailable.
+User requested focused commits.
 
 ## Question and existing evidence
 
@@ -68,8 +69,37 @@ The four synthetic resources are in
 The parent and all three children have `DisplayOrder: 0`; no sort field is present in their
 metadata. Child `CREATED` timestamps are 16:55:04, 16:55:12 and 16:55:21 UTC for Zulu,
 Alpha and Mike respectively. This distinguishes creation order but does not yet prove that
-the phone sorts by it. Displayed order and sort setting await the user's report.
+the phone sorts by it in every case.
 
-Desktop default sorting would place these undated items as Alpha, Mike, Zulu. The next
-barrier is the user's report of the initial display followed by dragging Mike ahead of
-Zulu, if the phone supports it, and syncing. Do not append Bravo until that state is captured.
+Desktop default sorting would place these undated items as Alpha, Mike, Zulu. The user
+confirmed that the phone instead displays Zulu, Alpha, Mike, matching creation order,
+and that drag reordering is unavailable. No reorder action or capture was performed.
+The reorder path stops here as planned. Proposed next action: retain the same checklist,
+add Bravo on the phone and capture its placement; no sort/account changes or cleanup.
+
+### 010-appended
+
+The user added Bravo, confirmed it appeared at the end and synced. A second read-only
+REPORT captured the same parent and original children plus Bravo, with no local vdir,
+normal sync state/configuration or server changes by the agent.
+
+[`010-appended`](../../../fixtures/phase0/v1/issue35-checklist-order/010-appended/)
+contains Bravo with `DisplayOrder: 3` and `CREATED:20261105T170445Z`. The original three
+items retain `DisplayOrder: 0` and their original creation timestamps. Their modification
+timestamps and property layout changed between captures, but no other logical fields did;
+this capture does not establish what phone interaction caused those timestamp changes.
+
+The phone display is Zulu, Alpha, Mike, Bravo. This supports ascending creation time when
+ordering values tie and establishes that a phone append can write the zero-based position.
+It does not independently prove the precedence between creation time and `DisplayOrder`,
+because the two agree in these captures. No manual reorder capability was demonstrated.
+
+## Implementation considerations (not yet an approved design)
+
+The proposed reader uses `DisplayOrder`, then ascending creation time in both tree and
+flat views, independently of the containing view's sort. Ordering-field precedence is an
+inference from its documented meaning, rather than a separately captured phone reorder.
+Projects retain their existing sort semantics. New checklist items should receive an
+append position matching the phone's observed zero-based position. Equal/missing creation
+times need a deterministic fallback; second-resolution timestamps cannot establish entry
+order on their own. Writer changes need a separately approved Twydo-to-phone check.
