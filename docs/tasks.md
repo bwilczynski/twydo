@@ -259,6 +259,10 @@ then creation time for tied positions. Missing or invalid positions count as zer
 creation times come last, and remaining ties use UID for a stable order. The list's sort does
 not reorder nested items. Project items shown independently in Today and other flat date
 views still use that view's ordinary date sort.
+The Details pane uses the same item sequence. For legacy items tied on both position and
+creation time, UID is only a deterministic fallback: a family move/history copy can change
+that tie order because it assigns fresh UIDs. Unknown historical insertion order cannot be
+recovered from tied fields; Twydo does not renumber existing items to guess it.
 
 ## Alerts
 

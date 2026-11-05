@@ -515,15 +515,16 @@ fn compare(s: &Snapshot, c: &Clock, key: Key, descending: bool, a: usize, b: usi
 
 /// Nested items retain their sequence independently of the containing list's sort.
 /// Phone captures have tied (zero) positions; creation time orders those older items.
-fn compare_items(s: &Snapshot, c: &Clock, a: usize, b: usize) -> Ordering {
+/// `tz` resolves floating creation timestamps consistently with the current view.
+pub fn compare_items(s: &Snapshot, tz: Tz, a: usize, b: usize) -> Ordering {
     let (a, b) = (&s.tasks[a], &s.tasks[b]);
     a.meta
         .display_order()
         .cmp(&b.meta.display_order())
         .then_with(|| {
             date_cmp(
-                c.when(a.created.as_ref()),
-                c.when(b.created.as_ref()),
+                a.created.as_ref().map(|v| When::of(v, tz)),
+                b.created.as_ref().map(|v| When::of(v, tz)),
                 false,
             )
         })
@@ -616,7 +617,7 @@ fn push_tree(
         .copied()
         .filter(|&k| in_view[k])
         .collect();
-    kids.sort_by(|&a, &b| compare_items(s, c, a, b));
+    kids.sort_by(|&a, &b| compare_items(s, c.tz, a, b));
     for k in kids {
         push_tree(s, c, in_view, expanded, k, depth.saturating_add(1), out);
     }
@@ -674,7 +675,7 @@ pub fn build_view(
                 .copied()
                 .filter(|&k| s.tasks[k].status == Status::Open && !c.future_start(&s.tasks[k]))
                 .collect();
-            items.sort_by(|&a, &b| compare_items(s, &c, a, b));
+            items.sort_by(|&a, &b| compare_items(s, c.tz, a, b));
             rows.extend(items.into_iter().map(|k| Row {
                 task: k,
                 depth: 1,
