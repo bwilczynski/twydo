@@ -56,10 +56,12 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
     } else {
         0
     };
-    let conflicts = match ConflictStore::existing(&state)? {
+    let mut conflicts = match ConflictStore::existing(&state)? {
         Some(store) => store.unresolved()?,
         None => Vec::new(),
     };
+    let archived = crate::retired::list_state(&state)?;
+    conflicts.retain(|c| !archived.iter().any(|b| b.conflicts.contains(&c.id)));
     Ok(Some(SyncSummary {
         status: SyncStatus::load(&state)?,
         pending,

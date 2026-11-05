@@ -92,11 +92,11 @@ const MAX_RERUNS: usize = 2;
 /// The exclusive lock on `<state>/sync/run.lock`, released on drop. It unlocks explicitly
 /// rather than relying on close: a child forked by another thread holds a copy of the
 /// descriptor until it execs, and would keep the lock alive.
-struct RunLock(File);
+pub(crate) struct RunLock(File);
 
 impl RunLock {
     /// Blocks for the lock, or with `try_only` returns `None` when another runner holds it.
-    fn take(sync_dir: &Path, try_only: bool) -> io::Result<Option<RunLock>> {
+    pub(crate) fn take(sync_dir: &Path, try_only: bool) -> io::Result<Option<RunLock>> {
         let f = OpenOptions::new()
             .read(true)
             .write(true)
@@ -257,7 +257,31 @@ fn one_pass(
         state,
         running: &guard,
     };
-    let mut ran = run_command(&child_env, &args)?;
+    let rediscover = state.join("sync/rediscover");
+    let discovery = if rediscover.exists() {
+        let mut ran = run_command(&child_env, &["discover".into(), sync.pair.clone()])?;
+        let success = matches!(&ran.outcome, Outcome::Exited(st) if st.success())
+            && !ran
+                .stderr
+                .lines()
+                .any(|l| l.starts_with("error: ") || l.starts_with("critical: "));
+        if success {
+            remove_durable(&rediscover)?;
+            None
+        } else {
+            ran.stderr = format!(
+                "critical: list discovery failed; backup retained; check vdirsyncer configuration before retrying\n{}",
+                ran.stderr
+            );
+            Some(ran)
+        }
+    } else {
+        None
+    };
+    let mut ran = match discovery {
+        Some(failed) => failed,
+        None => run_command(&child_env, &args)?,
+    };
     let mut out = parse(&sync.pair, &ran.stderr);
     report.forced.extend(force.iter().cloned());
     // Local emptied by Twydo itself: rerun forced, once, still under the shared lock.

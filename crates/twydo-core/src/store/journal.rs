@@ -132,6 +132,34 @@ impl Journal {
         self.store(e)
     }
 
+    /// Retire source-list intent without claiming it synced. The full originals live in
+    /// the published list backup; surviving writes of cross-list operations stay active.
+    pub(crate) fn retire_collection(&self, collection: &str) -> io::Result<()> {
+        for mut e in self.list()? {
+            let remaining: Vec<_> = e
+                .writes
+                .iter()
+                .filter(|w| !crate::retired::in_collection(&w.path, collection))
+                .cloned()
+                .collect();
+            if remaining.is_empty() && !e.writes.is_empty() {
+                e.stage = Stage::Abandoned;
+            } else {
+                e.writes = remaining;
+            }
+            e.holds
+                .retain(|(p, _)| !crate::retired::in_collection(p, collection));
+            if e.family
+                .as_ref()
+                .is_some_and(|f| f.collection == collection)
+            {
+                e.family = None;
+            }
+            self.store(&e)?;
+        }
+        Ok(())
+    }
+
     /// Rewrites the stage of entry `id`; `NotFound` if there is no such entry.
     pub fn set_stage(&self, id: &str, s: Stage) -> io::Result<()> {
         let mut e = self.get(id)?.ok_or_else(|| {
@@ -367,6 +395,7 @@ pub fn try_recover(vdir: &Path, state_dir: &Path) -> io::Result<Option<RecoveryR
 /// Applied. A conflicting, invalid or unparseable entry is left as it is and
 /// reported as stuck. I/O errors abort recovery.
 pub fn recover_locked(vdir: &Path, journal: &Journal) -> io::Result<RecoveryReport> {
+    crate::retired::resume_locked(vdir, journal.dir.parent().expect("journal state directory"))?;
     let mut report = RecoveryReport::default();
     for (id, parsed) in journal.list_raw()? {
         let e = match parsed {
