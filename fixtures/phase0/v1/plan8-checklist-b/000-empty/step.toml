@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "000-empty"
+device = "twydo"
+action = "Approved B-only fresh sync confirms empty collection before seeding."
+captured_at = "2026-11-05T08:58:58Z"
