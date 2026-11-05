@@ -52,6 +52,13 @@ through the same runner/locks, selecting only the two capture collections with
 forced deletion prohibited. Normal config, account and write mode are unchanged.
 Private manifests/backups and all extra synthetic copies remain outside cleanup.
 
+The next approved bounded increment prioritizes issue #29: see the
+[bounded repeating-checklist checklist](../../reference/phase0/plan8-checklist-29-checklist.md).
+It includes individual checklist-item deletion, an empty-list preflight and two
+bounded phone rounds. The user approved that exact scope; fresh B-only sync
+confirms zero resources, with phone backup/empty-list confirmation pending.
+No leftovers cleanup or broader device operations are authorized.
+
 Next: prepare a minimum bounded checklist for the remaining Task 2 work (repeat
 end changes or project/item repeat cases), consulting the full session coverage
 ledger first. RF/RA does not authorize additional device operations, move/delete,
