@@ -1647,4 +1647,97 @@ mod monthly_checklist_writes {
             }
         }
     }
+
+    #[test]
+    fn deletion_inverses_refuse_new_family_members_without_writes() {
+        for redo in [false, true] {
+            let e = env("011-phone-items-and-text");
+            let mut store = e.store(Matrix::embedded().clone());
+            let snap = e.snap();
+            let uid = member(&snap, CHECKLIST_A_UID, "q");
+            let sibling = member(&snap, CHECKLIST_A_UID, "z");
+            store
+                .apply(&snap, &Op::Delete { uid: uid.clone() }, now())
+                .unwrap();
+            if redo {
+                store.undo_last(now()).unwrap();
+            }
+            let text = fs::read_to_string(e.file(&sibling))
+                .unwrap()
+                .replace(&sibling, "new-synthetic-child")
+                .replace("STATUS:NEEDS-ACTION", "STATUS:COMPLETED");
+            fs::write(e.file("new-synthetic-child"), text).unwrap();
+            let before = e.files();
+            let entries = e.journal().len();
+            let result = if redo {
+                store.redo_last(now())
+            } else {
+                store.undo_last(now())
+            };
+            assert!(
+                matches!(result, Err(WriteError::Stale(_))),
+                "redo={redo}: {result:?}"
+            );
+            assert_eq!(e.files(), before);
+            assert_eq!(e.journal().len(), entries);
+        }
+    }
+
+    #[test]
+    fn deletion_recovery_refuses_new_family_members_before_or_after_removal() {
+        for removed in [false, true] {
+            let e = env("011-phone-items-and-text");
+            let mut store = e.store(Matrix::embedded().clone());
+            let snap = e.snap();
+            let uid = member(&snap, CHECKLIST_A_UID, "q");
+            let sibling = member(&snap, CHECKLIST_A_UID, "z");
+            let id = store
+                .apply(&snap, &Op::Delete { uid: uid.clone() }, now())
+                .unwrap();
+            let journal = Journal::open(&e.state).unwrap();
+            let mut entry = journal.get(&id).unwrap().unwrap();
+            entry.stage = Stage::Prepared;
+            journal.prepare(&entry).unwrap();
+            if !removed {
+                fs::write(e.file(&uid), entry.writes[0].before.as_ref().unwrap()).unwrap();
+            }
+            let text = fs::read_to_string(e.file(&sibling))
+                .unwrap()
+                .replace(&sibling, "new-synthetic-child");
+            fs::write(e.file("new-synthetic-child"), text).unwrap();
+            let before = e.files();
+            let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+            assert_eq!(report.stuck.len(), 1, "removed={removed}");
+            assert_eq!(e.files(), before);
+        }
+    }
+
+    #[test]
+    fn deletion_inverses_and_recovery_allow_unrelated_new_resources() {
+        let e = env("011-phone-items-and-text");
+        let mut store = e.store(Matrix::embedded().clone());
+        let snap = e.snap();
+        let uid = member(&snap, CHECKLIST_A_UID, "q");
+        let id = store
+            .apply(&snap, &Op::Delete { uid: uid.clone() }, now())
+            .unwrap();
+        fs::write(
+            e.file("unrelated"),
+            b"BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:unrelated\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+        )
+        .unwrap();
+        store.undo_last(now()).unwrap();
+        assert!(e.file(&uid).exists());
+        store.redo_last(now()).unwrap();
+        assert!(!e.file(&uid).exists());
+        let journal = Journal::open(&e.state).unwrap();
+        let mut entry = journal.get(&id).unwrap().unwrap();
+        entry.stage = Stage::Prepared;
+        journal.prepare(&entry).unwrap();
+        let before = e.files();
+        let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert!(report.stuck.is_empty());
+        assert_eq!(report.resumed, vec![id]);
+        assert_eq!(e.files(), before);
+    }
 }

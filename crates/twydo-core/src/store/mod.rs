@@ -363,6 +363,11 @@ impl Store {
             } else {
                 Vec::new()
             },
+            family: if durable_holds && matches!(op, Op::Delete { .. }) {
+                family.clone()
+            } else {
+                None
+            },
             writes: plan.writes,
         };
 
@@ -415,6 +420,7 @@ impl Store {
             inverse_of: None,
             synced: None,
             holds: Vec::new(),
+            family: None,
             writes: vec![Write {
                 path: path.to_string(),
                 before: expect.map(str::to_string),
@@ -497,6 +503,9 @@ impl Store {
         for w in &e.writes {
             self.check_holds(&w.path, w.after.as_deref())?;
         }
+        if let Some(family) = &e.family {
+            self.check_family(family)?;
+        }
         for (rel, content) in &e.holds {
             self.check_holds(rel, Some(content))?;
         }
@@ -520,6 +529,7 @@ impl Store {
             inverse_of: Some(id.to_string()),
             synced: None,
             holds: e.holds,
+            family: e.family,
             writes,
         })
     }

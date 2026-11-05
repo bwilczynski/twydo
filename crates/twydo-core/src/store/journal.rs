@@ -1,6 +1,6 @@
 //! The operation journal and crash recovery. See `docs/architecture.md` (The operation journal).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -43,6 +43,18 @@ pub struct Entry {
     /// Optional for older entries. Revalidated on recovery and retained by inverses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<(String, String)>,
+    /// Family membership dependency, retained by inverses and checked on recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<FamilyGuard>,
+}
+
+/// Loaded family paths. The operation's own paths may be absent after a deletion;
+/// byte dependencies guard existing members while this guard rejects new members.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FamilyGuard {
+    pub collection: String,
+    pub parent_uid: String,
+    pub loaded: BTreeSet<String>,
 }
 
 /// One file write. `path` is relative to the vdir (`<collection>/<file>.ics`);
@@ -227,12 +239,58 @@ fn same(current: &Option<Vec<u8>>, want: &Option<String>) -> bool {
     current.as_deref() == want.as_ref().map(String::as_bytes)
 }
 
+/// Reject resources newly joined to a recorded family. Call under the vdir lock.
+pub(super) fn check_family(vdir: &Path, f: &FamilyGuard) -> Result<(), ApplyError> {
+    if f.parent_uid.is_empty() {
+        return Err(ApplyError::InvalidPath("empty family parent UID".into()));
+    }
+    let dir = resolve(vdir, &f.collection)?;
+    for e in fs::read_dir(&dir)? {
+        let path = e?.path();
+        if path.extension().is_none_or(|x| x != "ics") {
+            continue;
+        }
+        let rel = format!(
+            "{}/{}",
+            f.collection,
+            path.file_name().unwrap().to_string_lossy()
+        );
+        if f.loaded.contains(&rel) {
+            continue;
+        }
+        let bytes = match fs::read(&path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.into()),
+        };
+        let needle = f.parent_uid.as_bytes();
+        if !bytes.windows(needle.len()).any(|w| w == needle) {
+            continue;
+        }
+        // Mentions the parent: an item of it, or unreadable (then refuse to be safe).
+        let joined = match crate::ical::parse(&bytes) {
+            Ok(cal) => cal.root.children_named("VTODO").any(|t| {
+                t.props_named("RELATED-TO")
+                    .any(|p| p.value.trim() == f.parent_uid)
+            }),
+            Err(_) => true,
+        };
+        if joined {
+            return Err(ApplyError::Conflict { path: rel });
+        }
+    }
+    Ok(())
+}
+
 /// Applies the writes of `e` to `vdir`, in order. Per write: if the file
 /// already equals `after` it is skipped; if it equals `before` it becomes
 /// `after` (written atomically, or removed when `after` is `None`); otherwise
 /// the entry fails with `Conflict`. Every write is checked before any is
 /// made, so a conflict leaves the vdir untouched.
 pub fn apply_entry(vdir: &Path, e: &Entry) -> Result<(), ApplyError> {
+    if let Some(family) = &e.family {
+        check_family(vdir, family)?;
+    }
     for (rel, content) in &e.holds {
         let path = resolve(vdir, rel)?;
         if read_opt(&path)?.as_deref() != Some(content.as_bytes()) {

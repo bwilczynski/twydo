@@ -19,6 +19,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         inverse_of: None,
         synced: None,
         holds: Vec::new(),
+        family: None,
         writes,
     }
 }
@@ -497,6 +498,7 @@ fn read_dependencies_block_all_writes_and_older_entries_need_none() {
     old.as_object_mut().unwrap().remove("holds");
     let old: Entry = serde_json::from_value(old).unwrap();
     assert!(old.holds.is_empty());
+    assert!(old.family.is_none());
     for invalid in ["../outside.ics", "/absolute.ics"] {
         e.holds = vec![(invalid.into(), "x".into())];
         assert!(matches!(
