@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "012-phone-family-complete"
+device = "iphone"
+action = "In B only: tick z under A/B, observe parent remains open, manually tick each parent. Live families advance to January 10 and reopen z; deleted q absent; two completed parent/child history pairs."
+captured_at = "2026-11-05T09:27:16Z"

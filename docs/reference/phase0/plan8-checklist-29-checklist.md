@@ -181,3 +181,13 @@ created. Other collection bytes and normal configuration remain unchanged;
 privacy scan passes. This establishes the narrow phone baseline for deleting
 one of multiple open undated checklist items under an open monthly parent,
 not last-item/completed-item/project-item deletion or Twydo acceptance.
+
+## C29-12 baseline family completion captured
+
+The user confirmed the parent stays open after the item tick. B-only
+`012-phone-family-complete` contains nine resources: both live parents advance
+December 10 → January 10, their original `z` items reopen without native dates,
+and each family gains one completed parent and one completed linked child copy.
+No deleted `q` returns or appears in history. Task `d`, other collection bytes
+and normal configuration stay unchanged. Privacy scan passes. This completes
+the first phone round; local replay/guard implementation precedes writer upload.
