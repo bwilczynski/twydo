@@ -159,3 +159,25 @@ to confirm both appear last, rename each Echo to ECHO, and sync. Capture only ch
 resources, referring to existing evidence for unchanged members. No cleanup, completions,
 deletions, other family writes, account changes or normal configuration changes. Await
 fresh approval before upload; the earlier read-only approval does not authorize it.
+
+### 020-twydo-appended: approved upload and server read-back
+
+The user explicitly approved the two-item writer check. A fresh read found the exact
+expected two parents and eight existing items, with all ten dependency hashes matching
+the reviewed private candidate manifest. Only two PUT requests were made: one new Echo
+under each approved parent, both guarded by `If-None-Match: *`; both returned HTTP 201.
+Fresh server read-back verified both new resources byte-for-byte against the candidate
+CLI output and all ten existing resources byte-unchanged. No normal local vdir, sync
+state/configuration, accounts or other server resources were changed by these actions.
+
+Each scenario's `020-twydo-appended` delta stores only its new Echo resource at
+`DisplayOrder: 4`, referring to its existing five family resources rather than copying them:
+[checklist](../../../fixtures/phase0/v1/issue35-checklist-order/020-twydo-appended/),
+[project](../../../fixtures/phase0/v1/issue35-project-order/020-twydo-appended/).
+The writer revision is recorded in each step; the later Details-pane fix does not change
+the writer. Private manifests, receipts, dependency hashes and account paths stay outside git.
+
+Phone return pending: user syncs, checks both Echo items are last, renames each to ECHO
+and syncs. Do not repeat creation or upload. Store only changed/new return resources and
+reference earlier captures for unchanged members. This check does not authorize cleanup,
+completion, deletion, reorder experiments or any additional test tasks.

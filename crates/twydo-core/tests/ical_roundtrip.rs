@@ -150,6 +150,33 @@ fn roundtrip_plan7_phone_captures() {
     assert!(n > 100, "expected the plan 7 captures, found {n}");
 }
 
+#[test]
+fn roundtrip_item_order_phone_and_twydo_captures() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1");
+    let mut count = 0;
+    for scenario in ["issue35-checklist-order", "issue35-project-order"] {
+        for step in std::fs::read_dir(root.join(scenario)).unwrap() {
+            for file in std::fs::read_dir(step.unwrap().path()).unwrap() {
+                let path = file.unwrap().path();
+                if path.extension().is_some_and(|ext| ext == "ics") {
+                    let bytes = std::fs::read(&path).unwrap();
+                    assert_eq!(
+                        serialize(&parse(&bytes).unwrap()),
+                        bytes,
+                        "{}",
+                        path.display()
+                    );
+                    count += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        count >= 16,
+        "expected both families and their append captures"
+    );
+}
+
 // Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
     use crate::common::fixture;
