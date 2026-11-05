@@ -140,5 +140,22 @@ and the normal configuration remain unchanged.
 The previously documented legacy create journal entry for an absent unrelated
 file remains byte-unchanged. It is not a current session write; no journal was
 replayed, abandoned or removed to clear it. All other unsynced/prepared operations
-remain stop conditions. Phone confirmation of a restorable backup and empty list
-with completed tasks visible is pending. **Nothing has been seeded yet.**
+remain stop conditions. The user confirmed readiness and the empty phone list. Only the two approved
+monthly prerequisites were then seeded and uploaded; capture A remained untouched.
+
+## C29-10 phone creation/conversion captured
+
+The user completed the first phone actions and required that new evidence use
+**only capture B**. All new captures and exported fixtures in this increment are
+therefore from B; no A resource is included. Scoped sync remains B-only.
+
+Synthetic captures are under `fixtures/phase0/v1/plan8-checklist-b/`: `000-empty`,
+`002-seeded`, and `010-phone-create-convert`. After the phone round B contains
+exactly three parents: phone-created monthly checklist `a`, converted monthly
+checklist `b`, and unchanged monthly task `d`. All are open, date-only, due
+2026-12-10 with `FREQ=MONTHLY`. There are no children yet. The conversion changes
+JSON TaskType/uid while preserving recurrence metadata and series identity.
+Only `a` was added and `b` changed; `d` is byte-unchanged. Privacy scan passes.
+Other collection hashes and normal configuration remain unchanged. No capability
+verdict is promoted from this phone baseline alone. Next: add/edit the two items
+per baseline parent, then capture deletion separately before completion.
