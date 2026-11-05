@@ -99,8 +99,9 @@ The keys Twydo reads or writes:
 | `RecurrenceEndType`, `RecurrenceEndRepetitions` | The repeat's end |
 | `duetime` | The due time as HHMM (`1430`) on a timed due date; absent without a time |
 | `IsStarred` | 0 or 1 |
+| `DisplayOrder` | Nested checklist/project item position, ascending. Creation time breaks ties (older phone captures often contain zero on every item) |
 
-Other keys (`TaskDuration`, `StartDayDelay`, `DisplayOrder`, …) are kept as they are. When Twydo
+Other keys (`TaskDuration`, `StartDayDelay`, …) are kept as they are. When Twydo
 changes a field it changes every representation of it: moving a start date updates
 `StartDate`, completing a repeat updates `DUE`, its `DTSTART` copy and `StartDate` together.
 Twydo edits the JSON field by field and keeps the key order and the text around the markers, so

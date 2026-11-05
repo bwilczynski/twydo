@@ -662,6 +662,151 @@ fn sort_title_desc_ungrouped() {
     assert_eq!(titles, vec!["Cherry", "cherry", "banana", "apple"]);
 }
 
+/// The project append is a delta: unchanged baseline resources are intentionally not copied.
+fn item_order_capture(scenario: &str, appended: bool) -> Snapshot {
+    let temp = tempfile::tempdir().unwrap();
+    let list = temp.path().join("list1");
+    std::fs::create_dir(&list).unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1")
+        .join(scenario);
+    for step in [Some("000-created"), appended.then_some("010-appended")]
+        .into_iter()
+        .flatten()
+    {
+        for entry in std::fs::read_dir(root.join(step)).unwrap() {
+            let p = entry.unwrap().path();
+            if p.extension().is_some_and(|ext| ext == "ics") {
+                std::fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
+            }
+        }
+    }
+    Snapshot::new(load(temp.path()).unwrap(), config(&[]))
+}
+
+#[test]
+fn captured_checklist_and_project_keep_phone_item_order_under_list_sort_overrides() {
+    for scenario in ["issue35-checklist-order", "issue35-project-order"] {
+        for appended in [false, true] {
+            for field in [SortField::Due, SortField::Title, SortField::Creation] {
+                let mut s = item_order_capture(scenario, appended);
+                s.config.lists.insert(
+                    "list1".into(),
+                    ListPrefs {
+                        sort: Sort {
+                            field,
+                            descending: true,
+                        },
+                        ..ListPrefs::default()
+                    },
+                );
+                let parent = s
+                    .tasks
+                    .iter()
+                    .find(|t| t.parent.is_none())
+                    .unwrap()
+                    .uid
+                    .clone();
+                for view in [View::All, View::List("list1".into())] {
+                    let result = build_view(&s, &view, now(), &HashSet::from([parent.clone()]));
+                    let titles: Vec<_> = result
+                        .groups
+                        .iter()
+                        .flat_map(|(_, rows)| rows)
+                        .filter(|row| row.depth == 1)
+                        .map(|row| s.tasks[row.task].summary.as_str())
+                        .collect();
+                    let mut expected = vec!["Zulu", "Alpha", "Mike"];
+                    if appended {
+                        expected.push("Bravo");
+                    }
+                    assert_eq!(
+                        titles, expected,
+                        "{scenario}, {appended}, {view:?}, {field:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn captured_checklist_item_order_is_shared_by_flat_views() {
+    for view in [View::Today, View::Next3Days, View::Scheduled] {
+        let mut s = item_order_capture("issue35-checklist-order", true);
+        let p = s.tasks.iter().position(|t| t.parent.is_none()).unwrap();
+        s.tasks[p].due = Some(IcalDateTime::Date(now().date_naive()));
+        if view == View::Scheduled {
+            s.tasks[p].start = Some(IcalDateTime::Date(date("2026-12-01")));
+        }
+        let result = build_view(&s, &view, now(), &no_expand());
+        let titles: Vec<_> = result
+            .groups
+            .iter()
+            .flat_map(|(_, rows)| rows)
+            .filter(|row| row.depth == 1)
+            .map(|row| s.tasks[row.task].summary.as_str())
+            .collect();
+        assert_eq!(titles, ["Zulu", "Alpha", "Mike", "Bravo"], "{view:?}");
+    }
+}
+
+#[test]
+fn nested_order_uses_position_then_creation_then_uid_with_safe_missing_values() {
+    for kind in [TaskKind::Checklist, TaskKind::Project] {
+        let mut tasks = vec![TaskBuilder::new("parent", "inbox").kind(kind).build()];
+        for (uid, position, created, title) in [
+            ("a", Some("0"), Some("2026-11-01 10:00"), "Zulu"),
+            ("b", Some("-1"), Some("2026-11-02 10:00"), "Yankee"),
+            ("c", Some("\"bad\""), Some("2026-11-03 10:00"), "Xray"),
+            ("d", None, Some("2026-11-03 10:00"), "Whiskey"),
+            ("e", Some("9223372036854775808"), None, "Victor"),
+            ("f", None, None, "Uniform"),
+            ("g", Some("3"), Some("2026-10-01 10:00"), "Alpha"),
+        ] {
+            let mut child = TaskBuilder::new(uid, "inbox")
+                .parent("parent")
+                .title(title)
+                .build();
+            child.created = created.map(ny);
+            if let Some(position) = position {
+                child.meta = twydo_core::model::parse_metadata(&format!(
+                    "<2Do Meta>{{\"DisplayOrder\":{position}}}</2Do Meta>"
+                ));
+            }
+            tasks.push(child);
+        }
+        let s = snapshot(tasks, &[]);
+        let result = build_view(&s, &View::All, now(), &HashSet::from(["parent".into()]));
+        assert_eq!(
+            uids(&s, &result),
+            ["parent", "a", "b", "c", "d", "e", "f", "g"]
+        );
+    }
+}
+
+#[test]
+fn independent_project_items_in_flat_views_keep_date_sorting() {
+    let mut s = item_order_capture("issue35-project-order", true);
+    for t in &mut s.tasks {
+        t.due = Some(IcalDateTime::Date(date(match t.summary.as_str() {
+            "Bravo" => "2026-11-01",
+            "Mike" => "2026-11-02",
+            "Alpha" => "2026-11-03",
+            _ => "2026-11-04",
+        })));
+    }
+    let result = build_view(&s, &View::Today, now(), &no_expand());
+    let titles: Vec<_> = result
+        .groups
+        .iter()
+        .flat_map(|(_, rows)| rows)
+        .filter(|row| s.tasks[row.task].parent.is_some())
+        .map(|row| s.tasks[row.task].summary.as_str())
+        .collect();
+    assert_eq!(titles, ["Bravo", "Mike", "Alpha", "Zulu"]);
+}
+
 #[test]
 fn due_sort_timed_before_date_only_and_descending() {
     let tasks = vec![
