@@ -170,3 +170,14 @@ capitalized and notes are `x`; parent recurrence/identity JSON is unchanged from
 are no removed resources, and `d`, other collection bytes and normal config are
 unchanged. Privacy scan passes. Individual deletion is the next separate barrier;
 no operation verdict is promoted by this baseline.
+
+## C29-11D individual item deletion captured
+
+B-only `011d-phone-delete-items` contains five resources. Exactly the two open
+`q` children were removed, one from each open recurring checklist. Both parents,
+both remaining `z` children and `d` are byte-unchanged from 011: the phone does
+not rewrite parent counts or metadata for this shape. No resource/history was
+created. Other collection bytes and normal configuration remain unchanged;
+privacy scan passes. This establishes the narrow phone baseline for deleting
+one of multiple open undated checklist items under an open monthly parent,
+not last-item/completed-item/project-item deletion or Twydo acceptance.
