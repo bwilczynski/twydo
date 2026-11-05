@@ -322,3 +322,7 @@ conflict store.
 - Known TUI issues from the visual check: #2 (focus to the sidebar sometimes takes two presses),
   #3 (project details do not list the project's tasks).
 - The user reviewed and approved the matrix on 2026-11-01. Plan 4 may start.
+
+## Later capture logs
+
+- [Plan 8 RF/RA session](plan8-rf-ra-checklist.md): bounded from-completion editing evidence and closeout.

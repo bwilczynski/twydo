@@ -1119,7 +1119,7 @@ mod verified_recurrence_tui {
 
     #[test]
     fn completion_anchored_card_and_date_keys_use_verified_permissions_and_keep_refused_text() {
-        let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
+        let e = env_in("plan8-rfra", "202-seeded-after-upload");
         let uid = "twydo-p8-rfra-fields-p";
         let (mut w, _) = writer(&e.config());
         let mut a = App::new(
@@ -1162,7 +1162,7 @@ mod verified_recurrence_tui {
     #[test]
     fn completion_anchored_interval_card_accepts_only_the_captured_pure_change() {
         for mixed in [false, true] {
-            let e = env_in("plan8-rfra", "202-seeded-after-upload-A");
+            let e = env_in("plan8-rfra", "202-seeded-after-upload");
             let uid = "twydo-p8-rfra-interval-p";
             let (mut w, _) = writer(&e.config());
             let mut a = App::new(

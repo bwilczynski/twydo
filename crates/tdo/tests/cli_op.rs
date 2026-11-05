@@ -707,7 +707,7 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     let env = Env::new("verified");
     let uid = "twydo-p8-rfra-fields-p";
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload-A")
+        .join("../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload")
         .join(format!("{uid}.ics"));
     let target = env.vdir().join(format!("list1/{uid}.ics"));
     fs::copy(source, &target).unwrap();

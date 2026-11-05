@@ -20,7 +20,7 @@ See the session's regression map and local closeout for exact enabled/refused sh
   `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
   are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
   [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
-- Matrix accounting after RF/RA: 69 passing, 35 unverified and 2 unsupported operation rows.
+- Matrix accounting after RF/RA: iPhone baseline has 76 passing, 28 unverified and 2 unsupported operation rows; Twydo-to-iPhone has 72 passing and 34 unverified.
   Of the 35, 15 are unused attribute placeholders and 5 generic reopen rows overlap narrower
   dedicated cases; 15 are other task/family case-operation entries. This is **not** a complete count of
   remaining features: absent rows and guarded combinations add real gaps.
@@ -145,7 +145,8 @@ it does not mean the code is known to produce the right result.
   support (in particular type/repeat changes need JSON).
 - `monthly-31st`, `yearly-feb-29`, `from-completion-anchor` and `end-after-n` edge entries were
   stale despite sessions B/C and regression tests covering those behaviours. Task 1 reconciled
-  those records from existing evidence; `end-on-date` passes for the captured daily and plain-monthly date-only scope; other contexts remain unverified.
+  those records from existing evidence. Batch 1 subsequently captured `end-on-date` continuation,
+  boundary and final completion for the narrow daily/plain-monthly scope; other until shapes remain gated.
 
 ### Do not mistake matrix cells for effective capabilities
 

@@ -1388,52 +1388,52 @@ mod recurrence_phone_captures {
 fn existing_from_completion_field_edits_match_phone() {
     let steps: &[(&str, &str, Change)] = &[
         (
-            "202-seeded-after-upload-A",
-            "210-phone-first-actions-A",
+            "202-seeded-after-upload",
+            "210-phone-first-actions",
             Change::Summary("RFRA fields p edited".into()),
         ),
         (
-            "210-phone-first-actions-A",
-            "220-phone-second-actions-A",
+            "210-phone-first-actions",
+            "220-phone-second-actions",
             Change::Description(Some("RFRA notes".into())),
         ),
         (
-            "220-phone-second-actions-A",
-            "230-phone-third-actions-A",
+            "220-phone-second-actions",
+            "230-phone-third-actions",
             Change::Description(None),
         ),
         (
-            "230-phone-third-actions-A",
-            "240-phone-fourth-actions-A",
+            "230-phone-third-actions",
+            "240-phone-fourth-actions",
             Change::Due(Some(Due::Date(date(2026, 12, 9)))),
         ),
         (
-            "240-phone-fourth-actions-A",
-            "250-phone-time-added-A",
+            "240-phone-fourth-actions",
+            "250-phone-time-added",
             Change::Due(Some(Due::Time(
                 date(2026, 12, 9).and_hms_opt(9, 0, 0).unwrap(),
             ))),
         ),
         (
-            "250-phone-time-added-A",
-            "260-phone-time-changed-A",
+            "250-phone-time-added",
+            "260-phone-time-changed",
             Change::Due(Some(Due::Time(
                 date(2026, 12, 9).and_hms_opt(11, 0, 0).unwrap(),
             ))),
         ),
         (
-            "260-phone-time-changed-A",
-            "270-phone-time-removed-A",
+            "260-phone-time-changed",
+            "270-phone-time-removed",
             Change::Due(Some(Due::Date(date(2026, 12, 9)))),
         ),
         (
-            "270-phone-time-removed-A",
-            "280-phone-start-and-completions-A",
+            "270-phone-time-removed",
+            "280-phone-start-and-completions",
             Change::Start(Some(date(2026, 12, 7))),
         ),
         (
-            "280-phone-start-and-completions-A",
-            "290-phone-start-changed-A",
+            "280-phone-start-and-completions",
+            "290-phone-start-changed",
             Change::Start(Some(date(2026, 12, 8))),
         ),
     ];
@@ -1481,8 +1481,8 @@ fn existing_from_completion_interval_edit_matches_phone() {
         Change::Repeat(Some(spec("every 2 months after done"))),
     ] {
         check_after_done_edit(
-            "202-seeded-after-upload-A",
-            "210-phone-first-actions-A",
+            "202-seeded-after-upload",
+            "210-phone-first-actions",
             "interval",
             change,
         );
@@ -1493,18 +1493,18 @@ fn existing_from_completion_interval_edit_matches_phone() {
 fn completion_anchor_and_class_changes_match_phone() {
     for (from, to, rule) in [
         (
-            "202-seeded-after-upload-A",
-            "210-phone-first-actions-A",
+            "202-seeded-after-upload",
+            "210-phone-first-actions",
             "monthly after done",
         ),
         (
-            "210-phone-first-actions-A",
-            "220-phone-second-actions-A",
+            "210-phone-first-actions",
+            "220-phone-second-actions",
             "weekly after done",
         ),
         (
-            "220-phone-second-actions-A",
-            "230-phone-third-actions-A",
+            "220-phone-second-actions",
+            "230-phone-third-actions",
             "weekly",
         ),
     ] {
@@ -1515,8 +1515,8 @@ fn completion_anchor_and_class_changes_match_phone() {
 #[test]
 fn setting_completion_anchor_on_plain_task_matches_phone() {
     check_after_done_edit(
-        "202-seeded-after-upload-A",
-        "210-phone-first-actions-A",
+        "202-seeded-after-upload",
+        "210-phone-first-actions",
         "direct",
         Change::Repeat(Some(spec("monthly after done"))),
     );
@@ -1530,13 +1530,13 @@ fn removing_completion_related_repeat_preserves_series_and_only_differs_in_inact
     for (case, from, to) in [
         (
             "direct",
-            "210-phone-first-actions-A",
-            "220-phone-second-actions-A",
+            "210-phone-first-actions",
+            "220-phone-second-actions",
         ),
         (
             "anchor",
-            "230-phone-third-actions-A",
-            "240-phone-fourth-actions-A",
+            "230-phone-third-actions",
+            "240-phone-fourth-actions",
         ),
     ] {
         let uid = format!("twydo-p8-rfra-{case}-p");

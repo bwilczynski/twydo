@@ -124,7 +124,7 @@ The newly enabled operations are:
 | `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
 | `history-copy.reopen` | Top-level non-recurring, date-only task copies linked by RUID; no children/start/alerts/delay |
 | `from-completion.edit` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly interval 1 → 2 also passes |
-| `from-completion.repeat` | Pure plain interval-1 monthly/weekly set/remove, class and due/completion anchor changes; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
+| `from-completion.repeat` | Captured interval-1 transitions: plain or monthly due → monthly completion, monthly completion → weekly completion or none, and weekly completion → weekly due; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
 
 `until` completion now passes for top-level plain daily/monthly day 1–28 tasks with interval 1,
 date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,
