@@ -60,7 +60,12 @@ app replacing 2Do for one user, plan by plan.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
-   parser), manual order `J`/`K`, or Plan 2 (notifier). Write the plan first.
+   parser), manual order `J`/`K`, the write queue in `twydo-core` (edits during a sync are
+   queued instead of refused; high-level view in §4.5 of the phone web app design below, which
+   needs its own design first), or Plan 2 (notifier). Write the plan first. Before Plan 2,
+   decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
+   [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has
+   no build date).
 
 ## Ground rules
 
