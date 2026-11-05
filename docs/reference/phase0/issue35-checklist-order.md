@@ -4,6 +4,11 @@ Status: bounded baseline capture approved by the user on 2026-11-05; creation an
 captured and phone display confirmed. Drag reorder is unavailable.
 User requested focused commits.
 
+The user subsequently approved extending read-only capture to `Project Order 35` in the
+same collection and created/synced it. Evidence for that project includes only its own
+parent and children; do not copy `Order 35` resources into the project scenario. Future
+barriers retain only changed/new resources and reference unchanged earlier captures.
+
 ## Question and existing evidence
 
 Issue 35 reports inconsistent placement while adding checklist items. The user also observes
@@ -93,6 +98,18 @@ The phone display is Zulu, Alpha, Mike, Bravo. This supports ascending creation 
 ordering values tie and establishes that a phone append can write the zero-based position.
 It does not independently prove the precedence between creation time and `DisplayOrder`,
 because the two agree in these captures. No manual reorder capability was demonstrated.
+
+### Project 000-created
+
+The approved project extension captured four new synthetic resources using the same
+read-only server request, filtered to the project family. No checklist resources were
+saved again, no server writes occurred, and normal desktop vdir/state/configuration were
+unchanged. Fixtures are in
+[`issue35-project-order/000-created`](../../../fixtures/phase0/v1/issue35-project-order/000-created/).
+The parent has `TaskType: 2`; it and all three items have `DisplayOrder: 0`. Zulu, Alpha
+and Mike have ascending creation timestamps 17:10:41, 17:10:49 and 17:10:56 UTC.
+The project's displayed order awaits confirmation; its next proposed barrier is a phone
+append of Bravo, followed by a capture of changed/new project resources only.
 
 ## Implementation considerations (not yet an approved design)
 
