@@ -108,8 +108,19 @@ unchanged. Fixtures are in
 [`issue35-project-order/000-created`](../../../fixtures/phase0/v1/issue35-project-order/000-created/).
 The parent has `TaskType: 2`; it and all three items have `DisplayOrder: 0`. Zulu, Alpha
 and Mike have ascending creation timestamps 17:10:41, 17:10:49 and 17:10:56 UTC.
-The project's displayed order awaits confirmation; its next proposed barrier is a phone
-append of Bravo, followed by a capture of changed/new project resources only.
+The user subsequently confirmed the project's display after appending as described below.
+
+### Project 010-appended
+
+The user appended Bravo and synced, confirming display Zulu, Alpha, Mike, Bravo. A read-only
+capture found exactly one new project child. Bravo has `DisplayOrder: 3` and
+`CREATED:20261105T171317Z`; the parent and original three children are byte-unchanged.
+
+[`issue35-project-order/010-appended`](../../../fixtures/phase0/v1/issue35-project-order/010-appended/)
+stores only Bravo. Its `step.toml` references `000-created` and explicitly lists the four
+unchanged resources; reconstruct this state by overlaying the new file on that baseline.
+No checklist files or unchanged project resources were duplicated. No server writes,
+normal desktop sync/configuration changes, completions or deletions occurred.
 
 ## Implementation considerations (not yet an approved design)
 
