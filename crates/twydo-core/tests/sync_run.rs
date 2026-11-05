@@ -108,6 +108,40 @@ fn manual() -> RunOptions {
     }
 }
 
+#[test]
+fn failed_rediscovery_blocks_sync_and_is_retried_before_sync() {
+    let fx = Fx::new(
+        r#"
+        dir=$(dirname "$TWYDO_SYNC_HOOKLOG")
+        echo "$1" >> "$dir/calls"
+        if [ "$1" = discover ] && [ ! -f "$dir/allow" ]; then
+            echo 'error: discovery unavailable' >&2
+            exit 1
+        fi
+        [ "$1" = sync ] && echo 'Syncing twydo/c1' >&2
+        exit 0
+    "#,
+    );
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+    let first = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(first.transient.as_deref().unwrap().contains("discovery"));
+    assert_eq!(
+        fs::read_to_string(state.join("sync/calls")).unwrap(),
+        "discover\n"
+    );
+    assert!(state.join("sync/rediscover").exists());
+    fs::write(state.join("sync/allow"), "").unwrap();
+    let second = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(second.transient.is_none(), "{:?}", second.transient);
+    assert!(!state.join("sync/rediscover").exists());
+    assert_eq!(
+        fs::read_to_string(state.join("sync/calls")).unwrap(),
+        "discover\ndiscover\nsync\n"
+    );
+}
+
 fn background() -> RunOptions {
     RunOptions {
         background: true,

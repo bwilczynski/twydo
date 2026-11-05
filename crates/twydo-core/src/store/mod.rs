@@ -8,6 +8,7 @@
 mod family;
 pub mod fsio;
 pub mod journal;
+mod retired;
 
 use std::fs;
 use std::io;

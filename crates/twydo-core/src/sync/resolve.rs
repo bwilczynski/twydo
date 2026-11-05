@@ -92,6 +92,13 @@ pub fn resolve(
 ) -> Result<Resolution, ResolveError> {
     let not_found = || ResolveError::NotFound(id.to_string());
     let state = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)?.ok_or_else(not_found)?;
+    if crate::retired::archived_conflict(&state, id)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "this conflict belongs to a preserved list; use :recover to restore its local snapshot",
+        )
+        .into());
+    }
     let store = ConflictStore::existing(&state)?.ok_or_else(not_found)?;
     let c = store.get(id)?.ok_or_else(not_found)?;
     if !matches!(c.state, ConflictState::Open | ConflictState::Chosen) {
