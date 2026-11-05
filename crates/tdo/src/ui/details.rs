@@ -9,7 +9,7 @@ use ratatui::widgets::{Padding, Paragraph, Wrap};
 use twydo_core::format::{describe_alarm, relative_date};
 use twydo_core::model::Status;
 use twydo_core::model::repeat::{describe, parse_rrule};
-use twydo_core::views::View;
+use twydo_core::views::{View, compare_items};
 
 use super::tasks::glyph;
 use super::{dim, list_name, pane_block, theme};
@@ -90,7 +90,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(page.scroll((app.details_offset(), 0)), inner);
 }
 
-/// A parent's tasks: the open ones by due date (undated last), then how many are done, then
+/// A parent's tasks: the open ones in sibling order, then how many are done, then
 /// (in views that nest tasks) how to see them in the list. Nothing for a task without children.
 fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
     let snap = &app.snapshot;
@@ -98,15 +98,10 @@ fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
     if kids.is_empty() {
         return Vec::new();
     }
-    let tz = snap.tz();
     let (mut open, done): (Vec<usize>, Vec<usize>) = kids
         .iter()
         .partition(|&&c| !matches!(snap.tasks[c].status, Status::Completed | Status::Cancelled));
-    open.sort_by_key(|&c| {
-        let t = &snap.tasks[c];
-        let due = t.due.as_ref().map(|d| d.local_date(tz));
-        (due.is_none(), due, t.summary.to_lowercase())
-    });
+    open.sort_by(|&a, &b| compare_items(snap, app.now.timezone(), a, b));
     let mut lines = vec![
         Line::raw(""),
         Line::styled(format!("── Tasks ({} open) ──", open.len()), dim()),

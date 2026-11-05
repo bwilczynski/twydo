@@ -956,6 +956,48 @@ fn details_lines(buf: &Buffer) -> Vec<String> {
 }
 
 #[test]
+fn details_and_task_list_share_captured_checklist_and_project_item_order() {
+    for (scenario, title) in [
+        ("issue35-checklist-order", "Order 35"),
+        ("issue35-project-order", "Project Order 35"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let list = dir.path().join("test");
+        fs::create_dir(&list).unwrap();
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/phase0/v1")
+            .join(scenario);
+        for step in ["000-created", "010-appended"] {
+            for entry in fs::read_dir(root.join(step)).unwrap() {
+                let p = entry.unwrap().path();
+                if p.extension().is_some_and(|ext| ext == "ics") {
+                    fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
+                }
+            }
+        }
+        let mut a = App::new(snapshot_at(dir.path()), now());
+        let parent = select(&mut a, title);
+        a.expanded.insert(parent);
+        let buf = render(&mut a, 160, 30);
+        let details = details_lines(&buf);
+        let mut previous = 0;
+        for title in ["Zulu", "Alpha", "Mike", "Bravo"] {
+            let row = details
+                .iter()
+                .position(|line| line.contains(title))
+                .unwrap();
+            assert!(row > previous, "{scenario}: {}", details.join("\n"));
+            previous = row;
+        }
+        let list_order: Vec<_> = ["Zulu", "Alpha", "Mike", "Bravo"]
+            .into_iter()
+            .map(|title| find_in_tasks(&buf, title).1)
+            .collect();
+        assert!(list_order.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+}
+
+#[test]
 fn details_list_a_projects_open_tasks_and_completed_count() {
     let dir = project_vdir();
     let mut a = App::new(snapshot_at(dir.path()), now());
@@ -970,9 +1012,10 @@ fn details_list_a_projects_open_tasks_and_completed_count() {
     let heading = at("Tasks (2 open)");
     let sooner = at("○ Sooner child");
     let later = at("↺ Later child");
-    assert!(heading < sooner && sooner < later, "{}", lines.join("\n"));
+    // These legacy items have no position or creation time, so UID breaks the tie.
+    assert!(heading < later && later < sooner, "{}", lines.join("\n"));
     assert!(lines[sooner].contains("Tomorrow"), "{}", lines[sooner]);
-    assert!(at("+ 1 completed") > later);
+    assert!(at("+ 1 completed") > sooner);
     assert!(!lines.iter().any(|l| l.contains("Finished child")));
     at("Enter: expand in list");
 }
