@@ -170,7 +170,9 @@ vdirsyncer refuses to sync a list that became empty on either side until it is t
   `list "<name>" was emptied here; to apply that on the server run: tdo sync --force-delete "<name>"`
   (or `... emptied on the server; to apply that here ...`). After checking that this is what you
   want, run the command. `--force-delete` takes a list's directory name or its unique display
-  name, and can be repeated. In the TUI use `:sync! <list>`.
+  name, and can be repeated. In the TUI use `:sync! <list>`. The TUI reloads tasks when
+  a manual sync finishes, including after a failed run that may have applied some changes.
+  This refresh also works when live filesystem notifications are unavailable.
 
 The record of a list is only as good as the last sync that wrote it:
 
