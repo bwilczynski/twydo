@@ -966,7 +966,7 @@ mod recurrence_phone_captures {
             assert_eq!(copies.len(), 4);
             let now = completed(&after_phone[&copies["FCa"]]);
             let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{from}"));
-            let mut store = env.store(candidate());
+            let mut store = env.store(Matrix::embedded().clone());
             let before = env.files();
             store
                 .apply(&env.snap(), &Op::Complete { uid: FC.into() }, now)
@@ -1029,7 +1029,7 @@ mod recurrence_phone_captures {
             // Interrupt after two history creates: recovery must finish all eight resources,
             // not generate a second family or expose half of the reset indefinitely.
             let recovering = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{from}"));
-            drop(recovering.store(candidate()));
+            drop(recovering.store(Matrix::embedded().clone()));
             let mut interrupted = entry.clone();
             interrupted.stage = Stage::Prepared;
             Journal::open(&recovering.state)
@@ -1043,7 +1043,8 @@ mod recurrence_phone_captures {
                 )
                 .unwrap();
             }
-            let (_, report) = Store::open_with(&recovering.cfg, candidate()).unwrap();
+            let (_, report) =
+                Store::open_with(&recovering.cfg, Matrix::embedded().clone()).unwrap();
             assert!(report.stuck.is_empty());
             assert_eq!(
                 recovering.files(),
@@ -1063,7 +1064,7 @@ mod recurrence_phone_captures {
             "timed",
         ] {
             let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{SET}"));
-            let mut store = env.store(candidate());
+            let mut store = env.store(Matrix::embedded().clone());
             let snap = env.snap();
             let child = snap.children(snap.find(FC).unwrap())[0];
             let path = &snap.tasks[child].path;

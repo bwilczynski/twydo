@@ -25,7 +25,7 @@ Twydo reads nested projects and checklists (a parent inside a parent) but does n
 selector does:
 
 - **Task to checklist or project**: the task keeps its title, dates, repeat and notes, and has no
-  items yet. Converting a repeating task to a checklist is refused (repeating checklists are not
+  items yet. Converting a repeating task to a checklist is refused (the recurring-checklist edit operation is not
   verified).
 - **Checklist with items to project**: the items stay, with their dates as they were.
 - **Empty project or checklist to task**: allowed.
@@ -100,6 +100,7 @@ transitions are due anchored and have no end or weekday selector. Existing
 monthly/weekly behavior, including a monthly count end, remains supported.
 From-completion and project repeat changes remain unverified. Existing
 checklists can set/change/remove plain monthly/weekly rules: interval 1,
+monthly due day 28 or less,
 date-only due, no end/start/alerts/delay or completion anchor. Monthly recurring
 checklists reset items and create history on completion; ordinary recurring
 checklist edits, creation and other completion shapes remain refused.
