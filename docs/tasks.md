@@ -254,6 +254,12 @@ Within a group, tasks sort by due date (on the same day, timed tasks before date
 by title. A list can sort by `due`, `start`, `creation` or `title`, ascending or descending
 (`[lists.<id>] sort` in [config.md](config.md)); sorting by title or creation shows one list without groups.
 
+Items nested under a checklist or project keep their own sequence: `DisplayOrder` ascending,
+then creation time for tied positions. Missing or invalid positions count as zero; missing
+creation times come last, and remaining ties use UID for a stable order. The list's sort does
+not reorder nested items. Project items shown independently in Today and other flat date
+views still use that view's ordinary date sort.
+
 ## Alerts
 
 Twydo keeps every alert a task has, shows them in the Details pane (`15 min before due`), and

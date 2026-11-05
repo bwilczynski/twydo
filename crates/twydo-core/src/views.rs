@@ -513,6 +513,23 @@ fn compare(s: &Snapshot, c: &Clock, key: Key, descending: bool, a: usize, b: usi
         .then_with(|| ta.uid.cmp(&tb.uid))
 }
 
+/// Nested items retain their sequence independently of the containing list's sort.
+/// Phone captures have tied (zero) positions; creation time orders those older items.
+fn compare_items(s: &Snapshot, c: &Clock, a: usize, b: usize) -> Ordering {
+    let (a, b) = (&s.tasks[a], &s.tasks[b]);
+    a.meta
+        .display_order()
+        .cmp(&b.meta.display_order())
+        .then_with(|| {
+            date_cmp(
+                c.when(a.created.as_ref()),
+                c.when(b.created.as_ref()),
+                false,
+            )
+        })
+        .then_with(|| a.uid.cmp(&b.uid))
+}
+
 // ---------- layout ----------
 
 struct Plan {
@@ -579,7 +596,6 @@ fn group_order(a: &DateGroup, b: &DateGroup) -> Ordering {
 fn push_tree(
     s: &Snapshot,
     c: &Clock,
-    plan: &Plan,
     in_view: &[bool],
     expanded: &HashSet<String>,
     idx: usize,
@@ -600,18 +616,9 @@ fn push_tree(
         .copied()
         .filter(|&k| in_view[k])
         .collect();
-    kids.sort_by(|&a, &b| compare(s, c, plan.key, plan.descending, a, b));
+    kids.sort_by(|&a, &b| compare_items(s, c, a, b));
     for k in kids {
-        push_tree(
-            s,
-            c,
-            plan,
-            in_view,
-            expanded,
-            k,
-            depth.saturating_add(1),
-            out,
-        );
+        push_tree(s, c, in_view, expanded, k, depth.saturating_add(1), out);
     }
 }
 
@@ -652,7 +659,7 @@ pub fn build_view(
             }
         };
         if plan.tree {
-            push_tree(s, &c, &plan, &in_view, expanded, idx, 0, rows);
+            push_tree(s, &c, &in_view, expanded, idx, 0, rows);
             continue;
         }
         rows.push(Row {
@@ -667,7 +674,7 @@ pub fn build_view(
                 .copied()
                 .filter(|&k| s.tasks[k].status == Status::Open && !c.future_start(&s.tasks[k]))
                 .collect();
-            items.sort_by(|&a, &b| compare(s, &c, plan.key, plan.descending, a, b));
+            items.sort_by(|&a, &b| compare_items(s, &c, a, b));
             rows.extend(items.into_iter().map(|k| Row {
                 task: k,
                 depth: 1,

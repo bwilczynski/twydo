@@ -41,6 +41,15 @@ impl Metadata {
     pub fn has(&self, key: &str) -> bool {
         self.tokens.contains_key(key)
     }
+
+    /// Nested sibling position. Older captures omit it or contain all zeroes.
+    /// Malformed, negative and out-of-range values have the same fallback as absent ones.
+    pub fn display_order(&self) -> i64 {
+        self.value("displayorder")
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|&v| v >= 0)
+            .unwrap_or(0)
+    }
 }
 
 /// Byte offset of the next token start at or after `from`: an `@` preceded by whitespace
@@ -149,6 +158,12 @@ fn parse_json_metadata(raw: &str) -> Metadata {
     }
     if int("RecurrenceFrom") == Some(2) {
         t.insert("repeatfromcompletion".into(), None);
+    }
+    if let Some(order) = obj.get("DisplayOrder").and_then(|v| {
+        v.as_i64()
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+    }) {
+        t.insert("displayorder".into(), Some(order.to_string()));
     }
     meta
 }
