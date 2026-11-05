@@ -51,8 +51,8 @@ app replacing 2Do for one user, plan by plan.
    [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)).
    **Current follow-up:** Plan 8's [resume checkpoint](docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
    and [session coverage ledger](docs/reference/phase0/plan8-tui-completeness-session.md) record
-   completed evidence and remaining work across all existing TUI actions. Batch 1 and RF/RA
-   phone rounds are complete; do not repeat them. See [compatibility](docs/compatibility.md)
+   completed evidence and remaining work across all existing TUI actions. Batch 1 phone rounds
+   are complete; do not repeat them. See [compatibility](docs/compatibility.md)
    for exact enabled and refused shapes, including date-only daily/plain-monthly until execution.
    Prepare a bounded checklist and obtain fresh approval before additional device rounds. Private
    session state and backups are outside git. Do not touch other data, change accounts or global
