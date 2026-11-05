@@ -284,6 +284,12 @@ pub fn check(
         operation_row(m, mode, case, "convert")?;
     }
 
+    if cases.family == Some("recurring-checklist")
+        || after.is_some_and(|a| a.family == Some("recurring-checklist"))
+    {
+        captured_checklist_write(snap, target, op, repeat_only)?;
+    }
+
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
         && ((snap.tasks[i].rrule.is_some() && snap.tasks[i].from_completion)
             || new_repeat(changes)
@@ -880,7 +886,22 @@ fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blo
                 );
             }
             Op::Delete { .. } => {
-                return blocked("deleting one item of a project or checklist is not verified yet");
+                if snap.tasks[p].kind != TaskKind::Checklist || snap.tasks[p].rrule.is_none() {
+                    return blocked(
+                        "deleting one item of a project or checklist is not verified yet",
+                    );
+                }
+                if !captured_monthly_checklist(snap, p)
+                    || snap.children(p).len() < 2
+                    || snap
+                        .children(p)
+                        .iter()
+                        .any(|&c| !captured_checklist_item(snap, c, p))
+                {
+                    return blocked(
+                        "individual deletion is verified only for an open item with open siblings under a plain monthly date-only checklist",
+                    );
+                }
             }
             Op::Reopen { .. } if snap.tasks[p].status != Status::Open => {
                 return blocked(
@@ -965,7 +986,15 @@ fn due_case(timed: bool) -> &'static str {
 /// The matrix cases `op` touches: the own and family cases, then the attribute cases of a
 /// create (the new task's due and start) or an edit (`Due`: the due before and after; `Start`).
 fn op_cases(snap: &Snapshot, target: Option<usize>, cases: Cases, op: &Op) -> Vec<&'static str> {
-    let mut out: Vec<&'static str> = std::iter::once(cases.own).chain(cases.family).collect();
+    let family = if matches!(op, Op::Delete { .. })
+        && target.is_some_and(|i| snap.parent(i).is_some())
+        && cases.family == Some("recurring-checklist")
+    {
+        Some("recurring-checklist-item")
+    } else {
+        cases.family
+    };
+    let mut out: Vec<&'static str> = std::iter::once(cases.own).chain(family).collect();
     let mut add = |c: &'static str| {
         if !out.contains(&c) {
             out.push(c);
@@ -1296,6 +1325,96 @@ fn captured_from_completion_edit(
         return refuse();
     }
     Ok(())
+}
+
+/// C29 creation/text/item operations have their own shape boundary. The existing
+/// repeat-only path retains its independently verified monthly/weekly transitions.
+fn captured_monthly_schedule(t: &Task) -> bool {
+    t.status == Status::Open
+        && captured_schedule(t)
+        && matches!(t.due, Some(IcalDateTime::Date(d)) if d.day() <= 28)
+        && t.rrule.as_deref().is_some_and(|raw| {
+            parse_rrule(raw).is_ok_and(|r| plain_rule(&r, &[Freq::Monthly]) && r.end == End::Never)
+        })
+}
+
+fn captured_monthly_checklist(snap: &Snapshot, i: usize) -> bool {
+    snap.tasks[i].kind == TaskKind::Checklist
+        && known_task_type(&snap.tasks[i])
+        && snap.tasks[i].blocked.is_none()
+        && snap.parent(i).is_none()
+        && captured_monthly_schedule(&snap.tasks[i])
+}
+
+fn captured_checklist_item(snap: &Snapshot, i: usize, parent: usize) -> bool {
+    let t = &snap.tasks[i];
+    t.kind == TaskKind::Task
+        && known_task_type(t)
+        && t.blocked.is_none()
+        && t.status == Status::Open
+        && t.rrule.is_none()
+        && !t.from_completion
+        && t.start.is_none()
+        && t.alarms.is_empty()
+        && snap.children(i).is_empty()
+        && (t.due.is_none() || t.due == snap.tasks[parent].due)
+        && json_meta(t).is_some_and(|m| {
+            m.get_i64("StartDate").is_none()
+                && m.get_i64("duetime").is_none()
+                && m.get_i64("StartDayDelay").unwrap_or(0) == 0
+        })
+}
+
+fn captured_checklist_write(
+    snap: &Snapshot,
+    target: Option<usize>,
+    op: &Op,
+    repeat_only: bool,
+) -> Result<(), Blocked> {
+    let allowed = match op {
+        Op::Create(n) => match n.parent.as_deref() {
+            Some(uid) => snap
+                .find(uid)
+                .is_some_and(|p| captured_monthly_checklist(snap, p)),
+            None => {
+                n.kind == TaskKind::Checklist
+                    && n.start.is_none()
+                    && matches!(n.due, Some(Due::Date(d)) if d.day() <= 28)
+                    && n.repeat.as_ref().is_some_and(|r| {
+                        !r.from_completion
+                            && plain_rule(&r.rule, &[Freq::Monthly])
+                            && r.rule.end == End::Never
+                    })
+            }
+        },
+        Op::Edit { changes, .. } if !repeat_only => {
+            let i = target.expect("an edit has a target");
+            let t = &snap.tasks[i];
+            let shape = if let Some(p) = snap.parent(i) {
+                captured_monthly_checklist(snap, p) && captured_checklist_item(snap, i, p)
+            } else {
+                captured_monthly_schedule(t)
+                    && (t.kind == TaskKind::Checklist
+                        || (t.kind == TaskKind::Task && snap.children(i).is_empty()))
+            };
+            shape
+                && changes.iter().all(|c| match c {
+                    Change::Summary(_) | Change::Description(_) => true,
+                    Change::Kind(TaskKind::Checklist) => {
+                        t.kind == TaskKind::Task && snap.parent(i).is_none()
+                    }
+                    _ => false,
+                })
+        }
+        _ => true,
+    };
+    if allowed {
+        Ok(())
+    } else {
+        blocked(
+            "checklist creation and text editing are verified only for open plain monthly date-only checklists; conversion is from a top-level recurring task",
+        )
+    }
 }
 
 fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {

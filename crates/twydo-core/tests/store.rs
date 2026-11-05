@@ -473,6 +473,7 @@ fn stuck_journal_blocks_writes() {
         stage: Stage::Prepared,
         inverse_of: None,
         synced: None,
+        holds: Vec::new(),
         writes: vec![Write {
             path: format!("list1/{A}.ics"),
             before: Some("neither".into()),

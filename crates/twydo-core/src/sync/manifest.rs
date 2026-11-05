@@ -151,6 +151,7 @@ mod tests {
             stage: Stage::Applied,
             inverse_of: None,
             synced: None,
+            holds: Vec::new(),
             writes: writes
                 .iter()
                 .map(|(p, a)| Write {

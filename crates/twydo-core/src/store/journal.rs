@@ -39,6 +39,10 @@ pub struct Entry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synced: Option<DateTime<Utc>>,
     pub writes: Vec<Write>,
+    /// Read dependencies (vdir-relative path, exact contents), never sync mutations.
+    /// Optional for older entries. Revalidated on recovery and retained by inverses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<(String, String)>,
 }
 
 /// One file write. `path` is relative to the vdir (`<collection>/<file>.ics`);
@@ -229,6 +233,12 @@ fn same(current: &Option<Vec<u8>>, want: &Option<String>) -> bool {
 /// the entry fails with `Conflict`. Every write is checked before any is
 /// made, so a conflict leaves the vdir untouched.
 pub fn apply_entry(vdir: &Path, e: &Entry) -> Result<(), ApplyError> {
+    for (rel, content) in &e.holds {
+        let path = resolve(vdir, rel)?;
+        if read_opt(&path)?.as_deref() != Some(content.as_bytes()) {
+            return Err(ApplyError::Conflict { path: rel.clone() });
+        }
+    }
     // Check pass: simulate the writes in order so repeated paths are handled.
     let mut overlay: HashMap<PathBuf, Option<Vec<u8>>> = HashMap::new();
     let mut todo = Vec::with_capacity(e.writes.len());

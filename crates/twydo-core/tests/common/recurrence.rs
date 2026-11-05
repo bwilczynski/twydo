@@ -93,3 +93,48 @@ pub fn stamped(cal: &Calendar, now: DateTime<Utc>) {
 pub fn preserved_created(before: &Calendar, after: &Calendar) {
     assert_eq!(todo(before).prop("CREATED"), todo(after).prop("CREATED"));
 }
+
+/// New evidence for issue 29 is exclusively from capture B.
+pub const CHECKLIST_B: &str = "plan8-checklist-b";
+pub const CHECKLIST_A_UID: &str = "12d762a5639e406c8ec865517882f130";
+pub const CHECKLIST_B_UID: &str = "twydo-p8-c29-b";
+
+/// Phone-baseline permissions for local candidate replay; never a shipping verdict.
+pub fn checklist_candidate_matrix() -> twydo_core::compat::Matrix {
+    let mut m = twydo_core::compat::Matrix::embedded().clone();
+    let extra = twydo_core::compat::Matrix::from_toml_str(
+        r#"matrix_version = 1
+[[operation]]
+case = "recurring-checklist"
+op = "create"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "pass"
+[[operation]]
+case = "recurring-checklist"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "pass"
+[[operation]]
+case = "recurring-checklist-item"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "pass"
+"#,
+    )
+    .unwrap();
+    for row in extra.operation {
+        if m.operation(&row.case, &row.op).is_none() {
+            m.operation.push(row);
+        }
+    }
+    m
+}

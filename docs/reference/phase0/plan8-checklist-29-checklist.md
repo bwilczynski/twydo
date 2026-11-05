@@ -191,3 +191,41 @@ and each family gains one completed parent and one completed linked child copy.
 No deleted `q` returns or appears in history. Task `d`, other collection bytes
 and normal configuration stay unchanged. Privacy scan passes. This completes
 the first phone round; local replay/guard implementation precedes writer upload.
+
+## Local candidate implementation and review
+
+B-only baseline replay now covers direct creation, task conversion, parent title/notes,
+item creation with inherited native due/mirror dates, individual deletion, manual
+family completion/reset and history identities. Gates admit only the captured
+monthly/date-only schedule and title/notes/type transition; destination edit rows
+do not imply date/start/interval/project conversions. Item deletion has a dedicated
+`recurring-checklist-item.delete` case rather than enabling parent deletion.
+
+Failing regressions first exposed missing inherited dates and stale deletion
+checks. Exact reset replay also exposed a history-parent identity bug on the
+phone-converted B parent: its JSON uid differs from its CalDAV UID. The history
+copy now gets its new identity, while the live parent keeps the internal identity
+and copied items link to the new history parent. Focused fix: `56214d9`.
+
+Independent review found two further safety issues, both reproduced before fixing:
+parent/sibling holds were not durable across undo/redo/recovery, and item text
+edits did not hold their parent. New optional journal read dependencies preserve
+these bytes separately from mutations, and inverses retain them. Tests cover
+removed parent on undo, removed sibling on redo, changed parent during recovery,
+stale parent for ordinary/grouped text edits, and sync preserving a remote parent
+without offering its stale held bytes as a write conflict. Old entries default
+to no dependencies. No new capability verdict is enabled yet.
+
+There is one explicit representation difference: the phone's reset A child has
+PERCENT-COMPLETE:0, while the converted B child's reset omits that property. Both
+are open. The regression asserts the difference rather than dropping it from the
+comparison. The candidate retains the existing explicit-zero reopen writer;
+subsequent phone execution on the candidate conversion remains required.
+
+All 845 Rust tests, 49 Python tests, documentation links, clippy and formatting
+pass after the review fixes. The exact 16-operation CLI writer sequence passes
+on an offline B copy: 16 final resources, C/D due January 10 with open z items,
+q deleted and excluded from history, all earlier baseline resources unchanged
+except the intended d conversion. A private runner's initial expected-total
+arithmetic was corrected from 15 to 16 before production use. No candidate
+production write/upload has occurred at this checkpoint.

@@ -77,6 +77,12 @@ impl Store {
         let Some(idx) = snap.find(uid) else {
             return Ok(None);
         };
+        // Individual deletion also depends on the loaded parent and sibling set.
+        let idx = if matches!(op, Op::Delete { .. }) {
+            snap.parent(idx).unwrap_or(idx)
+        } else {
+            idx
+        };
         // Any task may have gained an item since the snapshot, even one that had none (an
         // empty checklist or project, or a plain task). An edit matters for a checklist's
         // dates, which its items follow, and for a change of type, which the gate allows or
@@ -96,7 +102,7 @@ impl Store {
         }
         Ok(Some(Family {
             collection: snap.tasks[idx].collection.clone(),
-            parent_uid: uid.clone(),
+            parent_uid: snap.tasks[idx].uid.clone(),
             loaded,
         }))
     }

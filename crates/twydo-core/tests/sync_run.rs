@@ -322,6 +322,7 @@ fn stuck_journal_entry_becomes_conflict() {
             stage: Stage::Prepared,
             inverse_of: None,
             synced: None,
+            holds: Vec::new(),
             writes: vec![Write {
                 path: "c1/a.ics".into(),
                 before: Some(before),
@@ -390,6 +391,7 @@ fn applied(id: &str, writes: &[(&str, Option<&str>, Option<&str>)]) -> Entry {
         stage: Stage::Applied,
         inverse_of: None,
         synced: None,
+        holds: Vec::new(),
         writes: writes
             .iter()
             .map(|(p, b, a)| Write {
@@ -885,6 +887,7 @@ fn stuck_entry_records_its_unapplied_writes_too() {
             stage: Stage::Prepared,
             inverse_of: None,
             synced: None,
+            holds: Vec::new(),
             writes: vec![
                 Write {
                     path: "c1/a.ics".into(),
@@ -1594,4 +1597,50 @@ fn pass_begun_after_a_stop_runs() {
     let r = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(!r.stopped);
     assert!(count.exists());
+}
+
+#[test]
+fn changed_journal_read_dependency_never_becomes_parent_write_conflict() {
+    let fx = Fx::new("exit 0");
+    let parent = task("parent", "remote parent edit");
+    let item = task("item", "synthetic item");
+    fs::write(fx.cfg.vdir.join("c1/parent.ics"), &parent).unwrap();
+    fs::write(fx.cfg.vdir.join("c1/item.ics"), &item).unwrap();
+    let journal = Journal::open(&fx.state()).unwrap();
+    journal
+        .prepare(&Entry {
+            format: 1,
+            id: "20261101T090000Z-0000abce".into(),
+            created: now(),
+            kind: "delete".into(),
+            uids: vec!["item".into()],
+            stage: Stage::Prepared,
+            inverse_of: None,
+            synced: None,
+            holds: vec![("c1/parent.ics".into(), task("parent", "loaded parent"))],
+            writes: vec![Write {
+                path: "c1/item.ics".into(),
+                before: Some(item.clone()),
+                after: None,
+            }],
+        })
+        .unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(r.new_conflicts.len(), 1);
+    assert_eq!(
+        fs::read_to_string(fx.cfg.vdir.join("c1/parent.ics")).unwrap(),
+        parent
+    );
+    assert_eq!(
+        fs::read_to_string(fx.cfg.vdir.join("c1/item.ics")).unwrap(),
+        item
+    );
+    let conflicts = ConflictStore::open(&fx.state())
+        .unwrap()
+        .unresolved()
+        .unwrap();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].path, "c1/item.ics");
+    assert!(conflicts[0].local.is_none());
+    assert_eq!(conflicts[0].remote.as_deref(), Some(item.as_str()));
 }
