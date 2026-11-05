@@ -1222,3 +1222,59 @@ fn new_row_draws_under_cursor() {
     assert!(t.contains("▏"), "{t}");
     assert!(!t.contains("No tasks"), "{t}");
 }
+
+#[test]
+fn all_shows_future_and_done_sections_while_today_stays_focused() {
+    let mut a = app();
+    a.view = View::All;
+    let buf = render(&mut a, 120, 60);
+    let (_, future_y) = find_in_tasks(&buf, "FUTURE");
+    let (_, done_y) = find_in_tasks(&buf, "DONE");
+    let (_, stamps_y) = find_in_tasks(&buf, "Buy stamps");
+    assert!(done_y > future_y && stamps_y > done_y);
+    a.view = View::Today;
+    let buf = render(&mut a, 120, 60);
+    let t = text(&buf);
+    assert!(!t.contains("Buy stamps"));
+    assert!(!t.contains("FUTURE"));
+}
+
+#[test]
+fn detached_children_show_parent_context_in_all_and_ordinary_lists() {
+    let base = app().snapshot;
+    let mut tasks = base.tasks.clone();
+    let p = tasks
+        .iter_mut()
+        .find(|t| t.summary == "Prepare tax return")
+        .unwrap();
+    p.summary = "Parent".into();
+    let uid = p.uid.clone();
+    let mut children = tasks
+        .iter_mut()
+        .filter(|t| t.parent.as_deref() == Some(&uid));
+    let done = children.next().unwrap();
+    done.summary = "Done child".into();
+    done.status = twydo_core::model::Status::Completed;
+    let future = children.next().unwrap();
+    future.summary = "Future child".into();
+    future.start = Some(twydo_core::ical::value::IcalDateTime::Date(
+        chrono::NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+    ));
+    let snapshot = Snapshot::new(
+        twydo_core::vdir::LoadReport {
+            tasks,
+            collections: base.collections.clone(),
+            ..Default::default()
+        },
+        base.config.clone(),
+    );
+    for view in [View::All, View::List("bills".into())] {
+        let mut a = App::new(snapshot.clone(), now());
+        a.view = view;
+        let buf = render(&mut a, 180, 60);
+        for title in ["Done child", "Future child"] {
+            let (_, y) = find_in_tasks(&buf, title);
+            assert!(line(&buf, y).contains("↳ Parent"), "{}", line(&buf, y));
+        }
+    }
+}

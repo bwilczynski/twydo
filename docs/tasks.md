@@ -1,7 +1,8 @@
 # How tasks behave
 
-Twydo follows 2Do's rules, because both apps edit the same tasks. Everything here was checked
-against 2Do on an iPhone; where Twydo cannot write something yet, it says so (see
+Twydo follows 2Do's task-data rules, because both apps edit the same tasks. Writable behavior
+is checked against 2Do on an iPhone; view presentation includes Twydo's own choices described
+below. Where Twydo cannot write something yet, it says so (see
 [compatibility.md](compatibility.md) for why). For how this is stored in the `.ics` files, see
 [data-model.md](data-model.md).
 
@@ -47,8 +48,8 @@ or a checklist). A checklist's items have no dates, repeat or alerts of their ow
 - **Due date**: date-only (`Fri`) or with a time (`Fri 10:00`). A date-only task becomes overdue
   the day after its due date; a timed one, once its time has passed.
 - **Start date**: the day you plan to start. A task whose start date is still in the future is
-  out of the way: it is not in Today, All or its list, but in **Scheduled**, until that day
-  comes. Start dates have no time.
+  shown in **Scheduled** and the **Future** section of All and its list until that day
+  comes. It stays out of Today and Next 3 Days until it starts. Start dates have no time.
 - A **checklist item** has no dates of its own; date keys and the form's Due and Start are refused
   on an item. Some items still carry an old copy of the checklist's date (2Do gives items a copy
   when the checklist already had a date when they were added). When the checklist gets a new
@@ -227,14 +228,22 @@ Modifiers, after any rule: `after done` (count from the completion date), `until
 | View | Shows |
 |---|---|
 | **Today** | open tasks that are overdue, due today, or started (start date reached) |
-| **All** | every open task that has started, from lists not excluded from All |
+| **All** | open tasks (including future-start tasks) and completed tasks, from eligible lists not excluded from All |
 | **Scheduled** | open tasks whose start date is in the future, sorted by start date under one Scheduled header |
 | **Done** | completed tasks, newest first, grouped by completion day |
 | **Next 3 Days** | open tasks due today, tomorrow or the day after (not overdue) |
-| **a list** | its open tasks that have started |
+| **a list** | its open tasks (including future-start tasks) and completed tasks |
 
-The number beside a view is `due│total`: tasks due today or overdue, then all of them (checklist
-items are not counted; Done shows its total only).
+All and ordinary lists always show future-start work under **Future** and completed work
+under **Done** at the bottom, newest completions first. Empty sections disappear. These
+sections also appear with title/creation sorting; there are no visibility toggles or settings.
+Completed tasks are excluded from Today, Scheduled and Next 3 Days. A list's `show_in_done`
+setting affects only the dedicated Done view, not its completed rows in All or its own list.
+
+The number beside a view is `due│total`: unfinished tasks due today or overdue, then all
+eligible unfinished tasks, including future-start work. Completed rows do not inflate these
+numbers; checklist items are not counted, project children are, and Done shows its completed
+total only.
 
 Tasks are grouped by due date, in this order:
 
@@ -247,17 +256,23 @@ Tasks are grouped by due date, in this order:
 | Next 7 Days | due in 3–6 days |
 | Next 2 Weeks | due in 7–13 days |
 | Next 30 Days | due in 14–29 days |
-| Future | due later |
+| Future | due later, or not yet started (All and ordinary lists) |
 | No Due Date | no due date |
+| Done | completed tasks (All and ordinary lists), regardless of due/start dates |
 
 Within a group, tasks sort by due date (on the same day, timed tasks before date-only ones), then
 by title. A list can sort by `due`, `start`, `creation` or `title`, ascending or descending
-(`[lists.<id>] sort` in [config.md](config.md)); sorting by title or creation shows one list without groups.
+(`[lists.<id>] sort` in [config.md](config.md)); sorting by title or creation leaves active rows
+without date groups, alongside any Future and Done sections.
 
 Items nested under a checklist or project keep their own sequence: `DisplayOrder` ascending,
 then creation time for tied positions. Missing or invalid positions count as zero; missing
 creation times come last, and remaining ties use UID for a stable order. The list's sort does
-not reorder nested items. Project items shown independently in Today and other flat date
+not reorder nested items. In All and ordinary lists, children in the same active/future-start/
+completed section as their parent appear beneath it when expanded. Children in a different
+section appear separately with parent context, so a collapsed open parent cannot hide its
+completed children. Ordinary due-date buckets do not split an active family.
+Project items shown independently in Today and other flat date
 views still use that view's ordinary date sort.
 The Details pane uses the same item sequence. For legacy items tied on both position and
 creation time, UID is only a deterministic fallback: a family move/history copy can change

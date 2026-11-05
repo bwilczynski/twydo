@@ -1049,7 +1049,7 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
     let items: Vec<_> = app
         .visible_rows()
         .iter()
-        .filter(|r| app.snapshot.parent(r.task) == Some(p))
+        .filter(|r| r.depth > 0 && app.snapshot.parent(r.task) == Some(p))
         .map(|r| &app.snapshot.tasks[r.task])
         .collect();
     assert_eq!(
@@ -1062,6 +1062,12 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
             .map(|t| t.meta.display_order())
             .collect::<Vec<_>>(),
         [3, 4, 5]
+    );
+    assert!(
+        app.visible_rows()
+            .iter()
+            .any(|r| { r.depth == 0 && app.snapshot.tasks[r.task].uid == "fam-3" }),
+        "the completed item remains visible separately in Done"
     );
     assert_eq!(
         app.new_row.as_ref().unwrap().anchor.as_deref(),

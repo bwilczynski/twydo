@@ -1225,14 +1225,26 @@ fn reload_drops_parent_confirmation_and_its_message() {
 
 #[test]
 fn tick_moving_the_selection_drops_parent_confirmation_and_its_message() {
-    let mut a = app();
-    select_tax_return(&mut a);
-    let uid = selected_uid(&a);
+    let mut r = report();
+    let parent = r
+        .tasks
+        .iter_mut()
+        .find(|t| t.summary == "Prepare tax return")
+        .unwrap();
+    parent.due = Some(twydo_core::ical::value::IcalDateTime::Date(
+        now().date_naive(),
+    ));
+    let uid = parent.uid.clone();
+    let mut a = App::new(snapshot_of(r), now());
+    a.view = View::Next3Days;
+    a.cursor = titles(&a)
+        .iter()
+        .position(|t| t == "Prepare tax return")
+        .unwrap();
     a.handle_key(key('x'));
     assert!(a.message.is_some());
-    // The parent leaves the view, so the selection moves.
-    a.snapshot.tasks.retain(|t| t.uid != uid);
-    a.tick(a.now);
+    // Tomorrow the parent is overdue, leaving Next 3 Days and moving the selection.
+    a.tick(now() + chrono::Duration::days(1));
     assert_ne!(selected_uid(&a), uid);
     assert!(a.message.is_none(), "the confirmation no longer applies");
     // A tick that keeps the selection keeps the confirmation.
@@ -2178,4 +2190,38 @@ fn ct_on_an_untyped_parent_writes_nothing() {
         write_op(a.handle_key(key('p'))),
         kind_save(&dentist, TaskKind::Project)
     );
+}
+
+#[test]
+fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
+    let mut a = app();
+    type_str(&mut a, ":list inbox");
+    a.handle_key(code(KeyCode::Enter));
+    a.cursor = titles(&a)
+        .iter()
+        .position(|t| t == "Call the dentist")
+        .unwrap();
+    let uid = selected_uid(&a);
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Complete { uid: uid.clone() }
+    );
+    let mut r = report();
+    let t = r.tasks.iter_mut().find(|t| t.uid == uid).unwrap();
+    t.status = twydo_core::model::Status::Completed;
+    t.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+    a.reload(snapshot_of(r));
+    assert_eq!(selected_uid(&a), uid);
+    let rows = a.visible_rows();
+    assert_eq!(
+        a.snapshot.tasks[rows[a.cursor + 1].task].summary,
+        "Buy stamps"
+    );
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Reopen { uid: uid.clone() }
+    );
+    a.reload(snapshot_of(report()));
+    assert_eq!(selected_uid(&a), uid);
+    assert_eq!(a.cursor, 1); // Due today, following the overdue task.
 }

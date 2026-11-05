@@ -109,6 +109,18 @@ The backup remains after recovery. `u` undoes a recovery and Ctrl-r redoes it; r
 `:recover` cannot overwrite later edits or import the same backup into another list.
 See [deleted lists and recovery](sync.md#deleted-lists-and-recovery) for storage and sync details.
 
+## Planned and completed work
+
+All and ordinary lists always include future-start tasks under **FUTURE** and completed tasks
+under **DONE** at the bottom. Empty sections are omitted, and Done rows sort newest completion
+first. These sections remain with title/creation sorting. There are no visibility controls.
+Today, Scheduled, Done and Next 3 Days keep their own membership rules.
+
+Sidebar counts describe unfinished work, including future-start tasks; completed rows do not
+increase them. The dedicated Done view shows its completed total. A child in a different
+active/future-start/completed section from its parent appears separately with parent context;
+otherwise `Enter` expands or collapses the family's items as before.
+
 ## Adding tasks
 
 `o` opens an empty row below the selected task, `O` above it. Type the title straight into the

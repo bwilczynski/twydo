@@ -146,7 +146,11 @@ impl App {
     fn last_item_anchor(&self, p: usize) -> String {
         self.visible_rows()
             .iter()
-            .rfind(|r| self.snapshot.parent(r.task) == Some(p))
+            // Detached Future/Done children are not anchors for this parent's item row.
+            .rfind(|r| {
+                self.snapshot.parent(r.task) == Some(p)
+                    && (r.depth > 0 || !matches!(self.view, View::All | View::List(_)))
+            })
             .map(|r| self.snapshot.tasks[r.task].uid.clone())
             .unwrap_or_else(|| self.snapshot.tasks[p].uid.clone())
     }

@@ -240,6 +240,8 @@ pub enum DateGroup {
     CompletedOn(NaiveDate),
     /// A view sorted by title or creation: one list without a date header.
     Ungrouped,
+    /// Completed work at the bottom of All and ordinary lists.
+    Done,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -373,8 +375,8 @@ fn eligible(s: &Snapshot, idx: usize, v: &View, c: &Clock) -> bool {
                 && p.show_in_today
                 && (c.due_today(t) || c.overdue(t) || c.started(t))
         }
-        View::All => current && visible && p.show_in_all,
-        View::List(id) => current && &t.collection == id,
+        View::All => (open || t.status == Status::Completed) && visible && p.show_in_all,
+        View::List(id) => (open || t.status == Status::Completed) && &t.collection == id,
         View::Scheduled => open && c.future_start(t) && visible,
         View::Done => t.status == Status::Completed && p.show_in_done && !p.hidden,
         View::Next3Days => {
@@ -393,7 +395,10 @@ fn eligible(s: &Snapshot, idx: usize, v: &View, c: &Clock) -> bool {
 fn counts_with(s: &Snapshot, v: &View, c: &Clock) -> Counts {
     let mut out = Counts::default();
     for i in 0..s.tasks.len() {
-        if s.is_item(i) || !eligible(s, i, v, c) {
+        if s.is_item(i)
+            || !eligible(s, i, v, c)
+            || (*v != View::Done && s.tasks[i].status != Status::Open)
+        {
             continue;
         }
         out.total += 1;
@@ -571,7 +576,32 @@ fn plan(s: &Snapshot, v: &View) -> Plan {
     }
 }
 
+/// Tree sections are independent of ordinary date buckets: active families stay together.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TreeSection {
+    Active,
+    Future,
+    Completed,
+}
+
+fn tree_section(s: &Snapshot, c: &Clock, idx: usize) -> TreeSection {
+    if s.tasks[idx].status == Status::Completed {
+        TreeSection::Completed
+    } else if c.future_start(&s.tasks[idx]) {
+        TreeSection::Future
+    } else {
+        TreeSection::Active
+    }
+}
+
 fn group_of(s: &Snapshot, v: &View, plan: &Plan, c: &Clock, idx: usize) -> DateGroup {
+    if plan.tree {
+        match tree_section(s, c, idx) {
+            TreeSection::Completed => return DateGroup::Done,
+            TreeSection::Future => return DateGroup::Future,
+            TreeSection::Active => {}
+        }
+    }
     match (v, plan.key) {
         (View::Scheduled, _) => DateGroup::Scheduled,
         (View::Done, _) => c
@@ -615,7 +645,7 @@ fn push_tree(
         .children(idx)
         .iter()
         .copied()
-        .filter(|&k| in_view[k])
+        .filter(|&k| in_view[k] && tree_section(s, c, k) == tree_section(s, c, idx))
         .collect();
     kids.sort_by(|&a, &b| compare_items(s, c.tz, a, b));
     for k in kids {
@@ -635,19 +665,34 @@ pub fn build_view(
     let plan = plan(s, v);
     let in_view: Vec<bool> = (0..s.tasks.len()).map(|i| eligible(s, i, v, &c)).collect();
 
-    // Top-level rows. Tree views: anything whose parent is not in the view (so nothing open
-    // disappears). Flat views: every eligible task except checklist items.
+    // Tree roots include children whose parent is absent or in another section. Ordinary
+    // active date buckets do not split families. Flat views omit checklist items here.
     let mut top: Vec<usize> = (0..s.tasks.len())
         .filter(|&i| in_view[i])
         .filter(|&i| {
             if plan.tree {
-                s.parent(i).is_none_or(|p| !in_view[p])
+                s.parent(i)
+                    .is_none_or(|p| !in_view[p] || tree_section(s, &c, p) != tree_section(s, &c, i))
             } else {
                 !s.is_item(i)
             }
         })
         .collect();
-    top.sort_by(|&a, &b| compare(s, &c, plan.key, plan.descending, a, b));
+    top.sort_by(|&a, &b| {
+        if plan.tree {
+            let a_done = s.tasks[a].status == Status::Completed;
+            let b_done = s.tasks[b].status == Status::Completed;
+            a_done.cmp(&b_done).then_with(|| {
+                if a_done {
+                    compare(s, &c, Key::Completed, false, a, b)
+                } else {
+                    compare(s, &c, plan.key, plan.descending, a, b)
+                }
+            })
+        } else {
+            compare(s, &c, plan.key, plan.descending, a, b)
+        }
+    });
 
     let mut groups: Vec<(DateGroup, Vec<Row>)> = Vec::new();
     for idx in top {
@@ -683,7 +728,17 @@ pub fn build_view(
             }));
         }
     }
-    groups.sort_by(|a, b| group_order(&a.0, &b.0));
+    groups.sort_by(|a, b| {
+        if plan.tree {
+            match (a.0, b.0) {
+                (DateGroup::Ungrouped, DateGroup::Ungrouped) => return Ordering::Equal,
+                (DateGroup::Ungrouped, _) => return Ordering::Less,
+                (_, DateGroup::Ungrouped) => return Ordering::Greater,
+                _ => {}
+            }
+        }
+        group_order(&a.0, &b.0)
+    });
 
     ViewResult {
         groups,
