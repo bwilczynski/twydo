@@ -1427,82 +1427,95 @@ mod monthly_checklist_writes {
 
     #[test]
     fn checklist_completion_after_deletion_matches_phone_history_and_reset() {
-        let e = env("011d-phone-delete-items");
-        let mut store = e.store(checklist_candidate_matrix());
-        let phone = env("012-phone-family-complete");
-        let after_snap = phone.snap();
-        for parent in [CHECKLIST_A_UID, CHECKLIST_B_UID] {
-            let uid = member(&e.snap(), parent, "z");
-            let title = e.snap().tasks[e.snap().find(parent).unwrap()]
-                .summary
-                .clone();
-            let history_parent = after_snap
-                .tasks
-                .iter()
-                .find(|t| t.summary == title && t.status == twydo_core::model::Status::Completed)
-                .unwrap();
-            let child = after_snap.children(after_snap.find(&history_parent.uid).unwrap())[0];
-            let item_at = crate::common::completed(&cal(
+        for (from, to, parents, total) in [
+            (
+                "011d-phone-delete-items",
                 "012-phone-family-complete",
-                &after_snap.tasks[child].uid,
-            ));
-            store
-                .apply(&e.snap(), &Op::Complete { uid: uid.clone() }, item_at)
-                .unwrap();
-            assert_eq!(
-                e.snap().tasks[e.snap().find(parent).unwrap()].status,
-                twydo_core::model::Status::Open
-            );
-            let before = e.files();
-            let parent_at =
-                crate::common::completed(&cal("012-phone-family-complete", &history_parent.uid));
-            store
-                .apply(&e.snap(), &Op::Complete { uid: parent.into() }, parent_at)
-                .unwrap();
-            let entry = e.journal().pop().unwrap();
-            assert_eq!(entry.writes.len(), 4);
-            let mut ids = BTreeMap::new();
-            for w in entry.writes.iter().filter(|w| w.before.is_none()) {
-                let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
-                let t = todo(&got);
-                let ours = t.prop("UID").unwrap().value.clone();
-                let theirs = if t.prop("RELATED-TO").is_some() {
-                    after_snap.tasks[child].uid.clone()
-                } else {
-                    history_parent.uid.clone()
-                };
-                ids.insert(ours, theirs);
-            }
-            for w in &entry.writes {
-                let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
-                let ours = &todo(&got).prop("UID").unwrap().value;
-                let theirs = ids.get(ours).unwrap_or(ours);
-                let mut want = cal("012-phone-family-complete", theirs);
-                if parent == CHECKLIST_B_UID && ours == &uid {
-                    // Captured alternatives, not ignored metadata: the phone's A
-                    // reset retains explicit 0; its converted B reset omits it.
-                    // Keep the existing explicit-zero writer and require its
-                    // subsequent phone return before promoting candidate verdicts.
-                    assert_eq!(todo(&got).prop("PERCENT-COMPLETE").unwrap().value, "0");
-                    assert!(todo(&want).prop("PERCENT-COMPLETE").is_none());
-                    assert_eq!(todo(&want).prop("STATUS").unwrap().value, "NEEDS-ACTION");
-                    want.root
-                        .children_named_mut("VTODO")
-                        .next()
-                        .unwrap()
-                        .insert_prop(
-                            twydo_core::ical::Property::new("PERCENT-COMPLETE", vec![], "0"),
-                            None,
-                        );
+                [CHECKLIST_A_UID, CHECKLIST_B_UID],
+                9,
+            ),
+            (
+                "028-phone-writer-note-followup",
+                "029-phone-second-family-reset",
+                ["55180c631f304b44be543382c0b85b94", "twydo-p8-c29-d"],
+                20,
+            ),
+        ] {
+            let e = env(from);
+            let mut store = e.store(checklist_candidate_matrix());
+            let phone = env(to);
+            let after_snap = phone.snap();
+            for parent in parents {
+                let uid = member(&e.snap(), parent, "z");
+                let title = e.snap().tasks[e.snap().find(parent).unwrap()]
+                    .summary
+                    .clone();
+                let history_parent = after_snap
+                    .tasks
+                    .iter()
+                    .find(|t| {
+                        t.summary == title && t.status == twydo_core::model::Status::Completed
+                    })
+                    .unwrap();
+                let child = after_snap.children(after_snap.find(&history_parent.uid).unwrap())[0];
+                let item_at = crate::common::completed(&cal(to, &after_snap.tasks[child].uid));
+                store
+                    .apply(&e.snap(), &Op::Complete { uid: uid.clone() }, item_at)
+                    .unwrap();
+                assert_eq!(
+                    e.snap().tasks[e.snap().find(parent).unwrap()].status,
+                    twydo_core::model::Status::Open
+                );
+                let before = e.files();
+                let parent_at = crate::common::completed(&cal(to, &history_parent.uid));
+                store
+                    .apply(&e.snap(), &Op::Complete { uid: parent.into() }, parent_at)
+                    .unwrap();
+                let entry = e.journal().pop().unwrap();
+                assert_eq!(entry.writes.len(), 4);
+                let mut ids = BTreeMap::new();
+                for w in entry.writes.iter().filter(|w| w.before.is_none()) {
+                    let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+                    let t = todo(&got);
+                    let ours = t.prop("UID").unwrap().value.clone();
+                    let theirs = if t.prop("RELATED-TO").is_some() {
+                        after_snap.tasks[child].uid.clone()
+                    } else {
+                        history_parent.uid.clone()
+                    };
+                    ids.insert(ours, theirs);
                 }
-                same("post-delete family reset", &got, &want, &ids);
+                for w in &entry.writes {
+                    let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+                    let ours = &todo(&got).prop("UID").unwrap().value;
+                    let theirs = ids.get(ours).unwrap_or(ours);
+                    let mut want = cal(to, theirs);
+                    if parent == CHECKLIST_B_UID && ours == &uid {
+                        // Captured alternatives, not ignored metadata: the phone's A
+                        // reset retains explicit 0; its converted B reset omits it.
+                        // Keep the existing explicit-zero writer and require its
+                        // subsequent phone return before promoting candidate verdicts.
+                        assert_eq!(todo(&got).prop("PERCENT-COMPLETE").unwrap().value, "0");
+                        assert!(todo(&want).prop("PERCENT-COMPLETE").is_none());
+                        assert_eq!(todo(&want).prop("STATUS").unwrap().value, "NEEDS-ACTION");
+                        want.root
+                            .children_named_mut("VTODO")
+                            .next()
+                            .unwrap()
+                            .insert_prop(
+                                twydo_core::ical::Property::new("PERCENT-COMPLETE", vec![], "0"),
+                                None,
+                            );
+                    }
+                    same("post-delete family reset", &got, &want, &ids);
+                }
+                store.undo_last(parent_at).unwrap();
+                assert_eq!(e.files(), before);
+                store.redo_last(parent_at).unwrap();
             }
-            store.undo_last(parent_at).unwrap();
-            assert_eq!(e.files(), before);
-            store.redo_last(parent_at).unwrap();
+            assert_eq!(e.files().len(), total);
+            assert!(!e.snap().tasks.iter().any(|t| t.summary == "q"));
         }
-        assert_eq!(e.files().len(), 9);
-        assert!(!e.snap().tasks.iter().any(|t| t.summary == "q"));
     }
 
     #[test]

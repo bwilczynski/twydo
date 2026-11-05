@@ -266,3 +266,22 @@ Every child and history resource, all earlier A/B branches inside B, and other
 collections remain byte-unchanged. Both z items remain open with the candidate's
 explicit PERCENT-COMPLETE:0; q stays absent. Privacy scan passes. No shipping
 verdict is promoted yet; next manual completion and final item edit remain.
+
+## C29-22/23 second execution and final item edits captured
+
+B-only `029-phone-second-family-reset` has 20 resources. The phone completed the
+Twydo-created/converted families again: four live resources changed, C/D advance
+January 10 → February 10, both z items reopen without dates, and four correctly
+linked completed history resources appear. All earlier history is byte-unchanged,
+and q never returns. This also checks the candidate explicit-zero reset representation
+through actual subsequent phone execution.
+
+The first requested item-edit return actually changed C/D parent notes z → x;
+it is preserved separately as `030-phone-parent-note-return`, without desktop
+repetition or overwriting. After clarification, `031-phone-reset-item-edits`
+changes exactly the two live child titles z → x and modification stamps. Every
+other property, metadata key, parent link and parent/history resource is unchanged.
+Regressions replay both the second reset and these separate note/title edits.
+All new evidence remains exclusively from capture B; privacy scans pass and
+other collection bytes/normal configuration are unchanged. Phone rounds are
+complete; there is no authorization for further writes or cleanup at closeout.
