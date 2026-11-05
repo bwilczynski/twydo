@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "011d-phone-delete-items"
+device = "iphone"
+action = "Delete only open q item from each open monthly checklist A/B in capture B. Exactly two children removed; all five surviving resources byte-unchanged."
+captured_at = "2026-11-05T09:09:00Z"
