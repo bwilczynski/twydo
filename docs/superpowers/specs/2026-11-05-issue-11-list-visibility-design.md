@@ -7,7 +7,10 @@ Status: scope confirmed by the user, 2026-11-05: no controls; always on in quali
 All and ordinary lists show future-start and completed tasks automatically. Future-start
 rows use Future, taking precedence over their due-date bucket. Existing long-range due
 rows still use Future. Completed rows use a Done section at the bottom, newest completion
-first. Empty sections are omitted. Future and Done remain sections with title/creation
+first. Only completions in the last 30 local calendar days, including today, appear in these
+sections. Older completions and items without a completion date remain in the dedicated Done
+view; no resources are deleted. Future-dated completions stay out of ordinary list sections.
+Empty sections are omitted. Future and Done remain sections with title/creation
 sorts; ordinary rows keep their current sorting and grouping.
 
 Today, Scheduled, Done and Next 3 Days retain their current rules. All retains its
@@ -28,7 +31,7 @@ and project-child/checklist-item distinction. The dedicated Done view keeps its 
 total. Search does not change sidebar counts.
 
 No new shortcuts, status hints, visibility preferences, configuration or persistence.
-No completion-age windows, auto-deletion, new Today settings, stars, paused tags, counter
+No configurable completion windows, auto-deletion, new Today settings, stars, paused tags, counter
 settings or sorting controls. No task-resource writes or production/device round.
 
 ## Verification

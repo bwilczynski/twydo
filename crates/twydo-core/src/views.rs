@@ -357,6 +357,14 @@ impl Clock {
     fn due_or_overdue(&self, t: &Task) -> bool {
         self.due_today(t) || self.overdue(t)
     }
+
+    /// The last 30 local calendar days, including today. Unknown dates stay in Done only.
+    fn recently_completed(&self, t: &Task) -> bool {
+        t.status == Status::Completed
+            && self
+                .when(t.completed.as_ref())
+                .is_some_and(|w| (0..30).contains(&(self.today - w.date()).num_days()))
+    }
 }
 
 // ---------- membership ----------
@@ -375,8 +383,8 @@ fn eligible(s: &Snapshot, idx: usize, v: &View, c: &Clock) -> bool {
                 && p.show_in_today
                 && (c.due_today(t) || c.overdue(t) || c.started(t))
         }
-        View::All => (open || t.status == Status::Completed) && visible && p.show_in_all,
-        View::List(id) => (open || t.status == Status::Completed) && &t.collection == id,
+        View::All => (open || c.recently_completed(t)) && visible && p.show_in_all,
+        View::List(id) => (open || c.recently_completed(t)) && &t.collection == id,
         View::Scheduled => open && c.future_start(t) && visible,
         View::Done => t.status == Status::Completed && p.show_in_done && !p.hidden,
         View::Next3Days => {

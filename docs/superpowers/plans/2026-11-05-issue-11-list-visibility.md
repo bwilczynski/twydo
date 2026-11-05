@@ -69,3 +69,19 @@ with completed children. A regression also pins shared due ordering within Futur
 
 Validation: `mise run lint`, `mise run test`, `python3 tools/check_links.py` and
 `git diff --check` passed. No production/device data or sync operations were used.
+
+## Follow-up: fixed 30-day Done sections
+
+User request: show the last 30 days in All and ordinary lists; keep the dedicated Done view's
+full history. Use 30 local calendar days including today, without deleting any task resources.
+Unknown completion dates remain available in the dedicated Done view.
+
+- [x] Add failing boundary/expiry tests spanning DST, unknown/future dates, and a recent child
+  of an expired completed parent in `crates/twydo-core/tests/views.rs`.
+- [x] Filter completed membership in All/lists by local completion date; leave `View::Done`
+  unrestricted. Give existing synthetic completed-child fixtures explicit completion dates.
+- [x] Update the as-is docs and design; run lint, full tests and links.
+- [x] Commit this follow-up and update the existing PR.
+
+Follow-up verification: core view tests 33/33; full Rust and Python suites, lint and
+documentation links passed. Read-only review found no actionable defects.

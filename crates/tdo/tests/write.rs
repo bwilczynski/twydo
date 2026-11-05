@@ -639,7 +639,7 @@ fn add_family(env: &Env) {
             task(
                 "fam-3",
                 "Synthetic three",
-                "RELATED-TO:fam-p\r\nSTATUS:COMPLETED\r\n",
+                "RELATED-TO:fam-p\r\nSTATUS:COMPLETED\r\nCOMPLETED:20261104T120000Z\r\n",
             ),
         ),
     ];

@@ -1255,6 +1255,7 @@ fn detached_children_show_parent_context_in_all_and_ordinary_lists() {
     let done = children.next().unwrap();
     done.summary = "Done child".into();
     done.status = twydo_core::model::Status::Completed;
+    done.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
     let future = children.next().unwrap();
     future.summary = "Future child".into();
     future.start = Some(twydo_core::ical::value::IcalDateTime::Date(
