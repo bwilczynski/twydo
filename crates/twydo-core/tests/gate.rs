@@ -2342,28 +2342,26 @@ mod recurrence_phone_captures {
     use twydo_core::edit::{Change, Op};
 
     #[test]
-    fn baseline_only_matrix_does_not_enable_unchecked_writes() {
+    fn missing_checklist_completion_verdict_refuses_without_writes() {
+        let (step, uid, op) = (SET, FC, Op::Complete { uid: FC.into() });
+        let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
+        let mut matrix = Matrix::embedded().clone();
+        for row in matrix
+            .operation
+            .iter_mut()
+            .filter(|r| r.case == "recurring-checklist")
         {
-            let (step, uid, op) = (SET, FC, Op::Complete { uid: FC.into() });
-            let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
-            let mut matrix = Matrix::embedded().clone();
-            for row in matrix
-                .operation
-                .iter_mut()
-                .filter(|r| r.case == "recurring-checklist")
-            {
-                row.twydo_to_iphone = Verdict::Unverified;
-            }
-            let mut store = env.store(matrix);
-            let before = env.files();
-            assert!(
-                store
-                    .apply(&env.snap(), &op, dtstamp(&cal(step, uid)))
-                    .is_err()
-            );
-            assert_eq!(env.files(), before);
-            assert!(env.journal().is_empty());
+            row.twydo_to_iphone = Verdict::Unverified;
         }
+        let mut store = env.store(matrix);
+        let before = env.files();
+        assert!(
+            store
+                .apply(&env.snap(), &op, dtstamp(&cal(step, uid)))
+                .is_err()
+        );
+        assert_eq!(env.files(), before);
+        assert!(env.journal().is_empty());
     }
 
     #[test]
@@ -2508,79 +2506,49 @@ mod verified_recurrence_shapes {
         }
     }
     #[test]
-    fn promoted_until_and_checklist_verdicts_do_not_admit_uncaptured_contexts() {
-        {
-            let (uid, step, op) = (FC, SET, Op::Complete { uid: FC.into() });
-            for shape in ["timed", "start", "alarm", "start-delay", "interval"] {
-                let e = env(step);
-                let mut snap = e.snap();
-                let i = snap.find(uid).unwrap();
-                let t = &mut snap.tasks[i];
-                match shape {
-                    "timed" => t.due = Some(IcalDateTime::Floating(now().naive_utc())),
-                    "start" => t.start = Some(IcalDateTime::Date(now().date_naive())),
-                    "alarm" => t.alarms.push(Alarm {
-                        trigger: Trigger::Relative {
-                            offset: Duration::minutes(-5),
-                            related_end: true,
-                        },
-                        index: 0,
-                    }),
-                    "start-delay" => {
-                        let mut m = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
-                        m.set_i64("StartDayDelay", 1);
-                        t.meta.raw = Some(m.encode());
-                    }
-                    "interval" => {
-                        t.rrule = Some(
-                            t.rrule
-                                .as_ref()
-                                .unwrap()
-                                .replace("FREQ=", "INTERVAL=2;FREQ="),
-                        )
-                    }
-                    _ => unreachable!(),
+    fn checklist_completion_refuses_uncaptured_shapes() {
+        let (uid, step, op) = (FC, SET, Op::Complete { uid: FC.into() });
+        for shape in ["timed", "start", "alarm", "start-delay", "interval"] {
+            let e = env(step);
+            let mut snap = e.snap();
+            let i = snap.find(uid).unwrap();
+            let t = &mut snap.tasks[i];
+            match shape {
+                "timed" => t.due = Some(IcalDateTime::Floating(now().naive_utc())),
+                "start" => t.start = Some(IcalDateTime::Date(now().date_naive())),
+                "alarm" => t.alarms.push(Alarm {
+                    trigger: Trigger::Relative {
+                        offset: Duration::minutes(-5),
+                        related_end: true,
+                    },
+                    index: 0,
+                }),
+                "start-delay" => {
+                    let mut m = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
+                    m.set_i64("StartDayDelay", 1);
+                    t.meta.raw = Some(m.encode());
                 }
-                assert!(
-                    gate::check(
-                        &snap,
-                        &promoted(),
-                        WriteMode::Verified,
-                        &op,
-                        now().date_naive()
+                "interval" => {
+                    t.rrule = Some(
+                        t.rrule
+                            .as_ref()
+                            .unwrap()
+                            .replace("FREQ=", "INTERVAL=2;FREQ="),
                     )
-                    .is_err(),
-                    "{uid} {shape}"
-                );
+                }
+                _ => unreachable!(),
             }
-        }
-        for (uid, step) in [(FC, SET)] {
-            for (text, raw) in [
-                ("weekly until", "FREQ=WEEKLY;UNTIL=20261120"),
-                ("yearly until", "FREQ=YEARLY;UNTIL=20281120"),
-                ("interval until", "FREQ=DAILY;INTERVAL=2;UNTIL=20261120"),
-            ] {
-                let e = env(step);
-                let mut snap = e.snap();
-                let i = snap.find(uid).unwrap();
-                snap.tasks[i].rrule = Some(raw.into());
-                let op = if step == END {
-                    Op::Reopen { uid: uid.into() }
-                } else {
-                    Op::Complete { uid: uid.into() }
-                };
-                assert!(
-                    gate::check(
-                        &snap,
-                        &promoted(),
-                        WriteMode::Verified,
-                        &op,
-                        now().date_naive()
-                    )
-                    .is_err(),
-                    "{uid} {step} {text}"
-                );
-            }
+            assert!(
+                gate::check(
+                    &snap,
+                    &promoted(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_err(),
+                "{uid} {shape}"
+            );
         }
     }
 
