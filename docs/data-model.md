@@ -105,7 +105,8 @@ New checklist/project items receive an append position: the larger of the existi
 count (including completed items) and one more than the highest valid sibling position.
 An empty parent starts at zero. Twydo preserves existing sibling resources and creation
 timestamps; positions beyond the supported integer range are refused instead of wrapping.
-The ordering writer's phone return check is tracked in the
+The ordering writer passed a bounded phone return for undated items under non-recurring
+checklists/projects; exact evidence and remaining limits are in the
 [issue 35 capture notes](reference/phase0/issue35-checklist-order.md).
 
 Other keys (`TaskDuration`, `StartDayDelay`, …) are kept as they are. When Twydo

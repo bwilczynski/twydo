@@ -42,6 +42,14 @@ Twydo changes only what an operation is about. A file it does not change is neve
 file it changes, every unrelated line keeps its exact bytes, including properties and metadata
 Twydo does not understand. Details: [data-model.md](data-model.md#what-twydo-preserves).
 
+Nested checklist/project items use `DisplayOrder`, then creation time, rather than the
+containing list's date/title sort; Details uses the same sequence. The
+[ordering check](reference/phase0/issue35-checklist-order.md) covered undated items under
+non-recurring checklist and project parents: phone-created sequences, phone appends,
+Twydo appends displayed last on the phone, and subsequent phone renames preserving identity
+and position. Existing siblings remained byte-unchanged. This does not establish drag
+reordering or project-specific phone sort preferences, and does not widen recurrence gates.
+
 ## Verified mode
 
 Twydo writes a change only the way 2Do writes it: each kind of write is first made on the iPhone
