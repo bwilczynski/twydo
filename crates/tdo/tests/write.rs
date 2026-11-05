@@ -1308,4 +1308,159 @@ mod verified_recurrence_tui {
             assert_eq!(a.snapshot.tasks.len(), count);
         }
     }
+    #[test]
+    fn verified_checklist_card_creation_and_conversion_are_usable() {
+        let e = env_in("plan8-checklist-b", "002-seeded");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        a.view = twydo_core::views::View::List("list1".into());
+        a.handle_key(key('o'));
+        a.handle_key(key('c'));
+        a.handle_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+        let form = a.form.as_mut().unwrap();
+        form.kind = TaskKind::Checklist;
+        form.due = "2026-12-10".into();
+        form.repeat = "monthly".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &mut w, r);
+        let created = a.snapshot.tasks.iter().find(|t| t.summary == "c").unwrap();
+        let uid = created.uid.clone();
+        assert_eq!(created.kind, TaskKind::Checklist);
+        assert_eq!(created.rrule.as_deref(), Some("FREQ=MONTHLY"));
+        select(&mut a, "twydo-p8-c29-d", false);
+        a.handle_key(key('c'));
+        let r = request(a.handle_key(key('c')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find("twydo-p8-c29-d").unwrap()].kind,
+            TaskKind::Checklist
+        );
+        // Add through the Enter chain, then escape only the unsaved next row.
+        select(&mut a, &uid, false);
+        a.handle_key(key('a'));
+        for title in ['x', 'q'] {
+            a.handle_key(key(title));
+            let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+            run(&e, &mut a, &mut w, r);
+        }
+        a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let p = a.snapshot.find(&uid).unwrap();
+        assert_eq!(a.snapshot.children(p).len(), 2);
+        for &i in a.snapshot.children(p) {
+            assert_eq!(
+                a.snapshot.tasks[i]
+                    .due
+                    .as_ref()
+                    .unwrap()
+                    .local_date(a.snapshot.tz()),
+                chrono::NaiveDate::from_ymd_opt(2026, 12, 10).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn verified_checklist_item_delete_keys_undo_and_reset_use_exact_targets() {
+        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        let parent = "12d762a5639e406c8ec865517882f130";
+        let p = a.snapshot.find(parent).unwrap();
+        let q = a
+            .snapshot
+            .children(p)
+            .iter()
+            .map(|&i| &a.snapshot.tasks[i])
+            .find(|t| t.summary == "q")
+            .unwrap()
+            .uid
+            .clone();
+        select(&mut a, parent, false);
+        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        select(&mut a, &q, false);
+        a.handle_key(key('d'));
+        let r = request(a.handle_key(key('d')));
+        run(&e, &mut a, &mut w, r);
+        assert!(a.snapshot.find(&q).is_none());
+        assert!(a.snapshot.find(parent).is_some());
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert!(a.snapshot.find(&q).is_some());
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &mut w, r);
+        assert!(a.snapshot.find(&q).is_none());
+        let p = a.snapshot.find(parent).unwrap();
+        let z = a.snapshot.tasks[a.snapshot.children(p)[0]].uid.clone();
+        select(&mut a, &z, false);
+        let r = request(a.handle_key(key('x')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find(parent).unwrap()].status,
+            Status::Open
+        );
+        select(&mut a, parent, false);
+        let r = request(a.handle_key(key('x')));
+        run(&e, &mut a, &mut w, r);
+        let p = a.snapshot.find(parent).unwrap();
+        assert_eq!(
+            a.snapshot.tasks[p]
+                .due
+                .as_ref()
+                .unwrap()
+                .local_date(a.snapshot.tz()),
+            chrono::NaiveDate::from_ymd_opt(2027, 1, 10).unwrap()
+        );
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find(&z).unwrap()].status,
+            Status::Open
+        );
+        assert!(a.snapshot.find(&q).is_none());
+        assert!(
+            !a.snapshot
+                .tasks
+                .iter()
+                .any(|t| t.summary == "q" && t.parent.as_deref() == Some(parent))
+        );
+        // Text cards use the same shipping writer on reset items and their parent.
+        select(&mut a, &z, false);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "x".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(a.snapshot.tasks[a.snapshot.find(&z).unwrap()].summary, "x");
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find(&z).unwrap()]
+                .parent
+                .as_deref(),
+            Some(parent)
+        );
+        select(&mut a, parent, false);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "renamed".into();
+        a.form.as_mut().unwrap().notes = "z".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        run(&e, &mut a, &mut w, r);
+        let task = &a.snapshot.tasks[a.snapshot.find(parent).unwrap()];
+        assert_eq!(task.summary, "renamed");
+        assert_eq!(task.rrule.as_deref(), Some("FREQ=MONTHLY"));
+        // An uncaptured date edit retains typing and changes no resource.
+        select(&mut a, parent, false);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "kept unsaved".into();
+        a.form.as_mut().unwrap().due = "2027-01-11".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let before = fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap();
+        let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(err.message()));
+        assert_eq!(a.form.as_ref().unwrap().title, "kept unsaved");
+        assert_eq!(
+            fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap(),
+            before
+        );
+    }
 }
