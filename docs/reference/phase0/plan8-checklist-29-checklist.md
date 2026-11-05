@@ -159,3 +159,14 @@ Only `a` was added and `b` changed; `d` is byte-unchanged. Privacy scan passes.
 Other collection hashes and normal configuration remain unchanged. No capability
 verdict is promoted from this phone baseline alone. Next: add/edit the two items
 per baseline parent, then capture deletion separately before completion.
+
+## C29-11 item creation and text edits captured
+
+B-only `011-phone-items-and-text` contains seven resources: A/B checklist
+parents, two open items (`z`,`q`) under each, and unchanged monthly task `d`.
+Each item has the correct RELATED-TO and JSON parentuid link. Parent titles are
+capitalized and notes are `x`; parent recurrence/identity JSON is unchanged from
+010. Exactly four child resources were added and the two parents changed. There
+are no removed resources, and `d`, other collection bytes and normal config are
+unchanged. Privacy scan passes. Individual deletion is the next separate barrier;
+no operation verdict is promoted by this baseline.
