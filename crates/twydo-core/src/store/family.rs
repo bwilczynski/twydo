@@ -49,7 +49,10 @@ impl Store {
             | Op::Move { uid, .. }
             | Op::Delete { uid } => uid,
             Op::Edit { uid, .. } => uid,
-            Op::Create(_) => return Ok(None),
+            Op::Create(task) => match &task.parent {
+                Some(parent) => parent,
+                None => return Ok(None),
+            },
             // A save's move rescans the whole family, which covers its edit; without one, its
             // edit may.
             Op::Save { uid, changes, to } => {

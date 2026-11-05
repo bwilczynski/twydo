@@ -935,6 +935,329 @@ fn creating_an_item_refused_when_its_parent_changed() {
     assert_eq!(env.files(), before);
 }
 
+mod item_order {
+    use super::*;
+    use twydo_core::model::meta_edit::MetaJson;
+
+    fn setup(kind: TaskKind) -> (Env, Store, String) {
+        let scenario = match kind {
+            TaskKind::Checklist => "issue35-checklist-order",
+            TaskKind::Project => "issue35-project-order",
+            _ => unreachable!(),
+        };
+        let env = Env::new(WriteMode::Verified, &format!("{scenario}/000-created"));
+        let store = env.store(Matrix::embedded().clone());
+        let parent = env
+            .snap()
+            .tasks
+            .iter()
+            .find(|t| t.parent.is_none())
+            .unwrap()
+            .uid
+            .clone();
+        (env, store, parent)
+    }
+
+    fn op(parent: &str, title: &str) -> Op {
+        Op::Create(NewTask {
+            parent: Some(parent.into()),
+            ..NewTask::plain("list1", title)
+        })
+    }
+
+    fn add(env: &Env, store: &mut Store, parent: &str, title: &str) -> String {
+        let id = store.apply(&env.snap(), &op(parent, title), now()).unwrap();
+        env.journal().iter().find(|e| e.id == id).unwrap().uids[0].clone()
+    }
+
+    fn mutate(env: &Env, uid: &str, order: Option<i64>, completed: bool) {
+        let path = env.file(uid);
+        let mut cal = parse(&fs::read(&path).unwrap()).unwrap();
+        let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+        let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut meta = MetaJson::parse(&prop.value).unwrap();
+        if let Some(order) = order {
+            meta.set_i64("DisplayOrder", order);
+        } else {
+            meta.set_str("DisplayOrder", "bad");
+        }
+        prop.set_value(&meta.encode());
+        if completed {
+            todo.prop_mut("STATUS").unwrap().set_value("COMPLETED");
+        }
+        fs::write(path, twydo_core::ical::serialize(&cal)).unwrap();
+    }
+
+    #[test]
+    fn append_matches_phone_positions_and_keeps_same_second_entry_order() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            let (env, mut store, parent) = setup(kind);
+            let before = env.files();
+            let bravo = add(&env, &mut store, &parent, "Bravo");
+            let able = add(&env, &mut store, &parent, "Able");
+            let snap = env.snap();
+            let (b, a) = (snap.find(&bravo).unwrap(), snap.find(&able).unwrap());
+            assert_eq!(snap.tasks[b].meta.display_order(), 3);
+            assert_eq!(snap.tasks[a].meta.display_order(), 4);
+            assert_eq!(snap.tasks[b].created, snap.tasks[a].created);
+            assert_eq!(
+                snap.tasks[b].created,
+                Some(twydo_core::ical::value::IcalDateTime::Utc(now()))
+            );
+            for (path, bytes) in &before {
+                assert_eq!(&env.files()[path], bytes);
+            }
+            let result = twydo_core::views::build_view(
+                &snap,
+                &twydo_core::views::View::All,
+                now().with_timezone(&chrono_tz::America::New_York),
+                &std::collections::HashSet::from([parent.clone()]),
+            );
+            let titles: Vec<_> = result
+                .groups
+                .iter()
+                .flat_map(|(_, rows)| rows)
+                .filter(|r| r.depth == 1)
+                .map(|r| snap.tasks[r.task].summary.as_str())
+                .collect();
+            assert_eq!(titles, ["Zulu", "Alpha", "Mike", "Bravo", "Able"]);
+
+            let after = env.files();
+            store.undo_last(later()).unwrap();
+            assert!(!env.file(&able).exists());
+            store.undo_last(later()).unwrap();
+            assert_eq!(env.files(), before);
+            store.redo_last(later()).unwrap();
+            store.redo_last(later()).unwrap();
+            assert_eq!(env.files(), after);
+        }
+    }
+
+    #[test]
+    fn append_handles_empty_sparse_completed_and_malformed_siblings() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            for case in ["empty", "sparse-completed", "malformed"] {
+                let (env, mut store, parent) = setup(kind);
+                let snap = env.snap();
+                let kids = snap.children(snap.find(&parent).unwrap());
+                match case {
+                    "empty" => {
+                        for &i in kids {
+                            fs::remove_file(&snap.tasks[i].path).unwrap();
+                        }
+                    }
+                    "sparse-completed" => mutate(&env, &snap.tasks[kids[0]].uid, Some(41), true),
+                    _ => {
+                        for &i in kids {
+                            mutate(&env, &snap.tasks[i].uid, None, false);
+                        }
+                    }
+                }
+                let before = env.files();
+                let uid = add(&env, &mut store, &parent, "New item");
+                let snap = env.snap();
+                assert_eq!(
+                    snap.tasks[snap.find(&uid).unwrap()].meta.display_order(),
+                    match case {
+                        "empty" => 0,
+                        "sparse-completed" => 42,
+                        _ => 3,
+                    }
+                );
+                for (path, bytes) in before {
+                    assert_eq!(env.files()[&path], bytes);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn append_refuses_position_overflow_without_writes() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            let (env, mut store, parent) = setup(kind);
+            let child = env
+                .snap()
+                .tasks
+                .iter()
+                .find(|t| t.parent.is_some())
+                .unwrap()
+                .uid
+                .clone();
+            mutate(&env, &child, Some(i64::MAX), false);
+            let before = env.files();
+            let err = store
+                .apply(&env.snap(), &op(&parent, "Overflow"), now())
+                .unwrap_err();
+            assert!(err.to_string().contains("item order"), "{err}");
+            assert_eq!(env.files(), before);
+            assert!(env.journal().is_empty());
+        }
+    }
+
+    #[test]
+    fn append_refuses_stale_sibling_changes_removals_and_joins() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            for change in ["edit", "remove", "join"] {
+                let (env, mut store, parent) = setup(kind);
+                let snap = env.snap();
+                let child = snap.tasks.iter().find(|t| t.parent.is_some()).unwrap();
+                match change {
+                    "edit" => mutate(&env, &child.uid, Some(99), false),
+                    "remove" => fs::remove_file(&child.path).unwrap(),
+                    _ => {
+                        add(&env, &mut store, &parent, "Concurrent item");
+                    }
+                }
+                let before = env.files();
+                let count = env.journal().len();
+                let result = store.apply(&snap, &op(&parent, "Stale item"), now());
+                assert!(
+                    matches!(result, Err(WriteError::Stale(_))),
+                    "{kind:?}, {change}: {result:?}"
+                );
+                assert_eq!(env.files(), before);
+                assert_eq!(env.journal().len(), count);
+            }
+        }
+    }
+
+    #[test]
+    fn append_recovery_is_idempotent_and_guards_sibling_dependencies() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            for interruption in [
+                "after-write",
+                "before-write",
+                "sibling-edit",
+                "sibling-join",
+            ] {
+                let (env, mut store, parent) = setup(kind);
+                let snap = env.snap();
+                let uid = add(&env, &mut store, &parent, "Bravo");
+                let entry = env.journal().pop().unwrap();
+                assert_eq!(entry.holds.len(), 4);
+                assert!(entry.family.as_ref().unwrap().loaded.contains(&key(&uid)));
+                match interruption {
+                    "before-write" => fs::remove_file(env.file(&uid)).unwrap(),
+                    "sibling-edit" => mutate(
+                        &env,
+                        &snap.tasks[snap.children(snap.find(&parent).unwrap())[0]].uid,
+                        Some(91),
+                        false,
+                    ),
+                    "sibling-join" => {
+                        add(&env, &mut store, &parent, "Concurrent item");
+                    }
+                    _ => {}
+                }
+                Journal::open(&env.state)
+                    .unwrap()
+                    .set_stage(&entry.id, Stage::Prepared)
+                    .unwrap();
+                let before = env.files();
+                let (_, report) = Store::open_with(&env.cfg, Matrix::embedded().clone()).unwrap();
+                if interruption.starts_with("sibling-") {
+                    assert_eq!(report.stuck.len(), 1, "{report:?}");
+                    assert_eq!(env.files(), before);
+                } else {
+                    assert!(report.stuck.is_empty(), "{report:?}");
+                    assert_eq!(env.snap().tasks.iter().filter(|t| t.uid == uid).count(), 1);
+                    assert_eq!(
+                        fs::read_to_string(env.file(&uid)).unwrap(),
+                        entry.writes[0].after.as_ref().unwrap().as_str()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn completion_reopen_and_family_move_preserve_item_positions() {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            let (env, mut store, parent) = setup(kind);
+            let uid = add(&env, &mut store, &parent, "Bravo");
+            for op in [
+                Op::Complete {
+                    uid: parent.clone(),
+                },
+                Op::Reopen {
+                    uid: parent.clone(),
+                },
+            ] {
+                store.apply(&env.snap(), &op, later()).unwrap();
+                let snap = env.snap();
+                assert_eq!(snap.tasks[snap.find(&uid).unwrap()].meta.display_order(), 3);
+            }
+            store
+                .apply(
+                    &env.snap(),
+                    &Op::Move {
+                        uid: parent,
+                        to: "list2".into(),
+                    },
+                    later(),
+                )
+                .unwrap();
+            let snap = env.snap();
+            let t = snap.tasks.iter().find(|t| t.summary == "Bravo").unwrap();
+            assert_eq!(t.collection, "list2");
+            assert_eq!(t.meta.display_order(), 3);
+        }
+    }
+
+    #[test]
+    fn recurring_parent_completion_preserves_positions_in_live_and_history_items() {
+        for (scenario, parent) in [
+            (FIXTURE, R),
+            ("plan8-checklist-b/011d-phone-delete-items", ""),
+        ] {
+            let env = Env::new(WriteMode::Test, scenario);
+            let mut store = env.store(Matrix::embedded().clone());
+            let parent = if parent.is_empty() {
+                env.snap()
+                    .tasks
+                    .iter()
+                    .find(|t| t.summary == "B")
+                    .unwrap()
+                    .uid
+                    .clone()
+            } else {
+                parent.to_string()
+            };
+            let uid = add(&env, &mut store, &parent, "Order item");
+            let before = env.files();
+            let position = env
+                .snap()
+                .tasks
+                .iter()
+                .find(|t| t.uid == uid)
+                .unwrap()
+                .meta
+                .display_order();
+            assert!(position > 0);
+            store
+                .apply(&env.snap(), &Op::Complete { uid: parent }, later())
+                .unwrap();
+            let snap = env.snap();
+            let copies: Vec<_> = snap
+                .tasks
+                .iter()
+                .filter(|t| t.summary == "Order item")
+                .collect();
+            assert_eq!(copies.len(), 2);
+            assert!(copies.iter().all(|t| t.meta.display_order() == position));
+            assert_eq!(
+                copies
+                    .iter()
+                    .filter(|t| t.status == twydo_core::model::Status::Open)
+                    .count(),
+                1
+            );
+            store.undo_last(later()).unwrap();
+            assert_eq!(env.files(), before);
+        }
+    }
+}
+
 // Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
     use crate::common::recurrence::*;
