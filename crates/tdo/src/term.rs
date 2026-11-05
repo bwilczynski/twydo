@@ -180,8 +180,7 @@ fn event_loop(
         }
         for message in sync_rx.try_iter() {
             syncing = false;
-            app.sync_finished(message);
-            refresh_sync(app);
+            finish_sync(app, root, message);
         }
         if let Some((_, rx)) = &watcher
             && rx.try_iter().count() > 0
@@ -271,4 +270,48 @@ fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String>
         .map(str::trim)
         .find(|l| !l.is_empty())
         .map_or_else(|| crate::app::SYNC_DONE.to_string(), str::to_string))
+}
+
+/// Apply the result delivered by the manual sync worker.
+fn finish_sync(app: &mut App, root: &Path, message: String) {
+    app.sync_finished(message);
+    // Sync may have applied changes even if it failed. Do not rely on watcher delivery.
+    reload(app, root);
+    refresh_sync(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use twydo_core::config::Config;
+    use twydo_core::views::View;
+
+    #[test]
+    fn sync_completion_refreshes_an_emptied_list_without_watcher_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("vdir");
+        let list = root.join("inbox");
+        std::fs::create_dir_all(&list).unwrap();
+        let file = list.join("task.ics");
+        std::fs::write(
+            &file,
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:synthetic-task\r\nSUMMARY:Synthetic task\r\nEND:VTODO\r\nEND:VCALENDAR\r\n",
+        )
+        .unwrap();
+        let mut cfg = Config::with_vdir(root.clone());
+        cfg.state_dir = Some(dir.path().join("state"));
+        let snapshot = Snapshot::new(twydo_core::vdir::load(&root).unwrap(), cfg);
+        let mut app = App::new(snapshot, Utc::now().with_timezone(&chrono_tz::UTC));
+        app.view = View::List("inbox".into());
+        assert_eq!(app.visible_rows().len(), 1);
+
+        // The sync child applied an empty server list. No watcher is running.
+        std::fs::remove_file(file).unwrap();
+        finish_sync(&mut app, &root, crate::app::SYNC_DONE.into());
+
+        assert!(app.visible_rows().is_empty());
+        assert!(app.snapshot.tasks.is_empty());
+        assert_eq!(app.view, View::List("inbox".into()));
+        assert_eq!(app.message.as_deref(), Some(crate::app::SYNC_DONE));
+    }
 }
