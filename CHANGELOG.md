@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/bwilczynski/twydo/compare/v0.1.2...v0.1.3) - 2026-11-05
+
+### Added
+
+- *(compat)* unlock scoped repeating checklist creation and item deletion
+- *(compat)* verify scoped from-completion editing
+- *(compat)* verify until completion and occurrence reopening
+- *(compat)* verify monthly recurring checklist workflows
+- *(compat)* verify plain daily and yearly repeat changes
+- *(core)* prepare scoped checklist writes with durable family checks
+
+### Fixed
+
+- use the same family item order in details
+- keep the next item row at the end of its family
+- *(compat)* restrict completion repeat changes to captured transitions
+- append family items with guarded ordering positions
+- preserve checklist and project item display order
+- *(store)* retain checklist family guards through journal replay
+- *(core)* assign new checklist history parent identities
+
 ## [0.1.2](https://github.com/bwilczynski/twydo/compare/v0.1.1...v0.1.2) - 2026-11-04
 
 ### Added
