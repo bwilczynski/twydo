@@ -187,6 +187,51 @@ The record of a list is only as good as the last sync that wrote it:
   only at the end of its update. A sync that is killed, fails, or cannot write the file (it warns)
   leaves no record, so the next one forces nothing.
 
+## Deleted lists and recovery
+
+Deleting a collection in 2Do can leave it in vdirsyncer's cached list set, so later syncs
+report Not Found. Twydo names the affected list and collection id, and gives the exact
+`:forget-list <id>` command. The TUI's `:errors` report retains these details, including
+when several lists fail; j/k scrolls the report. A missing task can also produce Not Found,
+so Twydo does not remove a list automatically.
+
+If you deleted the list on another device, run `:forget-list <id>` (or its unique display
+name) and confirm with `y`. Twydo preserves its complete local folder, list metadata,
+unsynced journal evidence, and both versions of recorded conflicts outside the synced vdir
+before removing the local folder. Cancelling or a changed confirmation snapshot writes
+nothing. Other lists' pending work remains active; archived work is not marked synced.
+
+The next sync first runs the ordinary `vdirsyncer discover <pair>`, with the configured
+executable/configuration, timeout, and lock protection. It never automatically answers yes
+to creation prompts. This refreshes the cached collection set before sync and metasync.
+A discovery failure keeps the backup and discovery request, reports the failure, and blocks
+ordinary sync until discovery succeeds. With explicit collection names in the vdirsyncer
+configuration, remove the deleted entry there before retrying. The usual
+`collections = ["from a", "from b"]` setup needs no configuration change.
+Only confirm deletion of a list you actually removed remotely: an existing remote list
+can be discovered and downloaded again.
+
+Use `:recover` to browse preserved lists, see their backup ids, and preview tasks/notes.
+Recover to an existing list with `:recover <backup-id> <destination-list>`; the destination
+can be a collection id or unique display name, including spaces. Review the local snapshot
+and confirm with `y`. Recovery uses the existing gated move/copy implementation and writes
+the complete accepted task set as one journalled operation with fresh identities and
+preserved family/history links. Unsupported shapes or unreadable resources refuse the whole
+recovery; the original backup stays available. Historical conflict alternatives stay in the
+backup files for inspection; recovery does not merge or restore those alternatives.
+
+Backups live under the per-vdir state directory at `retired/<backup-id>/`:
+`backup.json` records the original collection, capture time, file inventory, journal
+evidence, conflict ids, and any recovery operation/destination. Original files are under
+`data/<original-collection>/`; conflict records and both versions are under `conflicts/`.
+Directories are private to the user. Backups have no automatic expiry or TUI delete command.
+Back them up with the rest of Twydo's state.
+
+A completed recovery retains its backup and can be undone/redone with the ordinary session
+keys. A retry recognizes the recorded operation rather than making duplicates. After undo,
+use Ctrl-r; a repeated recovery refuses to resurrect removed tasks or overwrite later edits.
+A backup cannot be recovered to a second destination through these commands.
+
 ## Backoff and timeout
 
 vdirsyncer is killed (with its child processes) after `timeout_secs` (default 300); the run counts
@@ -241,6 +286,8 @@ read; do not edit them while a sync runs.
 
 | Path | Content |
 |---|---|
+| `sync/rediscover` | a confirmed list retirement requires ordinary discovery before another sync; removed only when discovery succeeds |
+| `retired/<id>/` | permanent local-list backup, journal/conflict evidence, and recovery operation; see [deleted lists and recovery](#deleted-lists-and-recovery) |
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |

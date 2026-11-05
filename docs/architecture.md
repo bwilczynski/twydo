@@ -22,7 +22,21 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
 
 Twydo keeps its own state (the operation journal, sync status, conflicts) outside the vdir, under
 `state_dir` ([config.md](config.md)). Task data stays iCalendar; nothing in the state directory
-is a second copy of your tasks.
+is an alternative active task database. Recovery backups deliberately retain task copies.
+
+Explicit list retirement also keeps inspectable backups under `retired/<id>/`. It publishes
+the complete original files and journal/conflict evidence durably before removing the local
+collection, then requests ordinary vdirsyncer rediscovery. An incomplete retirement resumes
+under the exclusive vdir lock before journal recovery. Journal entries entirely in that
+collection are abandoned locally, with originals kept in the backup; entries spanning lists
+retain their surviving writes without claiming archived writes synced. Archived conflicts
+cannot write into the old collection through the normal resolver.
+
+Recovery plans the archive's local snapshot using existing gated moves, retains destination
+writes only, and journals them together. The backup records the chosen destination and exact
+operation/identity mapping before it applies, so retries reuse identities and never duplicate
+the import. Known family/history references follow the remapped identities. Backups survive
+normal journal/conflict retention. User-facing commands are in [tui.md](tui.md#commands).
 
 ## Crates
 

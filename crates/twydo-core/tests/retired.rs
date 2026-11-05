@@ -220,3 +220,156 @@ fn archived_conflicts_cannot_recreate_the_retired_collection() {
     );
     assert!(!cfg.vdir.join("old").exists());
 }
+
+#[test]
+fn recovery_remaps_family_and_history_references_as_one_operation() {
+    use twydo_core::model::meta_edit::MetaJson;
+    let (_dir, cfg) = env();
+    let parent=task().replace("UID:original","UID:parent").replace("SUMMARY:Synthetic task",
+        "SUMMARY:Parent\r\nX-2DOAPP-METADATA:<2Do Meta>%7B%22TaskType%22%3A2%2C%22uid%22%3A%22parent%22%7D</2Do Meta>");
+    let child=task().replace("UID:original","UID:child\r\nRELATED-TO:parent").replace("SUMMARY:Synthetic task",
+        "SUMMARY:Child\r\nX-2DOAPP-METADATA:<2Do Meta>%7B%22TaskType%22%3A0%2C%22parentuid%22%3A%22parent%22%7D</2Do Meta>");
+    let history=task().replace("UID:original","UID:history\r\nSTATUS:COMPLETED").replace("SUMMARY:Synthetic task",
+        "SUMMARY:History\r\nX-2DOAPP-METADATA:<2Do Meta>%7B%22TaskType%22%3A0%2C%22RUID%22%3A%22parent%22%7D</2Do Meta>");
+    for (name, text) in [("parent", parent), ("child", child), ("history", history)] {
+        fs::write(cfg.vdir.join(format!("old/{name}.ics")), text).unwrap();
+    }
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    store
+        .recover_list(&snap(&cfg), &b.id, "inbox", now())
+        .unwrap();
+    let restored = snap(&cfg);
+    assert_eq!(restored.tasks.len(), 4);
+    let p = restored
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Parent")
+        .unwrap();
+    let c = restored
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Child")
+        .unwrap();
+    let h = restored
+        .tasks
+        .iter()
+        .find(|t| t.summary == "History")
+        .unwrap();
+    assert_eq!(c.parent.as_deref(), Some(p.uid.as_str()));
+    assert_eq!(
+        MetaJson::parse(c.meta.raw.as_deref().unwrap())
+            .unwrap()
+            .get_str("parentuid"),
+        Some(p.uid.as_str())
+    );
+    assert_eq!(
+        MetaJson::parse(h.meta.raw.as_deref().unwrap())
+            .unwrap()
+            .get_str("RUID"),
+        Some(p.uid.as_str())
+    );
+    let journal = Journal::open(&bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()).unwrap();
+    let entries: Vec<_> = journal
+        .list()
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "recover")
+        .collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].writes.len(), 4);
+}
+
+#[test]
+fn unreadable_backup_resources_refuse_the_whole_recovery() {
+    let (_dir, cfg) = env();
+    fs::write(cfg.vdir.join("old/broken.ics"), "not a calendar").unwrap();
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    assert!(
+        store
+            .recover_list(&snap(&cfg), &b.id, "inbox", now())
+            .is_err()
+    );
+    assert!(snap(&cfg).tasks.is_empty());
+    assert!(
+        retired::data_dir(&cfg, &b.id)
+            .unwrap()
+            .join("old/broken.ics")
+            .exists()
+    );
+}
+
+#[test]
+fn an_edited_recovered_task_is_never_overwritten_on_retry() {
+    let (_dir, cfg) = env();
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    store
+        .recover_list(&snap(&cfg), &b.id, "inbox", now())
+        .unwrap();
+    let file = snap(&cfg).tasks[0].path.clone();
+    let changed = fs::read_to_string(&file)
+        .unwrap()
+        .replace("Synthetic task", "Later edit");
+    fs::write(&file, &changed).unwrap();
+    assert!(
+        store
+            .recover_list(&snap(&cfg), &b.id, "inbox", now())
+            .is_err()
+    );
+    assert_eq!(fs::read_to_string(file).unwrap(), changed);
+}
+
+#[test]
+fn recovery_cannot_use_a_different_destination_on_retry() {
+    let (_dir, cfg) = env();
+    fs::create_dir(cfg.vdir.join("other")).unwrap();
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    store
+        .recover_list(&snap(&cfg), &b.id, "inbox", now())
+        .unwrap();
+    assert!(
+        store
+            .recover_list(&snap(&cfg), &b.id, "other", now())
+            .is_err()
+    );
+    assert_eq!(fs::read_dir(cfg.vdir.join("other")).unwrap().count(), 0);
+}
+
+#[test]
+fn backup_keeps_a_file_named_like_an_atomic_write_temporary() {
+    let (_dir, cfg) = env();
+    fs::write(cfg.vdir.join("old/.task.ics.tdo-tmp"), "scratch evidence").unwrap();
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    assert_eq!(
+        fs::read_to_string(
+            retired::data_dir(&cfg, &b.id)
+                .unwrap()
+                .join("old/.task.ics.tdo-tmp")
+        )
+        .unwrap(),
+        "scratch evidence"
+    );
+}
+#[test]
+fn recovered_operation_survives_journal_pruning() {
+    let (_dir, cfg) = env();
+    let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    let (id, _) = store
+        .recover_list(&snap(&cfg), &b.id, "inbox", now())
+        .unwrap();
+    let journal = Journal::open(&bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()).unwrap();
+    journal.mark_synced(&id, now()).unwrap();
+    journal.prune(now() + chrono::Duration::days(31)).unwrap();
+    assert!(journal.get(&id).unwrap().is_some());
+    let path = snap(&cfg).tasks[0].path.clone();
+    fs::remove_file(path).unwrap();
+    assert!(
+        store
+            .recover_list(&snap(&cfg), &b.id, "inbox", now())
+            .is_err()
+    );
+}

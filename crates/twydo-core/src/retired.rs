@@ -71,10 +71,10 @@ fn record(state: &Path, id: &str) -> io::Result<PathBuf> {
 }
 
 fn private_dir(path: &Path) -> io::Result<()> {
-    if let Ok(m) = fs::symlink_metadata(path) {
-        if !m.is_dir() || m.is_symlink() {
-            return Err(invalid("backup path is not a plain directory"));
-        }
+    if let Ok(m) = fs::symlink_metadata(path)
+        && (!m.is_dir() || m.is_symlink())
+    {
+        return Err(invalid("backup path is not a plain directory"));
     }
     let mut b = fs::DirBuilder::new();
     b.recursive(true);
@@ -128,7 +128,14 @@ fn copy_tree(dir: &Path, files: &BTreeMap<String, Vec<u8>>) -> io::Result<()> {
         }
         let path = dir.join(name);
         private_dir(path.parent().unwrap())?;
-        write_atomic(&path, bytes)?;
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        sync_dir(path.parent().unwrap())?;
     }
     sync_dir(dir)
 }

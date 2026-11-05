@@ -102,7 +102,7 @@ impl Store {
             gate::check(&source, &self.matrix, self.mode, &op, today)
                 .map_err(WriteError::Blocked)?;
             let plan = self.plan(&source, &op, now)?;
-            for pair in plan.uids.chunks_exact(2) {
+            for pair in plan.uids.as_chunks::<2>().0 {
                 mapping.insert(pair[0].clone(), pair[1].clone());
             }
             writes.extend(

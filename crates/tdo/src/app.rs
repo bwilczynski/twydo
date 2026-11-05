@@ -2,6 +2,8 @@
 //! fields and the terminal loop feeds `handle_key` / `tick`.
 
 mod newrow;
+mod recovery;
+pub use recovery::{Confirmation, RecoveryPanel};
 
 pub use newrow::{NewRow, default_list};
 
@@ -85,6 +87,7 @@ pub enum Outcome {
     EditNotes(String),
     /// Stop the running sync, then write; the loop reports back with [`App::write_finished`].
     StopSyncAndWrite(Request),
+    ForgetList(twydo_core::retired::Preview),
 }
 
 /// The list picker, in sidebar order: `m` moves task `uid` to the chosen list; from the
@@ -97,6 +100,9 @@ pub struct ListPicker {
 }
 
 pub struct App {
+    pub recovery: Option<RecoveryPanel>,
+    pub confirmation: Option<Confirmation>,
+    recovery_target: Option<String>,
     pub snapshot: Snapshot,
     pub view: View,
     pub focus: Pane,
@@ -115,6 +121,7 @@ pub struct App {
     pub show_help: bool,
     /// The `:errors` overlay listing unreadable files.
     pub show_errors: bool,
+    pub errors_scroll: u16,
     /// Sync state for the status line and conflict markers; `None` without `[sync]`.
     pub sync: Option<SyncSummary>,
     /// The `:conflicts` overlay.
@@ -187,6 +194,9 @@ fn blocked(action: &str) -> String {
 impl App {
     pub fn new(snapshot: Snapshot, now: DateTime<Tz>) -> App {
         App {
+            recovery: None,
+            confirmation: None,
+            recovery_target: None,
             snapshot,
             view: View::Today,
             focus: Pane::Tasks,
@@ -200,6 +210,7 @@ impl App {
             transient: None,
             show_help: false,
             show_errors: false,
+            errors_scroll: 0,
             sync: None,
             show_conflicts: false,
             conflict_cursor: 0,
@@ -571,6 +582,9 @@ impl App {
     }
 
     fn dispatch_key(&mut self, k: KeyEvent) -> Outcome {
+        if self.confirmation.is_some() {
+            return self.confirmation_key(k);
+        }
         if self.stop_prompt.is_some() {
             return self.stop_prompt_key(k);
         }
@@ -582,6 +596,9 @@ impl App {
         }
         if self.new_row.is_some() {
             return self.row_key(k);
+        }
+        if self.recovery.is_some() && self.mode == Mode::Normal {
+            return self.recovery_key(k);
         }
         match self.mode {
             Mode::Normal => self.normal_key(k),
@@ -599,6 +616,19 @@ impl App {
     }
 
     fn normal_key(&mut self, k: KeyEvent) -> Outcome {
+        if self.show_errors {
+            match k.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.errors_scroll = self.errors_scroll.saturating_add(1);
+                    return Outcome::Continue;
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.errors_scroll = self.errors_scroll.saturating_sub(1);
+                    return Outcome::Continue;
+                }
+                _ => {}
+            }
+        }
         let pending = self.pending.take();
         if pending == Some('a') {
             return self.answer_items(k);
@@ -927,7 +957,11 @@ impl App {
 
     /// Help, `:errors` or `:conflicts` is drawn over the task list.
     fn overlay_open(&self) -> bool {
-        self.show_help || self.show_errors || self.show_conflicts
+        self.show_help
+            || self.show_errors
+            || self.show_conflicts
+            || self.recovery.is_some()
+            || self.confirmation.is_some()
     }
 
     fn open_picker(&mut self) {
@@ -967,13 +1001,21 @@ impl App {
         };
         let last = p.lists.len().saturating_sub(1);
         match k.code {
-            KeyCode::Esc => self.picker = None,
+            KeyCode::Esc => {
+                self.picker = None;
+                self.recovery_target = None;
+            }
             KeyCode::Char('j') | KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
             KeyCode::Char('k') | KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
             KeyCode::Enter => {
                 let Some(to) = p.lists.get(p.cursor).cloned() else {
                     return Outcome::Continue;
                 };
+                if let Some(id) = self.recovery_target.take() {
+                    self.picker = None;
+                    self.confirm_recovery(&id, &to);
+                    return Outcome::Continue;
+                }
                 match p.uid.clone() {
                     Some(uid) => return Outcome::Write(Request::Apply(Op::Move { uid, to })),
                     None => {
@@ -1207,7 +1249,12 @@ impl App {
                 }
             }
             "conflicts" => self.show_conflicts = !self.show_conflicts,
-            "errors" => self.show_errors = !self.show_errors,
+            "forget-list" => self.forget_command(arg),
+            "recover" => self.recover_command(arg),
+            "errors" => {
+                self.show_errors = !self.show_errors;
+                self.errors_scroll = 0;
+            }
             "list" => {
                 let want = arg.to_lowercase();
                 let found = self.snapshot.collections.iter().find(|c| {
