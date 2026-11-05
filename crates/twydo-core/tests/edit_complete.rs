@@ -1669,3 +1669,42 @@ fn edited_from_completion_live_and_history_match_phone_after_followup_note_expor
         &BTreeMap::new(),
     );
 }
+
+#[test]
+fn converted_checklist_history_gets_new_parent_identity_while_live_keeps_its_own() {
+    use common::recurrence::same;
+    use std::collections::BTreeMap;
+    const CHECKLIST_B: &str = "plan8-checklist-b";
+    const CHECKLIST_B_UID: &str = "twydo-p8-c29-b";
+    const COPY: &str = "c73764e2f37140829c3f36d495afbc80";
+    let input = parse(&fixture(
+        CHECKLIST_B,
+        "011d-phone-delete-items",
+        CHECKLIST_B_UID,
+    ))
+    .unwrap();
+    let want = parse(&fixture(CHECKLIST_B, "012-phone-family-complete", COPY)).unwrap();
+    let at = common::completed(&want);
+    let (live, copy) = complete_recurring(&input, at, at.date_naive(), COPY).unwrap();
+    let copy = copy.unwrap();
+    same(
+        "converted checklist history identity",
+        &copy,
+        &want,
+        &BTreeMap::new(),
+    );
+    let after = parse(&fixture(
+        CHECKLIST_B,
+        "012-phone-family-complete",
+        CHECKLIST_B_UID,
+    ))
+    .unwrap();
+    same(
+        "converted checklist live identity",
+        &live,
+        &after,
+        &BTreeMap::new(),
+    );
+    assert_eq!(json_uid(&live), json_uid(&input));
+    assert_eq!(json_uid(&copy).as_deref(), Some(COPY));
+}
