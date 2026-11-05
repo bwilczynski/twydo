@@ -1,0 +1,5 @@
+scenario = "issue35-project-order"
+step = "000-created"
+device = "iphone"
+action = "Create Project Order 35 with Zulu, Alpha, Mike in that order and sync; phone display awaiting confirmation. Only this project family captured."
+captured_at = "2026-11-05T17:12:27Z"
