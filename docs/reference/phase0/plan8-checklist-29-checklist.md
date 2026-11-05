@@ -253,3 +253,16 @@ and normal configuration remain unchanged. Privacy scan passes before importing
 only these B snapshots. Phone inspection and note edit (C29-21), next family
 execution (C29-22) and item edit (C29-23) remain pending. **No shipping capability
 verdict is promoted from local execution/upload.**
+
+## C29-21 phone accepts candidate creation/conversion and saves notes
+
+The user confirmed inspection and note edits. B-only
+`028-phone-writer-note-followup` contains the same 16 resources. Exactly C/D
+parents change notes x → z and modification stamps. Their first phone save also
+changes PRODID to 2Do and adds the three known sync image/audio/duration properties;
+all four decorations and values are asserted explicitly in the regression.
+Every JSON key, recurrence/date/identity value and creation field is preserved.
+Every child and history resource, all earlier A/B branches inside B, and other
+collections remain byte-unchanged. Both z items remain open with the candidate's
+explicit PERCENT-COMPLETE:0; q stays absent. Privacy scan passes. No shipping
+verdict is promoted yet; next manual completion and final item edit remain.

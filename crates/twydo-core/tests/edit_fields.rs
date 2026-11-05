@@ -1674,3 +1674,48 @@ fn phone_accepts_final_due_anchored_repeat_removal_with_series_identity_preserve
     assert_eq!(meta.get_i64("RecurrenceValue"), Some(1));
     assert_eq!(meta.get_i64("RecurrenceFrom"), Some(1));
 }
+
+#[test]
+fn checklist_phone_return_notes_preserve_created_converted_families() {
+    use common::recurrence::{CHECKLIST_B, same};
+    use std::collections::BTreeMap;
+    for uid in ["55180c631f304b44be543382c0b85b94", "twydo-p8-c29-d"] {
+        let mut got = parse(&fixture(CHECKLIST_B, "027-twydo-upload", uid)).unwrap();
+        let want = parse(&fixture(CHECKLIST_B, "028-phone-writer-note-followup", uid)).unwrap();
+        let before_meta =
+            MetaJson::parse(&common::todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        let after_meta =
+            MetaJson::parse(&common::todo(&want).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        assert_eq!(before_meta, after_meta);
+        for (key, value) in [
+            ("X-2DOAPP-SYNC-IMAGE", "1"),
+            ("X-2DOAPP-SYNC-AUDIO", "1"),
+            ("X-2DOAPP-AUDIO-DURATION", "0.000000"),
+        ] {
+            assert!(common::todo(&got).prop(key).is_none());
+            assert_eq!(common::todo(&want).prop(key).unwrap().value, value);
+        }
+        assert_eq!(
+            got.root.prop("PRODID").unwrap().value,
+            "-//Twydo//tdo 0.1.2//EN"
+        );
+        assert_eq!(
+            want.root.prop("PRODID").unwrap().value,
+            "-//2DOAPP.COM//2Do 3.8//EN"
+        );
+        apply_changes(
+            &mut got,
+            &[Change::Description(Some("z".into()))],
+            dtstamp(&want),
+        )
+        .unwrap();
+        same("phone note return", &got, &want, &BTreeMap::new());
+        let created = common::todo(&got).prop("CREATED").unwrap();
+        let phone_created = common::todo(&want).prop("CREATED").unwrap();
+        assert_eq!(
+            (&created.value, &created.params),
+            (&phone_created.value, &phone_created.params),
+            "phone line endings may differ; creation value and parameters must not"
+        );
+    }
+}
