@@ -122,12 +122,40 @@ unchanged resources; reconstruct this state by overlaying the new file on that b
 No checklist files or unchanged project resources were duplicated. No server writes,
 normal desktop sync/configuration changes, completions or deletions occurred.
 
-## Implementation considerations (not yet an approved design)
+## Approved implementation and local verification
 
-The proposed reader uses `DisplayOrder`, then ascending creation time in both tree and
+The user approved the implementation design and instructed continued work. The reader
+uses `DisplayOrder`, then ascending creation time in both tree and
 flat views, independently of the containing view's sort. Ordering-field precedence is an
 inference from its documented meaning, rather than a separately captured phone reorder.
-Projects retain their existing sort semantics. New checklist items should receive an
-append position matching the phone's observed zero-based position. Equal/missing creation
-times need a deterministic fallback; second-resolution timestamps cannot establish entry
-order on their own. Writer changes need a separately approved Twydo-to-phone check.
+Independently displayed project items retain their flat view's date sort. New checklist
+and project items receive an append position matching the phone's observed zero-based
+position. Equal/missing creation times fall back to UID; second-resolution timestamps
+cannot establish entry order on their own. Writer changes need a separately approved
+Twydo-to-phone check.
+
+Local fixes are split into display ordering (`6b32a95`), guarded append creation (`8ceede6`)
+and the next input row's placement (`c3130b4`). New regressions were observed failing before
+the corresponding fix. Initial validation passed all 864 Rust tests, 49 Python tests,
+documentation links, clippy with warnings denied and formatting checks.
+
+Independent review found that the Details pane still used date/title sorting. A new rendered
+regression reproduced the mismatch for both captured parent types; Details now shares the
+core item comparator with the task list. Its 42 rendering tests pass. Final validation passed 865 Rust tests,
+49 Python tests, documentation links, clippy with warnings denied and formatting checks. The review found no other Critical or Important issue. One minor remains:
+legacy items tied on position and creation time fall back to UID, which changes on moves
+and history copies. Such tied historical order is not recoverable from the captured fields;
+no normalization of old metadata is enabled by this investigation.
+
+Two candidate resources were generated privately through the candidate CLI in verified
+mode: one Echo under each synthetic parent, each with `DisplayOrder: 4`. The ten existing
+family resources remained byte-unchanged; automatic sync was disabled by omitting sync
+configuration in the isolated candidate environment. No candidates have been uploaded.
+The candidate manifest, hashes, local config and journal remain outside git.
+
+Proposed bounded return: fresh-read the two known families, refuse stale dependencies,
+then upload only the two new Echo resources with create-only preconditions. Ask the user
+to confirm both appear last, rename each Echo to ECHO, and sync. Capture only changed/new
+resources, referring to existing evidence for unchanged members. No cleanup, completions,
+deletions, other family writes, account changes or normal configuration changes. Await
+fresh approval before upload; the earlier read-only approval does not authorize it.

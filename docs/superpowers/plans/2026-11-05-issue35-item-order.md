@@ -37,13 +37,13 @@ chain at the end of the visible family. Reuse captured evidence without duplicat
 and map JSON `DisplayOrder` to token `displayorder`. Use a nested sibling comparator in
 both tree and flat checklist paths; preserve the ordinary `compare` for other rows.
 
-- [ ] Add captured-family view regressions for checklist/project creation and append,
+- [x] Add captured-family view regressions for checklist/project creation and append,
   reconstructing the project delta from its baseline. Assert Zulu, Alpha, Mike, Bravo.
   Cover tree/list sort overrides and flat checklist views, equal/missing timestamps,
   malformed/absent positions, and independent project-child date sorting.
-- [ ] Run `cargo test -p twydo-core --test views`; confirm the new regressions fail.
-- [ ] Implement metadata parsing and nested ordering by position, creation, UID; update docs.
-- [ ] Run the same view suite; expect all tests pass. Commit the reader fix.
+- [x] Run `cargo test -p twydo-core --test views`; confirm the new regressions fail.
+- [x] Implement metadata parsing and nested ordering by position, creation, UID; update docs.
+- [x] Run the same view suite; expect all tests pass. Commit the reader fix.
 
 ### Task 2: Append safely and keep the Enter row at the end
 
@@ -57,15 +57,15 @@ and family guards. New child position is `max(sibling_count, max_position + 1)`,
 when empty; checked arithmetic refuses overflow. Persist sibling holds and membership
 guards for create; include the created path in durable guards for idempotent recovery.
 
-- [ ] Add real-store tests for both parent types: captured append position, same-second
+- [x] Add real-store tests for both parent types: captured append position, same-second
   appends, empty/sparse/completed/malformed/overflow siblings, unchanged neighbor bytes,
   stale sibling edits/joins, recovery after a create, undo/redo and family copy retention.
   Extend Enter-chain tests to assert the next row is at the visible family's end.
-- [ ] Run `cargo test -p twydo-core --test store_family` and
+- [x] Run `cargo test -p twydo-core --test store_family` and
   `cargo test -p tdo --test write --test app_keys`; confirm relevant new failures.
-- [ ] Implement append metadata and guards, reuse end-of-items anchoring in the Enter chain,
+- [x] Implement append metadata and guards, reuse end-of-items anchoring in the Enter chain,
   and update docs. Do not change standalone creation or rewrite siblings.
-- [ ] Run the same suites, then `mise run test`, `mise run lint`, `git diff --check`.
+- [x] Run the same suites, then `mise run test`, `mise run lint`, `git diff --check`.
   Expect all checks pass; review the full branch with a fresh reviewer. Commit focused fixes.
 
 ### Task 3: Bounded phone return (approval gate)
@@ -75,7 +75,7 @@ guards for create; include the created path in durable guards for idempotent rec
 
 **Interfaces:** The tested store creates one `Echo` under each existing synthetic parent.
 
-- [ ] Prepare the two exact candidate resources and a fresh read of their family dependencies
+- [x] Prepare the two exact candidate resources and a fresh read of their family dependencies
   privately, without uploading. Present exact scope for fresh approval.
 - [ ] Only after approval, upload the two new resources with creation preconditions; ask the
   user to inspect end placement and rename each Echo to ECHO, then capture the return.
@@ -87,3 +87,11 @@ guards for create; include the created path in durable guards for idempotent rec
 
 The user approved the design and instructed continued implementation in this session.
 Tasks 1–2 execute inline; Task 3 stops before uploads for the explicitly required approval.
+
+## Local checkpoint
+
+Tasks 1–2 are implemented in focused commits; final 865 Rust tests, 49 Python tests,
+links, clippy and formatting pass. Independent review completed; its Important Details
+ordering finding was reproduced and fixed with a rendering regression. The legacy UID-tie
+minor is documented and deferred. Task 3 candidates are
+prepared privately (two Echo resources, position 4); no uploads are authorized yet.
