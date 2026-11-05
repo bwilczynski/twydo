@@ -1,0 +1,5 @@
+scenario = "issue35-checklist-order"
+step = "000-created"
+device = "iphone"
+action = "Create Order 35 checklist, then Zulu, Alpha, Mike in that order; sync. Displayed order awaiting user confirmation."
+captured_at = "2026-11-05T16:58:35Z"
