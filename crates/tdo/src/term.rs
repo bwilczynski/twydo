@@ -96,6 +96,17 @@ fn event_loop(
                     match app.key_at(k, now()) {
                         Outcome::Quit => return Ok(()),
                         Outcome::Continue => {}
+                        Outcome::ForgetList(preview) => {
+                            if syncing {
+                                app.message = Some(
+                                    "sync already running; retry :forget-list when it finishes"
+                                        .into(),
+                                );
+                            } else {
+                                syncing = true;
+                                start_forget(&app.snapshot.config, preview, &sync_tx);
+                            }
+                        }
                         Outcome::Sync { force_delete } => {
                             if syncing {
                                 app.message = Some("sync already running".into());
@@ -241,7 +252,7 @@ fn refresh_sync(app: &mut App) {
     }
 }
 
-/// Run `tdo sync` as a child on a thread. The loop gets the first stderr line (or `sync done`)
+/// Run `tdo sync` as a child on a thread. The loop gets stderr (or `sync done`)
 /// through `tx`, so the UI never blocks.
 fn start_sync(vdir: &Path, force_delete: Option<String>, tx: &mpsc::Sender<String>) {
     let vdir = vdir.to_path_buf();
@@ -265,11 +276,42 @@ fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String>
         .stderr(std::process::Stdio::piped())
         .output()?;
     let stderr = String::from_utf8_lossy(&out.stderr);
-    Ok(stderr
+    let lines: Vec<_> = stderr
         .lines()
         .map(str::trim)
-        .find(|l| !l.is_empty())
-        .map_or_else(|| crate::app::SYNC_DONE.to_string(), str::to_string))
+        .filter(|l| !l.is_empty())
+        .collect();
+    Ok(if lines.is_empty() {
+        crate::app::SYNC_DONE.to_string()
+    } else {
+        lines.join(" · ")
+    })
+}
+
+fn start_forget(
+    cfg: &twydo_core::config::Config,
+    preview: twydo_core::retired::Preview,
+    tx: &mpsc::Sender<String>,
+) {
+    let cfg = cfg.clone();
+    let tx = tx.clone();
+    std::thread::spawn(move || {
+        let message = match twydo_core::retired::forget(&cfg, &preview, Utc::now()) {
+            Err(e) => format!("list was not removed: {e}"),
+            Ok(b) => {
+                let saved = format!(
+                    "preserved {:?} as {}; recover with :recover {} <destination-list>",
+                    b.name, b.id, b.id
+                );
+                match twydo_core::sync::run::run(&cfg, &Default::default(), Utc::now()) {
+                    Ok(r) if r.transient.is_none() => saved,
+                    Ok(r) => format!("{saved} · {}", r.transient.unwrap_or_default()),
+                    Err(e) => format!("{saved} · sync failed: {e}"),
+                }
+            }
+        };
+        let _ = tx.send(message);
+    });
 }
 
 /// Apply the result delivered by the manual sync worker.

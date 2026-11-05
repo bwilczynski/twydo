@@ -5,6 +5,7 @@ mod card;
 mod conflicts;
 mod details;
 mod picker;
+mod recovery;
 mod sidebar;
 mod status;
 mod tasks;
@@ -71,6 +72,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(p) = &app.picker {
         picker::render(f, area, app, p);
     }
+    if app.picker.is_none() {
+        recovery::render(f, area, app);
+    }
 }
 
 /// A centred, cleared rectangle of at most `width` x `height` cells.
@@ -88,30 +92,55 @@ fn overlay_rect(area: Rect, width: u16, height: u16) -> Rect {
 
 /// The `:errors` overlay: each unreadable file with the reason it failed to load.
 fn render_errors(f: &mut Frame, area: Rect, app: &App) {
-    let errors = &app.snapshot.errors;
-    let rect = overlay_rect(area, 100, errors.len().max(1) as u16 + 2);
-    let text_w = rect.width.saturating_sub(2) as usize;
-    let lines: Vec<Line> = if errors.is_empty() {
-        vec![Line::styled("No unreadable files", dim())]
-    } else {
-        errors
-            .iter()
-            .map(|(path, msg)| {
-                let path = path.display().to_string();
-                let msg = format!(": {msg}");
-                let path = truncate(&path, text_w);
-                let msg = truncate(&msg, text_w.saturating_sub(path.width()));
-                Line::from(vec![Span::styled(path, theme::warning()), Span::raw(msg)])
-            })
-            .collect()
-    };
+    use twydo_core::sync::status::CollState;
+    let mut lines: Vec<Line> = app
+        .snapshot
+        .errors
+        .iter()
+        .map(|(path, msg)| Line::raw(format!("{}: {msg}", path.display())))
+        .collect();
+    let mut sync_errors = false;
+    if let Some(summary) = &app.sync {
+        for (id, state) in &summary.status.collections {
+            if let CollState::Error { message } = state {
+                sync_errors = true;
+                lines.push(Line::raw(format!(
+                    "List {:?} ({id}): {message}",
+                    list_name(&app.snapshot, id)
+                )));
+                if message.trim_end_matches(';').ends_with("Not Found") {
+                    lines.push(Line::raw("If you deleted this list on another device:"));
+                    lines.push(Line::raw(format!(":forget-list {id}")));
+                }
+            }
+        }
+        if !sync_errors && let Some(error) = &summary.status.last_error {
+            sync_errors = true;
+            lines.push(Line::raw(format!("Sync: {error}")));
+        }
+    }
+    if lines.is_empty() {
+        lines.push(Line::styled("No unreadable files", dim()));
+    }
+    let rect = overlay_rect(
+        area,
+        110,
+        (lines.len().saturating_mul(2) + 2).min(u16::MAX as usize) as u16,
+    );
     f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(lines).block(
-            Block::bordered()
-                .border_type(BorderType::Rounded)
-                .title(" Unreadable files "),
-        ),
+        Paragraph::new(lines)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((app.errors_scroll, 0))
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .title(if sync_errors {
+                        " Errors · j/k scroll · Esc close "
+                    } else {
+                        " Unreadable files "
+                    }),
+            ),
         rect,
     );
 }
@@ -230,7 +259,21 @@ const HELP: &[(&str, &str, bool)] = &[
     ("/  n  N", "search in view", false),
     ("1-5", "Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),
-    (":errors", "list unreadable files", false),
+    (
+        ":errors",
+        "unreadable files and sync errors (j/k scroll)",
+        false,
+    ),
+    (
+        ":forget-list <list>",
+        "confirm remote deletion and preserve local copy",
+        false,
+    ),
+    (
+        ":recover [id destination]",
+        "browse backups / recover into an existing list",
+        false,
+    ),
     (
         ":sync  :sync! <list>",
         "sync / apply an emptied list",

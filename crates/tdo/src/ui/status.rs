@@ -128,7 +128,19 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
     };
     let yellow = theme::warning();
     let mut out = Vec::new();
-    if let Some(err) = &s.status.last_error {
+    let missing = s.status.collections.iter().find(|(_, state)| {
+        matches!(state,
+        CollState::Error { message } if message.trim_end_matches(';').ends_with("Not Found"))
+    });
+    if let Some((id, _)) = missing {
+        out.push((
+            format!(
+                "list {:?}: Not Found (:forget-list {id}; :errors)",
+                list_name(&app.snapshot, id)
+            ),
+            theme::overdue(),
+        ));
+    } else if let Some(err) = &s.status.last_error {
         let retry = s.status.next_attempt.map(|t| {
             format!(
                 "; retry {}",

@@ -17,6 +17,7 @@ use twydo_core::views::Snapshot;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Apply(Op),
+    Recover { backup: String, to: String },
     Undo,
     Redo,
 }
@@ -159,6 +160,11 @@ impl Writer {
         store.set_lock_wait(Some(wait));
         let done = match req {
             Request::Apply(op) => store.apply(snap, op, now),
+            Request::Recover { backup, to } => match store.recover_list(snap, backup, to, now) {
+                Ok((_, false)) => return Ok("already recovered; backup retained".into()),
+                Ok((id, true)) => Ok(id),
+                Err(e) => Err(e),
+            },
             Request::Undo => store.undo_last(now),
             Request::Redo => store.redo_last(now),
         };
@@ -172,6 +178,11 @@ impl Writer {
             Err(e) => return Err(Refused::Other(failure(snap, e))),
         }
         let message = match req {
+            Request::Recover { to, .. } => {
+                self.done.push("recovered list".into());
+                self.undone.clear();
+                format!("recovered local snapshot into {to}; backup retained")
+            }
             Request::Apply(op) => {
                 self.done.push(op_title(snap, op));
                 self.undone.clear();

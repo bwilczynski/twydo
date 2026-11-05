@@ -89,8 +89,25 @@ On a checklist or project, a write acts on the whole family; see
 | `:sync` | sync now (needs `[sync]` in the config; [sync.md](sync.md)) |
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
-| `:errors` | list files that could not be read |
+| `:errors` | show unreadable files and sync errors; j/k scroll |
+| `:forget-list <list>` | confirm a list was deleted remotely, preserve its local copy, and refresh the synced list set |
+| `:recover` | browse preserved lists; Enter previews tasks and notes, r chooses a destination |
+| `:recover <backup-id> <destination-list>` | preview and confirm recovery into a named existing list |
 | `:q` | quit |
+
+A missing-list sync error includes the local name, collection id, and exact
+`:forget-list <id>` command. A Not Found response alone does not prove a list was deleted:
+only confirm if you deleted it on another device. Both forgetting and recovery require
+`y`; `n` or Esc cancels without writing. List arguments accept a collection id or unique
+display name, including spaces. Recovery always needs an existing destination, for example
+`:recover 20261105T120000Z-ab12cd34 Personal Tasks`.
+
+The recovery preview shows the preserved local snapshot. Historical conflict alternatives
+remain in the backup; they are not selected or merged automatically. Recovery uses the
+existing compatibility gate and refuses an unsupported task set without a partial import.
+The backup remains after recovery. `u` undoes a recovery and Ctrl-r redoes it; repeating
+`:recover` cannot overwrite later edits or import the same backup into another list.
+See [deleted lists and recovery](sync.md#deleted-lists-and-recovery) for storage and sync details.
 
 ## Adding tasks
 

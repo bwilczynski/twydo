@@ -103,12 +103,17 @@ fn name_of<'a>(names: &'a BTreeMap<String, String>, coll: &'a str) -> &'a str {
 /// One line per thing the user should know about after a run.
 fn problems(r: &RunReport, names: &BTreeMap<String, String>) -> Vec<String> {
     let mut out = Vec::new();
-    if let Some(t) = &r.transient {
-        out.push(format!("sync failed: {t}"));
-    }
     for (coll, state) in &r.collections {
         match state {
             CollState::Ok => {}
+            CollState::Error { message }
+                if message.trim_end_matches(';').ends_with("Not Found") =>
+            {
+                out.push(format!(
+                    "list {:?} ({coll}): server returned Not Found; if you deleted this list on another device, run :forget-list {coll}",
+                    name_of(names, coll)
+                ));
+            }
             CollState::Error { .. } if r.transient.is_some() => {}
             CollState::EmptiedLocal | CollState::EmptiedRemote => {
                 let n = name_of(names, coll);
@@ -123,6 +128,9 @@ fn problems(r: &RunReport, names: &BTreeMap<String, String>) -> Vec<String> {
             }
             other => out.push(format!("list \"{coll}\": {}", describe(other))),
         }
+    }
+    if let Some(t) = &r.transient {
+        out.push(format!("sync failed: {t}"));
     }
     if !r.new_conflicts.is_empty() {
         out.push(format!(
@@ -252,5 +260,41 @@ pub fn spawn_background(config: &Config, vdir_flag: Option<&Path>) {
     };
     if let Some(cmd) = background_command(&exe, config, vdir_flag) {
         detach(cmd);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_lists_identify_every_target_and_the_confirmation_command() {
+        let r = RunReport {
+            transient: Some("c1: Unknown error occurred: Not Found".into()),
+            collections: BTreeMap::from([
+                (
+                    "c1".into(),
+                    CollState::Error {
+                        message: "Unknown error occurred: Not Found".into(),
+                    },
+                ),
+                (
+                    "c2".into(),
+                    CollState::Error {
+                        message: "Unknown error occurred: Not Found".into(),
+                    },
+                ),
+            ]),
+            ..RunReport::default()
+        };
+        let names = BTreeMap::from([("c1".into(), "Old Projects".into())]);
+        let text = problems(&r, &names).join("\n");
+        assert!(text.contains("Old Projects"), "{text}");
+        assert!(text.contains(":forget-list c1"), "{text}");
+        assert!(text.contains(":forget-list c2"), "{text}");
+        assert!(
+            !text.contains("was deleted"),
+            "404 is not proof of deletion"
+        );
     }
 }

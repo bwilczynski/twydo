@@ -193,7 +193,10 @@ impl Journal {
     pub fn prune(&self, before: DateTime<Utc>) -> io::Result<Vec<String>> {
         let mut gone = Vec::new();
         for e in self.list()? {
-            if e.stage == Stage::Applied && e.synced.is_some_and(|t| t < before) {
+            if e.kind != "recover"
+                && e.stage == Stage::Applied
+                && e.synced.is_some_and(|t| t < before)
+            {
                 remove_durable(&self.path(&e.id)?)?;
                 gone.push(e.id);
             }

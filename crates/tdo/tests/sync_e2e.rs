@@ -1048,3 +1048,50 @@ fn hook_uses_the_vdir_of_tdo_sync() {
     assert_eq!(open[0].local.as_deref(), Some(local.as_str()));
     assert_eq!(open[0].remote.as_deref(), Some(remote.as_str()));
 }
+
+#[test]
+fn forgetting_a_remote_deleted_collection_refreshes_real_vdirsyncer_cache() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    fs::create_dir_all(p.server().join("c2")).unwrap();
+    fs::create_dir_all(p.vdir().join("c2")).unwrap();
+    fs::write(p.server().join("c2/keep.ics"), task("keep", "Keep syncing")).unwrap();
+    assert_eq!(p.vdirsyncer(&["discover", "twydo"]).0, 0);
+    assert_eq!(p.tdo_sync().0, 0);
+    fs::remove_dir_all(p.server().join(COLL)).unwrap();
+    let mut cfg =
+        twydo_core::config::Config::load(&p.root().join("config/twydo/config.toml")).unwrap();
+    cfg.state_dir = Some(p.state().join("twydo"));
+    let preview = twydo_core::retired::preview(&cfg, COLL).unwrap();
+    let b = twydo_core::retired::forget(&cfg, &preview, chrono::Utc::now()).unwrap();
+    let (code, error) = p.tdo_sync();
+    assert_eq!(code, 0, "{error}");
+    assert!(
+        !p.server().join(COLL).exists(),
+        "must not recreate the deleted server list"
+    );
+    assert!(!p.vdir().join(COLL).exists());
+    assert!(p.vdir().join("c2/keep.ics").exists());
+    assert_eq!(twydo_core::retired::get(&cfg, &b.id).unwrap().tasks, 3);
+    assert_eq!(p.tdo_sync().0, 0, "cached list set must stay usable");
+}
+
+#[test]
+fn forgetting_the_last_collection_does_not_resurrect_it() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    fs::remove_dir_all(p.server().join(COLL)).unwrap();
+    let mut cfg =
+        twydo_core::config::Config::load(&p.root().join("config/twydo/config.toml")).unwrap();
+    cfg.state_dir = Some(p.state().join("twydo"));
+    twydo_core::retired::forget(
+        &cfg,
+        &twydo_core::retired::preview(&cfg, COLL).unwrap(),
+        chrono::Utc::now(),
+    )
+    .unwrap();
+    let (code, error) = p.tdo_sync();
+    assert_eq!(code, 0, "{error}");
+    assert!(!p.server().join(COLL).exists());
+    assert!(!p.vdir().join(COLL).exists());
+}
