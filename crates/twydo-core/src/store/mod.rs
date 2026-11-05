@@ -338,6 +338,16 @@ impl Store {
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let plan = self.plan(snap, op, now)?;
         let holds = plan.holds;
+        let member_parent = match op {
+            Op::Create(n) => n.parent.as_deref().and_then(|uid| snap.find(uid)),
+            Op::Edit { uid, .. } | Op::Save { uid, .. } | Op::Delete { uid } => {
+                snap.find(uid).and_then(|i| snap.parent(i))
+            }
+            _ => None,
+        };
+        let durable_holds = member_parent.is_some_and(|p| {
+            snap.tasks[p].kind == crate::model::TaskKind::Checklist && snap.tasks[p].rrule.is_some()
+        });
         let family = self.family_of(snap, op)?;
         let entry = Entry {
             format: FORMAT,
@@ -348,6 +358,11 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: None,
             synced: None,
+            holds: if durable_holds {
+                holds.clone()
+            } else {
+                Vec::new()
+            },
             writes: plan.writes,
         };
 
@@ -399,6 +414,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: None,
             synced: None,
+            holds: Vec::new(),
             writes: vec![Write {
                 path: path.to_string(),
                 before: expect.map(str::to_string),
@@ -481,6 +497,9 @@ impl Store {
         for w in &e.writes {
             self.check_holds(&w.path, w.after.as_deref())?;
         }
+        for (rel, content) in &e.holds {
+            self.check_holds(rel, Some(content))?;
+        }
         let writes = e
             .writes
             .iter()
@@ -500,6 +519,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: Some(id.to_string()),
             synced: None,
+            holds: e.holds,
             writes,
         })
     }
@@ -667,7 +687,17 @@ impl Store {
             Op::Create(n) => {
                 let uid = new_uid();
                 let parent_json_uid = n.parent.as_deref().and_then(|p| parent_json_uid(snap, p));
-                let cal = new_task(n, &uid, parent_json_uid.as_deref(), now)?;
+                // The C29 phone baseline copies a recurring checklist's due onto a
+                // newly added item. Its dates remain inherited, not independent input.
+                let mut inherited = n.clone();
+                if let Some(p) = n.parent.as_deref().and_then(|p| snap.find(p))
+                    && snap.tasks[p].kind == crate::model::TaskKind::Checklist
+                    && snap.tasks[p].rrule.is_some()
+                    && let Some(crate::ical::value::IcalDateTime::Date(due)) = snap.tasks[p].due
+                {
+                    inherited.due = Some(crate::edit::Due::Date(due));
+                }
+                let cal = new_task(&inherited, &uid, parent_json_uid.as_deref(), now)?;
                 let w = create(&n.collection, &uid, &cal)?;
                 let mut plan = one("create", &uid, w);
                 // The parent the gate checked must still be as loaded: not removed, nor
@@ -687,7 +717,15 @@ impl Store {
                 let t = self.target(snap, uid)?;
                 let mut cal = t.cal.clone();
                 apply_changes(&mut cal, changes, now)?;
-                one("edit", uid, t.update(&cal)?)
+                let mut plan = one("edit", uid, t.update(&cal)?);
+                if let Some(p) = snap.find(uid).and_then(|i| snap.parent(i))
+                    && snap.tasks[p].kind == crate::model::TaskKind::Checklist
+                    && snap.tasks[p].rrule.is_some()
+                {
+                    plan.holds
+                        .push(self.target(snap, &snap.tasks[p].uid)?.hold());
+                }
+                plan
             }
             Op::Complete { uid } if let Some(i) = parent(uid) => {
                 self.plan_family_complete(snap, i, self.target(snap, uid)?, now)?
@@ -756,7 +794,18 @@ impl Store {
             }
             Op::Delete { uid } => {
                 let t = self.target(snap, uid)?;
-                one("delete", uid, t.remove())
+                let mut plan = one("delete", uid, t.remove());
+                if let Some(p) = snap.find(uid).and_then(|i| snap.parent(i)) {
+                    // The gate depends on the parent's schedule and open siblings.
+                    // Hold all of them until the deletion commits under the shared lock.
+                    for &i in std::iter::once(&p).chain(snap.children(p)) {
+                        if snap.tasks[i].uid != *uid {
+                            plan.holds
+                                .push(self.target(snap, &snap.tasks[i].uid)?.hold());
+                        }
+                    }
+                }
+                plan
             }
         })
     }

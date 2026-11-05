@@ -147,6 +147,11 @@ target, and the directory is fsynced. Removals unlink and then fsync the directo
   `null` means the file is absent, so `before: null` creates a file and `after: null` deletes
   one.
 - `synced` (optional): when a sync confirmed that the server holds the result.
+- `holds` (optional): read dependencies as `[relative path, full contents]` pairs.
+  Recurring-checklist item operations retain the parent bytes (and deletion also
+  retains sibling bytes) here. Apply, recovery, undo and redo require them to remain
+  unchanged. They are never written or treated as sync mutations. Older entries
+  without this field have no durable read dependencies.
 
 Writes are ordered so that a completed occurrence is created before its live task advances: if
 an operation stops halfway, there is never a live task that has moved on without its history

@@ -18,6 +18,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         stage: Stage::Prepared,
         inverse_of: None,
         synced: None,
+        holds: Vec::new(),
         writes,
     }
 }
@@ -468,4 +469,46 @@ fn prune_removes_only_synced_before_cutoff() {
     let ids: Vec<_> = j.list().unwrap().into_iter().map(|e| e.id).collect();
     assert_eq!(ids, vec!["a-2", "a-3", "a-4", "a-5", "a-6"]);
     assert!(!dir.path().join("journal/a-1.json").exists());
+}
+
+#[test]
+fn read_dependencies_block_all_writes_and_older_entries_need_none() {
+    let vdir = tempfile::tempdir().unwrap();
+    fs::create_dir(vdir.path().join("list")).unwrap();
+    fs::write(vdir.path().join("list/parent.ics"), "new parent").unwrap();
+    fs::write(vdir.path().join("list/item.ics"), "item").unwrap();
+    let mut e = entry(
+        "20261101T120000Z-000000aa",
+        vec![w("list/item.ics", Some("item"), None)],
+    );
+    e.holds = vec![("list/parent.ics".into(), "loaded parent".into())];
+    assert!(matches!(
+        apply_entry(vdir.path(), &e),
+        Err(ApplyError::Conflict { .. })
+    ));
+    assert_eq!(
+        read(&vdir.path().join("list/item.ics")).as_deref(),
+        Some("item")
+    );
+    let encoded = serde_json::to_value(&e).unwrap();
+    let restored: Entry = serde_json::from_value(encoded.clone()).unwrap();
+    assert_eq!(restored.holds, e.holds);
+    let mut old = encoded;
+    old.as_object_mut().unwrap().remove("holds");
+    let old: Entry = serde_json::from_value(old).unwrap();
+    assert!(old.holds.is_empty());
+    for invalid in ["../outside.ics", "/absolute.ics"] {
+        e.holds = vec![(invalid.into(), "x".into())];
+        assert!(matches!(
+            apply_entry(vdir.path(), &e),
+            Err(ApplyError::InvalidPath(_))
+        ));
+    }
+    e.holds = vec![("list/parent.ics".into(), "new parent".into())];
+    apply_entry(vdir.path(), &e).unwrap();
+    assert!(!vdir.path().join("list/item.ics").exists());
+    assert_eq!(
+        read(&vdir.path().join("list/parent.ics")).as_deref(),
+        Some("new parent")
+    );
 }

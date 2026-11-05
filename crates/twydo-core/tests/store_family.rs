@@ -1210,3 +1210,429 @@ mod recurrence_phone_captures {
         }
     }
 }
+
+mod monthly_checklist_writes {
+    use super::*;
+    use crate::common::{dtstamp, recurrence::*, todo};
+    use twydo_core::edit::Due;
+    use twydo_core::repeatinput;
+
+    fn env(step: &str) -> Env {
+        Env::new(WriteMode::Test, &format!("{CHECKLIST_B}/{step}"))
+    }
+    fn cal(step: &str, uid: &str) -> twydo_core::ical::Calendar {
+        parse(&fixture(CHECKLIST_B, step, uid)).unwrap()
+    }
+    fn member(s: &twydo_core::views::Snapshot, parent: &str, title: &str) -> String {
+        s.children(s.find(parent).unwrap())
+            .iter()
+            .map(|&c| &s.tasks[c])
+            .find(|t| t.summary == title)
+            .unwrap()
+            .uid
+            .clone()
+    }
+
+    #[test]
+    fn monthly_checklist_creation_conversion_and_member_creation_match_phone() {
+        let evidence = cal("010-phone-create-convert", CHECKLIST_A_UID);
+        let e = env("002-seeded");
+        let mut store = e.store(checklist_candidate_matrix());
+        let op = Op::Create(NewTask {
+            kind: TaskKind::Checklist,
+            due: Some(Due::Date(
+                chrono::NaiveDate::from_ymd_opt(2026, 12, 10).unwrap(),
+            )),
+            repeat: repeatinput::parse("monthly", now().date_naive(), &[]).unwrap(),
+            ..NewTask::plain("list1", "a")
+        });
+        let at = dtstamp(&evidence);
+        store.apply(&e.snap(), &op, at).unwrap();
+        let entry = e.journal().pop().unwrap();
+        assert_eq!(entry.writes.len(), 1);
+        let created = parse(entry.writes[0].after.as_ref().unwrap().as_bytes()).unwrap();
+        let uid = todo(&created).prop("UID").unwrap().value.clone();
+        same(
+            "direct checklist create",
+            &created,
+            &evidence,
+            &BTreeMap::from([(uid, CHECKLIST_A_UID.into())]),
+        );
+        let evidence = cal("010-phone-create-convert", CHECKLIST_B_UID);
+        store
+            .apply(
+                &e.snap(),
+                &Op::Edit {
+                    uid: CHECKLIST_B_UID.into(),
+                    changes: vec![Change::Kind(TaskKind::Checklist)],
+                },
+                dtstamp(&evidence),
+            )
+            .unwrap();
+        let converted = parse(&fs::read(e.file(CHECKLIST_B_UID)).unwrap()).unwrap();
+        let (got_lines, got_meta) = comparable(&converted, &BTreeMap::new());
+        let (want_lines, mut want_meta) = comparable(&evidence, &BTreeMap::new());
+        assert_eq!(
+            got_meta.get_str("uid"),
+            Some(CHECKLIST_B_UID),
+            "Twydo uses the public UID as parent identity"
+        );
+        assert_ne!(
+            want_meta.get_str("uid"),
+            Some(CHECKLIST_B_UID),
+            "phone creates its own internal parent identity"
+        );
+        want_meta.set_str("uid", CHECKLIST_B_UID);
+        assert_eq!(
+            (got_lines, got_meta),
+            (want_lines, want_meta),
+            "conversion differs only in explicitly mapped internal parent identity"
+        );
+
+        let e = env("010-phone-create-convert");
+        let mut store = e.store(checklist_candidate_matrix());
+        let phone = Env::new(
+            WriteMode::Test,
+            &format!("{CHECKLIST_B}/011-phone-items-and-text"),
+        );
+        let phone_uid = member(&phone.snap(), CHECKLIST_B_UID, "q");
+        let evidence = cal("011-phone-items-and-text", &phone_uid);
+        store
+            .apply(
+                &e.snap(),
+                &Op::Create(NewTask {
+                    parent: Some(CHECKLIST_B_UID.into()),
+                    ..NewTask::plain("list1", "q")
+                }),
+                dtstamp(&evidence),
+            )
+            .unwrap();
+        let entry = e.journal().pop().unwrap();
+        assert_eq!(entry.writes.len(), 1);
+        let created = parse(entry.writes[0].after.as_ref().unwrap().as_bytes()).unwrap();
+        let uid = todo(&created).prop("UID").unwrap().value.clone();
+        same(
+            "new checklist item inherits date",
+            &created,
+            &evidence,
+            &BTreeMap::from([(uid, phone_uid)]),
+        );
+    }
+
+    #[test]
+    fn individual_checklist_deletion_matches_phone_and_undo_redo() {
+        let e = env("011-phone-items-and-text");
+        let mut store = e.store(checklist_candidate_matrix());
+        let before = e.files();
+        for parent in [CHECKLIST_A_UID, CHECKLIST_B_UID] {
+            let uid = member(&e.snap(), parent, "q");
+            store.apply(&e.snap(), &Op::Delete { uid }, now()).unwrap();
+        }
+        let phone = env("011d-phone-delete-items");
+        assert_eq!(e.files(), phone.files(), "only deleted bytes differ");
+        let after = e.files();
+        assert!(
+            e.journal()
+                .iter()
+                .all(|j| j.writes.len() == 1 && j.writes[0].after.is_none())
+        );
+        store.undo_last(now()).unwrap();
+        store.undo_last(now()).unwrap();
+        assert_eq!(e.files(), before);
+        store.redo_last(now()).unwrap();
+        store.redo_last(now()).unwrap();
+        assert_eq!(e.files(), after);
+    }
+
+    #[test]
+    fn item_delete_refuses_changed_parent_or_sibling_without_writes() {
+        for change in ["parent", "sibling", "missing-sibling", "new-sibling"] {
+            let e = env("011-phone-items-and-text");
+            let mut store = e.store(checklist_candidate_matrix());
+            let snap = e.snap();
+            let uid = member(&snap, CHECKLIST_A_UID, "q");
+            let sibling = member(&snap, CHECKLIST_A_UID, "z");
+            match change {
+                "parent" => {
+                    let p = e.file(CHECKLIST_A_UID);
+                    fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                }
+                "sibling" => {
+                    let p = e.file(&sibling);
+                    fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                }
+                "missing-sibling" => fs::remove_file(e.file(&sibling)).unwrap(),
+                "new-sibling" => {
+                    let text = fs::read_to_string(e.file(&sibling))
+                        .unwrap()
+                        .replace(&sibling, "new-synthetic-sibling");
+                    fs::write(e.file("new-synthetic-sibling"), text).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let before = e.files();
+            let result = store.apply(&snap, &Op::Delete { uid }, now());
+            assert!(
+                matches!(result, Err(WriteError::Stale(_))),
+                "{change}: {result:?}"
+            );
+            assert_eq!(e.files(), before);
+            assert!(e.journal().is_empty());
+        }
+    }
+    #[test]
+    fn checklist_text_edits_match_phone_and_mixed_schedule_save_is_atomic() {
+        let e = env("010-phone-create-convert");
+        let mut store = e.store(checklist_candidate_matrix());
+        for (uid, title) in [(CHECKLIST_A_UID, "A"), (CHECKLIST_B_UID, "B")] {
+            let want = cal("011-phone-items-and-text", uid);
+            let before = e.files();
+            store
+                .apply(
+                    &e.snap(),
+                    &Op::Edit {
+                        uid: uid.into(),
+                        changes: vec![
+                            Change::Summary(title.into()),
+                            Change::Description(Some("x".into())),
+                        ],
+                    },
+                    dtstamp(&want),
+                )
+                .unwrap();
+            let got = parse(&fs::read(e.file(uid)).unwrap()).unwrap();
+            same("parent text fields", &got, &want, &BTreeMap::new());
+            for (path, bytes) in before {
+                if path != key(uid) {
+                    assert_eq!(e.files()[&path], bytes);
+                }
+            }
+        }
+        let before = e.files();
+        let journal_len = e.journal().len();
+        let op = Op::Save {
+            uid: CHECKLIST_A_UID.into(),
+            changes: vec![
+                Change::Summary("unsaved".into()),
+                Change::Due(Some(Due::Date(
+                    chrono::NaiveDate::from_ymd_opt(2026, 12, 11).unwrap(),
+                ))),
+            ],
+            to: None,
+        };
+        assert!(store.apply(&e.snap(), &op, now()).is_err());
+        assert_eq!(e.files(), before);
+        assert_eq!(e.journal().len(), journal_len);
+    }
+
+    #[test]
+    fn checklist_completion_after_deletion_matches_phone_history_and_reset() {
+        let e = env("011d-phone-delete-items");
+        let mut store = e.store(checklist_candidate_matrix());
+        let phone = env("012-phone-family-complete");
+        let after_snap = phone.snap();
+        for parent in [CHECKLIST_A_UID, CHECKLIST_B_UID] {
+            let uid = member(&e.snap(), parent, "z");
+            let title = e.snap().tasks[e.snap().find(parent).unwrap()]
+                .summary
+                .clone();
+            let history_parent = after_snap
+                .tasks
+                .iter()
+                .find(|t| t.summary == title && t.status == twydo_core::model::Status::Completed)
+                .unwrap();
+            let child = after_snap.children(after_snap.find(&history_parent.uid).unwrap())[0];
+            let item_at = crate::common::completed(&cal(
+                "012-phone-family-complete",
+                &after_snap.tasks[child].uid,
+            ));
+            store
+                .apply(&e.snap(), &Op::Complete { uid: uid.clone() }, item_at)
+                .unwrap();
+            assert_eq!(
+                e.snap().tasks[e.snap().find(parent).unwrap()].status,
+                twydo_core::model::Status::Open
+            );
+            let before = e.files();
+            let parent_at =
+                crate::common::completed(&cal("012-phone-family-complete", &history_parent.uid));
+            store
+                .apply(&e.snap(), &Op::Complete { uid: parent.into() }, parent_at)
+                .unwrap();
+            let entry = e.journal().pop().unwrap();
+            assert_eq!(entry.writes.len(), 4);
+            let mut ids = BTreeMap::new();
+            for w in entry.writes.iter().filter(|w| w.before.is_none()) {
+                let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+                let t = todo(&got);
+                let ours = t.prop("UID").unwrap().value.clone();
+                let theirs = if t.prop("RELATED-TO").is_some() {
+                    after_snap.tasks[child].uid.clone()
+                } else {
+                    history_parent.uid.clone()
+                };
+                ids.insert(ours, theirs);
+            }
+            for w in &entry.writes {
+                let got = parse(w.after.as_ref().unwrap().as_bytes()).unwrap();
+                let ours = &todo(&got).prop("UID").unwrap().value;
+                let theirs = ids.get(ours).unwrap_or(ours);
+                let mut want = cal("012-phone-family-complete", theirs);
+                if parent == CHECKLIST_B_UID && ours == &uid {
+                    // Captured alternatives, not ignored metadata: the phone's A
+                    // reset retains explicit 0; its converted B reset omits it.
+                    // Keep the existing explicit-zero writer and require its
+                    // subsequent phone return before promoting candidate verdicts.
+                    assert_eq!(todo(&got).prop("PERCENT-COMPLETE").unwrap().value, "0");
+                    assert!(todo(&want).prop("PERCENT-COMPLETE").is_none());
+                    assert_eq!(todo(&want).prop("STATUS").unwrap().value, "NEEDS-ACTION");
+                    want.root
+                        .children_named_mut("VTODO")
+                        .next()
+                        .unwrap()
+                        .insert_prop(
+                            twydo_core::ical::Property::new("PERCENT-COMPLETE", vec![], "0"),
+                            None,
+                        );
+                }
+                same("post-delete family reset", &got, &want, &ids);
+            }
+            store.undo_last(parent_at).unwrap();
+            assert_eq!(e.files(), before);
+            store.redo_last(parent_at).unwrap();
+        }
+        assert_eq!(e.files().len(), 9);
+        assert!(!e.snap().tasks.iter().any(|t| t.summary == "q"));
+    }
+
+    #[test]
+    fn checklist_delete_recovery_reuses_record_and_undo_preserves_remote_edit() {
+        let e = env("011-phone-items-and-text");
+        let mut store = e.store(checklist_candidate_matrix());
+        let before = e.files();
+        let uid = member(&e.snap(), CHECKLIST_A_UID, "q");
+        store
+            .apply(&e.snap(), &Op::Delete { uid: uid.clone() }, now())
+            .unwrap();
+        let after = e.files();
+        let mut entry = e.journal().pop().unwrap();
+        entry.stage = Stage::Prepared;
+        let recovering = env("011-phone-items-and-text");
+        drop(recovering.store(checklist_candidate_matrix()));
+        Journal::open(&recovering.state)
+            .unwrap()
+            .prepare(&entry)
+            .unwrap();
+        let (_, report) = Store::open_with(&recovering.cfg, checklist_candidate_matrix()).unwrap();
+        assert!(report.stuck.is_empty());
+        assert_eq!(recovering.files(), after);
+        // A remotely recreated/edited item must not be overwritten by undo.
+        let remote = String::from_utf8(before[&key(&uid)].clone())
+            .unwrap()
+            .replace("SUMMARY:q", "SUMMARY:remote synthetic");
+        fs::write(e.file(&uid), remote.as_bytes()).unwrap();
+        let with_remote = e.files();
+        assert!(matches!(store.undo_last(now()), Err(WriteError::Stale(_))));
+        assert_eq!(e.files(), with_remote);
+    }
+    #[test]
+    fn checklist_delete_dependencies_survive_undo_redo_and_recovery() {
+        for action in [
+            "undo-parent-removed",
+            "redo-sibling-removed",
+            "recover-parent-changed",
+        ] {
+            let e = env("011-phone-items-and-text");
+            let mut store = e.store(checklist_candidate_matrix());
+            let snap = e.snap();
+            let uid = member(&snap, CHECKLIST_A_UID, "q");
+            let sibling = member(&snap, CHECKLIST_A_UID, "z");
+            let id = store
+                .apply(&snap, &Op::Delete { uid: uid.clone() }, now())
+                .unwrap();
+            match action {
+                "undo-parent-removed" => {
+                    fs::remove_file(e.file(CHECKLIST_A_UID)).unwrap();
+                    let before = e.files();
+                    assert!(matches!(store.undo_last(now()), Err(WriteError::Stale(_))));
+                    assert_eq!(e.files(), before);
+                    assert!(!e.file(&uid).exists(), "undo cannot recreate an orphan");
+                }
+                "redo-sibling-removed" => {
+                    store.undo_last(now()).unwrap();
+                    fs::remove_file(e.file(&sibling)).unwrap();
+                    let before = e.files();
+                    assert!(matches!(store.redo_last(now()), Err(WriteError::Stale(_))));
+                    assert_eq!(e.files(), before);
+                    assert!(e.file(&uid).exists(), "redo cannot delete the last item");
+                }
+                "recover-parent-changed" => {
+                    let mut entry = Journal::open(&e.state).unwrap().get(&id).unwrap().unwrap();
+                    entry.stage = Stage::Prepared;
+                    Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+                    // Simulate crash before the removal, followed by an independent edit.
+                    fs::write(
+                        e.file(&uid),
+                        entry
+                            .writes
+                            .iter()
+                            .find(|w| w.path == key(&uid))
+                            .unwrap()
+                            .before
+                            .as_ref()
+                            .unwrap(),
+                    )
+                    .unwrap();
+                    let p = e.file(CHECKLIST_A_UID);
+                    let bytes = fs::read(&p).unwrap();
+                    fs::write(p, [bytes, b"\r\n".to_vec()].concat()).unwrap();
+                    let before = e.files();
+                    let (_, report) =
+                        Store::open_with(&e.cfg, checklist_candidate_matrix()).unwrap();
+                    assert_eq!(report.stuck.len(), 1);
+                    assert_eq!(e.files(), before);
+                    assert!(e.file(&uid).exists());
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn checklist_item_text_edits_hold_the_parent_for_edit_and_save() {
+        for grouped in [false, true] {
+            for removed in [false, true] {
+                let e = env("011-phone-items-and-text");
+                let mut store = e.store(checklist_candidate_matrix());
+                let snap = e.snap();
+                let uid = member(&snap, CHECKLIST_A_UID, "z");
+                let p = e.file(CHECKLIST_A_UID);
+                if removed {
+                    fs::remove_file(p).unwrap();
+                } else {
+                    let text = fs::read_to_string(&p)
+                        .unwrap()
+                        .replace("FREQ=MONTHLY", "FREQ=WEEKLY");
+                    fs::write(p, text).unwrap();
+                }
+                let changes = vec![Change::Summary("kept unsaved".into())];
+                let op = if grouped {
+                    Op::Save {
+                        uid,
+                        changes,
+                        to: None,
+                    }
+                } else {
+                    Op::Edit { uid, changes }
+                };
+                let before = e.files();
+                assert!(matches!(
+                    store.apply(&snap, &op, now()),
+                    Err(WriteError::Stale(_))
+                ));
+                assert_eq!(e.files(), before);
+                assert!(e.journal().is_empty());
+            }
+        }
+    }
+}

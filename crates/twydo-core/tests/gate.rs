@@ -3093,3 +3093,148 @@ fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_fore
         );
     }
 }
+
+mod recurring_checklist_writes {
+    use super::*;
+    use crate::common::{Env, recurrence::*};
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::{Status, TaskKind};
+
+    fn env(step: &str) -> Env {
+        Env::new(WriteMode::Test, &format!("{CHECKLIST_B}/{step}"))
+    }
+
+    fn parent() -> NewTask {
+        NewTask {
+            kind: TaskKind::Checklist,
+            due: Some(Due::Date(date(2026, 12, 10))),
+            repeat: Some(repeat("monthly")),
+            ..NewTask::plain("list1", "c")
+        }
+    }
+
+    #[test]
+    fn candidate_checklist_rows_allow_only_captured_creation_and_text_conversion() {
+        let e = env("010-phone-create-convert");
+        let s = e.snap();
+        let m = checklist_candidate_matrix();
+        for op in [
+            Op::Create(parent()),
+            Op::Create(NewTask {
+                parent: Some(CHECKLIST_A_UID.into()),
+                ..NewTask::plain("list1", "x")
+            }),
+            edit(
+                CHECKLIST_A_UID,
+                vec![
+                    Change::Summary("A".into()),
+                    Change::Description(Some("x".into())),
+                ],
+            ),
+            edit("twydo-p8-c29-d", vec![Change::Kind(TaskKind::Checklist)]),
+        ] {
+            assert!(
+                check(&s, &m, WriteMode::Test, &op, today()).is_ok(),
+                "{op:?}"
+            );
+            assert!(
+                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
+                "candidate evidence cannot bypass phone acceptance"
+            );
+        }
+        for change in [
+            Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+            Change::Start(Some(date(2026, 12, 9))),
+            Change::RepeatInterval(2),
+            Change::Kind(TaskKind::Project),
+        ] {
+            assert!(
+                check(
+                    &s,
+                    &m,
+                    WriteMode::Test,
+                    &edit(CHECKLIST_A_UID, vec![change.clone()]),
+                    today()
+                )
+                .is_err(),
+                "{change:?}"
+            );
+        }
+        for text in [
+            "weekly",
+            "yearly",
+            "2m",
+            "monthly after done",
+            "monthly 2 times",
+        ] {
+            let mut n = parent();
+            if let Ok(Some(spec)) = twydo_core::repeatinput::parse(text, today(), &[]) {
+                n.repeat = Some(spec);
+                assert!(
+                    check(&s, &m, WriteMode::Test, &Op::Create(n), today()).is_err(),
+                    "{text}"
+                );
+            } else {
+                panic!("invalid negative repeat: {text}");
+            }
+        }
+        for n in [
+            NewTask {
+                start: Some(date(2026, 12, 9)),
+                ..parent()
+            },
+            NewTask {
+                due: Some(Due::Time(date(2026, 12, 10).and_hms_opt(9, 0, 0).unwrap())),
+                ..parent()
+            },
+            NewTask {
+                due: Some(Due::Date(date(2026, 12, 31))),
+                ..parent()
+            },
+        ] {
+            assert!(
+                check(&s, &m, WriteMode::Test, &Op::Create(n.clone()), today()).is_err(),
+                "{n:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn individual_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
+        let e = env("011-phone-items-and-text");
+        let mut s = e.snap();
+        let m = checklist_candidate_matrix();
+        let p = s.find(CHECKLIST_A_UID).unwrap();
+        let q = *s
+            .children(p)
+            .iter()
+            .find(|&&c| s.tasks[c].summary == "q")
+            .unwrap();
+        let other = *s.children(p).iter().find(|&&c| c != q).unwrap();
+        let op = Op::Delete {
+            uid: s.tasks[q].uid.clone(),
+        };
+        assert!(check(&s, &m, WriteMode::Test, &op, today()).is_ok());
+        let mut missing = m.clone();
+        missing
+            .operation
+            .retain(|r| r.case != "recurring-checklist-item");
+        assert!(check(&s, &missing, WriteMode::Test, &op, today()).is_err());
+        for which in [p, q, other] {
+            s.tasks[which].status = Status::Completed;
+            assert!(
+                check(&s, &m, WriteMode::Test, &op, today()).is_err(),
+                "completed family member {which}"
+            );
+            s.tasks[which].status = Status::Open;
+        }
+        s.tasks[p].rrule = Some("FREQ=WEEKLY".into());
+        assert!(check(&s, &m, WriteMode::Test, &op, today()).is_err());
+        s.tasks[p].rrule = Some("FREQ=MONTHLY".into());
+        s.tasks[q].due = Some(IcalDateTime::Date(date(2026, 12, 11)));
+        assert!(
+            check(&s, &m, WriteMode::Test, &op, today()).is_err(),
+            "foreign child schedule"
+        );
+    }
+}
