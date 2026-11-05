@@ -229,3 +229,27 @@ q deleted and excluded from history, all earlier baseline resources unchanged
 except the intended d conversion. A private runner's initial expected-total
 arithmetic was corrected from 15 to 16 before production use. No candidate
 production write/upload has occurred at this checkpoint.
+
+## C29-20 candidate writer and clean upload
+
+A fresh B-only pull was byte-identical to the 012 phone checkpoint. The approved
+16 CLI operations then created c directly, converted d, added x/q to each, changed
+parent titles/notes and item titles, deleted only q, ticked z and manually completed
+each parent. Candidate process configuration uses the shared vdir/state/lock with
+after-edit sync disabled and baseline-only scratch rows; normal mode/configuration
+stay verified and unchanged. No operation touched capture A.
+
+B-only captures 020–026 retain the create/convert, item-text, deletion and reset
+barriers for both writer branches. Exactly the intended one-resource edits/removals
+and four-resource family resets occurred. B finishes with 16 resources: original
+A/B baselines/history untouched, D converted in place, and C/D live z items with
+one completed history pair each. C/D are open monthly checklists due January 10;
+q is absent from live and history. Each journal entry's writes and durable read
+dependencies stay inside B.
+
+Scoped upload succeeds without conflicts; `027-twydo-upload` is byte-identical to
+026, all 16 operation entries are confirmed synced, and all other collection bytes
+and normal configuration remain unchanged. Privacy scan passes before importing
+only these B snapshots. Phone inspection and note edit (C29-21), next family
+execution (C29-22) and item edit (C29-23) remain pending. **No shipping capability
+verdict is promoted from local execution/upload.**

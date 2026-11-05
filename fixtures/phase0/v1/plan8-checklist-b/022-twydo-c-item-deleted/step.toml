@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "022-twydo-c-item-deleted"
+device = "twydo"
+action = "B-only candidate writer barrier c-delete-q. Earlier baseline resources unchanged except intended d conversion; no shipping verdict promotion."
+captured_at = "2026-11-05T09:45:00Z"

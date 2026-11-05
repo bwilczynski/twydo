@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "024-twydo-d-items-text"
+device = "twydo"
+action = "B-only candidate writer barrier d-item-text. Earlier baseline resources unchanged except intended d conversion; no shipping verdict promotion."
+captured_at = "2026-11-05T09:45:00Z"
