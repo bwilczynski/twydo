@@ -274,10 +274,11 @@ fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String>
 
 /// Apply the result delivered by the manual sync worker.
 fn finish_sync(app: &mut App, root: &Path, message: String) {
-    app.sync_finished(message);
     // Sync may have applied changes even if it failed. Do not rely on watcher delivery.
+    // Reload before reporting, so a failed reload cannot hide what the sync said.
     reload(app, root);
     refresh_sync(app);
+    app.sync_finished(message);
 }
 
 #[cfg(test)]
@@ -286,10 +287,11 @@ mod tests {
     use twydo_core::config::Config;
     use twydo_core::views::View;
 
-    #[test]
-    fn sync_completion_refreshes_an_emptied_list_without_watcher_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("vdir");
+    const FORCE_DELETE: &str = "list \"inbox\" was emptied on the server; to apply that here run: tdo sync --force-delete \"inbox\"";
+
+    /// An app over a vdir with one synthetic task in `inbox`, showing that list.
+    fn inbox_app(dir: &Path) -> (App, PathBuf, PathBuf) {
+        let root = dir.join("vdir");
         let list = root.join("inbox");
         std::fs::create_dir_all(&list).unwrap();
         let file = list.join("task.ics");
@@ -299,11 +301,18 @@ mod tests {
         )
         .unwrap();
         let mut cfg = Config::with_vdir(root.clone());
-        cfg.state_dir = Some(dir.path().join("state"));
+        cfg.state_dir = Some(dir.join("state"));
         let snapshot = Snapshot::new(twydo_core::vdir::load(&root).unwrap(), cfg);
         let mut app = App::new(snapshot, Utc::now().with_timezone(&chrono_tz::UTC));
         app.view = View::List("inbox".into());
         assert_eq!(app.visible_rows().len(), 1);
+        (app, root, file)
+    }
+
+    #[test]
+    fn sync_completion_refreshes_an_emptied_list_without_watcher_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, file) = inbox_app(dir.path());
 
         // The sync child applied an empty server list. No watcher is running.
         std::fs::remove_file(file).unwrap();
@@ -313,5 +322,47 @@ mod tests {
         assert!(app.snapshot.tasks.is_empty());
         assert_eq!(app.view, View::List("inbox".into()));
         assert_eq!(app.message.as_deref(), Some(crate::app::SYNC_DONE));
+    }
+
+    #[test]
+    fn a_failed_sync_keeps_its_message_after_the_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, _) = inbox_app(dir.path());
+
+        finish_sync(&mut app, &root, FORCE_DELETE.into());
+
+        assert_eq!(app.message.as_deref(), Some(FORCE_DELETE));
+        app.expire_message(Utc::now().with_timezone(&chrono_tz::UTC) + chrono::Duration::hours(1));
+        assert_eq!(app.message.as_deref(), Some(FORCE_DELETE), "errors stay");
+    }
+
+    #[test]
+    fn a_failed_reload_does_not_hide_the_sync_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, _) = inbox_app(dir.path());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        finish_sync(&mut app, &root, FORCE_DELETE.into());
+        let shown = app.message.clone().unwrap();
+        assert!(shown.starts_with(FORCE_DELETE), "{shown}");
+        assert!(shown.contains("reload failed: "), "{shown}");
+
+        // A reload that works later must not clear the instruction.
+        let (_, root, _) = inbox_app(dir.path());
+        reload(&mut app, &root);
+        assert_eq!(app.message.as_deref(), Some(shown.as_str()));
+    }
+
+    #[test]
+    fn a_failed_reload_after_a_good_sync_shows_the_reload_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, _) = inbox_app(dir.path());
+        std::fs::remove_dir_all(&root).unwrap();
+
+        finish_sync(&mut app, &root, crate::app::SYNC_DONE.into());
+        let shown = app.message.clone().unwrap();
+        assert!(shown.starts_with("reload failed: "), "{shown}");
+        app.expire_message(Utc::now().with_timezone(&chrono_tz::UTC) + chrono::Duration::hours(1));
+        assert_eq!(app.message.as_deref(), Some(shown.as_str()), "errors stay");
     }
 }

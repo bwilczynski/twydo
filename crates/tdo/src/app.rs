@@ -433,9 +433,23 @@ impl App {
     }
 
     /// A background sync ended: show its first stderr line, or `sync done`.
+    ///
+    /// The loop reloads before reporting. If that reload failed, its error stays visible next
+    /// to the sync's message (which may be a `--force-delete` instruction), and neither clears
+    /// itself. The combined text is not the recorded reload error, so a later reload that works
+    /// does not clear the sync's message either.
     pub fn sync_finished(&mut self, message: String) {
-        self.transient = (message == SYNC_DONE).then(|| (message.clone(), None));
-        self.message = Some(message);
+        let reload_error = self
+            .reload_error
+            .clone()
+            .filter(|e| self.message.as_ref() == Some(e));
+        let text = match reload_error {
+            Some(e) if message == SYNC_DONE => e,
+            Some(e) => format!("{message} · {e}"),
+            None => message,
+        };
+        self.transient = (text == SYNC_DONE).then(|| (text.clone(), None));
+        self.message = Some(text);
     }
 
     /// The unresolved conflicts, as of the last summary.

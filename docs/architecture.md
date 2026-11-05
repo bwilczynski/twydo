@@ -229,6 +229,7 @@ only one sync runs at a time), then the vdir lock, then the conflicts lock.
 ## Reading
 
 The TUI loads the whole vdir into a snapshot, renders views from it, and reloads when files in
-the vdir change (for example after a sync) and once a minute, so "today" and the date groups stay
+the vdir change (for example after a sync) and when a manual `:sync` finishes, without waiting
+for the watcher. Once a minute it moves its clock on, so "today" and the date groups stay
 current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.
