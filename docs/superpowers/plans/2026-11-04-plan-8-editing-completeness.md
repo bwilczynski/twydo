@@ -81,7 +81,7 @@ it does not mean the code is known to produce the right result.
 
 | Gap | Actual state | Required next step |
 |---|---|---|
-| Complete a repeat with an end date (`until`) | Implemented, gated by `mod:until.execute`. Only the final occurrence was captured; continuation/history end fields are inferred | Capture continuation, an occurrence landing exactly on the boundary, and final completion; compare live and history resources |
+| Complete a repeat with an end date (`until`) | Captured continuation and history, inclusive boundary, and final completion for date-only daily/plain-monthly rules; scoped by the gate | Other until shapes remain unverified |
 | Set/remove/reshape daily and yearly repeats | Implemented, `repeat` rows lack Twydo round trips; interval-only edits already work | Capture setting, reshaping and removing, in both directions; keep those actions distinct from interval edits |
 | Edit an existing from-completion task | Implemented, `from-completion.edit` has no baseline | Capture title/notes, due/start/time and interval edits; complete afterwards to check the anchor |
 | Set/remove/reshape from-completion repeats | Implemented, `repeat` row incomplete | Capture switching from due-date to completion-date recurrence and back, changing class/end, and removing recurrence |

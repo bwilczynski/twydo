@@ -2671,6 +2671,45 @@ mod verified_recurrence_shapes {
     }
 
     #[test]
+    fn timed_until_is_refused_for_completion_and_reopening() {
+        for (uid, step, op) in [
+            (U1, SET, Op::Complete { uid: U1.into() }),
+            (U2, SET, Op::Complete { uid: U2.into() }),
+            (U1, END, Op::Reopen { uid: U1.into() }),
+            (U2, END, Op::Reopen { uid: U2.into() }),
+        ] {
+            let mut snap = env(step).snap();
+            assert!(
+                gate::check(
+                    &snap,
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_ok(),
+                "baseline {uid} {step}"
+            );
+            let i = snap.find(uid).unwrap();
+            let rule = snap.tasks[i].rrule.as_mut().unwrap();
+            let start = rule.find("UNTIL=").unwrap() + "UNTIL=".len();
+            let end = rule[start..].find(';').map_or(rule.len(), |n| start + n);
+            rule.replace_range(start..end, "20261120T120000Z");
+            assert!(
+                gate::check(
+                    &snap,
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_err(),
+                "timed until {uid} {step}"
+            );
+        }
+    }
+
+    #[test]
     fn checklist_repeat_permissions_cover_only_the_captured_rules() {
         for step in [SEED, SET] {
             for text in [

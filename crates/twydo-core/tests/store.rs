@@ -933,17 +933,7 @@ mod recurrence_phone_captures {
             .collect();
         assert_eq!(history.len(), 4);
         let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
-        let mut matrix = twydo_core::compat::Matrix::embedded().clone();
-        // These repeat changes are still candidates pending this round's phone follow-up.
-        for case in ["daily", "yearly"] {
-            matrix
-                .operation
-                .iter_mut()
-                .find(|r| r.case == case && r.op == "repeat")
-                .unwrap()
-                .twydo_to_iphone = Verdict::Pass;
-        }
-        let mut store = env.store(matrix);
+        let mut store = env.store(twydo_core::compat::Matrix::embedded().clone());
         for title in ["FCb", "RDb", "RYb", "U1b", "U2b"] {
             let id = uid(title);
             let (op, now) = if title == "RDb" || title == "RYb" {
