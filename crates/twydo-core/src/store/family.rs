@@ -16,20 +16,12 @@
 //! depends on its items.
 
 use std::collections::BTreeSet;
-use std::fs;
-use std::io;
 
 use chrono::{DateTime, Utc};
 
 use super::{Plan, Store, Target, WriteError, create};
 
-/// A family as loaded: the parent's list, its UID and the vdir-relative files of the parent
-/// and every item.
-pub(super) struct Family {
-    collection: String,
-    parent_uid: String,
-    loaded: BTreeSet<String>,
-}
+use super::journal::{FamilyGuard as Family, check_family};
 use crate::edit::Op;
 use crate::edit::{
     Change, apply_changes, complete_member, complete_one_time, complete_recurring,
@@ -110,38 +102,13 @@ impl Store {
     /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
     /// item of the parent that was not loaded. The caller holds the lock.
     pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
-        let dir = self.vdir.join(&f.collection);
-        for e in fs::read_dir(&dir)? {
-            let path = e?.path();
-            if path.extension().is_none_or(|x| x != "ics") {
-                continue;
+        check_family(&self.vdir, f).map_err(|err| match err {
+            super::journal::ApplyError::Conflict { path } => {
+                WriteError::Stale(self.vdir.join(path))
             }
-            let rel = self.rel(&path)?;
-            if f.loaded.contains(&rel) {
-                continue;
-            }
-            let bytes = match fs::read(&path) {
-                Ok(b) => b,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(e.into()),
-            };
-            let needle = f.parent_uid.as_bytes();
-            if !bytes.windows(needle.len()).any(|w| w == needle) {
-                continue;
-            }
-            // Mentions the parent: an item of it, or unreadable (then refuse to be safe).
-            let joined = match ical::parse(&bytes) {
-                Ok(cal) => cal.root.children_named("VTODO").any(|t| {
-                    t.props_named("RELATED-TO")
-                        .any(|p| p.value.trim() == f.parent_uid)
-                }),
-                Err(_) => true,
-            };
-            if joined {
-                return Err(WriteError::Stale(path));
-            }
-        }
-        Ok(())
+            super::journal::ApplyError::Io(err) => err.into(),
+            err => super::io_error(std::io::ErrorKind::InvalidInput, err.to_string()),
+        })
     }
 
     fn children(&self, snap: &Snapshot, idx: usize) -> Result<Vec<Child>, WriteError> {

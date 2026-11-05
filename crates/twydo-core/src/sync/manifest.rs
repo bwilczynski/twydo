@@ -152,6 +152,7 @@ mod tests {
             inverse_of: None,
             synced: None,
             holds: Vec::new(),
+            family: None,
             writes: writes
                 .iter()
                 .map(|(p, a)| Write {
