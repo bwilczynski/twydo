@@ -2343,19 +2343,16 @@ mod recurrence_phone_captures {
 
     #[test]
     fn baseline_only_matrix_does_not_enable_unchecked_writes() {
-        for (step, uid, op) in [(SET, FC, Op::Complete { uid: FC.into() })] {
+        {
+            let (step, uid, op) = (SET, FC, Op::Complete { uid: FC.into() });
             let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
             let mut matrix = Matrix::embedded().clone();
-            matrix
-                .rule
+            for row in matrix
+                .operation
                 .iter_mut()
-                .find(|r| r.class == "mod:until")
-                .unwrap()
-                .execute = Verdict::Unverified;
-            for case in ["recurring-checklist", "ended-until-daily"] {
-                for row in matrix.operation.iter_mut().filter(|r| r.case == case) {
-                    row.twydo_to_iphone = Verdict::Unverified;
-                }
+                .filter(|r| r.case == "recurring-checklist")
+            {
+                row.twydo_to_iphone = Verdict::Unverified;
             }
             let mut store = env.store(matrix);
             let before = env.files();
@@ -2512,7 +2509,8 @@ mod verified_recurrence_shapes {
     }
     #[test]
     fn promoted_until_and_checklist_verdicts_do_not_admit_uncaptured_contexts() {
-        for (uid, step, op) in [(FC, SET, Op::Complete { uid: FC.into() })] {
+        {
+            let (uid, step, op) = (FC, SET, Op::Complete { uid: FC.into() });
             for shape in ["timed", "start", "alarm", "start-delay", "interval"] {
                 let e = env(step);
                 let mut snap = e.snap();

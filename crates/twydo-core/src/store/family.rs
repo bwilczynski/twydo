@@ -172,9 +172,11 @@ impl Store {
                         parent_uid,
                         p,
                         children,
-                        live,
-                        copy_uid,
-                        copy,
+                        RecurringCompletion {
+                            live,
+                            copy_uid,
+                            copy,
+                        },
                         snap.tasks[idx].kind == TaskKind::Checklist,
                         now,
                     );
@@ -335,17 +337,25 @@ impl Store {
 /// child under it (an open child's completed now, a completed one's keeping its time), then
 /// the advanced parent and its completed children reopened. A checklist also drops live
 /// inherited item dates after copying them to history; a project's open children are untouched.
-#[allow(clippy::too_many_arguments)]
+struct RecurringCompletion {
+    live: ical::Calendar,
+    copy_uid: String,
+    copy: ical::Calendar,
+}
+
 fn plan_recurring_complete(
     parent_uid: String,
     p: Target,
     children: Vec<Child>,
-    live: ical::Calendar,
-    copy_uid: String,
-    copy: ical::Calendar,
+    completion: RecurringCompletion,
     checklist: bool,
     now: DateTime<Utc>,
 ) -> Result<Plan, WriteError> {
+    let RecurringCompletion {
+        live,
+        copy_uid,
+        copy,
+    } = completion;
     let mut writes = vec![create(&p.collection, &copy_uid, &copy)?];
     let mut uids = vec![parent_uid, copy_uid.clone()];
     let mut updates = vec![p.update(&live)?];
