@@ -1,0 +1,5 @@
+scenario = "plan8-checklist-b"
+step = "011-phone-items-and-text"
+device = "iphone"
+action = "In B only: add x and q under a/b; capitalize parent titles A/B; parent note x; rename x to z. All remain open; d unchanged."
+captured_at = "2026-11-05T09:05:22Z"
