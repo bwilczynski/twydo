@@ -1,9 +1,27 @@
 # Plan 8 iPhone session: finish the existing TUI write surface
 
-Status: **batch 1 phone rounds complete through 153; eight scoped operation rows and until
-execution enabled, with local verified-mode TUI regression coverage**. Later Plan 8 batches
+Status: **batch 1, RFRA and bounded C29 phone rounds complete; C29 B-only evidence runs
+through 031, with three further scoped operation rows enabled locally**. Later Plan 8 batches
 and full-surface TUI acceptance remain open. Execution requires the recorded user approval;
 this document itself does not authorize access.
+
+## Latest increment: issue 29 repeating checklists
+
+The [bounded B-only session](plan8-checklist-29-checklist.md) adds direct monthly
+checklist creation, monthly-task conversion, title/notes, item creation/use and
+individual open-item deletion while open siblings remain. Phone evidence is
+complete through capture 031. Every new snapshot comes from capture B; capture A
+was not used for new evidence or changed. The three new matrix rows are narrowly
+guarded; weekly/yearly/ending/completion-anchored checklist creation, ordinary
+schedule changes and last/completed/project-item deletion stay blocked.
+
+B-only regressions use existing targets: `edit_complete` (converted history identity),
+`edit_fields` (phone return notes/items), `store_family` (creation/identity, deletion,
+reset, exact history, undo/redo/recovery/stale dependencies), `gate` (shipping positive
+and nearest-negative shapes), `journal`/`sync_run` (durable read dependencies), and
+`tdo/tests/write.rs` (actual verified-mode card/cc/a/dd/tick/undo/redo/refused saves).
+Final validation and exact evidence barriers are in the linked closeout. Earlier
+sections describe their historical checkpoints; they do not reopen completed rounds.
 
 ## 1. Outcome
 

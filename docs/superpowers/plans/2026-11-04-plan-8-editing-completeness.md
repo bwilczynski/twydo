@@ -1,29 +1,30 @@
 # Plan 8: close the task-editing compatibility gaps
 
-Date: 2026-11-04. Status: batch 1 and RF/RA complete through capture 380; ten scoped
-operation rows and narrow until execution enabled. Later batches/full TUI surface remain pending.
+Date: 2026-11-04. Status: batch 1, RF/RA and bounded C29 complete (B-only C29 through 031);
+thirteen scoped operation rows and narrow until execution enabled. Later batches/full TUI surface remain pending.
 See the session's regression map and local closeout for exact enabled/refused shapes.
 
 ## Resume checkpoint — start here after the required project/spec reading
 
-- Branch: `feat/tui-editing-completeness` ([PR #26](https://github.com/bwilczynski/twydo/pull/26)).
-  Batch 1 code is commit `594d4ba`; test organization is `9afa123`. Work is pushed, not merged.
-  GitHub PR validation (CI and conventional commits) passed on `594d4ba`.
+- Current increment branch: `feat/29-repeating-checklist`, based on `a047f71` on main.
+  Earlier batch 1/RFRA implementation is already in the base; do not replay it.
+  C29 phone evidence is complete through B-only capture 031; local promotion closes
+  three scoped operation rows. The full Plan 8 surface remains unfinished.
 - Batch 1 phone work is complete through 153. **Do not repeat those phone rounds.** Five
   logical synthetic cases yielded eight newly passing operation rows, narrow date-only
   daily/plain-monthly until execution, and its end-date summary edge. Exact scopes and remaining
   refusals are in [compatibility.md](../../compatibility.md#what-is-verified-today).
-- Validation on the completed code: `mise run test` passed 830 Rust tests, 49 Python tests and
-  documentation links; `mise run lint` passed. Offline verified-mode TUI key/card/writer tests
-  cover batch 1 and RF/RA, not the whole remaining TUI surface.
+- C29 final validation passed 850 Rust tests, 49 Python tests, links and project lint.
+  Shipping-matrix/TUI validation and the deferred minor are in the C29 closeout.
+  These checks cover batch 1, RFRA and the bounded C29 slice, not the full remaining TUI surface.
 - Assertions live in existing behavior suites (`edit_fields`, `edit_complete`, `store`,
   `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
   are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
   [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
-- Matrix accounting after RF/RA: iPhone baseline has 76 passing, 28 unverified and 2 unsupported operation rows; Twydo-to-iPhone has 72 passing and 34 unverified.
-  Of the 35, 15 are unused attribute placeholders and 5 generic reopen rows overlap narrower
-  dedicated cases; 15 are other task/family case-operation entries. This is **not** a complete count of
-  remaining features: absent rows and guarded combinations add real gaps.
+- Matrix accounting after C29: 109 operation rows. iPhone baseline has 79 passing,
+  28 unverified and 2 unsupported; Twydo-to-iPhone has 75 passing and 34 unverified.
+  These are row counts, not remaining-feature counts: unused attribute placeholders,
+  overlapping reopen cases, absent rows and guarded combinations need separate review.
 - Private production session manifests/backups are outside git. Existing synthetic test lists
   remain; no cleanup, account/config change or additional production operation is authorized
   by this checkpoint. The five conflicts at 130 were resolved using the user's phone versions.
@@ -57,8 +58,9 @@ The next approved bounded increment prioritizes issue #29: see the
 It includes individual checklist-item deletion, an empty-list preflight and two
 bounded phone rounds. The user approved that exact scope and confirmed backup/
 empty-list readiness. B-only baseline captures 000–012 and candidate writer/upload
-020–027 are complete. Next: C/D phone inspection and note z, then the remaining
-second-round actions from the checklist. No shipping verdict is promoted yet.
+020–027 and phone returns 028–031 are complete. Three scoped rows are now enabled
+locally: recurring-checklist create/edit and recurring-checklist-item delete.
+Verification passes and the bounded C29 scope is complete; do not repeat any C29 phone actions.
 No leftovers cleanup or broader device operations are authorized.
 
 Next: prepare a minimum bounded checklist for the remaining Task 2 work (repeat

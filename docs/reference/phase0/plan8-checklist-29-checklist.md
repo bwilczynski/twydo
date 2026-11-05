@@ -1,6 +1,6 @@
 # Issue 29: bounded repeating-checklist session
 
-Status: **bounded scope approved, including individual item deletion; preflight started**. This is the next
+Status: **B-only phone evidence complete through 031; three scoped capability rows enabled locally**. This is the next
 increment of [Plan 8](../../superpowers/plans/2026-11-04-plan-8-editing-completeness.md),
 prioritizing [issue 29](https://github.com/bwilczynski/twydo/issues/29).
 
@@ -285,3 +285,50 @@ Regressions replay both the second reset and these separate note/title edits.
 All new evidence remains exclusively from capture B; privacy scans pass and
 other collection bytes/normal configuration are unchanged. Phone rounds are
 complete; there is no authorization for further writes or cleanup at closeout.
+
+## Local closeout: enabled scope and remaining limits
+
+Three new operation rows pass iPhone baseline and both Twydo directions:
+`recurring-checklist.create`, `recurring-checklist.edit`, and
+`recurring-checklist-item.delete`. Every new provenance path is under
+`fixtures/phase0/v1/plan8-checklist-b/`; Mac columns stay unverified. No other
+operation/rule/edge verdict changes. The existing checklist.repeat note only points
+to this separately verified increment.
+
+Verified mode now creates a plain monthly checklist directly, converts an existing
+monthly task, adds items with inherited date copies, edits titles/notes, ticks
+items and manually resets the family, and deletes one open item while open
+siblings remain. Scope: top-level open JSON parent, monthly interval 1, due-day
+1–28, date-only/due-anchored, no end/start/alerts/delay. Text changes use the same
+Summary/Description setters for parents/items and preserve all recurrence and
+identity properties; the candidate override was removed from tests. Pure existing
+monthly/weekly repeat transitions retain their previous separate gate.
+
+Unverified neighbors stay refused: weekly/yearly/interval-2/ending/from-completion
+creation/conversion, ordinary due/start/time/interval or other type edits, parent
+delete/move/reopen, item move, project/plain-checklist item deletion, last/only-item
+or completed/cancelled-item deletion, and deletion under completed/cancelled
+parents. A refused grouped card save writes nothing and retains typed text.
+
+The shipped embedded matrix is exercised directly by gate/store regressions and
+real TUI new-row/card, cc, a/Enter, dd, tick, text-card, u/Ctrl-r and grouped-refusal
+tests. The two new TUI acceptance tests failed on missing operation verdicts before
+promotion, then passed. Exact B-only writer comparisons cover first/second phone
+resets, creation/conversion identities, item dates, deletion/absence in history,
+phone note/title returns, durable dependencies and remote-edit-safe undo/recovery.
+
+Final cargo workspace verification passes **850 Rust tests**. All 49 Python
+tests, documentation links, project lint (clippy and formatting), and shipping
+binary build pass. Independent promotion review found no Critical/Important issue.
+One minor test cleanup is deferred: select the expected history occurrence in
+`store_family` by due date/new identity as well as title/status; current fixture
+ordering selects correctly. This does not widen any capability.
+
+The initial legacy journal record remains untouched. The candidate's explicit
+PERCENT-COMPLETE:0 reset representation was retained and then accepted/executed
+by the phone; the baseline alternate omission is asserted explicitly. These are
+the recorded execution decisions, not hidden metadata normalization.
+
+The broader Plan 8 surface and wider recurrence vocabulary remain open. Capture
+lists A and B are preserved, normal mode/configuration remain verified/unchanged,
+and there is no new authorization for production writes, account changes or cleanup.

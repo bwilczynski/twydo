@@ -15,9 +15,9 @@
 //!    its class's preserve verdict (rule 4), or the op is refused with the child's reason.
 //!    A checklist's date change whose items have dates of their own is such an op too
 //!    ([`checklist_date_change`]); it may only set a new date-only due, and in verified
-//!    mode needs the `checklist-item-dates` edge case. Moving or deleting
-//!    one item alone, reopening an item of a completed or cancelled parent, or giving a
-//!    checklist item a due or start date, is refused;
+//!    mode needs the `checklist-item-dates` edge case. Individual deletion has a dedicated
+//!    case for open items with open siblings under captured monthly checklists; moving an
+//!    item, reopening one under a completed/cancelled parent, or giving it dates is refused;
 //! 2. [`task_cases`]: the task's own case (`one-time`, `daily`, `weekly`, `monthly`,
 //!    `yearly`, or `from-completion` for any rule repeated from completion) and family case
 //!    (`checklist`, `recurring-checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
@@ -867,8 +867,8 @@ pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
 
 /// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`], then have
 /// cases ([`task_cases`]) and, if it repeats, its class's `[[rule]]` preserve verdict (rule
-/// 4); an item moved, deleted, or reopened under a completed or cancelled parent, on its own
-/// is not verified, nor is a date on a checklist item.
+/// 4). Individual deletion is scoped to the C29 shape; moving an item or reopening one
+/// under a completed/cancelled parent remains unverified, as do independent checklist-item dates.
 fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
         if let Op::Edit { changes, .. } = op

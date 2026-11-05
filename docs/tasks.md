@@ -25,8 +25,8 @@ Twydo reads nested projects and checklists (a parent inside a parent) but does n
 selector does:
 
 - **Task to checklist or project**: the task keeps its title, dates, repeat and notes, and has no
-  items yet. Converting a repeating task to a checklist is refused because ordinary edits to recurring
-  checklists are not verified.
+  items yet. A repeating task can become a checklist only for the verified plain monthly,
+  interval-1, date-only day 1–28 due-anchored shape without end/start/alerts/delay.
 - **Checklist with items to project**: the items stay, with their dates as they were.
 - **Empty project or checklist to task**: allowed.
 - **A project with items cannot be converted**, neither to a checklist nor to a task. The iPhone
@@ -60,7 +60,8 @@ On a **task**: `x` (or `Space`) completes it; on a completed task it reopens it.
 another list, `dd` deletes it, `u` undoes the last write and `Ctrl-r` redoes it. A moved task gets
 a new UID in its new list, as in 2Do.
 
-On a **checklist or project**, every write acts on the whole family, as on the iPhone:
+On a **checklist or project**, parent completion, reopening, moving and deletion act on
+the family, where those operations are verified:
 
 - **Completing** a parent with open items first asks (`complete "<title>" and its <n> open
   items? x to confirm`; `tdo op complete` needs `--all`). Then every open item is completed with
@@ -73,15 +74,21 @@ On a **checklist or project**, every write acts on the whole family, as on the i
 - **Deleting** a parent deletes its items. History copies of a repeating task stay.
 - Cancelled items (from other apps) are left as they are by complete and reopen, and go with the
   family on move and delete.
-- Moving or deleting **one item on its own**, and reopening an item of a completed parent, are
-  refused (not verified yet).
+- Moving one item and reopening an item of a completed parent remain refused.
+- `dd` can delete one **open item of an open recurring monthly checklist** while another open
+  item remains, within the narrow schedule below. All siblings must be open and carry only
+  inherited or absent dates. Only that item is removed; parent, siblings and history stay
+  unchanged. Last/only-item, completed-item, project-item and plain-checklist-item deletion
+  remain unverified. Parent/sibling changes make apply, undo, redo or recovery refuse safely.
 
 A **recurring checklist** has narrower verified support: plain monthly day 1–28, interval 1,
 date-only, due anchored, no end/start/alerts/delay. Completing it copies the parent/items to
 history, preserves prior item completion times, then reopens live items and removes inherited
 date copies. It still needs its own final tick. Cancelled items and independent item starts or
-times are refused. Direct recurring-checklist creation, other rules and ordinary field edits
-remain unverified; pure monthly/weekly repeat changes are covered separately below.
+times are refused. In this scope you can create the checklist directly, convert an existing
+monthly task, add items, edit parent/item titles and notes, tick items and delete one open
+item while open siblings remain. Date/start/time/interval and other type edits remain refused;
+pure monthly/weekly repeat changes are covered separately below.
 
 ## Repeats
 
@@ -111,8 +118,9 @@ removed or changed between those classes. Newly verified daily/yearly transition
 anchored and have no end or weekday selector; they do not enable end/anchor/Nth-rule changes.
 The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
 can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
-start, alerts or completion anchor; monthly rules require a due day of 28 or less. Ordinary recurring-checklist edits, interval changes,
-other checklist rules and project repeat changes remain refused. Standalone tasks can
+start, alerts or completion anchor; monthly rules require a due day of 28 or less. Monthly
+checklist title/notes and task-to-checklist conversion are covered above. Other ordinary
+schedule/interval/type edits, other checklist rules and project repeat changes remain refused. Standalone tasks can
 make the captured completion-anchored changes: plain or monthly due to monthly completion,
 monthly completion to weekly completion or no repeat, and weekly completion to weekly due.
 These require interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;

@@ -1218,7 +1218,7 @@ mod monthly_checklist_writes {
     use twydo_core::repeatinput;
 
     fn env(step: &str) -> Env {
-        Env::new(WriteMode::Test, &format!("{CHECKLIST_B}/{step}"))
+        Env::new(WriteMode::Verified, &format!("{CHECKLIST_B}/{step}"))
     }
     fn cal(step: &str, uid: &str) -> twydo_core::ical::Calendar {
         parse(&fixture(CHECKLIST_B, step, uid)).unwrap()
@@ -1237,7 +1237,7 @@ mod monthly_checklist_writes {
     fn monthly_checklist_creation_conversion_and_member_creation_match_phone() {
         let evidence = cal("010-phone-create-convert", CHECKLIST_A_UID);
         let e = env("002-seeded");
-        let mut store = e.store(checklist_candidate_matrix());
+        let mut store = e.store(Matrix::embedded().clone());
         let op = Op::Create(NewTask {
             kind: TaskKind::Checklist,
             due: Some(Due::Date(
@@ -1290,9 +1290,9 @@ mod monthly_checklist_writes {
         );
 
         let e = env("010-phone-create-convert");
-        let mut store = e.store(checklist_candidate_matrix());
+        let mut store = e.store(Matrix::embedded().clone());
         let phone = Env::new(
-            WriteMode::Test,
+            WriteMode::Verified,
             &format!("{CHECKLIST_B}/011-phone-items-and-text"),
         );
         let phone_uid = member(&phone.snap(), CHECKLIST_B_UID, "q");
@@ -1322,7 +1322,7 @@ mod monthly_checklist_writes {
     #[test]
     fn individual_checklist_deletion_matches_phone_and_undo_redo() {
         let e = env("011-phone-items-and-text");
-        let mut store = e.store(checklist_candidate_matrix());
+        let mut store = e.store(Matrix::embedded().clone());
         let before = e.files();
         for parent in [CHECKLIST_A_UID, CHECKLIST_B_UID] {
             let uid = member(&e.snap(), parent, "q");
@@ -1348,7 +1348,7 @@ mod monthly_checklist_writes {
     fn item_delete_refuses_changed_parent_or_sibling_without_writes() {
         for change in ["parent", "sibling", "missing-sibling", "new-sibling"] {
             let e = env("011-phone-items-and-text");
-            let mut store = e.store(checklist_candidate_matrix());
+            let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
             let sibling = member(&snap, CHECKLIST_A_UID, "z");
@@ -1383,7 +1383,7 @@ mod monthly_checklist_writes {
     #[test]
     fn checklist_text_edits_match_phone_and_mixed_schedule_save_is_atomic() {
         let e = env("010-phone-create-convert");
-        let mut store = e.store(checklist_candidate_matrix());
+        let mut store = e.store(Matrix::embedded().clone());
         for (uid, title) in [(CHECKLIST_A_UID, "A"), (CHECKLIST_B_UID, "B")] {
             let want = cal("011-phone-items-and-text", uid);
             let before = e.files();
@@ -1442,7 +1442,7 @@ mod monthly_checklist_writes {
             ),
         ] {
             let e = env(from);
-            let mut store = e.store(checklist_candidate_matrix());
+            let mut store = e.store(Matrix::embedded().clone());
             let phone = env(to);
             let after_snap = phone.snap();
             for parent in parents {
@@ -1521,7 +1521,7 @@ mod monthly_checklist_writes {
     #[test]
     fn checklist_delete_recovery_reuses_record_and_undo_preserves_remote_edit() {
         let e = env("011-phone-items-and-text");
-        let mut store = e.store(checklist_candidate_matrix());
+        let mut store = e.store(Matrix::embedded().clone());
         let before = e.files();
         let uid = member(&e.snap(), CHECKLIST_A_UID, "q");
         store
@@ -1531,12 +1531,12 @@ mod monthly_checklist_writes {
         let mut entry = e.journal().pop().unwrap();
         entry.stage = Stage::Prepared;
         let recovering = env("011-phone-items-and-text");
-        drop(recovering.store(checklist_candidate_matrix()));
+        drop(recovering.store(Matrix::embedded().clone()));
         Journal::open(&recovering.state)
             .unwrap()
             .prepare(&entry)
             .unwrap();
-        let (_, report) = Store::open_with(&recovering.cfg, checklist_candidate_matrix()).unwrap();
+        let (_, report) = Store::open_with(&recovering.cfg, Matrix::embedded().clone()).unwrap();
         assert!(report.stuck.is_empty());
         assert_eq!(recovering.files(), after);
         // A remotely recreated/edited item must not be overwritten by undo.
@@ -1556,7 +1556,7 @@ mod monthly_checklist_writes {
             "recover-parent-changed",
         ] {
             let e = env("011-phone-items-and-text");
-            let mut store = e.store(checklist_candidate_matrix());
+            let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
             let sibling = member(&snap, CHECKLIST_A_UID, "z");
@@ -1600,8 +1600,7 @@ mod monthly_checklist_writes {
                     let bytes = fs::read(&p).unwrap();
                     fs::write(p, [bytes, b"\r\n".to_vec()].concat()).unwrap();
                     let before = e.files();
-                    let (_, report) =
-                        Store::open_with(&e.cfg, checklist_candidate_matrix()).unwrap();
+                    let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
                     assert_eq!(report.stuck.len(), 1);
                     assert_eq!(e.files(), before);
                     assert!(e.file(&uid).exists());
@@ -1616,7 +1615,7 @@ mod monthly_checklist_writes {
         for grouped in [false, true] {
             for removed in [false, true] {
                 let e = env("011-phone-items-and-text");
-                let mut store = e.store(checklist_candidate_matrix());
+                let mut store = e.store(Matrix::embedded().clone());
                 let snap = e.snap();
                 let uid = member(&snap, CHECKLIST_A_UID, "z");
                 let p = e.file(CHECKLIST_A_UID);

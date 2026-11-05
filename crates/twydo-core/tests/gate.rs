@@ -2424,6 +2424,10 @@ mod recurrence_phone_captures {
             .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
             .unwrap()
             .twydo_to_iphone = Verdict::Pass;
+        // Retain a baseline-only matrix to test pure repeat evidence independently.
+        matrix
+            .operation
+            .retain(|r| !(r.case == "recurring-checklist" && r.op == "edit"));
         assert!(matrix.operation("recurring-checklist", "edit").is_none());
         let now = dtstamp(&cal(STEP, &uid));
         let change = Change::Repeat(
@@ -3101,7 +3105,7 @@ mod recurring_checklist_writes {
     use twydo_core::model::{Status, TaskKind};
 
     fn env(step: &str) -> Env {
-        Env::new(WriteMode::Test, &format!("{CHECKLIST_B}/{step}"))
+        Env::new(WriteMode::Verified, &format!("{CHECKLIST_B}/{step}"))
     }
 
     fn parent() -> NewTask {
@@ -3114,10 +3118,10 @@ mod recurring_checklist_writes {
     }
 
     #[test]
-    fn candidate_checklist_rows_allow_only_captured_creation_and_text_conversion() {
+    fn verified_checklist_rows_allow_only_captured_creation_and_text_conversion() {
         let e = env("010-phone-create-convert");
         let s = e.snap();
-        let m = checklist_candidate_matrix();
+        let m = Matrix::embedded().clone();
         for op in [
             Op::Create(parent()),
             Op::Create(NewTask {
@@ -3134,12 +3138,21 @@ mod recurring_checklist_writes {
             edit("twydo-p8-c29-d", vec![Change::Kind(TaskKind::Checklist)]),
         ] {
             assert!(
-                check(&s, &m, WriteMode::Test, &op, today()).is_ok(),
+                check(&s, &m, WriteMode::Verified, &op, today()).is_ok(),
                 "{op:?}"
             );
+            let mut baseline_only = m.clone();
+            for row in &mut baseline_only.operation {
+                if (row.case == "recurring-checklist"
+                    && matches!(row.op.as_str(), "create" | "edit"))
+                    || row.case == "recurring-checklist-item"
+                {
+                    row.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
+                }
+            }
             assert!(
-                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
-                "candidate evidence cannot bypass phone acceptance"
+                check(&s, &baseline_only, WriteMode::Verified, &op, today()).is_err(),
+                "baseline-only evidence cannot bypass phone acceptance"
             );
         }
         for change in [
@@ -3152,7 +3165,7 @@ mod recurring_checklist_writes {
                 check(
                     &s,
                     &m,
-                    WriteMode::Test,
+                    WriteMode::Verified,
                     &edit(CHECKLIST_A_UID, vec![change.clone()]),
                     today()
                 )
@@ -3171,7 +3184,7 @@ mod recurring_checklist_writes {
             if let Ok(Some(spec)) = twydo_core::repeatinput::parse(text, today(), &[]) {
                 n.repeat = Some(spec);
                 assert!(
-                    check(&s, &m, WriteMode::Test, &Op::Create(n), today()).is_err(),
+                    check(&s, &m, WriteMode::Verified, &Op::Create(n), today()).is_err(),
                     "{text}"
                 );
             } else {
@@ -3193,7 +3206,7 @@ mod recurring_checklist_writes {
             },
         ] {
             assert!(
-                check(&s, &m, WriteMode::Test, &Op::Create(n.clone()), today()).is_err(),
+                check(&s, &m, WriteMode::Verified, &Op::Create(n.clone()), today()).is_err(),
                 "{n:?}"
             );
         }
@@ -3203,7 +3216,7 @@ mod recurring_checklist_writes {
     fn individual_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
         let e = env("011-phone-items-and-text");
         let mut s = e.snap();
-        let m = checklist_candidate_matrix();
+        let m = Matrix::embedded().clone();
         let p = s.find(CHECKLIST_A_UID).unwrap();
         let q = *s
             .children(p)
@@ -3214,27 +3227,70 @@ mod recurring_checklist_writes {
         let op = Op::Delete {
             uid: s.tasks[q].uid.clone(),
         };
-        assert!(check(&s, &m, WriteMode::Test, &op, today()).is_ok());
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_ok());
         let mut missing = m.clone();
         missing
             .operation
             .retain(|r| r.case != "recurring-checklist-item");
-        assert!(check(&s, &missing, WriteMode::Test, &op, today()).is_err());
+        assert!(check(&s, &missing, WriteMode::Verified, &op, today()).is_err());
         for which in [p, q, other] {
             s.tasks[which].status = Status::Completed;
             assert!(
-                check(&s, &m, WriteMode::Test, &op, today()).is_err(),
+                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
                 "completed family member {which}"
             );
             s.tasks[which].status = Status::Open;
         }
         s.tasks[p].rrule = Some("FREQ=WEEKLY".into());
-        assert!(check(&s, &m, WriteMode::Test, &op, today()).is_err());
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
         s.tasks[p].rrule = Some("FREQ=MONTHLY".into());
         s.tasks[q].due = Some(IcalDateTime::Date(date(2026, 12, 11)));
         assert!(
-            check(&s, &m, WriteMode::Test, &op, today()).is_err(),
+            check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
             "foreign child schedule"
         );
+    }
+    #[test]
+    fn verified_checklist_last_item_parent_and_unverified_conversion_stay_blocked() {
+        let e = env("011d-phone-delete-items");
+        let s = e.snap();
+        let m = Matrix::embedded();
+        let p = s.find(CHECKLIST_A_UID).unwrap();
+        let child = s.children(p)[0];
+        for uid in [&s.tasks[child].uid, &s.tasks[p].uid] {
+            assert!(
+                check(
+                    &s,
+                    m,
+                    WriteMode::Verified,
+                    &Op::Delete { uid: uid.clone() },
+                    today()
+                )
+                .is_err()
+            );
+        }
+        let e = env("002-seeded");
+        let base = e.snap();
+        for rule in [
+            "FREQ=WEEKLY",
+            "FREQ=MONTHLY;INTERVAL=2",
+            "FREQ=YEARLY",
+            "FREQ=MONTHLY;COUNT=2",
+        ] {
+            let mut s = base.clone();
+            let i = s.find("twydo-p8-c29-d").unwrap();
+            s.tasks[i].rrule = Some(rule.into());
+            assert!(
+                check(
+                    &s,
+                    m,
+                    WriteMode::Verified,
+                    &edit("twydo-p8-c29-d", vec![Change::Kind(TaskKind::Checklist)]),
+                    today()
+                )
+                .is_err(),
+                "{rule}"
+            );
+        }
     }
 }

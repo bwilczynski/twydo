@@ -1209,7 +1209,7 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan8-tui-a/001-after-upload", "fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/060-remove-checklist-repeat-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/151-twydo-checklist-repeat-removed", "fixtures/phase0/v1/plan8-tui-a/153-phone-checklist-removal-followup"]
-notes = "Plan 8 FC: monthly setting on an existing plain checklist and removal of its weekly repeat accepted and edited on the phone, through 153. Gate limits checklist repeat transitions to plain date-only interval-1 monthly/weekly/none with no end/from-completion/start/alerts. Ordinary recurring-checklist edit/create remains unverified."
+notes = "Plan 8 FC: monthly setting on an existing plain checklist and removal of its weekly repeat accepted and edited on the phone, through 153. Gate limits checklist repeat transitions to plain date-only interval-1 monthly/weekly/none with no end/from-completion/start/alerts. C29 separately verifies narrowly scoped monthly checklist creation/text edits."
 
 [[operation]]
 case = "project"
@@ -1265,6 +1265,39 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
 notes = "Plan 8 FC: monthly parent completes with mixed/all-done items; phone accepts both resets and acts on the output. History parent/child IDs are new, earlier item completion times retained, live inherited dates removed after copying. Gate limits parent completion to plain interval-1 date-only monthly day1-28, due anchored, no end/start/alerts/delay/cancelled items. Recovery/undo/redo/atomic-refusal tested; other checklist rules remain refused."
+
+[[operation]]
+case = "recurring-checklist"
+op = "create"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-checklist-b/010-phone-create-convert", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/020-twydo-create-convert", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/024-twydo-d-items-text", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+notes = "C29 B-only: direct monthly checklist creation and adding items; phone accepts and executes Twydo-created C/D families then edits reset items. Only top-level open JSON monthly interval-1 date-only day1-28 due-anchored parents without start/alert/delay/end. New items inherit parent due mirrors; no independent dates/repeats."
+
+[[operation]]
+case = "recurring-checklist"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-checklist-b/002-seeded", "fixtures/phase0/v1/plan8-checklist-b/010-phone-create-convert", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/012-phone-family-complete", "fixtures/phase0/v1/plan8-checklist-b/020-twydo-create-convert", "fixtures/phase0/v1/plan8-checklist-b/027-twydo-upload", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/030-phone-parent-note-return", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+notes = "C29 B-only: title/notes on monthly checklist parents/items and top-level recurring task to checklist conversion preserving rule/series identity. Plain date-only monthly interval1 day1-28, open JSON task/parent, due anchored with no end/start/alert/delay. Text writers preserve all schedule/identity metadata; no ordinary due/start/time/interval/repeat/type reshaping or project conversion inference. Phone-converted parents with internal identity distinct from CalDAV UID receive fresh history identities without altering live identity."
+
+[[operation]]
+case = "recurring-checklist-item"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/011d-phone-delete-items", "fixtures/phase0/v1/plan8-checklist-b/012-phone-family-complete", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/022-twydo-c-item-deleted", "fixtures/phase0/v1/plan8-checklist-b/024-twydo-d-items-text", "fixtures/phase0/v1/plan8-checklist-b/025-twydo-d-item-deleted", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+notes = "C29 B-only: remove one open item with at least one other open item, under an open top-level plain monthly interval1 date-only day1-28 checklist. Only undated/inherited-parent-date items without own repeat/start/alerts/delay; all siblings must be open. Exactly one resource removed, parent/siblings/history unchanged; deleted q never returns on phone reset. Dedicated row does not enable parent/project/last-item/completed-item deletion. Durable parent/sibling dependencies guard stale apply, undo, redo and recovery."
 
 [[operation]]
 case = "ended-until-daily"
