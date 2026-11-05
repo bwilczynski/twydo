@@ -92,8 +92,8 @@ The keys Twydo reads or writes:
 |---|---|
 | `TaskType` | 0 task, 1 checklist, 2 project |
 | `StartDate` | The start date, as epoch seconds at UTC midnight of the start day. Absent: no start date |
-| `parentuid` | On an item: the parent's UID (the same as `RELATED-TO`) |
-| `uid` | On a project: its own UID |
+| `parentuid` | On an item: the parent's JSON `uid` when present; otherwise its CalDAV UID. `RELATED-TO` always uses the CalDAV UID |
+| `uid` | On a checklist or project: its parent identity, which may differ from its CalDAV UID after a phone conversion |
 | `RUID` | The repeat series a task belongs to: on a live repeating task its own UID (or empty), on a completed history copy the UID of the task it was copied from |
 | `RecurrenceType`, `RecurrenceValue`, `RecurrenceFrom` | 2Do's own copy of the repeat rule: type, interval, and 2 = repeat from the completion date |
 | `RecurrenceEndType`, `RecurrenceEndRepetitions` | The repeat's end |
@@ -151,6 +151,11 @@ A class can carry `+from-completion` (repeat from the completion date) and `+cou
 
 The copy's JSON end fields are 0 too. When the series ends (`COUNT=1`, or the next date is after
 `UNTIL`), there is no copy: the task itself is completed, its `RRULE` kept.
+
+A repeating checklist's history parent receives a new JSON `uid` even when its live
+parent has a distinct phone-internal identity. The live identity remains unchanged,
+and the copied items link to the new history parent. This is captured in the
+[B-only checklist session](reference/phase0/plan8-checklist-29-checklist.md).
 
 Completing a repeating project also copies each of its items under the project's history copy.
 

@@ -601,7 +601,12 @@ pub fn complete_recurring(
         }
     }
     m.remove("RecurrenceEndDate");
-    if m.get_str("uid") == Some(uid.as_str()) {
+    // C29: a phone-converted checklist may have an internal parent identity that
+    // differs from its CalDAV UID. Its history is still a new checklist parent;
+    // reusing that identity would point the copy back at the live family.
+    let checklist_identity =
+        m.get_i64("TaskType") == Some(1) && m.get_str("uid").is_some_and(|id| !id.is_empty());
+    if m.get_str("uid") == Some(uid.as_str()) || checklist_identity {
         m.set_str("uid", copy_uid);
     }
     if m.get_str("RUID").is_none_or(str::is_empty) {
