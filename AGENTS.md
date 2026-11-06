@@ -63,8 +63,9 @@ app replacing 2Do for one user, plan by plan.
    parser), manual order `J`/`K`, the write queue in `twydo-core` (edits during a sync are
    queued instead of refused; design
    [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
-   issue #38; plan 1, batched sync with `tdo sync on|off`, is in
-   `docs/superpowers/plans/2026-11-06-write-queue-1-batched-sync.md`: Tasks 1-6 done), or Plan 2
+   issue #38; write-queue plan 1, batched sync with `tdo sync on|off`, merged (PR #50); plan 2
+   (the queue, strict checks) is in progress in
+   `docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`), or Plan 2
    (notifier). Write the plan first. Before Plan 2,
    decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
    [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has

@@ -32,14 +32,14 @@ const META_OPEN: &str = "<2Do Meta>";
 
 /// A due date. `Time` is floating local time (`DUE:YYYYMMDDTHHMMSS`, no `TZID`), as 2Do
 /// writes it (H8).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Due {
     Date(NaiveDate),
     Time(NaiveDateTime),
 }
 
 /// One field change of an existing task.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Change {
     Summary(String),
     /// `None` clears the notes.
@@ -58,7 +58,7 @@ pub enum Change {
 }
 
 /// A task to create in `collection`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NewTask {
     pub collection: String,
     pub summary: String,
@@ -91,7 +91,7 @@ impl NewTask {
 /// A write operation on the task store.
 // `Create` carries a whole `RepeatSpec`; ops are built one at a time, never in bulk.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     Create(NewTask),
     Edit {

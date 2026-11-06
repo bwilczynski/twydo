@@ -8,6 +8,7 @@
 mod family;
 pub mod fsio;
 pub mod journal;
+pub mod queue;
 mod retired;
 
 use std::fs;
@@ -369,6 +370,7 @@ impl Store {
             uids: plan.uids,
             stage: Stage::Prepared,
             inverse_of: None,
+            from_queue: None,
             synced: None,
             holds: if durable_holds {
                 holds.clone()
@@ -430,6 +432,7 @@ impl Store {
             uids,
             stage: Stage::Prepared,
             inverse_of: None,
+            from_queue: None,
             synced: None,
             holds: Vec::new(),
             family: None,
@@ -539,6 +542,7 @@ impl Store {
             uids: e.uids,
             stage: Stage::Prepared,
             inverse_of: Some(id.to_string()),
+            from_queue: None,
             synced: None,
             holds: e.holds,
             family: e.family,

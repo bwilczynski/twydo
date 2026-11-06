@@ -8,7 +8,7 @@ use super::meta::{MetaFormat, Metadata, parse_metadata};
 use crate::ical::value::{IcalDateTime, parse_date_time, parse_duration, unescape_text};
 use crate::ical::{Calendar, Component};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TaskKind {
     Task,
     Project,

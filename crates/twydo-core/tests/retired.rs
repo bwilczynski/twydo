@@ -77,6 +77,7 @@ fn retirement_preserves_pending_evidence_and_the_other_half_of_a_move() {
         uids: vec!["original".into()],
         stage: Stage::Applied,
         inverse_of: None,
+        from_queue: None,
         synced: None,
         holds: vec![],
         family: None,

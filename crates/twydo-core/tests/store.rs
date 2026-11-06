@@ -472,6 +472,7 @@ fn stuck_journal_blocks_writes() {
         uids: vec![A.into()],
         stage: Stage::Prepared,
         inverse_of: None,
+        from_queue: None,
         synced: None,
         holds: Vec::new(),
         family: None,

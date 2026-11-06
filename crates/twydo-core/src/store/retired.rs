@@ -159,6 +159,7 @@ impl Store {
             uids: mapping.values().cloned().collect(),
             stage: Stage::Prepared,
             inverse_of: None,
+            from_queue: None,
             synced: None,
             writes,
             holds: Vec::new(),

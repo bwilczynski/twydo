@@ -46,6 +46,16 @@ pub struct Entry {
     /// Family membership dependency, retained by inverses and checked on recovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family: Option<FamilyGuard>,
+    /// The queued item this entry was drained from, so it is applied at most once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_queue: Option<FromQueue>,
+}
+
+/// Names the write-queue item an entry came from, and when it was queued.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FromQueue {
+    pub id: String,
+    pub queued: DateTime<Utc>,
 }
 
 /// Loaded family paths. The operation's own paths may be absent after a deletion;
@@ -213,6 +223,14 @@ impl Journal {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// The entry drained from queue item `id`, if any.
+    pub fn by_queue_id(&self, id: &str) -> io::Result<Option<Entry>> {
+        Ok(self
+            .list()?
+            .into_iter()
+            .find(|e| e.from_queue.as_ref().is_some_and(|q| q.id == id)))
     }
 
     /// Every entry, sorted by id. Fails if any entry does not parse.
