@@ -10,11 +10,13 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
-use twydo_core::edit::{Change, Op};
+use twydo_core::edit::{Change, NewTask, Op};
+use twydo_core::model::Status;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, FORMAT, Journal, Stage, Write};
-use twydo_core::store::queue::Queue;
+use twydo_core::store::queue::{self, Queue};
 use twydo_core::store::{DrainOutcome, Store, Submitted, WriteError};
+use twydo_core::views::Snapshot;
 
 use common::Env;
 
@@ -377,4 +379,167 @@ fn submit_whose_own_item_hits_stuck_stays_queued() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, item.id);
     assert!(env.journal().iter().all(|e| e.from_queue.is_none()));
+}
+
+/// The overlaid view of the vdir, as the TUI builds it.
+fn view(env: &Env) -> Snapshot {
+    let report = twydo_core::vdir::load(&env.vdir).unwrap();
+    queue::view(report, env.cfg.clone())
+}
+
+fn idx(snap: &Snapshot, uid: &str) -> usize {
+    snap.find(uid)
+        .unwrap_or_else(|| panic!("{uid} not in view"))
+}
+
+#[test]
+fn queued_completion_stays_completed_until_applied() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let got = store
+        .submit(
+            &view(&env),
+            &Op::Complete { uid: A.into() },
+            "done",
+            "op",
+            now(),
+        )
+        .unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    for _ in 0..2 {
+        let snap = view(&env);
+        let i = idx(&snap, A);
+        assert_eq!(snap.tasks[i].status, Status::Completed);
+        assert!(snap.is_pending(i));
+    }
+    drop(sync);
+    store.drain(later()).unwrap();
+    let snap = view(&env);
+    let i = idx(&snap, A);
+    assert_eq!(snap.tasks[i].status, Status::Completed);
+    assert!(!snap.is_pending(i));
+}
+
+#[test]
+fn refused_item_returns_to_the_file() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    store
+        .submit(
+            &view(&env),
+            &title(A, "queued title"),
+            "rename",
+            "op",
+            now(),
+        )
+        .unwrap();
+    let snap = view(&env);
+    assert_eq!(snap.tasks[idx(&snap, A)].summary, "queued title");
+    // Another writer changes the file: the item can no longer apply.
+    let text = read(&env, A).replace("SUMMARY:", "SUMMARY:other ");
+    fs::write(env.file(A), &text).unwrap();
+    let snap = view(&env);
+    let i = idx(&snap, A);
+    assert!(
+        snap.tasks[i].summary.starts_with("other "),
+        "{}",
+        snap.tasks[i].summary
+    );
+    assert!(!snap.is_pending(i));
+    drop(sync);
+}
+
+#[test]
+fn second_queued_edit_builds_on_the_first() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let Submitted::Queued(one) = store
+        .submit(&view(&env), &title(A, "first"), "rename", "op", now())
+        .unwrap()
+    else {
+        panic!("queue");
+    };
+    let Submitted::Queued(two) = store
+        .submit(
+            &view(&env),
+            &Op::Complete { uid: A.into() },
+            "done",
+            "op",
+            later(),
+        )
+        .unwrap()
+    else {
+        panic!("queue");
+    };
+    drop(sync);
+    let drained = store.drain(later()).unwrap();
+    assert_eq!(drained.len(), 2);
+    assert!(
+        drained
+            .iter()
+            .all(|d| matches!(d.outcome, DrainOutcome::Applied(_))),
+        "{drained:?}"
+    );
+    let text = read(&env, A);
+    assert!(text.contains("SUMMARY:first"));
+    assert!(text.contains("STATUS:COMPLETED"));
+    assert_eq!(
+        two.writes()[0].before,
+        one.writes()[0].after,
+        "the second edit is planned on the first's result"
+    );
+}
+
+#[test]
+fn queued_create_keeps_its_uid() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let before = env.files().len();
+    let create = Op::Create(NewTask::plain("list1", "brand new"));
+    store
+        .submit(&view(&env), &create, "add", "op", now())
+        .unwrap();
+    let snap = view(&env);
+    let i = snap
+        .tasks
+        .iter()
+        .position(|t| t.summary == "brand new")
+        .expect("the queued create shows");
+    assert!(snap.is_pending(i));
+    let uid = snap.tasks[i].uid.clone();
+    let got = store
+        .submit(&snap, &title(&uid, "renamed new"), "rename", "op", later())
+        .unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    drop(sync);
+    let drained = store.drain(later()).unwrap();
+    assert!(
+        drained
+            .iter()
+            .all(|d| matches!(d.outcome, DrainOutcome::Applied(_))),
+        "{drained:?}"
+    );
+    assert_eq!(env.files().len(), before + 1);
+    let snap = view(&env);
+    let i = idx(&snap, &uid);
+    assert_eq!(snap.tasks[i].summary, "renamed new");
+    assert_eq!(snap.tasks.iter().filter(|t| t.uid == uid).count(), 1);
+}
+
+#[test]
+fn summary_counts_queued_items() {
+    let env = env();
+    let mut cfg = env.cfg.clone();
+    cfg.sync = Some(Default::default());
+    let mut store = env.store(matrix());
+    assert_eq!(twydo_core::sync::summary(&cfg).unwrap().unwrap().queued, 0);
+    let _sync = VdirLock::exclusive(&env.state).unwrap();
+    store
+        .submit(&env.snap(), &title(A, "x"), "rename", "op", now())
+        .unwrap();
+    assert_eq!(twydo_core::sync::summary(&cfg).unwrap().unwrap().queued, 1);
 }

@@ -21,6 +21,7 @@ use crate::config::Config;
 use crate::conflicts::{Conflict, ConflictStore};
 use crate::store::existing_vdir_state;
 use crate::store::journal::Journal;
+use crate::store::queue::Queue;
 use status::SyncStatus;
 
 /// Why a sync run could not complete (a failed vdirsyncer is not an error: see
@@ -43,6 +44,8 @@ pub struct SyncSummary {
     pub conflicts: Vec<Conflict>,
     /// Automatic sync is switched off (see [`switch`]).
     pub off: bool,
+    /// Edits queued while a sync held the vdir, not yet written.
+    pub queued: usize,
 }
 
 /// The sync state of `cfg`'s vdir; `None` without `[sync]`. Creates nothing: a vdir with no
@@ -57,6 +60,7 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
             pending: 0,
             conflicts: Vec::new(),
             off: false,
+            queued: 0,
         }));
     };
     let pending = if state.join("journal").is_dir() {
@@ -68,6 +72,10 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
         Some(store) => store.unresolved()?,
         None => Vec::new(),
     };
+    let queued = match Queue::existing(&state) {
+        Some(q) => q.len()?,
+        None => 0,
+    };
     let archived = crate::retired::list_state(&state)?;
     conflicts.retain(|c| !archived.iter().any(|b| b.conflicts.contains(&c.id)));
     Ok(Some(SyncSummary {
@@ -75,5 +83,6 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
         pending,
         conflicts,
         off: state.join("sync").join("off").try_exists()?,
+        queued,
     }))
 }

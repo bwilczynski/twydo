@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ical;
 use crate::model::{Task, tasks_from_calendar};
+use crate::store::journal::Write;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Collection {
@@ -17,7 +18,7 @@ pub struct Collection {
     pub color: Option<(u8, u8, u8)>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LoadReport {
     pub collections: Vec<Collection>,
     pub tasks: Vec<Task>,
@@ -120,6 +121,37 @@ pub fn load(root: &Path) -> io::Result<LoadReport> {
     Ok(report)
 }
 
+impl LoadReport {
+    /// Lays `writes` (vdir-relative `<collection>/<file>.ics`) over what was loaded, as if they
+    /// were on disk: a written file replaces its tasks and source, a deleted one disappears.
+    pub fn overlay_writes(&mut self, vdir: &Path, writes: &[Write]) {
+        for w in writes {
+            let path = vdir.join(&w.path);
+            self.tasks.retain(|t| t.path != path);
+            self.errors.retain(|(p, _)| *p != path);
+            self.sources.remove(&path);
+            let Some(after) = &w.after else { continue };
+            let bytes = after.as_bytes().to_vec();
+            let collection = w.path.split('/').next().unwrap_or_default();
+            match ical::parse(&bytes) {
+                Err(e) => self.errors.push((path.clone(), e.to_string())),
+                Ok(cal) => self
+                    .tasks
+                    .extend(tasks_from_calendar(&cal, collection, &path)),
+            }
+            self.sources.insert(path, bytes);
+        }
+        // Load order is by path; a stable sort keeps tasks of one file together.
+        self.tasks.sort_by(|a, b| a.path.cmp(&b.path));
+        for t in &mut self.tasks {
+            t.warnings.retain(|w| w != DUPLICATE_UID);
+        }
+        flag_duplicate_uids(&mut self.tasks);
+    }
+}
+
+const DUPLICATE_UID: &str = "duplicate UID";
+
 fn flag_duplicate_uids(tasks: &mut [Task]) {
     let mut counts: HashMap<String, usize> = HashMap::new();
     for t in tasks.iter().filter(|t| !t.uid.is_empty()) {
@@ -127,7 +159,7 @@ fn flag_duplicate_uids(tasks: &mut [Task]) {
     }
     for t in tasks.iter_mut() {
         if counts.get(&t.uid).is_some_and(|&n| n > 1) {
-            t.warnings.push("duplicate UID".to_string());
+            t.warnings.push(DUPLICATE_UID.to_string());
         }
     }
 }
