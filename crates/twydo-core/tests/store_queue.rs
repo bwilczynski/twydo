@@ -558,3 +558,152 @@ fn view_hides_an_applied_item_whose_claim_is_still_there() {
     let snap = view(&env);
     assert!(!snap.is_pending(idx(&snap, A)));
 }
+
+// Undo and redo of queued items.
+
+#[test]
+fn undo_of_a_queued_item_removes_it() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let before = read(&env, A);
+    queued_edit(&env, &mut store, title(A, "renamed"));
+    assert_eq!(queue(&env).len().unwrap(), 1);
+    let got = store.undo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Cancelled), "{got:?}");
+    assert!(queue(&env).is_empty().unwrap());
+    assert_eq!(read(&env, A), before);
+    let snap = view(&env);
+    assert!(!snap.is_pending(idx(&snap, A)));
+    assert!(env.journal().is_empty());
+}
+
+#[test]
+fn redo_requeues_it() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let Submitted::Queued(item) = store
+        .submit(&env.snap(), &title(A, "renamed"), "edit", "op", now())
+        .unwrap()
+    else {
+        panic!("should queue");
+    };
+    store.undo_last(later()).unwrap();
+    assert!(queue(&env).is_empty().unwrap());
+    // The sync still runs: the redo puts the same item back.
+    let Submitted::Queued(again) = store.redo_last(later()).unwrap() else {
+        panic!("should queue");
+    };
+    assert_eq!(again.id, item.id);
+    assert_eq!(queue(&env).len().unwrap(), 1);
+    let snap = view(&env);
+    assert!(snap.is_pending(idx(&snap, A)));
+    drop(sync);
+    store.drain(later()).unwrap();
+    assert!(read(&env, A).contains("SUMMARY:renamed"));
+    let journal = env.journal();
+    assert_eq!(journal.len(), 1);
+    assert_eq!(journal[0].from_queue.as_ref().unwrap().id, item.id);
+}
+
+#[test]
+fn redo_with_a_free_lock_applies_it() {
+    let env = env();
+    let mut store = env.store(matrix());
+    queued_edit(&env, &mut store, title(A, "renamed"));
+    store.undo_last(later()).unwrap();
+    let got = store.redo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert!(read(&env, A).contains("SUMMARY:renamed"));
+}
+
+#[test]
+fn undo_after_drain_reverts_the_entry() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let before = read(&env, A);
+    queued_edit(&env, &mut store, title(A, "renamed"));
+    store.drain(later()).unwrap();
+    assert!(read(&env, A).contains("SUMMARY:renamed"));
+    let got = store.undo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert_eq!(read(&env, A), before);
+}
+
+#[test]
+fn undo_after_claim_reverts_the_entry() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let before = read(&env, A);
+    let id = queued_edit(&env, &mut store, title(A, "renamed"));
+    let item = queue(&env).list().unwrap().remove(0);
+    // A drainer mid-commit has claimed the item but not yet written its entry.
+    assert!(queue(&env).claim(&id).unwrap());
+    assert!(matches!(store.undo_last(later()), Err(WriteError::Busy)));
+    assert_eq!(read(&env, A), before);
+    // The step stayed on the stack. Let the drainer finish (as a recovery drain would).
+    queue(&env).done(&id).unwrap();
+    queue(&env).push(&item).unwrap();
+    store.drain(later()).unwrap();
+    assert!(read(&env, A).contains("SUMMARY:renamed"));
+    let got = store.undo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert_eq!(read(&env, A), before);
+}
+
+#[test]
+fn undo_while_locked_queues_a_revert() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let before = read(&env, A);
+    let applied = store
+        .submit(&env.snap(), &title(A, "renamed"), "edit", "op", now())
+        .unwrap();
+    let Submitted::Applied(entry_id) = applied else {
+        panic!("the lock is free");
+    };
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let started = Instant::now();
+    let got = store.undo_last(later()).unwrap();
+    assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
+    let Submitted::Queued(item) = got else {
+        panic!("{got:?}");
+    };
+    assert!(read(&env, A).contains("SUMMARY:renamed"));
+    let snap = view(&env);
+    assert_eq!(snap.tasks[idx(&snap, A)].summary, "A2");
+    assert!(snap.is_pending(idx(&snap, A)));
+    drop(sync);
+    store.drain(later()).unwrap();
+    assert_eq!(read(&env, A), before);
+    let journal = env.journal();
+    let revert = journal
+        .iter()
+        .find(|e| e.inverse_of.as_deref() == Some(entry_id.as_str()))
+        .expect("a revert entry");
+    assert_eq!(revert.from_queue.as_ref().unwrap().id, item.id);
+}
+
+#[test]
+fn queued_revert_is_refused_if_the_file_changed() {
+    let env = env();
+    let mut store = env.store(matrix());
+    store
+        .submit(&env.snap(), &title(A, "renamed"), "edit", "op", now())
+        .unwrap();
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let got = store.undo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    // Another device changed the file while the sync ran.
+    let changed = read(&env, A).replace("SUMMARY:renamed", "SUMMARY:elsewhere");
+    fs::write(env.file(A), &changed).unwrap();
+    drop(sync);
+    let drained = store.drain(later()).unwrap();
+    assert!(
+        matches!(drained[0].outcome, DrainOutcome::Refused(_)),
+        "{:?}",
+        drained[0].outcome
+    );
+    assert_eq!(read(&env, A), changed);
+    assert!(queue(&env).is_empty().unwrap());
+}

@@ -14,7 +14,7 @@ use twydo_core::gate;
 use twydo_core::model::TaskKind;
 use twydo_core::repeatinput::{self, RepeatSpec};
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::store::{Store, WriteError, existing_vdir_state};
+use twydo_core::store::{Store, Submitted, WriteError, existing_vdir_state};
 use twydo_core::sync::batch::after_write;
 use twydo_core::views::Snapshot;
 
@@ -430,7 +430,11 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         OpCommand::Delete { uid } => Op::Delete { uid },
         OpCommand::Move { uid, to } => Op::Move { uid, to },
         OpCommand::Undo { op_id } => {
-            println!("{}", store.undo(&op_id, now)?);
+            match store.undo(&op_id, now)? {
+                Submitted::Applied(id) => println!("{id}"),
+                Submitted::Queued(item) => println!("queued {}", item.id),
+                Submitted::Cancelled => println!("cancelled"),
+            }
             sync_after_write(&cfg, vdir);
             return Ok(());
         }
