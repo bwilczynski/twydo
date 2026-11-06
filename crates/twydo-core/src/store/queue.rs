@@ -10,8 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::fsio::{remove_durable, sync_dir, write_atomic};
+use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
 use super::journal::{Entry, FamilyGuard, Write};
+use super::{Drained, Store, WriteError};
+use crate::config::Config;
 use crate::edit::Op;
 
 /// Current queue file format.
@@ -92,6 +94,16 @@ pub struct Refusal {
     pub reason: String,
     pub at: DateTime<Utc>,
     pub shown: bool,
+}
+
+/// Drains the queue for a caller that holds the vdir lock (the sync runner), with the
+/// embedded compatibility matrix.
+pub fn drain_with_lock(
+    cfg: &Config,
+    held: &VdirLock,
+    now: DateTime<Utc>,
+) -> Result<Vec<Drained>, WriteError> {
+    Store::for_drain(cfg)?.drain_locked(held, now)
 }
 
 /// A queue id: `<%Y%m%dT%H%M%S%6fZ>-<seq:08>-<pid:010>`. Fixed widths, so string order is
@@ -225,6 +237,12 @@ impl Queue {
     /// Removes a claimed item once it is committed or dealt with.
     pub fn done(&self, id: &str) -> io::Result<()> {
         remove_durable(&self.claimed(id)?)
+    }
+
+    /// Whether a refusal of item `id` is recorded.
+    pub fn is_refused(&self, id: &str) -> io::Result<bool> {
+        valid_id(id)?;
+        Ok(self.refused().join(format!("{id}.json")).exists())
     }
 
     /// Records why `item` was refused, then removes its claim.
