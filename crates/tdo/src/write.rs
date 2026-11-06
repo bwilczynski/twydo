@@ -265,7 +265,7 @@ fn step(
 }
 
 /// The title of the task an operation writes, as it is before the write.
-fn op_title(snap: &Snapshot, op: &Op) -> String {
+pub fn op_title(snap: &Snapshot, op: &Op) -> String {
     let uid = match op {
         Op::Create(t) => return t.summary.trim().to_string(),
         Op::Edit { uid, .. }

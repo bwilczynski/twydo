@@ -737,3 +737,107 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     assert!(err(&o).contains("captured"), "{}", err(&o));
     assert_eq!(fs::read(target).unwrap(), before);
 }
+
+/// What a running sync does to a writer: holds the vdir lock shared, so a save cannot get the
+/// exclusive lock and queues.
+fn sync_holds_vdir(env: &Env) -> twydo_core::store::fsio::VdirLock {
+    twydo_core::store::fsio::VdirLock::shared(&env.vdir_state()).unwrap()
+}
+
+/// Changes a task's file by a byte-visible property, as another device's edit would.
+fn touch_task_file(env: &Env, uid: &str) {
+    let file = env.vdir().join(format!("list1/{uid}.ics"));
+    let text = fs::read_to_string(&file).unwrap();
+    let changed = text.replacen("END:VTODO", "X-TEST-OTHER-DEVICE:1\r\nEND:VTODO", 1);
+    assert_ne!(text, changed);
+    fs::write(&file, changed).unwrap();
+}
+
+fn spawn_op(env: &Env, args: &[&str]) -> std::process::Child {
+    let m = env.dir.path().join("matrix.toml");
+    Command::new(env!("CARGO_BIN_EXE_tdo"))
+        .args(["op", "--matrix", m.to_str().unwrap()])
+        .args(args)
+        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
+        .env("XDG_STATE_HOME", env.state())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap()
+}
+
+#[test]
+fn op_during_a_sync_is_queued() {
+    let env = Env::new("test");
+    let lock = sync_holds_vdir(&env);
+    let start = std::time::Instant::now();
+    let o = env.op(&["complete", TASK_E]);
+    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(
+        out(&o).starts_with("queued (a sync is running): "),
+        "{}",
+        out(&o)
+    );
+    let queued = fs::read_dir(env.vdir_state().join("queue"))
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|x| x == "json")
+        })
+        .count();
+    assert_eq!(queued, 1);
+    drop(lock);
+}
+
+#[test]
+fn op_wait_reports_the_outcome() {
+    let env = Env::new("test");
+    let lock = sync_holds_vdir(&env);
+    let child = spawn_op(&env, &["complete", TASK_E, "--wait"]);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    drop(lock);
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
+    let j = env.op(&["journal"]);
+    assert!(out(&j).contains(out(&o).trim()), "{}", out(&j));
+}
+
+#[test]
+fn op_wait_reports_a_refusal() {
+    let env = Env::new("test");
+    let lock = sync_holds_vdir(&env);
+    let child = spawn_op(&env, &["complete", TASK_E, "--wait"]);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    touch_task_file(&env, TASK_E);
+    drop(lock);
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("Not saved"), "{}", err(&o));
+    assert_eq!(out(&o), "");
+    // the waiter showed it: nothing is repeated later
+    let j = env.op(&["journal"]);
+    assert!(!err(&j).contains("Not saved"), "{}", err(&j));
+}
+
+#[test]
+fn op_prints_unshown_refusals_once() {
+    let env = Env::new("test");
+    let lock = sync_holds_vdir(&env);
+    let o = env.op(&["complete", TASK_E]);
+    assert!(out(&o).starts_with("queued"), "{}", out(&o));
+    touch_task_file(&env, TASK_E);
+    drop(lock);
+    // the next write drains the queue and records the refusal
+    let o = env.op(&["edit", TASK_A, "--title", "Renamed"]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(!err(&o).contains("Not saved"), "{}", err(&o));
+    let first = env.op(&["journal"]);
+    assert!(err(&first).contains("Not saved"), "{}", err(&first));
+    let second = env.op(&["journal"]);
+    assert!(!err(&second).contains("Not saved"), "{}", err(&second));
+}

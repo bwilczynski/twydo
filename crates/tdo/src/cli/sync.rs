@@ -106,7 +106,7 @@ pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete:
 }
 
 /// Tells the user about queued edits that were refused and not yet shown, once.
-fn print_refusals(cfg: &Config) {
+pub(super) fn print_refusals(cfg: &Config) {
     let Ok(Some(state)) = twydo_core::store::existing_vdir_state(&cfg.state_dir(), &cfg.vdir)
     else {
         return;
