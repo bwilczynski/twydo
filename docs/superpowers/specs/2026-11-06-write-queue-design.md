@@ -121,6 +121,8 @@ instead of `Store::apply` directly. In order:
     one). For a new task: none. For a family operation: the family guard, as the journal
     has today.
   - `label`: the task title as the user saw it, for messages.
+  - As built (plan 2): an `op` item also stores the prepared journal entry (its writes,
+    holds and family guard), so draining commits exactly what the overlay showed.
 - **Relation to the journal:** the queue holds intent; the journal holds what was written.
   A queued item becomes an ordinary journal entry when it is applied, and that entry records
   the queue id it came from (a new optional `from_queue` field). Nothing about recovery

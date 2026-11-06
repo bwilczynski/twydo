@@ -292,9 +292,9 @@ fn edit_changes(
 }
 
 /// Load the vdir (with queued writes laid over it) under the shared lock of `state` (the
-/// store's per-vdir state dir), so the gate and `op check` never see a partly applied operation. The lock is released before
-/// this returns: the store takes the exclusive lock on its own descriptor, and two flocks in
-/// one process block each other (R2).
+/// store's per-vdir state dir), so the gate and `op check` never see a partly applied
+/// operation. The lock is released before this returns: the store takes the exclusive lock on
+/// its own descriptor, and two flocks in one process block each other (R2).
 fn snapshot(cfg: &Config, state: &Path) -> Result<Snapshot, Failure> {
     let lock = VdirLock::reader(state).map_err(|source| CliError::Lock {
         path: state.to_path_buf(),
