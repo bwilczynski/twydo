@@ -13,6 +13,7 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
     self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind,
 };
+use twydo_core::config::Config;
 use twydo_core::sync::resolve::{Resolution, resolve};
 use twydo_core::views::Snapshot;
 
@@ -85,6 +86,7 @@ fn event_loop(
     let mut last_tick = Instant::now();
     // When the last change signal arrived, if a reload is still due.
     let mut pending_since: Option<Instant> = None;
+    let mut watch_ended = EndedWatch::new(&app.snapshot.config);
     let size = terminal.size()?;
     app.resize(size.width, size.height);
     loop {
@@ -198,6 +200,7 @@ fn event_loop(
         {
             pending_since = Some(Instant::now());
         }
+        poll_ended(&mut watch_ended, app, root);
         // Wait for a quiet DEBOUNCE after the last change, so a sync batch reloads once.
         if pending_since.is_some_and(|t| t.elapsed() >= DEBOUNCE) {
             pending_since = None;
@@ -242,6 +245,40 @@ fn reload(app: &mut App, root: &Path) {
             app.reload(snapshot);
         }
         Err(e) => app.reload_failed(e),
+    }
+}
+
+/// Notices that some sync run (timer, after-edit or manual) has ended since the last look.
+struct EndedWatch {
+    last: Option<String>,
+}
+
+impl EndedWatch {
+    fn new(cfg: &Config) -> EndedWatch {
+        let last = twydo_core::sync::ended::read(cfg)
+            .ok()
+            .flatten()
+            .map(|e| e.run_id);
+        EndedWatch { last }
+    }
+
+    /// True once per new `run_id`; a read error or a missing file is not a change.
+    fn changed(&mut self, cfg: &Config) -> bool {
+        match twydo_core::sync::ended::read(cfg) {
+            Ok(Some(e)) if self.last.as_deref() != Some(e.run_id.as_str()) => {
+                self.last = Some(e.run_id);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// Reload when any sync has ended, whether or not the watcher saw the files change.
+fn poll_ended(watch: &mut EndedWatch, app: &mut App, root: &Path) {
+    if watch.changed(&app.snapshot.config) {
+        reload(app, root);
+        refresh_sync(app);
     }
 }
 
@@ -326,7 +363,6 @@ fn finish_sync(app: &mut App, root: &Path, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use twydo_core::config::Config;
     use twydo_core::views::View;
 
     const FORCE_DELETE: &str = "list \"inbox\" was emptied on the server; to apply that here run: tdo sync --force-delete \"inbox\"";
@@ -364,6 +400,30 @@ mod tests {
         assert!(app.snapshot.tasks.is_empty());
         assert_eq!(app.view, View::List("inbox".into()));
         assert_eq!(app.message.as_deref(), Some(crate::app::SYNC_DONE));
+    }
+
+    #[test]
+    fn a_background_sync_end_reloads_without_watcher_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, file) = inbox_app(dir.path());
+        let cfg = app.snapshot.config.clone();
+        let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+        let mut watch = EndedWatch::new(&cfg);
+
+        // No event yet: nothing reloads.
+        let saved = std::fs::read(&file).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        poll_ended(&mut watch, &mut app, &root);
+        assert_eq!(app.visible_rows().len(), 1);
+
+        twydo_core::sync::ended::write(&state, Utc::now()).unwrap();
+        poll_ended(&mut watch, &mut app, &root);
+        assert!(app.visible_rows().is_empty());
+
+        // The same event does not reload again.
+        std::fs::write(&file, saved).unwrap();
+        poll_ended(&mut watch, &mut app, &root);
+        assert!(app.visible_rows().is_empty());
     }
 
     #[test]
