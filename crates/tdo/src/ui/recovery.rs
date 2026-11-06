@@ -1,6 +1,6 @@
 //! Preserved-list browser and explicit confirmation overlay.
 use super::{dim, overlay_rect};
-use crate::app::App;
+use crate::app::{App, Confirmation};
 use ratatui::style::{Modifier, Style};
 use ratatui::{
     Frame,
@@ -11,6 +11,24 @@ use ratatui::{
 
 pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.recovery.is_none() && app.confirmation.is_none() {
+        return;
+    }
+    if let Some(confirmation @ Confirmation::Forget(_)) = &app.confirmation {
+        let question = Paragraph::new(confirmation.question())
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .title(" Forget list "),
+            );
+        let width = overlay_rect(area, 110, area.height).width;
+        // line_count includes the top/bottom borders, but wraps at the supplied width.
+        let height = question
+            .line_count(width.saturating_sub(2))
+            .min(u16::MAX as usize) as u16;
+        let rect = overlay_rect(area, 110, height);
+        f.render_widget(Clear, rect);
+        f.render_widget(question, rect);
         return;
     }
     let rect = overlay_rect(area, 110, area.height.saturating_sub(4).min(30));

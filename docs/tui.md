@@ -103,7 +103,8 @@ Run `:forget-list` to choose a list by name with j/k or the arrow keys, then Ent
 The chooser includes hidden, archived, and empty lists. Duplicate names show collection
 IDs beside them; unnamed lists use their IDs. Lists with a recorded Not Found sync
 error show `· Not Found`; this is the last sync report, not proof of remote deletion.
-Esc cancels the chooser.
+Esc cancels the chooser. Selecting a list opens a compact confirmation sized to its
+text; preserving and removing the local list still requires `y`.
 
 A missing-list sync error points to `:forget-list` to choose a list. The errors panel
 and CLI sync report also include the local name, collection id, and direct
