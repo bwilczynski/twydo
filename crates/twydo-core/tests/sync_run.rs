@@ -2043,6 +2043,68 @@ fn runner_drains_and_reruns_to_send() {
 }
 
 #[test]
+fn queued_final_task_deletion_is_automatically_sent_on_the_rerun() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    for entry in fs::read_dir(fx.cfg.vdir.join("c1")).unwrap() {
+        let path = entry.unwrap().path();
+        if path != qa_path(&fx) {
+            fs::remove_file(path).unwrap();
+        }
+    }
+    let (mut store, _) = Store::open(&fx.cfg).unwrap();
+    let snap = Snapshot::new(
+        twydo_core::vdir::load(&fx.cfg.vdir).unwrap(),
+        fx.cfg.clone(),
+    );
+    let held = VdirLock::shared(&fx.state()).unwrap();
+    let Submitted::Queued(item) = store
+        .submit(&snap, &Op::Delete { uid: QA.into() }, "delete", "op", now())
+        .unwrap()
+    else {
+        panic!("held lock")
+    };
+    drop(held);
+    // Publish the queued deletion during the first sync, after its pre-sync drain.
+    let queued = fx.state().join("queue").join(format!("{}.json", item.id));
+    let staged = fx.path("staged.json");
+    fs::rename(&queued, &staged).unwrap();
+    let calls = fx.path("calls");
+    write_script(
+        Path::new(&fx.cfg.sync.as_ref().unwrap().command),
+        &format!(
+            "echo \"$*\" >> '{calls}'\n\
+         if [ -e '{staged}' ]; then cp '{staged}' '{queued}'; rm '{staged}'; {clean}; \
+         elif [ \"$2\" = --force-delete ]; then {clean}; \
+         else {empty}; fi\nexit 0",
+            calls = calls.display(),
+            staged = staged.display(),
+            queued = queued.display(),
+            clean = cat_fixture("clean.txt"),
+            empty = cat_fixture("emptied-local.txt"),
+        ),
+    );
+
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+
+    assert_eq!(report.auto_forced, ["c1"]);
+    assert_eq!(report.collections.get("c1"), Some(&CollState::Ok));
+    assert!(
+        fs::read_to_string(calls)
+            .unwrap()
+            .contains("--force-delete twydo/c1")
+    );
+    assert!(!qa_path(&fx).exists());
+    let [drained] = report.drained.as_slice() else {
+        panic!("{report:?}")
+    };
+    let DrainOutcome::Applied(id) = &drained.outcome else {
+        panic!("{drained:?}")
+    };
+    assert!(synced(&fx, id));
+}
+
+#[test]
 fn drain_refusal_does_not_fail_the_run() {
     let mut fx = Fx::new(&format!("{}\nexit 0", cat_fixture("clean.txt")));
     seed_tasks(&mut fx);
