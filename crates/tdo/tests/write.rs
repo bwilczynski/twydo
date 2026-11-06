@@ -267,6 +267,49 @@ fn switched_off_triggers_nothing() {
     assert!(fired.borrow().is_empty());
 }
 
+/// A choice recorded for a held conflict syncs at once while automatic sync is on.
+#[test]
+fn recorded_resolve_syncs_now_when_on() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    assert_eq!(
+        batch::after_resolve(&cfg, true, now()),
+        Some(Trigger::SyncNow)
+    );
+}
+
+#[test]
+fn recorded_resolve_starts_nothing_when_off() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    twydo_core::sync::switch::set(&cfg, true).unwrap();
+    assert_eq!(batch::after_resolve(&cfg, true, now()), None);
+}
+
+#[test]
+fn recorded_resolve_starts_nothing_without_sync() {
+    let env = Env::new();
+    assert_eq!(batch::after_resolve(&env.config(), true, now()), None);
+}
+
+/// A resolve that wrote the vdir is an edit: it follows `after_write`.
+#[test]
+fn written_resolve_follows_after_write() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    assert_eq!(batch::after_resolve(&cfg, false, now()), None);
+    let (mut w, _) = writer(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    assert_eq!(
+        batch::after_resolve(&cfg, false, now()),
+        Some(Trigger::Waiter)
+    );
+    assert_eq!(
+        batch::after_resolve(&cfg, false, now()),
+        batch::after_write(&cfg, now())
+    );
+}
+
 /// Review Focus 1 through the form: a sync that lands while the form is open (here, a
 /// phone edit of the title) must make the save fail as stale, not overwrite it.
 #[test]
