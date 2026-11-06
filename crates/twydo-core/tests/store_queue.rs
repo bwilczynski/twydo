@@ -214,6 +214,66 @@ fn crash_after_apply_is_not_applied_twice() {
 }
 
 #[test]
+fn io_failure_keeps_the_claim_until_recovery_finishes() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::shared(&env.state).unwrap();
+    for text in ["first", "latest"] {
+        store
+            .submit(&view(&env), &title(A, text), text, "op", now())
+            .unwrap();
+    }
+    drop(sync);
+    let before = read(&env, A);
+    // Fail the vdir write after its journal entry is durable.
+    let blocker = env.file(A).with_file_name(format!(".{A}.ics.tdo-tmp"));
+    fs::create_dir(&blocker).unwrap();
+    for _ in 0..2 {
+        assert!(matches!(store.drain(later()), Err(WriteError::Io(_))));
+        assert_eq!(queue(&env).len().unwrap(), 2);
+        assert!(queue(&env).unshown().unwrap().is_empty());
+        assert_eq!(read(&env, A), before);
+        assert_eq!(env.journal()[0].stage, Stage::Prepared);
+    }
+
+    fs::remove_dir(&blocker).unwrap();
+    let drained = store.drain(later()).unwrap();
+    assert_eq!(drained.len(), 2);
+    assert!(
+        drained
+            .iter()
+            .all(|d| matches!(d.outcome, DrainOutcome::Applied(_))),
+        "{drained:?}"
+    );
+    assert!(read(&env, A).contains("SUMMARY:latest"));
+    assert!(queue(&env).is_empty().unwrap());
+    assert!(queue(&env).unshown().unwrap().is_empty());
+    assert_eq!(env.journal().len(), 2);
+    assert!(env.journal().iter().all(|e| e.stage == Stage::Applied));
+}
+
+#[test]
+fn io_failure_after_a_successful_item_stops_the_drain_without_refusing() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::shared(&env.state).unwrap();
+    store
+        .submit(&view(&env), &title(E, "first"), "first", "op", now())
+        .unwrap();
+    store
+        .submit(&view(&env), &title(A, "second"), "second", "op", later())
+        .unwrap();
+    drop(sync);
+    let blocker = env.file(A).with_file_name(format!(".{A}.ics.tdo-tmp"));
+    fs::create_dir(&blocker).unwrap();
+    let drained = store.drain(later()).unwrap();
+    assert_eq!(drained.len(), 1, "the failed item stays pending");
+    assert!(matches!(drained[0].outcome, DrainOutcome::Applied(_)));
+    assert_eq!(queue(&env).len().unwrap(), 1);
+    assert!(queue(&env).unshown().unwrap().is_empty());
+}
+
+#[test]
 fn a_claim_that_was_also_refused_is_dropped() {
     let env = env();
     let mut store = env.store(matrix());

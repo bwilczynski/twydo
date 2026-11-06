@@ -107,7 +107,10 @@ Draining (oldest id first) happens in any writer that gets the lock, in the sync
 recovery and after reconcile), in the TUI when a sync ends and at startup, and in `tdo op --wait`
 ([sync.md](sync.md#what-tdo-sync-does)). Each item has the gate re-checked on the current files and its
 base compared strictly, whole file by whole file; a mismatch refuses the item. A stuck journal
-stops the drain and the items stay queued. The journal entry an item produces records
+stops the drain and the items stay queued. An I/O failure also stops the drain without
+recording a refusal: a prepared journal entry may still recover. A later drain finishes
+that recovery before removing the claim and refreshes its snapshot for dependent edits.
+The journal entry an item produces records
 `from_queue {id, queued}`: an item named by an entry is removed, never applied twice, and
 batching ages the entry by `queued`, not by the drain time.
 
