@@ -97,6 +97,18 @@ pub struct Refusal {
     pub reason: String,
     pub at: DateTime<Utc>,
     pub shown: bool,
+    /// The refusal was [`WriteError::Stale`]: a file changed under the queued edit.
+    #[serde(default)]
+    pub stale: bool,
+}
+
+/// The line that tells the user a queued edit was not saved.
+pub fn refusal_message(r: &Refusal) -> String {
+    if r.stale {
+        format!("Not saved: \"{}\" changed on another device", r.item.label)
+    } else {
+        format!("Not saved: \"{}\": {}", r.item.label, r.reason)
+    }
 }
 
 /// Drains the queue for a caller that holds the vdir lock (the sync runner), with the
@@ -323,7 +335,13 @@ impl Queue {
     }
 
     /// Records why `item` was refused, then removes its claim.
-    pub fn refuse(&self, item: &Item, reason: &str, at: DateTime<Utc>) -> io::Result<()> {
+    pub fn refuse(
+        &self,
+        item: &Item,
+        reason: &str,
+        stale: bool,
+        at: DateTime<Utc>,
+    ) -> io::Result<()> {
         valid_id(&item.id)?;
         let r = Refusal {
             format: FORMAT,
@@ -331,6 +349,7 @@ impl Queue {
             reason: reason.to_string(),
             at,
             shown: false,
+            stale,
         };
         let bytes = serde_json::to_vec_pretty(&r).map_err(io::Error::other)?;
         write_atomic(&self.refused().join(format!("{}.json", item.id)), &bytes)?;

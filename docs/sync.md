@@ -123,7 +123,8 @@ One run, in order:
    vdirsyncer left over from a killed run), unfinished journal entries are rolled forward before
    vdirsyncer runs. For an entry that cannot be finished, every write whose file does not hold its
    `after` (the file holds its `before`, or a third version) becomes a `journal` conflict and the
-   entry is abandoned (see Known limits).
+   entry is abandoned (see Known limits). When nothing is stuck, edits waiting in the write
+   queue are applied here, under the same lock, oldest first.
 4. **vdirsyncer** `sync <pair>` runs under the shared vdir lock, so readers (the TUI, `tdo op`
    reads) continue and writers wait. vdirsyncer holds a shared lock of its own too (its stdin is
    the lock file), which lasts until it exits even if `tdo` does not. The runner sets
@@ -144,7 +145,12 @@ One run, in order:
      confirmed only by a run that counts. If the upload itself failed, the conflict is spurious:
      keep the local version.
    - Held conflicts that you decided, or that both sides now agree on, are marked resolved.
-   - Journal entries and conflicts older than `retention_days` (default 30) are pruned.
+   - Journal entries, conflicts and refused queued edits older than `retention_days` (default
+     30) are pruned.
+   - Edits queued while vdirsyncer ran are applied now, and when any was applied the runner does
+     another pass (unless it was the last) so they are sent. An edit that cannot be applied
+     because its file changed on another device is not saved; the next foreground `tdo sync`
+     prints `tdo: Not saved: "<title>" changed on another device` once.
 6. **Status.** Each list is classified and `status.json` is written.
 7. **Rerun** if a request arrived meanwhile (at most twice).
 

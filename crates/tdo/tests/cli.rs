@@ -470,6 +470,65 @@ mod sync {
         assert!(stdout(&o).contains("automatic sync on"), "{}", stdout(&o));
     }
 
+    /// A refusal for a queued edit titled `label`, not yet shown.
+    fn record_refusal(fx: &Fx, label: &str) {
+        use chrono::{TimeZone, Utc};
+        use twydo_core::edit::Op;
+        use twydo_core::store::journal::{Entry, Stage};
+        use twydo_core::store::queue::{FORMAT, Item, Kind, Prepared, Queue, new_id, origin};
+        let at = Utc.with_ymd_and_hms(2026, 11, 6, 12, 0, 0).unwrap();
+        let item = Item {
+            format: FORMAT,
+            id: new_id(at),
+            created: at,
+            origin: origin("op"),
+            label: label.to_string(),
+            kind: Kind::Op {
+                op: Op::Complete {
+                    uid: "uid-a".into(),
+                },
+                prepared: Prepared {
+                    entry: Entry {
+                        format: 1,
+                        id: "x".into(),
+                        created: at,
+                        kind: "edit".into(),
+                        uids: vec!["uid-a".into()],
+                        stage: Stage::Prepared,
+                        inverse_of: None,
+                        from_queue: None,
+                        synced: None,
+                        holds: Vec::new(),
+                        family: None,
+                        writes: Vec::new(),
+                    },
+                    holds: Vec::new(),
+                    family: None,
+                },
+            },
+        };
+        let state = twydo_core::store::vdir_state_dir(&fx.path("state"), &fx.path("vdir")).unwrap();
+        let q = Queue::open(&state).unwrap();
+        q.push(&item).unwrap();
+        assert!(q.claim(&item.id).unwrap());
+        q.refuse(&item, "changed on disk", true, at).unwrap();
+    }
+
+    #[test]
+    fn sync_prints_unshown_refusals_once() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
+        record_refusal(&fx, "Synthetic task");
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(
+            stderr(&o).contains("Not saved: \"Synthetic task\" changed on another device"),
+            "{}",
+            stderr(&o)
+        );
+        let o = fx.tdo(&["sync"]);
+        assert!(!stderr(&o).contains("Not saved"), "{}", stderr(&o));
+    }
+
     #[test]
     fn sync_off_without_config_exits_2() {
         let fx = Fx::new(None);

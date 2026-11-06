@@ -18,6 +18,7 @@ use super::status::CollState;
 use crate::config::SyncConfig;
 use crate::conflicts::{Conflict, ConflictKind, ConflictState, ConflictStore, NewConflict, Side};
 use crate::store::journal::{Entry, Journal, Stage};
+use crate::store::queue::Queue;
 
 /// What [`reconcile`] did.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -102,6 +103,9 @@ pub fn reconcile(
         now.checked_sub_signed(chrono::Duration::days(i64::from(sync.retention_days)))
     {
         rec.pruned = journal.prune(before)?.len() + conflicts.prune(before)?.len();
+        if let Some(queue) = Queue::existing(journal.state_dir()) {
+            rec.pruned += queue.prune(before)?;
+        }
     }
     Ok(rec)
 }
