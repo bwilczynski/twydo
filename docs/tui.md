@@ -94,13 +94,20 @@ On a checklist or project, a write acts on the whole family; see
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | show unreadable files and sync errors; j/k scroll |
-| `:forget-list <list>` | confirm a list was deleted remotely, preserve its local copy, and refresh the synced list set |
+| `:forget-list [list]` | choose a list, confirm it was deleted remotely, preserve its local copy, and refresh the synced list set |
 | `:recover` | browse preserved lists; Enter previews tasks and notes, r chooses a destination |
 | `:recover <backup-id> <destination-list>` | preview and confirm recovery into a named existing list |
 | `:q` | quit |
 
-A missing-list sync error includes the local name, collection id, and exact
-`:forget-list <id>` command. A Not Found response alone does not prove a list was deleted:
+Run `:forget-list` to choose a list by name with j/k or the arrow keys, then Enter.
+The chooser includes hidden, archived, and empty lists. Duplicate names show collection
+IDs beside them; unnamed lists use their IDs. Lists with a recorded Not Found sync
+error show `· Not Found`; this is the last sync report, not proof of remote deletion.
+Esc cancels the chooser.
+
+A missing-list sync error points to `:forget-list` to choose a list. The errors panel
+and CLI sync report also include the local name, collection id, and direct
+`:forget-list <id>` shortcut. A Not Found response alone does not prove a list was deleted:
 only confirm if you deleted it on another device. Both forgetting and recovery require
 `y`; `n` or Esc cancels without writing. List arguments accept a collection id or unique
 display name, including spaces. Recovery always needs an existing destination, for example

@@ -127,7 +127,7 @@ fn problems(r: &RunReport, names: &BTreeMap<String, String>) -> Vec<String> {
                 if message.trim_end_matches(';').ends_with("Not Found") =>
             {
                 out.push(format!(
-                    "list {:?} ({coll}): server returned Not Found; if you deleted this list on another device, run :forget-list {coll}",
+                    "list {:?} ({coll}): server returned Not Found; if you deleted this list on another device, run :forget-list to choose a list (or :forget-list {coll})",
                     name_of(names, coll)
                 ));
             }
@@ -373,6 +373,7 @@ mod tests {
         assert!(text.contains("Old Projects"), "{text}");
         assert!(text.contains(":forget-list c1"), "{text}");
         assert!(text.contains(":forget-list c2"), "{text}");
+        assert!(text.contains(":forget-list to choose a list"), "{text}");
         assert!(
             !text.contains("was deleted"),
             "404 is not proof of deletion"

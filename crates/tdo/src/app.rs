@@ -92,11 +92,19 @@ pub enum Outcome {
     ForgetList(twydo_core::retired::Preview),
 }
 
-/// The list picker, in sidebar order: `m` moves task `uid` to the chosen list; from the
-/// card's List field (`uid` = `None`) the choice only sets that field.
+/// The action performed after choosing a list. Retirement still requires confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListPickerAction {
+    Move(String),
+    SetList,
+    Recover(String),
+    Forget,
+}
+
+/// A list chooser shared by movement, editing, recovery and retirement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListPicker {
-    pub uid: Option<String>,
+    pub action: ListPickerAction,
     pub lists: Vec<String>,
     pub cursor: usize,
 }
@@ -104,7 +112,6 @@ pub struct ListPicker {
 pub struct App {
     pub recovery: Option<RecoveryPanel>,
     pub confirmation: Option<Confirmation>,
-    recovery_target: Option<String>,
     pub snapshot: Snapshot,
     pub view: View,
     pub focus: Pane,
@@ -198,7 +205,6 @@ impl App {
         App {
             recovery: None,
             confirmation: None,
-            recovery_target: None,
             snapshot,
             view: View::Today,
             focus: Pane::Tasks,
@@ -1007,7 +1013,7 @@ impl App {
             return;
         }
         self.picker = Some(ListPicker {
-            uid,
+            action: uid.map_or(ListPickerAction::SetList, ListPickerAction::Move),
             lists,
             cursor: 0,
         });
@@ -1021,7 +1027,6 @@ impl App {
         match k.code {
             KeyCode::Esc => {
                 self.picker = None;
-                self.recovery_target = None;
             }
             KeyCode::Char('j') | KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
             KeyCode::Char('k') | KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
@@ -1029,19 +1034,21 @@ impl App {
                 let Some(to) = p.lists.get(p.cursor).cloned() else {
                     return Outcome::Continue;
                 };
-                if let Some(id) = self.recovery_target.take() {
+                let action = p.action.clone();
+                if !matches!(action, ListPickerAction::Move(_)) {
                     self.picker = None;
-                    self.confirm_recovery(&id, &to);
-                    return Outcome::Continue;
                 }
-                match p.uid.clone() {
-                    Some(uid) => return Outcome::Write(Request::Apply(Op::Move { uid, to })),
-                    None => {
-                        self.picker = None;
+                match action {
+                    ListPickerAction::Move(uid) => {
+                        return Outcome::Write(Request::Apply(Op::Move { uid, to }));
+                    }
+                    ListPickerAction::SetList => {
                         if let Some(form) = self.form.as_mut() {
                             form.set_list(to);
                         }
                     }
+                    ListPickerAction::Recover(id) => self.confirm_recovery(&id, &to),
+                    ListPickerAction::Forget => self.forget_command(&to),
                 }
             }
             _ => {}

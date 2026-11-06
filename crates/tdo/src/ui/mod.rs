@@ -110,7 +110,9 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
                 )));
                 if message.trim_end_matches(';').ends_with("Not Found") {
                     lines.push(Line::raw("If you deleted this list on another device:"));
-                    lines.push(Line::raw(format!(":forget-list {id}")));
+                    lines.push(Line::raw(format!(
+                        ":forget-list to choose a list (or :forget-list {id})"
+                    )));
                 }
             }
         }
@@ -265,7 +267,7 @@ const HELP: &[(&str, &str, bool)] = &[
         false,
     ),
     (
-        ":forget-list <list>",
+        ":forget-list [list]",
         "confirm remote deletion and preserve local copy",
         false,
     ),
