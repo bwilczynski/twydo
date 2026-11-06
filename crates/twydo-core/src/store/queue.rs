@@ -131,31 +131,40 @@ fn base_matches(item: &Item, report: &LoadReport, vdir: &Path) -> bool {
 /// it and the row shows the file. Without state or a readable queue this is a plain
 /// [`Snapshot::new`]. A reverted entry whose journal record cannot be read is not marked.
 pub fn view(mut report: LoadReport, cfg: Config) -> Snapshot {
-    let layers = (|| -> Option<(Vec<Item>, Option<Journal>)> {
+    let layers = (|| -> Option<(Vec<Item>, Vec<Entry>)> {
         let state = existing_vdir_state(&cfg.state_dir(), &cfg.vdir).ok()??;
         let queue = Queue::existing(&state)?;
-        let journal = state
-            .join("journal")
-            .is_dir()
-            .then(|| Journal::open(&state).ok())
-            .flatten();
-        let items = queue
+        let items: Vec<Item> = queue
             .list()
             .ok()?
             .into_iter()
             .filter(|i| !queue.is_refused(&i.id).unwrap_or(false))
             .collect();
-        Some((items, journal))
+        if items.is_empty() {
+            return None;
+        }
+        // Listed once for all items; an unreadable journal only loses the applied-claim
+        // check and the reverted entries' pending marks.
+        let entries = if state.join("journal").is_dir() {
+            Journal::open(&state)
+                .and_then(|j| j.list())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        Some((items, entries))
     })();
-    let Some((items, journal)) = layers else {
+    let Some((items, entries)) = layers else {
         return Snapshot::new(report, cfg);
     };
+    let drained: HashSet<&str> = entries
+        .iter()
+        .filter_map(|e| e.from_queue.as_ref().map(|q| q.id.as_str()))
+        .collect();
     let mut pending = HashSet::new();
     for item in items {
         // Applied but not yet removed (a drain is between its commit and `done`).
-        if let Some(j) = &journal
-            && j.by_queue_id(&item.id).ok().flatten().is_some()
-        {
+        if drained.contains(item.id.as_str()) {
             continue;
         }
         if !base_matches(&item, &report, &cfg.vdir) {
@@ -165,8 +174,8 @@ pub fn view(mut report: LoadReport, cfg: Config) -> Snapshot {
         match &item.kind {
             Kind::Op { prepared, .. } => pending.extend(prepared.entry.uids.iter().cloned()),
             Kind::Revert { entry, .. } => {
-                if let Some(e) = journal.as_ref().and_then(|j| j.get(entry).ok().flatten()) {
-                    pending.extend(e.uids);
+                if let Some(e) = entries.iter().find(|e| e.id == *entry) {
+                    pending.extend(e.uids.iter().cloned());
                 }
             }
         }
