@@ -128,10 +128,17 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
         out.push(("sync off".into(), yellow));
         out.push((" · ".into(), Style::new()));
     }
+    let activity = app.sync_activity.label();
+    if let Some(label) = &activity {
+        out.push((label.clone(), theme::accent()));
+    }
     let missing = s.status.collections.iter().find(|(_, state)| {
         matches!(state,
         CollState::Error { message } if message.trim_end_matches(';').ends_with("Not Found"))
     });
+    if activity.is_some() && (missing.is_some() || s.status.last_error.is_some()) {
+        out.push((" · ".into(), Style::new()));
+    }
     if let Some((id, _)) = missing {
         out.push((
             format!(
@@ -156,7 +163,7 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
             format!("sync failed: {error}{}", retry.unwrap_or_default()),
             theme::overdue(),
         ));
-    } else {
+    } else if activity.is_none() {
         out.push((
             match s.status.last_success {
                 Some(t) => format!(

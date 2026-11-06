@@ -1313,3 +1313,52 @@ fn detached_children_show_parent_context_in_all_and_ordinary_lists() {
         }
     }
 }
+
+#[test]
+fn syncing_replaces_last_sync_age_and_preserves_diagnostics() {
+    use std::time::{Duration, Instant};
+    let mut a = app();
+    let mut s = summary(Default::default(), 2, vec![conflict_on("nope")]);
+    s.off = true;
+    s.status.last_error = Some("connection refused".into());
+    a.set_sync(Some(s));
+    let t = Instant::now();
+    a.sync_activity.observe(true, t);
+    a.message = Some("saved".into());
+    let first = status_line(&render(&mut a, 220, 20));
+    assert!(first.contains("⠋ Syncing…"), "{first}");
+    assert!(first.contains("sync off"));
+    assert!(first.contains("connection refused"));
+    assert!(first.contains("2 pending · 1 conflict"));
+    a.sync_activity
+        .observe(true, t + Duration::from_millis(250));
+    let second = status_line(&render(&mut a, 220, 20));
+    assert!(second.contains("⠙ Syncing…"), "{second}");
+
+    a.sync_activity.observe(false, t + Duration::from_secs(1));
+    let failed = status_line(&render(&mut a, 220, 20));
+    assert!(!failed.contains("Syncing") && !failed.contains("Sync complete"));
+    a.set_sync(Some(summary(
+        twydo_core::sync::status::SyncStatus {
+            last_success: Some(utc(15, 0)),
+            ..Default::default()
+        },
+        0,
+        vec![],
+    )));
+    a.sync_activity.observe(true, t + Duration::from_secs(2));
+    let running = status_line(&render(&mut a, 140, 20));
+    assert!(running.contains("Syncing…"), "{running}");
+    assert!(!running.contains("synced"), "{running}");
+    assert!(!running.contains("Sync complete"), "{running}");
+    a.sync_activity.observe(false, t + Duration::from_secs(3));
+    let finished = status_line(&render(&mut a, 140, 20));
+    assert!(finished.contains("synced just now"), "{finished}");
+    assert!(
+        !finished.contains("Syncing") && !finished.contains("Sync complete"),
+        "{finished}"
+    );
+    a.tick(now() + chrono::Duration::minutes(1));
+    assert!(status_line(&render(&mut a, 140, 20)).contains("synced 1m ago"));
+    assert_eq!(a.message.as_deref(), Some("saved"));
+}
