@@ -30,14 +30,18 @@ use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
 use fsio::VdirLock;
 use journal::{
-    ApplyError, Entry, FORMAT, Journal, Stage, Write, apply_entry, new_op_id, recover_locked,
-    try_recover,
+    ApplyError, Entry, FORMAT, FromQueue, Journal, Stage, Write, apply_entry, new_op_id,
+    recover_locked, try_recover,
 };
+use queue::{Item, Kind, Prepared, Queue};
 
 pub use journal::RecoveryReport;
 
 /// How often a write with a lock wait retries the vdir lock.
 const LOCK_RETRY: Duration = Duration::from_millis(25);
+
+/// How long [`Store::submit`] tries the vdir lock before it queues the write.
+const TRY_LOCK: Duration = Duration::from_millis(250);
 
 /// The edge case that must pass before a repeating completion can be undone in verified mode.
 const UNDO_REPEAT_EDGE: &str = "reopen-undo-before-after-sync";
@@ -166,6 +170,7 @@ pub fn existing_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<Option<P
 pub struct Store {
     vdir: PathBuf,
     state: PathBuf,
+    cfg: Config,
     mode: WriteMode,
     matrix: Matrix,
     journal: Journal,
@@ -175,6 +180,49 @@ pub struct Store {
     undone: Vec<String>,
     /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
     lock_wait: Option<Duration>,
+}
+
+/// What [`Store::submit`] did with a write.
+#[derive(Debug)]
+// Items carry whole tasks; one is built per write, never in bulk.
+#[allow(clippy::large_enum_variant)]
+pub enum Submitted {
+    /// Committed now; the journal entry id.
+    Applied(String),
+    /// A sync holds the vdir: waiting in the queue for the next lock holder.
+    Queued(Item),
+}
+
+/// A queued item a drain dealt with.
+#[derive(Debug)]
+pub struct Drained {
+    pub item: Item,
+    pub outcome: DrainOutcome,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DrainOutcome {
+    /// Committed; the journal entry id.
+    Applied(String),
+    /// A journal entry already named the item (a crash before its claim was removed).
+    AlreadyApplied(String),
+    /// Not committed; why.
+    Refused(String),
+}
+
+/// A drained item and, for a refusal, the error behind it.
+struct Step {
+    drained: Drained,
+    error: Option<WriteError>,
+}
+
+impl Step {
+    fn new(item: Item, outcome: DrainOutcome) -> Step {
+        Step {
+            drained: Drained { item, outcome },
+            error: None,
+        }
+    }
 }
 
 /// The parts of a journal entry an operation produces.
@@ -288,6 +336,7 @@ impl Store {
         let store = Store {
             vdir,
             state,
+            cfg: cfg.clone(),
             mode: cfg.writes.mode,
             matrix,
             journal,
@@ -296,6 +345,25 @@ impl Store {
             lock_wait: None,
         };
         Ok((store, report))
+    }
+
+    /// A store for a caller that already holds the vdir lock and drains the queue (the sync
+    /// runner): no recovery, the embedded matrix.
+    pub(crate) fn for_drain(cfg: &Config) -> Result<Store, WriteError> {
+        let vdir = cfg.vdir.clone();
+        let state = bind_vdir_state(&cfg.state_dir(), &vdir)?;
+        let journal = Journal::open(&state)?;
+        Ok(Store {
+            vdir,
+            state,
+            cfg: cfg.clone(),
+            mode: cfg.writes.mode,
+            matrix: Matrix::embedded().clone(),
+            journal,
+            done: Vec::new(),
+            undone: Vec::new(),
+            lock_wait: None,
+        })
     }
 
     /// How long a write waits for the vdir lock. `None` (the default) blocks until it is free
@@ -310,14 +378,19 @@ impl Store {
         let Some(wait) = self.lock_wait else {
             return Ok(VdirLock::exclusive(&self.state)?);
         };
+        self.try_lock_for(wait)?.ok_or(WriteError::Busy)
+    }
+
+    /// The vdir lock, retried every 25 ms for up to `wait`; `None` if it stayed held.
+    fn try_lock_for(&self, wait: Duration) -> Result<Option<VdirLock>, WriteError> {
         let deadline = Instant::now() + wait;
         loop {
             if let Some(lock) = VdirLock::try_exclusive(&self.state)? {
-                return Ok(lock);
+                return Ok(Some(lock));
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return Err(WriteError::Busy);
+                return Ok(None);
             }
             std::thread::sleep(left.min(LOCK_RETRY));
         }
@@ -337,6 +410,22 @@ impl Store {
         op: &Op,
         now: DateTime<Utc>,
     ) -> Result<String, WriteError> {
+        let prepared = self.prepare(snap, op, now)?;
+        let _lock = self.lock()?;
+        let id = self.commit_locked(prepared, None, now)?;
+        self.done.push(id.clone());
+        self.undone.clear();
+        Ok(id)
+    }
+
+    /// The gate and the plan: the journal entry `op` produces on the files loaded in `snap`,
+    /// with the holds and family it must find unchanged when it is committed.
+    pub(crate) fn prepare(
+        &self,
+        snap: &Snapshot,
+        op: &Op,
+        now: DateTime<Utc>,
+    ) -> Result<Prepared, WriteError> {
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let plan = self.plan(snap, op, now)?;
@@ -384,22 +473,204 @@ impl Store {
             },
             writes: plan.writes,
         };
+        Ok(Prepared {
+            entry,
+            holds,
+            family,
+        })
+    }
 
-        let _lock = self.lock()?;
+    /// Commits a prepared entry (the caller holds the lock): refused unless the journal is
+    /// clear and every file it reads or writes still holds the bytes it was planned on. The
+    /// entry gets a fresh id and `now` as its creation time.
+    pub(crate) fn commit_locked(
+        &mut self,
+        p: Prepared,
+        from_queue: Option<FromQueue>,
+        now: DateTime<Utc>,
+    ) -> Result<String, WriteError> {
         self.check_not_stuck()?;
-        for w in &entry.writes {
+        for w in &p.entry.writes {
             self.check_holds(&w.path, w.before.as_deref())?;
         }
-        for (rel, source) in &holds {
+        for (rel, source) in &p.holds {
             self.check_holds(rel, Some(source))?;
         }
-        if let Some(f) = &family {
+        if let Some(f) = &p.family {
             self.check_family(f)?;
         }
-        let id = self.run(entry)?;
-        self.done.push(id.clone());
-        self.undone.clear();
-        Ok(id)
+        let mut entry = p.entry;
+        entry.id = new_op_id(now);
+        entry.created = now;
+        entry.from_queue = from_queue;
+        self.run(entry)
+    }
+
+    /// The one write path of the TUI and `tdo op`: applies `op` when the vdir lock is free
+    /// and queues it when a sync holds it (spec §6.1). `label` names it in messages and
+    /// `tool` (`"tui"` or `"op"`) says who queued it. Never returns [`WriteError::Busy`].
+    pub fn submit(
+        &mut self,
+        view: &Snapshot,
+        op: &Op,
+        label: &str,
+        tool: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Submitted, WriteError> {
+        self.submit_with(view, op, label, tool, now, &mut || {})
+    }
+
+    /// [`Store::submit`], calling `after_push` once the item is queued and before the lock is
+    /// tried again: a test hook for the lost-wakeup window.
+    #[doc(hidden)]
+    pub fn submit_with(
+        &mut self,
+        view: &Snapshot,
+        op: &Op,
+        label: &str,
+        tool: &str,
+        now: DateTime<Utc>,
+        after_push: &mut dyn FnMut(),
+    ) -> Result<Submitted, WriteError> {
+        let prepared = self.prepare(view, op, now)?;
+        if let Some(lock) = self.try_lock_for(TRY_LOCK)? {
+            self.drain_locked(&lock, now)?;
+            let id = self.commit_locked(prepared, None, now)?;
+            self.done.push(id.clone());
+            self.undone.clear();
+            return Ok(Submitted::Applied(id));
+        }
+        let item = Item {
+            format: queue::FORMAT,
+            id: queue::new_id(now),
+            created: now,
+            origin: queue::origin(tool),
+            label: label.to_string(),
+            kind: Kind::Op {
+                op: op.clone(),
+                prepared,
+            },
+        };
+        let queue = Queue::open(&self.state)?;
+        queue.push(&item)?;
+        after_push();
+        // The holder may have released the lock after our try and before the push, and its
+        // drain would not have seen the item: look once more.
+        let Some(lock) = VdirLock::try_exclusive(&self.state)? else {
+            return Ok(Submitted::Queued(item));
+        };
+        let steps = match self.drain_steps(&lock, now) {
+            Ok(steps) => steps,
+            Err(e) => {
+                // Our item was not applied and the caller gets the error: do not keep it.
+                queue.done(&item.id)?;
+                return Err(e);
+            }
+        };
+        for step in steps {
+            if step.drained.item.id != item.id {
+                continue;
+            }
+            return match (step.drained.outcome, step.error) {
+                (DrainOutcome::Applied(id) | DrainOutcome::AlreadyApplied(id), _) => {
+                    self.done.push(id.clone());
+                    self.undone.clear();
+                    Ok(Submitted::Applied(id))
+                }
+                (DrainOutcome::Refused(reason), error) => Err(match error {
+                    Some(e) => e,
+                    None => WriteError::Blocked(Blocked(reason)),
+                }),
+            };
+        }
+        Ok(Submitted::Queued(item))
+    }
+
+    /// Commits the queued items, oldest first, once the lock is free. [`WriteError::Busy`]
+    /// if a sync still holds it. For the TUI when it learns a sync ended.
+    pub fn drain(&mut self, now: DateTime<Utc>) -> Result<Vec<Drained>, WriteError> {
+        let lock = self.try_lock_for(TRY_LOCK)?.ok_or(WriteError::Busy)?;
+        self.drain_locked(&lock, now)
+    }
+
+    /// [`Store::drain_steps`] without the refusal errors.
+    pub(crate) fn drain_locked(
+        &mut self,
+        held: &VdirLock,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<Drained>, WriteError> {
+        Ok(self
+            .drain_steps(held, now)?
+            .into_iter()
+            .map(|s| s.drained)
+            .collect())
+    }
+
+    /// Drains the queue under the held lock (spec §6.3): per item, in id order, skip what a
+    /// journal entry already names, skip what was cancelled, re-gate on the current files and
+    /// commit what was planned. A refused item is recorded and the drain goes on; a stuck
+    /// journal stops it, leaving the item claimed, and is the error only if nothing drained.
+    fn drain_steps(
+        &mut self,
+        _held: &VdirLock,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<Step>, WriteError> {
+        let queue = Queue::open(&self.state)?;
+        let mut snap = Snapshot::new(crate::vdir::load(&self.vdir)?, self.cfg.clone());
+        let mut steps: Vec<Step> = Vec::new();
+        for item in queue.list()? {
+            if let Some(entry) = self.journal.by_queue_id(&item.id)? {
+                queue.done(&item.id)?;
+                steps.push(Step::new(item, DrainOutcome::AlreadyApplied(entry.id)));
+                continue;
+            }
+            if !queue.claim(&item.id)? {
+                continue;
+            }
+            if queue.is_refused(&item.id)? {
+                // A crash inside `Queue::refuse` left both the claim and the refusal.
+                queue.done(&item.id)?;
+                continue;
+            }
+            let from_queue = FromQueue {
+                id: item.id.clone(),
+                queued: item.created,
+            };
+            let result = match &item.kind {
+                Kind::Op { op, prepared } => {
+                    let today = item.created.with_timezone(&snap.tz()).date_naive();
+                    gate::check(&snap, &self.matrix, self.mode, op, today)
+                        .map_err(WriteError::Blocked)
+                        .and_then(|()| self.commit_locked(prepared.clone(), Some(from_queue), now))
+                }
+                Kind::Revert { entry, .. } => self.revert_locked(entry, Some(from_queue), now),
+            };
+            match result {
+                Ok(id) => {
+                    queue.done(&item.id)?;
+                    snap = Snapshot::new(crate::vdir::load(&self.vdir)?, self.cfg.clone());
+                    steps.push(Step::new(item, DrainOutcome::Applied(id)));
+                }
+                Err(e @ WriteError::Stuck(_)) => {
+                    if steps.is_empty() {
+                        return Err(e);
+                    }
+                    break;
+                }
+                Err(e) => {
+                    let reason = e.to_string();
+                    queue.refuse(&item, &reason, now)?;
+                    steps.push(Step {
+                        drained: Drained {
+                            item,
+                            outcome: DrainOutcome::Refused(reason),
+                        },
+                        error: Some(e),
+                    });
+                }
+            }
+        }
+        Ok(steps)
     }
 
     /// Writes one file through the journal (kind "resolve") without the gate: it restores a
@@ -495,6 +766,17 @@ impl Store {
 
     fn revert(&self, id: &str, now: DateTime<Utc>) -> Result<String, WriteError> {
         let _lock = self.lock()?;
+        self.revert_locked(id, None, now)
+    }
+
+    /// [`Store::undo`]'s work under the held lock; `from_queue` names the queued item it
+    /// carries out.
+    fn revert_locked(
+        &self,
+        id: &str,
+        from_queue: Option<FromQueue>,
+        now: DateTime<Utc>,
+    ) -> Result<String, WriteError> {
         self.check_not_stuck()?;
         let e = self.journal.get(id)?.ok_or_else(|| no_entry(id))?;
         if e.stage != Stage::Applied {
@@ -542,7 +824,7 @@ impl Store {
             uids: e.uids,
             stage: Stage::Prepared,
             inverse_of: Some(id.to_string()),
-            from_queue: None,
+            from_queue,
             synced: None,
             holds: e.holds,
             family: e.family,
