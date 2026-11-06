@@ -543,3 +543,18 @@ fn summary_counts_queued_items() {
         .unwrap();
     assert_eq!(twydo_core::sync::summary(&cfg).unwrap().unwrap().queued, 1);
 }
+
+#[test]
+fn view_hides_an_applied_item_whose_claim_is_still_there() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let id = queued_edit(&env, &mut store, title(A, "renamed"));
+    let item = queue(&env).list().unwrap().remove(0);
+    store.drain(later()).unwrap();
+    // A crash left the claim of an applied item.
+    let q = queue(&env);
+    q.push(&item).unwrap();
+    assert!(q.claim(&id).unwrap());
+    let snap = view(&env);
+    assert!(!snap.is_pending(idx(&snap, A)));
+}
