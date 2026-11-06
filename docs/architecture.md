@@ -151,6 +151,12 @@ digits.
 An operation id is `<YYYYMMDDTHHMMSSZ>-<8 hex>`: the UTC creation time and 8 random hex digits.
 Ids sort chronologically, and recovery processes entries in id order.
 
+Journal creation times preserve commit order under the exclusive vdir lock. When the clock
+reading is no later than the preceding entry (including several items in one queue drain),
+the next entry uses the preceding time plus one nanosecond. Pending entries are sorted by
+this time, then id for older ties, so sync reconciliation and emptied-list checks use the
+last committed version rather than a random id suffix. Task timestamps retain the edit time.
+
 All files, in the journal and in the vdir, are written atomically: the bytes go to
 `.<name>.tdo-tmp` in the same directory, the temporary file is fsynced and renamed over the
 target, and the directory is fsynced. Removals unlink and then fsync the directory.

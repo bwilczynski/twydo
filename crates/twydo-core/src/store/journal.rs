@@ -194,13 +194,16 @@ impl Journal {
         self.store(&e)
     }
 
-    /// Applied entries not yet confirmed by a sync, sorted by id.
+    /// Applied entries not yet confirmed by a sync, in commit order (creation time, then id
+    /// for older entries whose timestamps tie).
     pub fn pending(&self) -> io::Result<Vec<Entry>> {
-        Ok(self
+        let mut pending: Vec<Entry> = self
             .list()?
             .into_iter()
             .filter(|e| e.stage == Stage::Applied && e.synced.is_none())
-            .collect())
+            .collect();
+        pending.sort_by(|a, b| (a.created, &a.id).cmp(&(b.created, &b.id)));
+        Ok(pending)
     }
 
     /// Removes Applied entries confirmed before `before`; returns their ids.

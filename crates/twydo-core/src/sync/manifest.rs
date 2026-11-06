@@ -111,7 +111,7 @@ impl Manifest {
         )
     }
 
-    /// Whether `pending` (sorted by id, as [`crate::store::journal::Journal::pending`]
+    /// Whether `pending` (in commit order, as [`crate::store::journal::Journal::pending`]
     /// returns it) accounts for `coll` being empty: the manifest lists at least one file
     /// for it, and the last pending write to each of them removed it. No entry for the
     /// collection means no evidence.

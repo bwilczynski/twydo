@@ -449,6 +449,20 @@ fn pending_excludes_synced_prepared_and_abandoned() {
 }
 
 #[test]
+fn pending_uses_commit_time_before_random_id_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let j = Journal::open(dir.path()).unwrap();
+    let mut first = applied("z-first");
+    first.created = at(1);
+    let mut second = applied("a-second");
+    second.created = at(2);
+    j.prepare(&first).unwrap();
+    j.prepare(&second).unwrap();
+    let ids: Vec<_> = j.pending().unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(ids, ["z-first", "a-second"]);
+}
+
+#[test]
 fn prune_removes_only_synced_before_cutoff() {
     let dir = tempfile::tempdir().unwrap();
     let j = Journal::open(dir.path()).unwrap();
