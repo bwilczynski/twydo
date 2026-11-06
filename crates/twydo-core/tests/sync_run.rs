@@ -12,6 +12,7 @@ use twydo_core::conflicts::{ConflictKind, ConflictStore, Side};
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
+use twydo_core::sync::ended;
 use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
@@ -1681,4 +1682,66 @@ fn changed_journal_read_dependency_never_becomes_parent_write_conflict() {
     assert_eq!(conflicts[0].path, "c1/item.ics");
     assert!(conflicts[0].local.is_none());
     assert_eq!(conflicts[0].remote.as_deref(), Some(item.as_str()));
+}
+
+#[test]
+fn clean_run_writes_ended() {
+    let fx = Fx::new("exit 0");
+    assert!(ended::read(&fx.cfg).unwrap().is_none());
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(ended::read(&fx.cfg).unwrap().unwrap().at, now());
+}
+
+#[test]
+fn failed_run_writes_ended() {
+    let fx = Fx::new("exit 1");
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(ended::read(&fx.cfg).unwrap().is_some());
+}
+
+#[test]
+fn skipped_runs_write_no_ended() {
+    // Not configured.
+    let mut fx = Fx::new("exit 0");
+    let configured = fx.cfg.sync.take();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(matches!(r.skipped, Some(Skip::NotConfigured)));
+    assert!(ended::read(&fx.cfg).unwrap().is_none());
+    fx.cfg.sync = configured;
+
+    // Backoff.
+    let st = SyncStatus {
+        next_attempt: Some(now() + chrono::Duration::seconds(60)),
+        ..SyncStatus::default()
+    };
+    let state = fx.state();
+    st.save(&state).unwrap();
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert!(matches!(r.skipped, Some(Skip::Backoff { .. })));
+    assert!(ended::read(&fx.cfg).unwrap().is_none());
+    SyncStatus::default().save(&state).unwrap();
+
+    // Busy.
+    let sync_dir = state.join("sync");
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(sync_dir.join("run.lock"))
+        .unwrap();
+    held.lock().unwrap();
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert!(matches!(r.skipped, Some(Skip::Busy)));
+    assert!(ended::read(&fx.cfg).unwrap().is_none());
+}
+
+#[test]
+fn each_run_has_a_new_run_id() {
+    let fx = Fx::new("exit 0");
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let first = ended::read(&fx.cfg).unwrap().unwrap();
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let second = ended::read(&fx.cfg).unwrap().unwrap();
+    assert_ne!(first.run_id, second.run_id);
 }
