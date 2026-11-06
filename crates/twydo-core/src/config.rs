@@ -121,6 +121,14 @@ pub struct SyncConfig {
     pub retention_days: u32,
 }
 
+impl SyncConfig {
+    /// Whether a local edit starts a sync.
+    // Temporary until the batching trigger replaces it (write-queue plan 1, Task 6).
+    pub fn edits_trigger_sync(&self) -> bool {
+        self.after_edit != Some(false)
+    }
+}
+
 impl Default for SyncConfig {
     fn default() -> Self {
         SyncConfig {
