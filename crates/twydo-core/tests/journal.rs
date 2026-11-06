@@ -17,6 +17,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         uids: vec!["uid-a".to_string()],
         stage: Stage::Prepared,
         inverse_of: None,
+        from_queue: None,
         synced: None,
         holds: Vec::new(),
         family: None,

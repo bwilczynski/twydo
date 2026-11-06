@@ -55,6 +55,7 @@ fn edit(cfg: &Config, id: &str, at: DateTime<Utc>) {
         uids: vec!["u1".into()],
         stage: Stage::Applied,
         inverse_of: None,
+        from_queue: None,
         synced: None,
         holds: Vec::new(),
         family: None,

@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::ical::value::IcalDateTime;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Freq {
     Daily,
     Weekly,
@@ -15,14 +15,14 @@ pub enum Freq {
     Yearly,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum End {
     Never,
     Count(u32),
     Until(IcalDateTime),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RRule {
     pub freq: Freq,
     pub interval: u32,
