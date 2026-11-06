@@ -2225,3 +2225,53 @@ fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
     assert_eq!(selected_uid(&a), uid);
     assert_eq!(a.cursor, 1); // Due today, following the overdue task.
 }
+
+#[test]
+fn reopening_detached_child_keeps_selection_under_a_collapsed_parent() {
+    for view in [View::All, View::List("bills".into())] {
+        for kind in [TaskKind::Project, TaskKind::Checklist] {
+            let mut r = report();
+            let parent = r
+                .tasks
+                .iter_mut()
+                .find(|t| t.summary == "Prepare tax return")
+                .unwrap();
+            parent.kind = kind;
+            let parent_uid = parent.uid.clone();
+            let child = r
+                .tasks
+                .iter_mut()
+                .find(|t| t.parent.as_deref() == Some(&parent_uid))
+                .unwrap();
+            let uid = child.uid.clone();
+            child.status = twydo_core::model::Status::Completed;
+            child.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+            let completed = snapshot_of(r);
+            let mut a = App::new(completed.clone(), now());
+            a.view = view.clone();
+            a.cursor = a
+                .visible_rows()
+                .iter()
+                .position(|r| a.snapshot.tasks[r.task].uid == uid)
+                .unwrap();
+
+            // An unchanged reload keeps the child detached and its parent collapsed.
+            a.reload(completed.clone());
+            assert_eq!(selected_uid(&a), uid);
+            assert!(!a.expanded.contains(&parent_uid));
+            assert_eq!(
+                write_op(a.handle_key(key('x'))),
+                Op::Reopen { uid: uid.clone() }
+            );
+            let mut reopened = completed;
+            let child = reopened.find(&uid).unwrap();
+            reopened.tasks[child].status = twydo_core::model::Status::Open;
+            reopened.tasks[child].completed = None;
+            a.reload(reopened);
+
+            assert_eq!(selected_uid(&a), uid, "{view:?}, {kind:?}");
+            assert_eq!(a.visible_rows()[a.cursor].depth, 1);
+            assert!(a.expanded.contains(&parent_uid));
+        }
+    }
+}
