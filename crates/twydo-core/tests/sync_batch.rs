@@ -14,7 +14,22 @@ fn ago(s: i64) -> DateTime<Utc> {
 }
 
 fn d(edits: &[DateTime<Utc>], last: Option<DateTime<Utc>>, next: Option<DateTime<Utc>>) -> Due {
-    decide(edits, last, next, 5, Std::from_secs(60), now())
+    let pairs: Vec<_> = edits.iter().map(|t| (*t, *t)).collect();
+    decide(&pairs, last, next, 5, Std::from_secs(60), now())
+}
+
+#[test]
+fn drained_edit_counts_from_its_queue_time() {
+    // Written a second ago (after the last attempt, so it counts), edited two minutes ago.
+    let due = decide(
+        &[(ago(1), ago(120))],
+        Some(ago(30)),
+        None,
+        5,
+        Std::from_secs(60),
+        now(),
+    );
+    assert_eq!(due, Due::Now);
 }
 
 #[test]
