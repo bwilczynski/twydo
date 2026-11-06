@@ -3,7 +3,9 @@
 
 mod newrow;
 mod recovery;
+mod sync_activity;
 pub use recovery::{Confirmation, RecoveryPanel};
+pub use sync_activity::SyncActivity;
 
 pub use newrow::{NewRow, default_list};
 
@@ -132,6 +134,7 @@ pub struct App {
     pub errors_scroll: u16,
     /// Sync state for the status line and conflict markers; `None` without `[sync]`.
     pub sync: Option<SyncSummary>,
+    pub sync_activity: SyncActivity,
     /// The `:conflicts` overlay.
     pub show_conflicts: bool,
     pub conflict_cursor: usize,
@@ -202,6 +205,7 @@ impl App {
             show_errors: false,
             errors_scroll: 0,
             sync: None,
+            sync_activity: SyncActivity::default(),
             show_conflicts: false,
             conflict_cursor: 0,
             picker: None,
@@ -1201,7 +1205,6 @@ impl App {
                 if cmd == "sync!" && arg.is_empty() {
                     self.message = Some("usage: :sync! <list>".into());
                 } else {
-                    self.message = Some("syncing…".into());
                     let force_delete = (cmd == "sync!").then(|| arg.to_string());
                     return Outcome::Sync { force_delete };
                 }

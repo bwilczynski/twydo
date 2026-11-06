@@ -88,6 +88,7 @@ fn event_loop(
     // Edits queued in an earlier session are written before the background sync starts (it
     // would hold the vdir), and refusals nobody has seen yet are shown.
     drain_and_reload(app, writer, root);
+    let mut watch_ended = EndedWatch::new(&app.snapshot.config);
     // One background sync at start, then the first summary.
     crate::cli::sync::spawn_background(&app.snapshot.config, Some(&app.snapshot.config.vdir));
     refresh_sync(app);
@@ -95,7 +96,6 @@ fn event_loop(
     let mut last_tick = Instant::now();
     // When the last change signal arrived, if a reload is still due.
     let mut pending_since: Option<Instant> = None;
-    let mut watch_ended = EndedWatch::new(&app.snapshot.config);
     let size = terminal.size()?;
     app.resize(size.width, size.height);
     loop {
@@ -203,7 +203,7 @@ fn event_loop(
         {
             pending_since = Some(Instant::now());
         }
-        poll_ended(&mut watch_ended, app, writer, root);
+        poll_sync(&mut watch_ended, app, writer, root, syncing, Instant::now());
         // Wait for a quiet DEBOUNCE after the last change, so a sync batch reloads once.
         if pending_since.is_some_and(|t| t.elapsed() >= DEBOUNCE) {
             pending_since = None;
@@ -263,7 +263,7 @@ impl EndedWatch {
         EndedWatch { last }
     }
 
-    /// True once per new `run_id`; a read error or a missing file is not a change.
+    /// True once per new `run_id`; missing or unreadable files are ignored.
     fn changed(&mut self, cfg: &Config) -> bool {
         match twydo_core::sync::ended::read(cfg) {
             Ok(Some(e)) if self.last.as_deref() != Some(e.run_id.as_str()) => {
@@ -281,6 +281,23 @@ fn poll_ended(watch: &mut EndedWatch, app: &mut App, writer: &mut Writer, root: 
     if watch.changed(&app.snapshot.config) {
         drain_and_reload(app, writer, root);
     }
+}
+
+/// Poll progress independently of filesystem notifications and ordinary UI messages.
+fn poll_sync(
+    watch: &mut EndedWatch,
+    app: &mut App,
+    writer: &mut Writer,
+    root: &Path,
+    manual_running: bool,
+    now: Instant,
+) {
+    poll_ended(watch, app, writer, root);
+    let running = twydo_core::sync::running::running(&app.snapshot.config)
+        .ok()
+        .flatten()
+        .is_some();
+    app.sync_activity.observe(manual_running || running, now);
 }
 
 /// Write the queued edits if the vdir is free, reload, and show the refusals of edits that
@@ -328,17 +345,23 @@ fn run_sync_child(vdir: &Path, force_delete: Option<&str>) -> io::Result<String>
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()?;
+    Ok(sync_child_result(out))
+}
+
+fn sync_child_result(out: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&out.stderr);
     let lines: Vec<_> = stderr
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty())
         .collect();
-    Ok(if lines.is_empty() {
+    if lines.is_empty() && out.status.success() {
         crate::app::SYNC_DONE.to_string()
+    } else if lines.is_empty() {
+        format!("sync failed: {}", out.status)
     } else {
         lines.join(" · ")
-    })
+    }
 }
 
 fn start_forget(
@@ -373,7 +396,9 @@ fn finish_sync(app: &mut App, root: &Path, message: String) {
     // Reload before reporting, so a failed reload cannot hide what the sync said.
     reload(app, root);
     refresh_sync(app);
-    app.sync_finished(message);
+    if message != crate::app::SYNC_DONE {
+        app.sync_finished(message);
+    }
 }
 
 #[cfg(test)]
@@ -419,7 +444,7 @@ mod tests {
         assert!(app.visible_rows().is_empty());
         assert!(app.snapshot.tasks.is_empty());
         assert_eq!(app.view, View::List("inbox".into()));
-        assert_eq!(app.message.as_deref(), Some(crate::app::SYNC_DONE));
+        assert_eq!(app.message, None);
     }
 
     #[test]
@@ -551,6 +576,52 @@ mod tests {
                 .unwrap()
                 .contains("SUMMARY:Renamed")
         );
+    }
+
+    #[test]
+    fn activity_tracks_external_and_manual_runs_and_ignores_stale_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, _) = inbox_app(dir.path());
+        app.snapshot.config.sync = Some(Default::default());
+        let cfg = app.snapshot.config.clone();
+        let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+        let mut watch = EndedWatch::new(&cfg);
+        let mut writer = quiet_writer(&cfg);
+        let t = Instant::now();
+        let mut running = twydo_core::sync::running::Running {
+            runner_pid: std::process::id(),
+            runner_start: twydo_core::sync::running::process_start(std::process::id()),
+            child_pgid: None,
+            child_start: None,
+            started: Utc::now(),
+        };
+        std::fs::create_dir_all(state.join("sync")).unwrap();
+        let record = state.join("sync/running.json");
+        std::fs::write(&record, serde_json::to_vec(&running).unwrap()).unwrap();
+        poll_sync(&mut watch, &mut app, &mut writer, &root, false, t);
+        assert!(app.sync_activity.label().unwrap().contains("Syncing"));
+        running.runner_start = Some("stale".into());
+        std::fs::write(&record, serde_json::to_vec(&running).unwrap()).unwrap();
+        poll_sync(&mut watch, &mut app, &mut writer, &root, false, t);
+        assert_eq!(app.sync_activity.label(), None);
+        poll_sync(&mut watch, &mut app, &mut writer, &root, true, t);
+        assert!(app.sync_activity.label().unwrap().contains("Syncing"));
+        poll_sync(&mut watch, &mut app, &mut writer, &root, false, t);
+        assert_eq!(app.sync_activity.label(), None);
+    }
+
+    #[test]
+    fn sync_worker_preserves_warnings_and_reports_a_silent_failure() {
+        let output = std::process::Command::new("sh")
+            .args(["-c", "printf 'nonfatal warning' >&2"])
+            .output()
+            .unwrap();
+        assert_eq!(sync_child_result(output), "nonfatal warning");
+        let output = std::process::Command::new("sh")
+            .args(["-c", "exit 1"])
+            .output()
+            .unwrap();
+        assert!(sync_child_result(output).contains("sync failed"));
     }
 
     #[test]

@@ -36,6 +36,10 @@
   (`:errors`). With `[sync]` it shows the sync state (`synced 3m ago · 2 pending`, conflicts,
   failures; the count includes edits queued during a sync); while automatic sync is off it starts
   with `sync off` in yellow, whatever the pending count ([sync.md](sync.md#when-edits-sync)).
+  An animated spinner and `Syncing…` replace the last-sync age during manual and background
+  syncs, including runs started outside this TUI. When the run ends, the usual status returns:
+  `synced just now`, then `synced 1m ago`, and so on after a successful sync. Errors, conflicts,
+  and pending counts remain visible. Editing or entering a command does not clear sync activity.
 
 The focused pane has a bold blue border. The sidebar takes a fifth of the width (24 to 40
 columns), or a third below 60 columns.
