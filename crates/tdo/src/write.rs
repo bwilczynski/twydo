@@ -7,9 +7,9 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::edit::Op;
 use twydo_core::model::Status;
-use twydo_core::store::{Store, WriteError};
+use twydo_core::store::queue::{Queue, refusal_message};
+use twydo_core::store::{DrainOutcome, Store, Submitted, WriteError, existing_vdir_state};
 use twydo_core::sync::batch::{Trigger, after_write};
-use twydo_core::sync::running::{StopResult, clear_stop, request_stop, running};
 use twydo_core::views::Snapshot;
 
 /// A write the TUI asks for.
@@ -23,27 +23,22 @@ pub enum Request {
     Redo,
 }
 
-/// How long a TUI write waits for a running sync before it gives up (issue #10).
+/// How long `:recover` waits for a running sync before it gives up (issue #10). Saves never
+/// wait: during a sync they are queued.
 pub const LOCK_WAIT: Duration = Duration::from_secs(2);
-/// How long a write waits for a sync it asked to stop.
-pub const STOP_WAIT: Duration = Duration::from_secs(10);
 
-/// Why a write did not happen.
+/// The message of a queued save, after its success text.
+const QUEUED: &str = " · queued (a sync is running)";
+
+/// Why a write did not happen: the message for the status line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refused {
-    /// The vdir lock stayed held for the whole wait. `running_for`: how long the recorded
-    /// sync has run (None: no `running.json`, nothing the TUI can stop).
-    Busy {
-        running_for: Option<Duration>,
-    },
     Other(String),
 }
 
 impl Refused {
-    /// The message for the status line.
     pub fn message(&self) -> String {
         match self {
-            Refused::Busy { .. } => WriteError::Busy.to_string(),
             Refused::Other(m) => m.clone(),
         }
     }
@@ -59,10 +54,26 @@ pub struct Writer {
     trigger: SyncTrigger,
     /// Titles of the writes `u` would undo and `Ctrl-r` would redo, in step with the store's
     /// session stacks, so the messages can name the task.
-    done: Vec<String>,
-    undone: Vec<String>,
+    done: Vec<Titled>,
+    undone: Vec<Titled>,
     lock_wait: Duration,
-    stop_wait: Duration,
+}
+
+/// A title on an undo or redo stack. `queued`: the id of the queue item that stands for the
+/// write, so a refusal can drop the step the store skips.
+#[derive(Debug, Clone)]
+struct Titled {
+    title: String,
+    queued: Option<String>,
+}
+
+impl Titled {
+    fn new(title: impl Into<String>, queued: Option<String>) -> Titled {
+        Titled {
+            title: title.into(),
+            queued,
+        }
+    }
 }
 
 impl Writer {
@@ -86,105 +97,136 @@ impl Writer {
             done: Vec::new(),
             undone: Vec::new(),
             lock_wait: LOCK_WAIT,
-            stop_wait: STOP_WAIT,
         }
     }
 
-    /// Replaces [`LOCK_WAIT`] and [`STOP_WAIT`] (tests).
-    pub fn set_waits(&mut self, lock: Duration, stop: Duration) {
+    /// Replaces [`LOCK_WAIT`] (tests).
+    pub fn set_lock_wait(&mut self, lock: Duration) {
         self.lock_wait = lock;
-        self.stop_wait = stop;
     }
 
-    /// Ok: the success message. Err: why nothing was written. Waits up to the lock wait for
-    /// a running sync.
+    /// Ok: the success message (a save during a sync is queued and says so). Err: why nothing
+    /// was written.
     pub fn run(
         &mut self,
         snap: &Snapshot,
         req: &Request,
         now: DateTime<Utc>,
     ) -> Result<String, Refused> {
-        let wait = self.lock_wait;
-        let written = self.write(snap, req, now, wait);
-        if written.is_ok() {
+        let (message, applied) = self.write(snap, req, now)?;
+        if applied {
             self.sync_after(now);
         }
-        written
+        Ok(message)
     }
 
-    /// Asks the running sync to stop, then writes, waiting up to the stop wait for it to let
-    /// go of the vdir. The message says so when a sync was stopped.
-    pub fn stop_and_run(
-        &mut self,
-        snap: &Snapshot,
-        req: &Request,
-        now: DateTime<Utc>,
-    ) -> Result<String, Refused> {
-        let stopped = match request_stop(&self.config) {
-            Ok(StopResult::NothingRunning) => false,
-            Ok(StopResult::Requested | StopResult::Killed) => true,
-            Err(e) => return Err(Refused::Other(format!("cannot stop the sync: {e}"))),
+    /// Writes the queued edits when no sync holds the vdir (a busy vdir is not an error:
+    /// the sync that holds it drains the queue), then returns [`Writer::unshown`]. Starts what
+    /// [`after_write`] says when something was written.
+    pub fn drain(&mut self, now: DateTime<Utc>) -> Vec<String> {
+        let Ok(store) = self.store.as_mut() else {
+            return Vec::new();
         };
-        let wait = self.stop_wait;
-        let written = self.write(snap, req, now, wait);
-        // The request held off other syncs until this write; withdraw it either way, and
-        // before the sync after the write starts, which would otherwise stop itself.
-        let _ = clear_stop(&self.config);
-        if written.is_ok() {
-            self.sync_after(now);
-        }
-        match written {
-            Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
-            Err(Refused::Busy { .. }) => {
-                Err(Refused::Other("not saved; the sync did not stop".into()))
+        let mut out = Vec::new();
+        match store.drain(now) {
+            Ok(drained) => {
+                if drained
+                    .iter()
+                    .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))
+                {
+                    self.sync_after(now);
+                }
             }
-            other => other,
+            Err(WriteError::Busy) => {}
+            Err(e) => out.push(format!("queued edits not saved: {e}")),
         }
+        out.extend(self.unshown());
+        out
     }
 
+    /// The messages of refused queued edits the user has not been told about, whoever drained
+    /// them. Each is marked shown, so it is returned once, and its step leaves the undo and
+    /// redo stacks, as the store skips it.
+    pub fn unshown(&mut self) -> Vec<String> {
+        let state = existing_vdir_state(&self.config.state_dir(), &self.config.vdir)
+            .ok()
+            .flatten();
+        let Some(queue) = state.and_then(|s| Queue::existing(&s)) else {
+            return Vec::new();
+        };
+        let Ok(refusals) = queue.unshown() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for r in refusals {
+            let id = &r.item.id;
+            self.done.retain(|t| t.queued.as_ref() != Some(id));
+            self.undone.retain(|t| t.queued.as_ref() != Some(id));
+            if queue.mark_shown(id).is_ok() {
+                out.push(refusal_message(&r));
+            }
+        }
+        out
+    }
+
+    /// The success message, and whether a write reached the vdir (a queued one has not).
     fn write(
         &mut self,
         snap: &Snapshot,
         req: &Request,
         now: DateTime<Utc>,
-        wait: Duration,
-    ) -> Result<String, Refused> {
+    ) -> Result<(String, bool), Refused> {
         let store = self.store.as_mut().map_err(|e| Refused::Other(e.clone()))?;
-        store.set_lock_wait(Some(wait));
-        let done = match req {
-            Request::Apply(op) => store.apply(snap, op, now),
-            Request::Recover { backup, to } => match store.recover_list(snap, backup, to, now) {
-                Ok((_, false)) => return Ok("already recovered; backup retained".into()),
-                Ok((id, true)) => Ok(id),
-                Err(e) => Err(e),
-            },
-            Request::Undo => store.undo_last(now).map(|_| String::new()),
-            Request::Redo => store.redo_last(now).map(|_| String::new()),
-        };
-        match done {
-            Ok(_) => {}
-            Err(WriteError::Busy) => {
-                return Err(Refused::Busy {
-                    running_for: running_for(&self.config),
-                });
+        let submitted = match req {
+            Request::Apply(op) => {
+                let label = op_title(snap, op);
+                store.submit(snap, op, &label, "tui", now)
             }
-            Err(e) => return Err(Refused::Other(failure(snap, e))),
-        }
+            Request::Recover { backup, to } => {
+                store.set_lock_wait(Some(self.lock_wait));
+                match store.recover_list(snap, backup, to, now) {
+                    Ok((_, false)) => {
+                        return Ok(("already recovered; backup retained".into(), false));
+                    }
+                    Ok((id, true)) => Ok(Submitted::Applied(id)),
+                    Err(WriteError::Busy) => {
+                        return Err(Refused::Other("a sync is running; try again".into()));
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            Request::Undo => store.undo_last(now),
+            Request::Redo => store.redo_last(now),
+        };
+        let submitted = submitted.map_err(|e| Refused::Other(failure(snap, e)))?;
+        let queued_id = match &submitted {
+            Submitted::Queued(item) => Some(item.id.clone()),
+            _ => None,
+        };
+        let applied = matches!(submitted, Submitted::Applied(_));
         let message = match req {
             Request::Recover { to, .. } => {
-                self.done.push("recovered list".into());
+                self.done.push(Titled::new("recovered list", None));
                 self.undone.clear();
                 format!("recovered local snapshot into {to}; backup retained")
             }
             Request::Apply(op) => {
-                self.done.push(op_title(snap, op));
+                self.done.push(Titled::new(op_title(snap, op), queued_id));
                 self.undone.clear();
-                success(snap, op)
+                format!("{}{}", success(snap, op), queued_note(&submitted))
             }
-            Request::Undo => step("undone", &mut self.done, &mut self.undone),
-            Request::Redo => step("redone", &mut self.undone, &mut self.done),
+            Request::Undo => format!(
+                "{}{}",
+                step("undone", &mut self.done, &mut self.undone, queued_id),
+                queued_note(&submitted)
+            ),
+            Request::Redo => format!(
+                "{}{}",
+                step("redone", &mut self.undone, &mut self.done, queued_id),
+                queued_note(&submitted)
+            ),
         };
-        Ok(message)
+        Ok((message, applied))
     }
 
     /// Starts a sync now when the batch is due, else makes sure the batch waiter runs.
@@ -195,22 +237,27 @@ impl Writer {
     }
 }
 
-/// How long the recorded sync has run; None when none is recorded (or unreadable).
-fn running_for(cfg: &Config) -> Option<Duration> {
-    let rec = running(cfg).ok().flatten()?;
-    Some(
-        (Utc::now() - rec.started)
-            .to_std()
-            .unwrap_or(Duration::ZERO),
-    )
+/// The note a queued write adds to its message.
+fn queued_note(s: &Submitted) -> &'static str {
+    if matches!(s, Submitted::Queued(_)) {
+        QUEUED
+    } else {
+        ""
+    }
 }
 
-/// Move the top title from `from` to `to` and name it in the message.
-fn step(verb: &str, from: &mut Vec<String>, to: &mut Vec<String>) -> String {
+/// Move the top title from `from` to `to` and name it in the message. `queued`: the queue
+/// item now standing for the write, if it was queued.
+fn step(
+    verb: &str,
+    from: &mut Vec<Titled>,
+    to: &mut Vec<Titled>,
+    queued: Option<String>,
+) -> String {
     match from.pop() {
-        Some(title) => {
-            let message = format!("{verb}: {title}");
-            to.push(title);
+        Some(t) => {
+            let message = format!("{verb}: {}", t.title);
+            to.push(Titled::new(t.title, queued));
             message
         }
         None => verb.to_string(),

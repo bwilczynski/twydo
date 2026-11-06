@@ -358,6 +358,9 @@ fn tail(s: &str, width: usize) -> String {
     out.into_iter().rev().collect()
 }
 
+/// Follows the title of a task whose edit waits in the write queue.
+const QUEUED_MARKER: &str = " (queued)";
+
 fn row_line(
     app: &App,
     r: &Row,
@@ -383,8 +386,15 @@ fn row_line(
     let budget = parent_hint
         .as_ref()
         .map_or(0, |s| truncate(s, title_w / 3).width());
-    let title = truncate(&t.summary, title_w.saturating_sub(budget));
-    let remaining = title_w.saturating_sub(title.width());
+    // A queued edit shows as saved, with a muted marker until a sync lets it be written.
+    let marker = if app.snapshot.is_pending(r.task) {
+        QUEUED_MARKER
+    } else {
+        ""
+    };
+    let marker_w = marker.width();
+    let title = truncate(&t.summary, title_w.saturating_sub(budget + marker_w));
+    let remaining = title_w.saturating_sub(title.width() + marker_w);
     let suffix = parent_hint
         .map(|s| truncate(&s, remaining))
         .unwrap_or_default();
@@ -421,6 +431,7 @@ fn row_line(
     }
     spans.extend([
         Span::styled(title, text),
+        Span::styled(marker, theme::muted()),
         Span::styled(suffix, dim()),
         Span::raw(" ".repeat(filler)),
     ]);

@@ -34,8 +34,8 @@
 - **Status line**: the mode (`NORMAL`, `INSERT`, `COMMAND`), the focused pane, key hints or the
   last message, and the position in the view. An indicator appears when files could not be read
   (`:errors`). With `[sync]` it shows the sync state (`synced 3m ago · 2 pending`, conflicts,
-  failures); while automatic sync is off it starts with `sync off` in yellow, whatever the
-  pending count ([sync.md](sync.md#when-edits-sync)).
+  failures; the count includes edits queued during a sync); while automatic sync is off it starts
+  with `sync off` in yellow, whatever the pending count ([sync.md](sync.md#when-edits-sync)).
 
 The focused pane has a bold blue border. The sidebar takes a fifth of the width (24 to 40
 columns), or a third below 60 columns.
@@ -285,27 +285,25 @@ The status line says why, and nothing is written:
 - **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
   view reloads; an open card switches to the synced version, so you see the new data before
   saving again.
-- **A sync is running.** A sync holds the vdir while vdirsyncer runs. The save waits up to two
-  seconds, so an ordinary sync finishes unnoticed. If it is still running after that, the status
-  line asks `sync running for 2m 14s — stop it and save? (y/n)`:
-  - `y` stops the sync and saves (the message ends in `· sync stopped`). The stopped sync counts
-    as a failed one ([sync.md](sync.md#stopping-a-sync)): it backs off, and your edit stays
-    pending until the next sync that works sends it. Any sync can be stopped this way, whether the
-    TUI, the timer or a `tdo sync` started it. If it does not let go within ten seconds, nothing is
-    written: `not saved; the sync did not stop`.
-  - `n` or `Esc` writes nothing: `not saved; the sync is still running`. An open edit card or
-    new row stays open with what you typed; for a one-key action, press the key again later.
-
-  Other keys do nothing while the question is open. When the TUI cannot tell which sync holds the
-  vdir, it says `a sync is running; try again in a moment` instead.
+- **Not saved: "…" changed on another device.** You saved while a sync was running, so the
+  edit was queued and shown at once (below). When the sync ended, the task had changed on
+  another device, so the edit was not written. The line is shown once, whichever of the TUI or
+  the sync noticed; an edit that fails any other check says `Not saved: "…": <reason>`.
 - **`cannot write: …`**: the operation journal could not be opened
   ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
+
+A save made while a sync is running is not refused and does not wait: it is queued, the message
+ends in `· queued (a sync is running)`, and the task shows as saved with a muted `(queued)` after
+its title. The queued edits count in the status line's `N pending`. They are written when the
+sync ends (or the next time the TUI starts); `u` on a queued save cancels it before anything is
+written. There is no question about stopping the sync. `:recover` is the exception: it waits up
+to two seconds for a running sync, then says `a sync is running; try again`.
 
 Success messages clear after five seconds. Writes sync in batches: a background sync starts
 once `batch_size` edits are unsynced and edits have paused for 3 seconds, or `max_wait_secs`
 after the oldest one, so quick writes in a row (closing checklist items one by one) are not
-interrupted by their own sync. A save made while a sync is running still waits for it (see
-above). Quitting starts no sync; the batch waiter sends the last edits
+interrupted by their own sync. A save made while a sync is running is queued (see above).
+Quitting starts no sync; the batch waiter sends the last edits
 ([sync.md](sync.md#when-edits-sync)).
 
 ## Not in the TUI yet

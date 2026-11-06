@@ -1,6 +1,6 @@
 //! The TUI writer against a temp vdir copied from synthetic phase-0 fixtures.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -405,144 +405,6 @@ fn sync_config(env: &Env) -> Config {
     cfg
 }
 
-/// Issue #10: a short sync is waited for, so the save just works.
-#[test]
-fn write_waits_briefly_for_a_short_sync() {
-    let env = Env::new();
-    let cfg = env.config();
-    let (mut w, _) = writer(&cfg);
-    let lock = shared_lock(&cfg);
-    let t = std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(300));
-        drop(lock);
-    });
-    let started = Instant::now();
-    assert_eq!(
-        w.run(&env.snapshot(), &complete_a(), now()),
-        Ok("done".into())
-    );
-    assert!(started.elapsed() < Duration::from_secs(2));
-    t.join().unwrap();
-}
-
-/// While a long sync holds the vdir lock, a TUI write gives up after its short wait, says how
-/// long the sync has run, and writes nothing.
-#[test]
-fn write_during_a_long_sync_is_busy_after_the_wait() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, _) = writer(&cfg);
-    w.set_waits(Duration::from_millis(300), Duration::from_secs(1));
-    let _sync = shared_lock(&cfg);
-    record_running(
-        &cfg,
-        &Running {
-            runner_pid: std::process::id(),
-            runner_start: process_start(std::process::id()),
-            child_pgid: None,
-            child_start: None,
-            started: Utc::now() - chrono::Duration::seconds(134),
-        },
-    );
-    let original = fs::read(env.task_file()).unwrap();
-    let started = Instant::now();
-    let got = w.run(&env.snapshot(), &complete_a(), now());
-    let elapsed = started.elapsed();
-    match got {
-        Err(Refused::Busy {
-            running_for: Some(d),
-        }) => assert!((134..140).contains(&d.as_secs()), "running for {d:?}"),
-        other => panic!("expected busy, got {other:?}"),
-    }
-    assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
-    assert!(elapsed < Duration::from_secs(2), "{elapsed:?}");
-    assert_eq!(fs::read(env.task_file()).unwrap(), original);
-    assert_eq!(
-        w.run(&env.snapshot(), &Request::Undo, now()),
-        Err(Refused::Other("nothing to undo".into()))
-    );
-}
-
-#[test]
-fn busy_without_a_recorded_sync_has_no_duration() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, _) = writer(&cfg);
-    w.set_waits(Duration::from_millis(100), Duration::from_secs(1));
-    let _sync = shared_lock(&cfg);
-    assert_eq!(
-        w.run(&env.snapshot(), &complete_a(), now()),
-        Err(Refused::Busy { running_for: None })
-    );
-    assert_eq!(
-        Refused::Busy { running_for: None }.message(),
-        "a sync is running; try again in a moment"
-    );
-}
-
-/// Review focus 1: the sync ended while the question was open; the save is plain.
-#[test]
-fn stop_and_run_when_the_sync_already_finished_saves_plainly() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, _) = writer(&cfg);
-    assert_eq!(
-        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
-        Ok("done".into())
-    );
-}
-
-/// A vdirsyncer left behind by a runner that is gone holds the lock; stopping kills it.
-#[test]
-fn stop_and_run_kills_an_orphaned_sync_and_saves() {
-    use std::os::unix::process::CommandExt;
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, _) = writer(&cfg);
-    w.set_waits(Duration::from_millis(300), Duration::from_secs(3));
-    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
-    sync_dir(&cfg);
-    let mut orphan = std::process::Command::new("sleep")
-        .arg("30")
-        .stdin(VdirLock::shared_for_child(&state).unwrap())
-        .process_group(0)
-        .spawn()
-        .unwrap();
-    let mut gone = std::process::Command::new("true").spawn().unwrap();
-    gone.wait().unwrap();
-    record_running(
-        &cfg,
-        &Running {
-            runner_pid: gone.id(),
-            runner_start: None,
-            child_pgid: Some(orphan.id()),
-            child_start: process_start(orphan.id()),
-            started: Utc::now(),
-        },
-    );
-    assert_eq!(
-        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
-        Ok("done · sync stopped".into())
-    );
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while orphan.try_wait().unwrap().is_none() {
-        assert!(Instant::now() < deadline, "the orphaned sync survived");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let text = fs::read_to_string(env.task_file()).unwrap();
-    assert!(text.contains("STATUS:COMPLETED"), "{text}");
-    assert!(
-        !sync_dir(&cfg).join("stop").exists(),
-        "the stop request is cleared after the write"
-    );
-    // PR review 4: nobody else records the killed orphan, so the stop does, with backoff,
-    // before the sync after the write could start another stuck run.
-    let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
-    assert_eq!(st.failures, 1);
-    assert!(st.next_attempt.is_some());
-    assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
-}
-
 /// Final review: recording an orphan stop is not an attempt, so edits made before it still
 /// count for batching (a waiter is due), with the backoff pushing the deadline.
 #[test]
@@ -584,26 +446,101 @@ fn edits_before_an_orphan_stop_still_count() {
     assert_eq!(batch::due(&cfg, Utc::now()).unwrap(), Due::At(next));
 }
 
+/// A save while a sync holds the vdir does not wait: it is queued, and says so.
 #[test]
-fn stop_and_run_gives_up_when_the_lock_stays_held() {
+fn save_during_a_sync_is_queued_at_once() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, fired) = writer(&cfg);
+    let _sync = shared_lock(&cfg);
+    let original = fs::read(env.task_file()).unwrap();
+    let started = Instant::now();
+    let got = w.run(&env.snapshot(), &complete_a(), now());
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(got, Ok("done · queued (a sync is running)".into()));
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+    assert!(fired.borrow().is_empty(), "a queued save starts no sync");
+}
+
+/// A queued save a drain refuses is reported once, by the title the user saw.
+#[test]
+fn drain_reports_refusals_with_the_title() {
     let env = Env::new();
     let cfg = sync_config(&env);
     let (mut w, _) = writer(&cfg);
-    w.set_waits(Duration::from_millis(100), Duration::from_millis(300));
-    let _sync = shared_lock(&cfg);
-    record_running(
-        &cfg,
-        &Running {
-            runner_pid: std::process::id(),
-            runner_start: process_start(std::process::id()),
-            child_pgid: None,
-            child_start: None,
-            started: Utc::now(),
-        },
-    );
+    let sync = shared_lock(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    // The phone changes the task before the queue is written.
+    let old = fs::read_to_string(env.task_file()).unwrap();
+    fs::write(
+        env.task_file(),
+        old.replace("SUMMARY:A2", "SUMMARY:From phone"),
+    )
+    .unwrap();
+    drop(sync);
     assert_eq!(
-        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
-        Err(Refused::Other("not saved; the sync did not stop".into()))
+        w.drain(now()),
+        vec!["Not saved: \"A2\" changed on another device".to_string()]
+    );
+    assert!(w.drain(now()).is_empty(), "shown once");
+    let text = fs::read_to_string(env.task_file()).unwrap();
+    assert!(!text.contains("STATUS:COMPLETED"), "{text}");
+}
+
+#[test]
+fn drain_after_applied_items_triggers_batching() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, fired) = writer(&cfg);
+    let sync = shared_lock(&cfg);
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    assert!(fired.borrow().is_empty());
+    drop(sync);
+    assert!(w.drain(Utc::now()).is_empty());
+    let text = fs::read_to_string(env.task_file()).unwrap();
+    assert!(text.contains("STATUS:COMPLETED"), "{text}");
+    assert!(
+        !fired.borrow().is_empty(),
+        "the written edit starts the batch"
+    );
+}
+
+#[test]
+fn undo_of_a_queued_save_cancels_it() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    let sync = shared_lock(&cfg);
+    let original = fs::read(env.task_file()).unwrap();
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    assert_eq!(
+        w.run(&env.snapshot(), &Request::Undo, now()),
+        Ok("undone: A2".into())
+    );
+    drop(sync);
+    assert!(w.drain(now()).is_empty());
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+}
+
+/// `:recover` still waits for the lock, for a short while, then says why it did not run.
+#[test]
+fn recover_while_syncing_says_try_again() {
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    w.set_lock_wait(Duration::from_millis(100));
+    let _sync = shared_lock(&cfg);
+    let req = Request::Recover {
+        backup: "any-backup".into(),
+        to: "list1".into(),
+    };
+    assert_eq!(
+        w.run(&env.snapshot(), &req, now()),
+        Err(Refused::Other("a sync is running; try again".into()))
     );
 }
 
@@ -760,49 +697,6 @@ fn family_success_message_uses_the_singular_for_one_item() {
     );
 }
 
-/// Issue #10, review focus 5: declining to stop the sync after the task changed meanwhile
-/// rebuilds the form from the saved version, as any refused save does.
-#[test]
-fn declining_after_the_task_changed_rebuilds_the_form() {
-    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tdo::app::{App, Outcome};
-    let env = Env::new();
-    let tz = chrono_tz::America::New_York;
-    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
-    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
-    let row = app
-        .visible_rows()
-        .iter()
-        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
-        .unwrap();
-    app.cursor = row;
-    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-    app.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
-    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-    else {
-        panic!("expected a write");
-    };
-    app.write_busy(
-        req,
-        Some(Duration::from_secs(5)),
-        app.write_snapshot().clone(),
-    );
-
-    let synced = String::from_utf8(fs::read(env.task_file()).unwrap())
-        .unwrap()
-        .replace("SUMMARY:A2", "SUMMARY:From phone");
-    fs::write(env.task_file(), &synced).unwrap();
-    app.reload(env.snapshot());
-
-    app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
-    let f = app.form.as_ref().expect("form stays open");
-    assert_eq!(f.title, "From phone");
-    assert_eq!(
-        f.error.as_deref(),
-        Some("not saved; the sync is still running; the form now shows the saved version")
-    );
-}
-
 /// Runs `f` in a thread; true if it finished within `limit`.
 fn finishes_within(limit: Duration, f: impl FnOnce() + Send + 'static) -> bool {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -836,244 +730,6 @@ fn tui_opens_while_a_sync_holds_the_vdir() {
         }),
         "opening the writer waited for the sync"
     );
-}
-
-/// Review minor 2: the sync after a write must start only once the stop request is
-/// withdrawn, or it stops itself and backs off.
-#[test]
-fn sync_after_a_write_starts_after_the_stop_request_is_cleared() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let stop = sync_dir(&cfg).join("stop");
-    let seen = Rc::new(Cell::new(None));
-    let s = seen.clone();
-    let mut w = Writer::open_with(
-        &cfg,
-        Matrix::embedded().clone(),
-        Box::new(move |_, _| s.set(Some(stop.exists()))),
-    );
-    record_running(
-        &cfg,
-        &Running {
-            runner_pid: std::process::id(),
-            runner_start: process_start(std::process::id()),
-            child_pgid: None,
-            child_start: None,
-            started: Utc::now(),
-        },
-    );
-    assert_eq!(
-        w.stop_and_run(&env.snapshot(), &complete_a(), now()),
-        Ok("done · sync stopped".into())
-    );
-    assert_eq!(
-        seen.get(),
-        Some(false),
-        "triggered while the stop was pending"
-    );
-}
-
-/// PR review 1: `y` on a one-key action must apply against the snapshot the user decided on,
-/// not one reloaded while the question was open.
-#[test]
-fn stop_and_save_refuses_a_one_key_action_on_a_task_changed_meanwhile() {
-    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tdo::app::{App, Outcome};
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, _) = writer(&cfg);
-    let tz = chrono_tz::America::New_York;
-    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
-    let key = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
-    app.handle_key(key('2'));
-    app.cursor = app
-        .visible_rows()
-        .iter()
-        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
-        .unwrap();
-    app.handle_key(key('d'));
-    let Outcome::Write(req) = app.handle_key(key('d')) else {
-        panic!("expected delete");
-    };
-    // As term.rs does on Busy: keep the snapshot the write was made against, then reload.
-    let base = app.write_snapshot().clone();
-    let old = fs::read_to_string(env.task_file()).unwrap();
-    fs::write(
-        env.task_file(),
-        old.replace("SUMMARY:A2", "SUMMARY:Remote update"),
-    )
-    .unwrap();
-    app.reload(env.snapshot());
-    app.write_busy(req, Some(Duration::from_secs(5)), base);
-    let Outcome::StopSyncAndWrite(req) = app.handle_key(key('y')) else {
-        panic!("expected stop");
-    };
-    let result = w.stop_and_run(app.write_snapshot(), &req, now());
-    assert!(result.is_err(), "{result:?}");
-    assert!(env.task_file().exists(), "the remote update was deleted");
-}
-
-/// PR re-review: a runner queued behind an orphan (it holds run.lock and waits for the vdir)
-/// must not miss the stop and restart vdirsyncer once the save has withdrawn its request.
-#[test]
-fn queued_runner_cannot_miss_an_orphan_stop() {
-    check_queued_orphan_stop(false);
-}
-
-/// A stop also applies before recovery: the runner may own run.lock while its status read
-/// is delayed. A FIFO holds it there until the stopping save has withdrawn its request.
-#[test]
-fn queued_runner_delayed_reading_status_cannot_miss_an_orphan_stop() {
-    check_queued_orphan_stop(true);
-}
-
-fn check_queued_orphan_stop(delay_status: bool) {
-    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
-    use std::process::{Command, Stdio};
-    let env = Env::new();
-    let mut cfg = sync_config(&env);
-    cfg.sync.as_mut().unwrap().metasync = false;
-    let marker = env.dir.path().join("started-again");
-    let fake = env.dir.path().join("fake.sh");
-    fs::write(
-        &fake,
-        format!("#!/bin/sh\necho ran > '{}'\nsleep 0.2\n", marker.display()),
-    )
-    .unwrap();
-    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
-    cfg.sync.as_mut().unwrap().command = fake.display().to_string();
-    let config_root = env.dir.path().join("config");
-    fs::create_dir_all(config_root.join("twydo")).unwrap();
-    fs::write(
-        config_root.join("twydo/config.toml"),
-        format!(
-            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\n",
-            cfg.vdir.display(),
-            cfg.state_dir().display(),
-            fake.display()
-        ),
-    )
-    .unwrap();
-    let (mut w, _) = writer(&cfg);
-    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
-    let sync = sync_dir(&cfg);
-    let status_path = sync.join("status.json");
-    // Held read-write, so the runner's open does not block but its read waits for the data.
-    let mut fifo = None;
-    if delay_status {
-        assert!(
-            Command::new("mkfifo")
-                .arg(&status_path)
-                .status()
-                .unwrap()
-                .success()
-        );
-        fifo = Some(
-            fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&status_path)
-                .unwrap(),
-        );
-    }
-    let mut orphan = Command::new("sleep")
-        .arg("30")
-        .stdin(VdirLock::shared_for_child(&state).unwrap())
-        .process_group(0)
-        .spawn()
-        .unwrap();
-    record_running(
-        &cfg,
-        &Running {
-            runner_pid: 0,
-            runner_start: None,
-            child_pgid: Some(orphan.id()),
-            child_start: process_start(orphan.id()),
-            started: Utc::now(),
-        },
-    );
-    let run_lock = fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(sync.join("run.lock"))
-        .unwrap();
-    let mut queued = Command::new(env!("CARGO_BIN_EXE_tdo"))
-        .args(["sync", "--background"])
-        .env("XDG_CONFIG_HOME", &config_root)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match run_lock.try_lock() {
-            Ok(()) => run_lock.unlock().unwrap(),
-            Err(std::fs::TryLockError::WouldBlock) => break,
-            Err(e) => panic!("{e:?}"),
-        }
-        assert!(Instant::now() < deadline, "runner did not take run.lock");
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    // Delay it before recovery (the FIFO status read) or during recovery (SIGSTOP),
-    // until the save has withdrawn its request.
-    let pid = queued.id().to_string();
-    if delay_status {
-        // Once the runner has the FIFO open, a plain status file takes its name, so the save's
-        // own status read (deciding the sync after the write) does not wait on the FIFO too.
-        let fds = PathBuf::from(format!("/proc/{pid}/fd"));
-        let has_fifo = || {
-            fs::read_dir(&fds)
-                .into_iter()
-                .flatten()
-                .any(|e| fs::read_link(e.unwrap().path()).is_ok_and(|t| t == status_path))
-        };
-        while !has_fifo() {
-            assert!(Instant::now() < deadline, "runner did not open status.json");
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        let plain = sync.join("status.json.plain");
-        let status = twydo_core::sync::status::SyncStatus::default();
-        fs::write(&plain, serde_json::to_vec(&status).unwrap()).unwrap();
-        fs::rename(&plain, &status_path).unwrap();
-    } else {
-        assert!(
-            Command::new("kill")
-                .args(["-STOP", &pid])
-                .status()
-                .unwrap()
-                .success()
-        );
-    }
-    let result = w.stop_and_run(&env.snapshot(), &complete_a(), Utc::now());
-    if let Some(mut fifo) = fifo {
-        use std::io::Write;
-        let status = twydo_core::sync::status::SyncStatus::default();
-        fifo.write_all(&serde_json::to_vec(&status).unwrap())
-            .unwrap();
-        // Closing the only writer ends the runner's read.
-        drop(fifo);
-    } else {
-        assert!(
-            Command::new("kill")
-                .args(["-CONT", &pid])
-                .status()
-                .unwrap()
-                .success()
-        );
-    }
-    queued.wait().unwrap();
-    orphan.wait().unwrap();
-    assert_eq!(result, Ok("done · sync stopped".into()));
-    assert!(
-        !marker.exists(),
-        "queued runner missed the stop and restarted vdirsyncer"
-    );
-    let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
-    assert!(st.failures > 0, "the stop was not recorded");
-    assert!(st.next_attempt.is_some());
 }
 
 /// The `Enter` chain against a real store (test mode): each row writes one item under the

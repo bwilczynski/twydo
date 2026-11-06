@@ -69,8 +69,8 @@ instead. A sync is **due** once `batch_size` edits (default 5) are unsynced and 
 paused for 3 seconds, or `max_wait_secs` (default 60) after the oldest of them
 ([config.md](config.md)), whichever comes first, or later while the runner backs off. The
 pause keeps a run of quick edits (closing checklist items one by one) from being interrupted by
-its own sync. A save made while a sync is running still waits for it
-([tui.md](tui.md#when-a-write-is-refused)); the write queue will remove that later.
+its own sync. A save made while a sync is running is queued and written when the sync ends
+([tui.md](tui.md#when-a-write-is-refused)).
 
 After every write (the TUI, `tdo op`, a `tdo conflicts resolve` that writes the vdir) the
 writer checks that rule:
@@ -130,7 +130,7 @@ One run, in order:
    the lock file), which lasts until it exits even if `tdo` does not. The runner sets
    `TWYDO_SYNC_VDIR` to the vdir, so the hook works on the same vdir as a
    `tdo --vdir <dir> sync`. While it runs, the runner records itself in `sync/running.json`. It
-   is killed after `timeout_secs`, or earlier when a save in the TUI asks to stop it (see
+   is killed after `timeout_secs`, or earlier when it is stopped (see
    [Stopping a sync](#stopping-a-sync)). Then `vdirsyncer metasync
    <pair>` runs if `metasync` is on and the sync did not fail (a failure such as a missing
    password would only repeat). A failed metasync is reported (`metasync failed: ...`) but is
@@ -308,8 +308,8 @@ network.
 ## Stopping a sync
 
 A sync holds the vdir for as long as vdirsyncer runs, and a slow one (for example vdirsyncer
-waiting for a password prompt) blocks every write meanwhile. A save in the TUI can stop it
-([tui.md](tui.md#when-a-write-is-refused)):
+waiting for a password prompt) holds the vdir meanwhile; saves are queued until it ends. `tdo` can stop a
+running sync, though no TUI key does today:
 
 - While vdirsyncer runs, the runner keeps `sync/running.json`: its own process id, vdirsyncer's
   process group, when each of those processes started, and when the sync started. A runner
@@ -401,8 +401,8 @@ Lock order is always run lock, vdir lock, conflicts lock.
   done twice. Nothing is lost; delete one copy if it bothers you.
 - **A locked password store stalls sync.** If vdirsyncer fetches the password with `pass` and the
   gpg agent needs your passphrase, vdirsyncer waits for pinentry (a few minutes) while holding the
-  vdir lock. A save in the TUI then asks whether to stop the sync ([Stopping a sync](#stopping-a-sync)).
-  To avoid it, unlock gpg, or let the agent cache the passphrase longer.
+  vdir lock. Saves in the TUI are queued until it ends.
+  To avoid the wait, unlock gpg, or let the agent cache the passphrase longer.
 
 All of these flows were checked against 2Do on an iPhone; the session log is
 [plan3-sync.md](reference/phase0/plan3-sync.md).

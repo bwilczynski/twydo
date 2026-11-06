@@ -14,13 +14,13 @@ use ratatui::crossterm::event::{
     self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind,
 };
 use twydo_core::config::Config;
+use twydo_core::store::queue;
 use twydo_core::sync::batch::after_resolve;
 use twydo_core::sync::resolve::{Resolution, resolve};
-use twydo_core::views::Snapshot;
 
 use crate::app::{App, Outcome};
 use crate::ui;
-use crate::write::{Refused, Writer};
+use crate::write::Writer;
 
 const DEBOUNCE: Duration = Duration::from_millis(300);
 const POLL: Duration = Duration::from_millis(250);
@@ -85,6 +85,9 @@ fn event_loop(
     };
     let (sync_tx, sync_rx) = mpsc::channel::<String>();
     let mut syncing = false;
+    // Edits queued in an earlier session are written before the background sync starts (it
+    // would hold the vdir), and refusals nobody has seen yet are shown.
+    drain_and_reload(app, writer, root);
     // One background sync at start, then the first summary.
     crate::cli::sync::spawn_background(&app.snapshot.config, Some(&app.snapshot.config.vdir));
     refresh_sync(app);
@@ -136,32 +139,12 @@ fn event_loop(
                             refresh_sync(app);
                         }
                         Outcome::Write(req) => {
-                            // Waits up to write::LOCK_WAIT for a running sync.
+                            // A save during a sync is queued at once, never waited for.
                             let result = writer.run(app.write_snapshot(), &req, Utc::now());
-                            // A retry after `y` must be checked against what this write saw,
-                            // not against the reload below.
-                            let base = matches!(result, Err(Refused::Busy { .. }))
-                                .then(|| app.write_snapshot().clone());
                             if result.is_err() {
                                 app.write_refused();
                             }
                             // Reload after failures too: a stale write means the vdir moved on.
-                            reload(app, root);
-                            refresh_sync(app);
-                            match (result, base) {
-                                (Err(Refused::Busy { running_for }), Some(base)) => {
-                                    app.write_busy(req, running_for, base)
-                                }
-                                (other, _) => app.write_finished(other.map_err(|e| e.message())),
-                            }
-                        }
-                        Outcome::StopSyncAndWrite(req) => {
-                            // Waits up to write::STOP_WAIT for the sync to let go.
-                            let result =
-                                writer.stop_and_run(app.write_snapshot(), &req, Utc::now());
-                            if result.is_err() {
-                                app.write_refused();
-                            }
                             reload(app, root);
                             refresh_sync(app);
                             app.write_finished(result.map_err(|e| e.message()));
@@ -220,7 +203,7 @@ fn event_loop(
         {
             pending_since = Some(Instant::now());
         }
-        poll_ended(&mut watch_ended, app, root);
+        poll_ended(&mut watch_ended, app, writer, root);
         // Wait for a quiet DEBOUNCE after the last change, so a sync batch reloads once.
         if pending_since.is_some_and(|t| t.elapsed() >= DEBOUNCE) {
             pending_since = None;
@@ -259,7 +242,7 @@ fn reload(app: &mut App, root: &Path) {
     };
     match twydo_core::vdir::load(root) {
         Ok(report) => {
-            let snapshot = Snapshot::new(report, app.snapshot.config.clone());
+            let snapshot = queue::view(report, app.snapshot.config.clone());
             app.reload(snapshot);
         }
         Err(e) => app.reload_failed(e),
@@ -292,11 +275,26 @@ impl EndedWatch {
     }
 }
 
-/// Reload when any sync has ended, whether or not the watcher saw the files change.
-fn poll_ended(watch: &mut EndedWatch, app: &mut App, root: &Path) {
+/// Reload when any sync has ended, whether or not the watcher saw the files change. Queued
+/// edits the sync left are written first, and refusals are shown.
+fn poll_ended(watch: &mut EndedWatch, app: &mut App, writer: &mut Writer, root: &Path) {
     if watch.changed(&app.snapshot.config) {
-        reload(app, root);
-        refresh_sync(app);
+        drain_and_reload(app, writer, root);
+    }
+}
+
+/// Write the queued edits if the vdir is free, reload, and show the refusals of edits that
+/// were not saved (the drain's, or a sync's that nobody has seen yet).
+fn drain_and_reload(app: &mut App, writer: &mut Writer, root: &Path) {
+    let refusals = writer.drain(Utc::now());
+    reload(app, root);
+    refresh_sync(app);
+    if !refusals.is_empty() {
+        let shown = refusals.join(" · ");
+        app.message = Some(match app.message.take() {
+            Some(m) if m != crate::app::SYNC_DONE => format!("{shown} · {m}"),
+            _ => shown,
+        });
     }
 }
 
@@ -381,7 +379,11 @@ fn finish_sync(app: &mut App, root: &Path, message: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use twydo_core::views::View;
+    use crate::write::Request;
+    use twydo_core::compat::Matrix;
+    use twydo_core::edit::{Change, Op};
+    use twydo_core::store::fsio::VdirLock;
+    use twydo_core::views::{Snapshot, View};
 
     const FORCE_DELETE: &str = "list \"inbox\" was emptied on the server; to apply that here run: tdo sync --force-delete \"inbox\"";
 
@@ -427,20 +429,21 @@ mod tests {
         let cfg = app.snapshot.config.clone();
         let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
         let mut watch = EndedWatch::new(&cfg);
+        let mut writer = Writer::open_with(&cfg, Matrix::embedded().clone(), Box::new(|_, _| {}));
 
         // No event yet: nothing reloads.
         let saved = std::fs::read(&file).unwrap();
         std::fs::remove_file(&file).unwrap();
-        poll_ended(&mut watch, &mut app, &root);
+        poll_ended(&mut watch, &mut app, &mut writer, &root);
         assert_eq!(app.visible_rows().len(), 1);
 
         twydo_core::sync::ended::write(&state, Utc::now()).unwrap();
-        poll_ended(&mut watch, &mut app, &root);
+        poll_ended(&mut watch, &mut app, &mut writer, &root);
         assert!(app.visible_rows().is_empty());
 
         // The same event does not reload again.
         std::fs::write(&file, saved).unwrap();
-        poll_ended(&mut watch, &mut app, &root);
+        poll_ended(&mut watch, &mut app, &mut writer, &root);
         assert!(app.visible_rows().is_empty());
     }
 
@@ -484,5 +487,93 @@ mod tests {
         assert!(shown.starts_with("reload failed: "), "{shown}");
         app.expire_message(Utc::now().with_timezone(&chrono_tz::UTC) + chrono::Duration::hours(1));
         assert_eq!(app.message.as_deref(), Some(shown.as_str()), "errors stay");
+    }
+
+    fn edit_title(title: &str) -> Request {
+        Request::Apply(Op::Edit {
+            uid: "synthetic-task".into(),
+            changes: vec![Change::Summary(title.into())],
+        })
+    }
+
+    fn quiet_writer(cfg: &Config) -> Writer {
+        Writer::open_with(cfg, Matrix::embedded().clone(), Box::new(|_, _| {}))
+    }
+
+    /// The state dir of the app's vdir, as a sync would hold its lock.
+    fn sync_lock(cfg: &Config) -> VdirLock {
+        let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+        VdirLock::shared(&state).unwrap()
+    }
+
+    #[test]
+    fn queued_edit_shows_after_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, file) = inbox_app(dir.path());
+        let cfg = app.snapshot.config.clone();
+        let mut writer = quiet_writer(&cfg);
+        let _sync = sync_lock(&cfg);
+        let before = std::fs::read(&file).unwrap();
+
+        let result = writer.run(app.write_snapshot(), &edit_title("Renamed"), Utc::now());
+        assert!(result.is_ok(), "{result:?}");
+        reload(&mut app, &root);
+
+        let row = app.visible_rows()[0].task;
+        assert_eq!(app.snapshot.tasks[row].summary, "Renamed");
+        assert!(app.snapshot.is_pending(row), "the row is marked queued");
+        assert_eq!(std::fs::read(&file).unwrap(), before, "nothing written yet");
+    }
+
+    #[test]
+    fn sync_ended_drains_and_reloads() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, file) = inbox_app(dir.path());
+        let cfg = app.snapshot.config.clone();
+        let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+        let mut writer = quiet_writer(&cfg);
+        let mut watch = EndedWatch::new(&cfg);
+        let sync = sync_lock(&cfg);
+        writer
+            .run(app.write_snapshot(), &edit_title("Renamed"), Utc::now())
+            .unwrap();
+        reload(&mut app, &root);
+        assert!(app.snapshot.is_pending(app.visible_rows()[0].task));
+
+        drop(sync);
+        twydo_core::sync::ended::write(&state, Utc::now()).unwrap();
+        poll_ended(&mut watch, &mut app, &mut writer, &root);
+
+        let row = app.visible_rows()[0].task;
+        assert!(!app.snapshot.is_pending(row), "written, so no marker");
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("SUMMARY:Renamed")
+        );
+    }
+
+    #[test]
+    fn startup_shows_unshown_refusals() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut app, root, file) = inbox_app(dir.path());
+        let cfg = app.snapshot.config.clone();
+        let mut writer = quiet_writer(&cfg);
+        let sync = sync_lock(&cfg);
+        writer
+            .run(app.write_snapshot(), &edit_title("Renamed"), Utc::now())
+            .unwrap();
+        // Another device changes the task; the session ends before the queue is written.
+        let old = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, old.replace("Synthetic task", "From phone")).unwrap();
+        drop(sync);
+
+        let mut next = quiet_writer(&cfg);
+        drain_and_reload(&mut app, &mut next, &root);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Not saved: \"Synthetic task\" changed on another device")
+        );
+        assert_eq!(app.snapshot.tasks[0].summary, "From phone");
     }
 }
