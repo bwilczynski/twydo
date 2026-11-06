@@ -759,53 +759,71 @@ impl Store {
     /// Every file must still hold what `id` wrote. Applied now when the lock is free, queued
     /// while a sync holds it.
     pub fn undo(&mut self, id: &str, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        let done = self.revert_or_queue(id, "op", now)?;
+        let done = self.revert_or_queue(id, "op", "undo", now)?;
         self.done
             .retain(|d| !matches!(d, Step::Applied(d) if d == id));
         Ok(done)
     }
 
-    /// Undo the last step applied, queued or redone this session. Never waits for a sync.
+    /// Undo the last step applied, queued or redone this session. Waits at most [`TRY_LOCK`]
+    /// for the lock, never for a sync: a held lock queues the revert.
     pub fn undo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        let step = self.done.last().cloned().ok_or(WriteError::NothingToUndo)?;
-        let (done, new) = self.revert_step(&step, now)?;
-        self.done.pop();
-        self.undone.push(new);
-        Ok(done)
+        while let Some(step) = self.done.last().cloned() {
+            match self.revert_step(&step, "undo", now)? {
+                Some((done, new)) => {
+                    self.done.pop();
+                    self.undone.push(new);
+                    return Ok(done);
+                }
+                None => {
+                    self.done.pop();
+                }
+            }
+        }
+        Err(WriteError::NothingToUndo)
     }
 
     /// Redo the last undo of this session by reverting it.
     pub fn redo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        let step = self
-            .undone
-            .last()
-            .cloned()
-            .ok_or(WriteError::NothingToRedo)?;
-        let (done, new) = self.revert_step(&step, now)?;
-        self.undone.pop();
-        self.done.push(new);
-        Ok(done)
+        while let Some(step) = self.undone.last().cloned() {
+            match self.revert_step(&step, "redo", now)? {
+                Some((done, new)) => {
+                    self.undone.pop();
+                    self.done.push(new);
+                    return Ok(done);
+                }
+                None => {
+                    self.undone.pop();
+                }
+            }
+        }
+        Err(WriteError::NothingToRedo)
     }
 
-    /// Reverts `step`; the result and the step to put on the other stack.
+    /// Reverts `step`: the result and the step for the other stack. `None` when `step` was a
+    /// queued item a drain refused, so nothing of it was ever written.
     fn revert_step(
         &mut self,
         step: &Step,
+        label: &str,
         now: DateTime<Utc>,
-    ) -> Result<(Submitted, Step), WriteError> {
+    ) -> Result<Option<(Submitted, Step)>, WriteError> {
         let done = match step {
-            Step::Applied(id) => self.revert_or_queue(id, "tui", now)?,
+            Step::Applied(id) => self.revert_or_queue(id, "tui", label, now)?,
             Step::Queued(item) => {
-                if Queue::open(&self.state)?.cancel(&item.id)? {
-                    return Ok((Submitted::Cancelled, Step::Cancelled(item.clone())));
+                let queue = Queue::open(&self.state)?;
+                if queue.cancel(&item.id)? {
+                    return Ok(Some((Submitted::Cancelled, Step::Cancelled(item.clone()))));
                 }
                 // A drainer got there first: the entry it commits names the item. Until that
-                // entry exists the drainer is mid-commit.
-                let entry = self
-                    .journal
-                    .by_queue_id(&item.id)?
-                    .ok_or(WriteError::Busy)?;
-                self.revert_or_queue(&entry.id, "tui", now)?
+                // entry exists the drainer is mid-commit, unless it refused the item.
+                let Some(entry) = self.journal.by_queue_id(&item.id)? else {
+                    if queue.is_refused(&item.id)? {
+                        return Ok(None);
+                    }
+                    return Err(WriteError::Busy);
+                };
+                self.revert_or_queue(&entry.id, "tui", label, now)?
             }
             Step::Cancelled(item) => self.settle_queued(item.clone(), now, &mut || {})?,
         };
@@ -814,7 +832,7 @@ impl Store {
             Submitted::Queued(item) => Step::Queued(item.clone()),
             Submitted::Cancelled => unreachable!("only a queued step is cancelled"),
         };
-        Ok((done, new))
+        Ok(Some((done, new)))
     }
 
     /// Reverts entry `id` now if the lock is free within [`TRY_LOCK`], else queues the revert.
@@ -823,6 +841,7 @@ impl Store {
         &mut self,
         id: &str,
         tool: &str,
+        label: &str,
         now: DateTime<Utc>,
     ) -> Result<Submitted, WriteError> {
         if let Some(lock) = self.try_lock_for(TRY_LOCK)? {
@@ -845,7 +864,7 @@ impl Store {
             id: queue::new_id(now),
             created: now,
             origin: queue::origin(tool),
-            label: "undo".to_string(),
+            label: label.to_string(),
             kind: Kind::Revert {
                 entry: id.to_string(),
                 writes,

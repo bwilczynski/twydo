@@ -707,3 +707,32 @@ fn queued_revert_is_refused_if_the_file_changed() {
     assert_eq!(read(&env, A), changed);
     assert!(queue(&env).is_empty().unwrap());
 }
+
+#[test]
+fn undo_skips_a_refused_queued_step() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let before = read(&env, A);
+    store
+        .submit(&env.snap(), &title(A, "first"), "edit", "op", now())
+        .unwrap();
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let got = store
+        .submit(&env.snap(), &title(E, "second"), "edit", "op", now())
+        .unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    // Another device changes E while the sync runs: the drain refuses the queued edit.
+    let changed = read(&env, E).replace("SUMMARY:", "SUMMARY:elsewhere ");
+    fs::write(env.file(E), &changed).unwrap();
+    drop(sync);
+    let drained = store.drain(later()).unwrap();
+    assert!(matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+    let got = store.undo_last(later()).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert_eq!(read(&env, A), before);
+    assert_eq!(read(&env, E), changed);
+    assert!(matches!(
+        store.undo_last(later()),
+        Err(WriteError::NothingToUndo)
+    ));
+}
