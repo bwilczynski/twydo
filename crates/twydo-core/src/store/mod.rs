@@ -642,7 +642,8 @@ impl Store {
     /// Drains the queue under the held lock (spec §6.3): per item, in id order, skip what a
     /// journal entry already names, skip what was cancelled, re-gate on the current files and
     /// commit what was planned. A refused item is recorded and the drain goes on; a stuck
-    /// journal stops it, leaving the item claimed, and is the error only if nothing drained.
+    /// journal or I/O error stops it, leaving the item claimed, and is the error only if
+    /// nothing drained.
     fn drain_steps(
         &mut self,
         _held: &VdirLock,
@@ -653,8 +654,22 @@ impl Store {
         let mut steps: Vec<DrainStep> = Vec::new();
         for item in queue.list()? {
             if let Some(entry) = self.journal.by_queue_id(&item.id)? {
+                let outcome = if entry.stage == Stage::Prepared {
+                    // An interrupted commit is not yet applied. Finish recovery before
+                    // dropping its claim, and refresh the gate's view for dependent items.
+                    if let Err(e) = self.check_not_stuck() {
+                        if steps.is_empty() {
+                            return Err(e);
+                        }
+                        break;
+                    }
+                    report = crate::vdir::load(&self.vdir)?;
+                    DrainOutcome::Applied(entry.id)
+                } else {
+                    DrainOutcome::AlreadyApplied(entry.id)
+                };
                 queue.done(&item.id)?;
-                steps.push(DrainStep::new(item, DrainOutcome::AlreadyApplied(entry.id)));
+                steps.push(DrainStep::new(item, outcome));
                 continue;
             }
             if !queue.claim(&item.id)? {
@@ -687,7 +702,7 @@ impl Store {
                     }
                     steps.push(DrainStep::new(item, DrainOutcome::Applied(id)));
                 }
-                Err(e @ WriteError::Stuck(_)) => {
+                Err(e @ (WriteError::Stuck(_) | WriteError::Io(_))) => {
                     if steps.is_empty() {
                         return Err(e);
                     }
