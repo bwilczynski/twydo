@@ -91,16 +91,6 @@ impl Env {
             .expect("run tdo")
     }
 
-    /// Appends `text` to the config file (into its last table).
-    fn append_config(&self, text: &str) {
-        use std::io::Write;
-        let mut f = fs::OpenOptions::new()
-            .append(true)
-            .open(self.dir.path().join("config/twydo/config.toml"))
-            .unwrap();
-        f.write_all(text.as_bytes()).unwrap();
-    }
-
     fn op(&self, args: &[&str]) -> Output {
         let m = self.dir.path().join("matrix.toml");
         let mut a = vec!["op", "--matrix", m.to_str().unwrap()];
@@ -406,7 +396,13 @@ fn op_journal_shows_synced() {
 }
 
 /// Adds a `[sync]` table whose command is a fake script touching `marker`; returns the marker.
+/// A fake sync command whose waiter syncs after one second, so no test leaves a waiter
+/// sleeping for the default minute.
 fn with_fake_sync(env: &Env) -> PathBuf {
+    with_fake_sync_waiting(env, 1)
+}
+
+fn with_fake_sync_waiting(env: &Env, max_wait_secs: u64) -> PathBuf {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     let marker = env.dir.path().join("marker");
@@ -426,7 +422,7 @@ fn with_fake_sync(env: &Env) -> PathBuf {
         .unwrap();
     write!(
         cfg,
-        "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+        "[sync]\ncommand = \"{}\"\nmetasync = false\nmax_wait_secs = {max_wait_secs}\n",
         fake.display()
     )
     .unwrap();
@@ -452,8 +448,7 @@ fn marker_stays_absent(marker: &Path) -> bool {
 #[test]
 fn op_starts_the_waiter_after_a_write() {
     let env = Env::new("test");
-    let marker = with_fake_sync(&env);
-    env.append_config("max_wait_secs = 2\n");
+    let marker = with_fake_sync_waiting(&env, 2);
     let o = env.op(&["complete", TASK_E]);
     assert!(o.status.success(), "{}", err(&o));
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -465,7 +460,6 @@ fn op_starts_the_waiter_after_a_write() {
 fn op_with_sync_off_starts_nothing() {
     let env = Env::new("test");
     let marker = with_fake_sync(&env);
-    env.append_config("max_wait_secs = 1\n");
     let o = env.tdo(&["sync", "off"]);
     assert!(o.status.success(), "{}", err(&o));
     let o = env.op(&["complete", TASK_E]);

@@ -455,6 +455,21 @@ mod sync {
         assert!(out.contains("automatic sync: on"), "{out}");
     }
 
+    /// Final review: once the switch is on, an error reading the unsynced edits starts a
+    /// sync (which checks again) rather than reporting the switch as failed.
+    #[test]
+    fn sync_on_succeeds_when_the_edits_cannot_be_read() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
+        let o = fx.tdo(&["sync", "off"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let state = twydo_core::store::vdir_state_dir(&fx.path("state"), &fx.path("vdir")).unwrap();
+        fs::create_dir_all(state.join("journal")).unwrap();
+        fs::write(state.join("sync/status.json"), "not json").unwrap();
+        let o = fx.tdo(&["sync", "on"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(stdout(&o).contains("automatic sync on"), "{}", stdout(&o));
+    }
+
     #[test]
     fn sync_off_without_config_exits_2() {
         let fx = Fx::new(None);
