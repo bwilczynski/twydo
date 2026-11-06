@@ -1,6 +1,7 @@
 //! Sync runner support: vdirsyncer output parsing, conflict handling, the runner and its
 //! status.
 
+pub mod ended;
 pub mod hook;
 pub mod manifest;
 pub mod output;

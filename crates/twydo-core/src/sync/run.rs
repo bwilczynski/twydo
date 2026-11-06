@@ -171,6 +171,12 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Backoff { until }));
     }
 
+    // Created after the backoff check: skipped runs record no event. Dropped on every exit,
+    // including an error from a pass.
+    let _ended = EndedGuard {
+        state: &state,
+        at: now,
+    };
     let mut report = RunReport::default();
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
@@ -193,6 +199,18 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         fs::remove_file(&requested)?;
     }
     Ok(report)
+}
+
+/// Records the sync-ended event when a run that got past the backoff check ends.
+struct EndedGuard<'a> {
+    state: &'a Path,
+    at: DateTime<Utc>,
+}
+
+impl Drop for EndedGuard<'_> {
+    fn drop(&mut self) {
+        let _ = super::ended::write(self.state, self.at);
+    }
 }
 
 /// Steps 3 to 6.
