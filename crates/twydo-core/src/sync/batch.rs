@@ -87,3 +87,34 @@ pub fn due(cfg: &Config, now: DateTime<Utc>) -> io::Result<Due> {
         now,
     ))
 }
+
+/// What a writer starts after an edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    /// The batch is full or overdue: start a background sync now.
+    SyncNow,
+    /// Make sure a batch waiter exists (`tdo sync --background --when-due`).
+    Waiter,
+}
+
+/// Called after a write that succeeded: what to start, if anything. `None` without `[sync]`,
+/// while switched off, or with nothing unsynced. A read error starts the waiter, which checks
+/// again itself.
+pub fn after_write(cfg: &Config, now: DateTime<Utc>) -> Option<Trigger> {
+    match due(cfg, now) {
+        Ok(Due::Nothing) => None,
+        Ok(Due::Now) => Some(Trigger::SyncNow),
+        Ok(Due::At(_)) | Err(_) => Some(Trigger::Waiter),
+    }
+}
+
+/// After a conflict was resolved: a choice recorded for a held conflict is not an edit and
+/// applies only on a sync, so that starts one now (unless switched off); a resolve that
+/// wrote the vdir follows [`after_write`].
+pub fn after_resolve(cfg: &Config, recorded: bool, now: DateTime<Utc>) -> Option<Trigger> {
+    if !recorded {
+        return after_write(cfg, now);
+    }
+    let on = cfg.sync.is_some() && !switch::is_off(cfg).unwrap_or(false);
+    on.then_some(Trigger::SyncNow)
+}

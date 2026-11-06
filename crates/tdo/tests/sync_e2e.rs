@@ -80,12 +80,15 @@ impl Pair {
             p.root().join("config/twydo/config.toml"),
             format!(
                 "vdir = \"{}\"\ntimezone = \"UTC\"\n[writes]\nmode = \"test\"\n\
-                 [sync]\nvdirsyncer_config = \"{}\"\nafter_edit = false\n{extra}",
+                 [sync]\nvdirsyncer_config = \"{}\"\n{extra}",
                 p.vdir().display(),
                 p.vdirsyncer_config().display()
             ),
         )
         .unwrap();
+        // Each test syncs by hand: no background sync or batch waiter may race it.
+        let o = p.tdo(&["sync", "off"]);
+        assert!(o.status.success(), "tdo sync off: {o:?}");
         let mut matrix = String::from("matrix_version = 1\n");
         for op in ["create", "edit", "delete"] {
             matrix.push_str(&format!(

@@ -14,6 +14,7 @@ use ratatui::crossterm::event::{
     self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyEventKind,
 };
 use twydo_core::config::Config;
+use twydo_core::sync::batch::after_resolve;
 use twydo_core::sync::resolve::{Resolution, resolve};
 use twydo_core::views::Snapshot;
 
@@ -57,8 +58,7 @@ pub fn run(mut app: App, root: PathBuf, tz: Tz) -> io::Result<()> {
     let mut terminal = init_terminal();
     let result = event_loop(&mut terminal, &mut app, &mut writer, &root, tz);
     restore_terminal();
-    // Saves made just before quitting still sync now, not on the next timer run.
-    writer.flush_sync();
+    // Quitting starts no sync: the batch waiter started by the last write outlives the TUI.
     result
 }
 
@@ -123,6 +123,18 @@ fn event_loop(
                                 start_sync(&app.snapshot.config.vdir, force_delete, &sync_tx);
                             }
                         }
+                        Outcome::SyncSwitch(on) => {
+                            let cfg = &app.snapshot.config;
+                            app.message = Some(if cfg.sync.is_none() {
+                                "sync is not configured".into()
+                            } else {
+                                match crate::cli::sync::set_switch(cfg, Some(&cfg.vdir), on) {
+                                    Ok(()) => crate::cli::sync::switch_message(on).into(),
+                                    Err(e) => format!("cannot switch automatic sync: {e}"),
+                                }
+                            });
+                            refresh_sync(app);
+                        }
                         Outcome::Write(req) => {
                             // Waits up to write::LOCK_WAIT for a running sync.
                             let result = writer.run(app.write_snapshot(), &req, Utc::now());
@@ -170,10 +182,12 @@ fn event_loop(
                         Outcome::Resolve { id, keep } => {
                             let cfg = &app.snapshot.config;
                             let result = resolve(cfg, &id, keep, Utc::now());
-                            // Same rule as `tdo conflicts resolve`: sync after a resolve
-                            // that worked, when sync is configured.
-                            if result.is_ok() {
-                                writer.sync_soon();
+                            // Same rule as `tdo conflicts resolve`.
+                            if let Ok(r) = &result {
+                                let recorded = *r == Resolution::Recorded;
+                                if let Some(t) = after_resolve(cfg, recorded, Utc::now()) {
+                                    crate::cli::sync::spawn(cfg, Some(&cfg.vdir), t);
+                                }
                             }
                             app.message = Some(match result {
                                 Ok(Resolution::Recorded) => "kept; applied on the next sync".into(),
@@ -213,8 +227,6 @@ fn event_loop(
             reload(app, root);
             refresh_sync(app);
         }
-        // The after-edit sync starts once saves pause (issue #19).
-        writer.sync_if_quiet(Instant::now());
         app.expire_message(now());
         if ticked || last_tick.elapsed() >= TICK_EVERY {
             app.tick(now());
@@ -254,7 +266,7 @@ fn reload(app: &mut App, root: &Path) {
     }
 }
 
-/// Notices that some sync run (timer, after-edit or manual) has ended since the last look.
+/// Notices that some sync run (background or manual) has ended since the last look.
 struct EndedWatch {
     last: Option<String>,
 }

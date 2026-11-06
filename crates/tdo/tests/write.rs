@@ -1,6 +1,6 @@
 //! The TUI writer against a temp vdir copied from synthetic phase-0 fixtures.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -12,6 +12,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::edit::{Change, Op};
 use twydo_core::store::fsio::VdirLock;
+use twydo_core::sync::batch::Trigger;
 use twydo_core::sync::running::{Running, process_start};
 use twydo_core::views::Snapshot;
 
@@ -64,16 +65,19 @@ fn now() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
 }
 
-/// A writer with the embedded matrix and a counting sync trigger.
-fn writer(cfg: &Config) -> (Writer, Rc<Cell<u32>>) {
+/// The triggers a writer fired, in order.
+type Fired = Rc<RefCell<Vec<Trigger>>>;
+
+/// A writer with the embedded matrix and a recording sync trigger.
+fn writer(cfg: &Config) -> (Writer, Fired) {
     writer_with(cfg, Matrix::embedded().clone())
 }
 
-fn writer_with(cfg: &Config, matrix: Matrix) -> (Writer, Rc<Cell<u32>>) {
-    let calls = Rc::new(Cell::new(0));
-    let c = calls.clone();
-    let w = Writer::open_with(cfg, matrix, Box::new(move |_| c.set(c.get() + 1)));
-    (w, calls)
+fn writer_with(cfg: &Config, matrix: Matrix) -> (Writer, Fired) {
+    let fired: Fired = Rc::default();
+    let f = fired.clone();
+    let w = Writer::open_with(cfg, matrix, Box::new(move |_, t| f.borrow_mut().push(t)));
+    (w, fired)
 }
 
 fn complete_a() -> Request {
@@ -154,7 +158,7 @@ fn blocked_op_returns_gate_reason() {
         Err(Refused::Other(reason))
     );
     assert_eq!(fs::read(env.task_file()).unwrap(), original);
-    assert_eq!(calls.get(), 0);
+    assert!(calls.borrow().is_empty());
 }
 
 #[test]
@@ -207,77 +211,59 @@ fn move_message_names_list() {
 }
 
 #[test]
-fn after_edit_triggers_sync_only_on_success() {
+fn first_save_starts_the_waiter() {
     let env = Env::new();
-    let mut cfg = env.config();
-    cfg.sync = Some(twydo_core::config::SyncConfig::default());
-    let (mut w, calls) = writer(&cfg);
+    let (mut w, fired) = writer(&sync_config(&env));
+    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
+    assert_eq!(*fired.borrow(), [Trigger::Waiter]);
+}
+
+#[test]
+fn fifth_save_syncs_now() {
+    let env = Env::new();
+    let mut cfg = sync_config(&env);
+    cfg.sync.as_mut().unwrap().batch_size = 5;
+    let (mut w, fired) = writer(&cfg);
+    for i in 0..5 {
+        let edit = Request::Apply(Op::Edit {
+            uid: TASK_A.into(),
+            changes: vec![Change::Summary(format!("A{i}"))],
+        });
+        w.run(&env.snapshot(), &edit, now()).unwrap();
+    }
+    let fired = fired.borrow();
+    assert_eq!(fired.len(), 5);
+    assert!(
+        fired[..4].iter().all(|t| *t == Trigger::Waiter),
+        "{fired:?}"
+    );
+    assert_eq!(fired[4], Trigger::SyncNow);
+}
+
+#[test]
+fn refused_save_triggers_nothing() {
+    let env = Env::new();
+    let (mut w, fired) = writer(&sync_config(&env));
     assert!(w.run(&env.snapshot(), &Request::Undo, now()).is_err());
-    w.flush_sync();
-    assert_eq!(calls.get(), 0);
-    assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
-    w.flush_sync();
-    assert_eq!(calls.get(), 1);
+    assert!(fired.borrow().is_empty());
 }
 
-/// Issue #19: a save does not start the sync at once, or the next quick save (closing
-/// checklist items one by one) waits on it. The sync starts once saves pause.
 #[test]
-fn after_edit_sync_waits_for_a_quiet_period() {
+fn no_sync_section_triggers_nothing() {
     let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, calls) = writer(&cfg);
+    let (mut w, fired) = writer(&env.config());
     w.run(&env.snapshot(), &complete_a(), now()).unwrap();
-    let t = Instant::now();
-    w.sync_if_quiet(t);
-    assert_eq!(calls.get(), 0, "started right after the save");
-    w.sync_if_quiet(t + tdo::write::SYNC_DELAY);
-    assert_eq!(calls.get(), 1);
-    w.sync_if_quiet(t + 2 * tdo::write::SYNC_DELAY);
-    assert_eq!(calls.get(), 1, "started twice for one save");
+    assert!(fired.borrow().is_empty());
 }
 
 #[test]
-fn each_save_pushes_the_after_edit_sync_back() {
+fn switched_off_triggers_nothing() {
     let env = Env::new();
     let cfg = sync_config(&env);
-    let (mut w, calls) = writer(&cfg);
+    twydo_core::sync::switch::set(&cfg, true).unwrap();
+    let (mut w, fired) = writer(&cfg);
     w.run(&env.snapshot(), &complete_a(), now()).unwrap();
-    let first = Instant::now();
-    std::thread::sleep(Duration::from_millis(20));
-    w.run(&env.snapshot(), &Request::Undo, now()).unwrap();
-    // A quiet period after the first save, but not after the second.
-    w.sync_if_quiet(first + tdo::write::SYNC_DELAY);
-    assert_eq!(calls.get(), 0);
-    w.sync_if_quiet(Instant::now() + tdo::write::SYNC_DELAY);
-    assert_eq!(calls.get(), 1, "two saves in a row start one sync");
-}
-
-/// Quitting the TUI starts a pending sync at once, so a save never waits for the timer.
-#[test]
-fn flush_starts_a_pending_sync_once() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, calls) = writer(&cfg);
-    w.flush_sync();
-    assert_eq!(calls.get(), 0, "nothing was saved");
-    w.run(&env.snapshot(), &complete_a(), now()).unwrap();
-    w.flush_sync();
-    w.flush_sync();
-    assert_eq!(calls.get(), 1);
-}
-
-/// A conflict resolved in the TUI schedules the same sync as a save.
-#[test]
-fn sync_soon_schedules_the_after_edit_sync() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let (mut w, calls) = writer(&cfg);
-    w.sync_soon();
-    w.sync_if_quiet(Instant::now());
-    assert_eq!(calls.get(), 0);
-    w.sync_if_quiet(Instant::now() + tdo::write::SYNC_DELAY);
-    assert_eq!(calls.get(), 1);
+    assert!(fired.borrow().is_empty());
 }
 
 /// Review Focus 1 through the form: a sync that lands while the form is open (here, a
@@ -506,7 +492,7 @@ fn stop_and_run_kills_an_orphaned_sync_and_saves() {
         "the stop request is cleared after the write"
     );
     // PR review 4: nobody else records the killed orphan, so the stop does, with backoff,
-    // before the after-edit sync could start another stuck run.
+    // before the sync after the write could start another stuck run.
     let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
     assert_eq!(st.failures, 1);
     assert!(st.next_attempt.is_some());
@@ -761,16 +747,16 @@ fn tui_opens_while_a_sync_holds_the_vdir() {
     let c = cfg.clone();
     assert!(
         finishes_within(Duration::from_secs(2), move || {
-            let _ = Writer::open_with(&c, Matrix::embedded().clone(), Box::new(|_| {}));
+            let _ = Writer::open_with(&c, Matrix::embedded().clone(), Box::new(|_, _| {}));
         }),
         "opening the writer waited for the sync"
     );
 }
 
-/// Review minor 2: the after-edit sync must start only once the stop request is withdrawn,
-/// or it stops itself and backs off.
+/// Review minor 2: the sync after a write must start only once the stop request is
+/// withdrawn, or it stops itself and backs off.
 #[test]
-fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
+fn sync_after_a_write_starts_after_the_stop_request_is_cleared() {
     let env = Env::new();
     let cfg = sync_config(&env);
     let stop = sync_dir(&cfg).join("stop");
@@ -779,7 +765,7 @@ fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
     let mut w = Writer::open_with(
         &cfg,
         Matrix::embedded().clone(),
-        Box::new(move |_| s.set(Some(stop.exists()))),
+        Box::new(move |_, _| s.set(Some(stop.exists()))),
     );
     record_running(
         &cfg,
@@ -795,7 +781,6 @@ fn after_edit_sync_starts_after_the_stop_request_is_cleared() {
         w.stop_and_run(&env.snapshot(), &complete_a(), now()),
         Ok("done · sync stopped".into())
     );
-    w.flush_sync();
     assert_eq!(
         seen.get(),
         Some(false),
@@ -862,7 +847,6 @@ fn check_queued_orphan_stop(delay_status: bool) {
     use std::process::{Command, Stdio};
     let env = Env::new();
     let mut cfg = sync_config(&env);
-    cfg.sync.as_mut().unwrap().after_edit = Some(false);
     cfg.sync.as_mut().unwrap().metasync = false;
     let marker = env.dir.path().join("started-again");
     let fake = env.dir.path().join("fake.sh");
@@ -878,7 +862,7 @@ fn check_queued_orphan_stop(delay_status: bool) {
     fs::write(
         config_root.join("twydo/config.toml"),
         format!(
-            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\nafter_edit = false\n",
+            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\n",
             cfg.vdir.display(),
             cfg.state_dir().display(),
             fake.display()
@@ -889,6 +873,8 @@ fn check_queued_orphan_stop(delay_status: bool) {
     let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
     let sync = sync_dir(&cfg);
     let status_path = sync.join("status.json");
+    // Held read-write, so the runner's open does not block but its read waits for the data.
+    let mut fifo = None;
     if delay_status {
         assert!(
             Command::new("mkfifo")
@@ -896,6 +882,13 @@ fn check_queued_orphan_stop(delay_status: bool) {
                 .status()
                 .unwrap()
                 .success()
+        );
+        fifo = Some(
+            fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&status_path)
+                .unwrap(),
         );
     }
     let mut orphan = Command::new("sleep")
@@ -942,7 +935,25 @@ fn check_queued_orphan_stop(delay_status: bool) {
     // Delay it before recovery (the FIFO status read) or during recovery (SIGSTOP),
     // until the save has withdrawn its request.
     let pid = queued.id().to_string();
-    if !delay_status {
+    if delay_status {
+        // Once the runner has the FIFO open, a plain status file takes its name, so the save's
+        // own status read (deciding the sync after the write) does not wait on the FIFO too.
+        let fds = PathBuf::from(format!("/proc/{pid}/fd"));
+        let has_fifo = || {
+            fs::read_dir(&fds)
+                .into_iter()
+                .flatten()
+                .any(|e| fs::read_link(e.unwrap().path()).is_ok_and(|t| t == status_path))
+        };
+        while !has_fifo() {
+            assert!(Instant::now() < deadline, "runner did not open status.json");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let plain = sync.join("status.json.plain");
+        let status = twydo_core::sync::status::SyncStatus::default();
+        fs::write(&plain, serde_json::to_vec(&status).unwrap()).unwrap();
+        fs::rename(&plain, &status_path).unwrap();
+    } else {
         assert!(
             Command::new("kill")
                 .args(["-STOP", &pid])
@@ -952,9 +963,13 @@ fn check_queued_orphan_stop(delay_status: bool) {
         );
     }
     let result = w.stop_and_run(&env.snapshot(), &complete_a(), Utc::now());
-    if delay_status {
+    if let Some(mut fifo) = fifo {
+        use std::io::Write;
         let status = twydo_core::sync::status::SyncStatus::default();
-        fs::write(&status_path, serde_json::to_vec(&status).unwrap()).unwrap();
+        fifo.write_all(&serde_json::to_vec(&status).unwrap())
+            .unwrap();
+        // Closing the only writer ends the runner's read.
+        drop(fifo);
     } else {
         assert!(
             Command::new("kill")

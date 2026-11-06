@@ -128,6 +128,11 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
     };
     let yellow = theme::warning();
     let mut out = Vec::new();
+    // While switched off, always first, so local-only edits are not forgotten.
+    if s.off {
+        out.push(("sync off".into(), yellow));
+        out.push((" · ".into(), Style::new()));
+    }
     let missing = s.status.collections.iter().find(|(_, state)| {
         matches!(state,
         CollState::Error { message } if message.trim_end_matches(';').ends_with("Not Found"))

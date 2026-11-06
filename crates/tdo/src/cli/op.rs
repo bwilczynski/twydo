@@ -15,9 +15,10 @@ use twydo_core::model::TaskKind;
 use twydo_core::repeatinput::{self, RepeatSpec};
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::{Store, WriteError, existing_vdir_state};
+use twydo_core::sync::batch::after_write;
 use twydo_core::views::Snapshot;
 
-use super::sync::spawn_background;
+use super::sync::spawn;
 use super::{CliError, EXIT_ERROR, resolve_config};
 
 /// A task type, as `--kind` spells it.
@@ -494,9 +495,10 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     Ok(())
 }
 
-/// Starts a background sync after a write that exited 0, when sync is configured.
+/// After a write that exited 0: a background sync when the batch is due, else the batch
+/// waiter (nothing without `[sync]` or while switched off).
 fn sync_after_write(cfg: &Config, vdir: Option<&Path>) {
-    if cfg.sync.as_ref().is_some_and(|s| s.edits_trigger_sync()) {
-        spawn_background(cfg, vdir);
+    if let Some(t) = after_write(cfg, Utc::now()) {
+        spawn(cfg, vdir, t);
     }
 }

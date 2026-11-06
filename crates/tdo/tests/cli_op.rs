@@ -91,6 +91,16 @@ impl Env {
             .expect("run tdo")
     }
 
+    /// Appends `text` to the config file (into its last table).
+    fn append_config(&self, text: &str) {
+        use std::io::Write;
+        let mut f = fs::OpenOptions::new()
+            .append(true)
+            .open(self.dir.path().join("config/twydo/config.toml"))
+            .unwrap();
+        f.write_all(text.as_bytes()).unwrap();
+    }
+
     fn op(&self, args: &[&str]) -> Output {
         let m = self.dir.path().join("matrix.toml");
         let mut a = vec!["op", "--matrix", m.to_str().unwrap()];
@@ -437,13 +447,33 @@ fn marker_stays_absent(marker: &Path) -> bool {
     !marker.exists()
 }
 
+/// One write is below `batch_size`: no sync at once, but the batch waiter syncs it once
+/// `max_wait_secs` have passed.
 #[test]
-fn op_triggers_background_sync() {
+fn op_starts_the_waiter_after_a_write() {
     let env = Env::new("test");
     let marker = with_fake_sync(&env);
+    env.append_config("max_wait_secs = 2\n");
     let o = env.op(&["complete", TASK_E]);
     assert!(o.status.success(), "{}", err(&o));
-    assert!(marker_appears(&marker), "no background sync after op edit");
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    assert!(!marker.exists(), "one write synced at once");
+    assert!(marker_appears(&marker), "the waiter did not sync the write");
+}
+
+#[test]
+fn op_with_sync_off_starts_nothing() {
+    let env = Env::new("test");
+    let marker = with_fake_sync(&env);
+    env.append_config("max_wait_secs = 1\n");
+    let o = env.tdo(&["sync", "off"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let o = env.op(&["complete", TASK_E]);
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(
+        marker_stays_absent(&marker),
+        "a sync ran while switched off"
+    );
 }
 
 #[test]

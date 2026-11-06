@@ -503,6 +503,30 @@ fn status_line(buf: &Buffer) -> String {
 }
 
 #[test]
+fn status_shows_sync_off_with_the_pending_count() {
+    let mut a = app();
+    let st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(14, 57)),
+        ..Default::default()
+    };
+    let mut s = summary(st, 3, vec![]);
+    s.off = true;
+    a.set_sync(Some(s.clone()));
+    let buf = render(&mut a, 140, 20);
+    let l = status_line(&buf);
+    assert!(l.contains("sync off · synced 3m ago · 3 pending"), "{l}");
+    let x = l.find("sync off").unwrap();
+    let x = l[..x].chars().count() as u16;
+    assert_eq!(buf[(x, buf.area.height - 1)].fg, Color::Yellow);
+
+    s.pending = 0;
+    a.set_sync(Some(s));
+    assert!(status_line(&render(&mut a, 140, 20)).contains("sync off"));
+    a.set_sync(Some(summary(Default::default(), 0, vec![])));
+    assert!(!status_line(&render(&mut a, 140, 20)).contains("sync off"));
+}
+
+#[test]
 fn status_shows_synced_ago_pending_and_conflicts() {
     let mut a = app();
     // now() is 10:00 New York = 15:00 UTC.

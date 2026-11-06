@@ -33,7 +33,9 @@
   parent) and notes. It appears when the terminal is at least 110 columns wide.
 - **Status line**: the mode (`NORMAL`, `INSERT`, `COMMAND`), the focused pane, key hints or the
   last message, and the position in the view. An indicator appears when files could not be read
-  (`:errors`).
+  (`:errors`). With `[sync]` it shows the sync state (`synced 3m ago · 2 pending`, conflicts,
+  failures); while automatic sync is off it starts with `sync off` in yellow, whatever the
+  pending count ([sync.md](sync.md#when-edits-sync)).
 
 The focused pane has a bold blue border. The sidebar takes a fifth of the width (24 to 40
 columns), or a third below 60 columns.
@@ -41,8 +43,9 @@ columns), or a third below 60 columns.
 Colours come from your terminal's 16-colour palette, so the TUI follows your terminal theme and
 re-colours live when it changes. Only the list bars use the lists' own (true) colours.
 
-The TUI reloads when files in the vdir change, for example after a sync, and when a `:sync` it
-started finishes, even if no file change was reported. Every minute it moves its clock on, so
+The TUI reloads when files in the vdir change, for example after a sync, and when any sync ends
+(its own `:sync`, the startup sync, the batch waiter or the timer), even if no file change was
+reported. Every minute it moves its clock on, so
 "today" and the groups stay current.
 
 ## Keys
@@ -87,6 +90,7 @@ On a checklist or project, a write acts on the whole family; see
 |---|---|
 | `:list <name>` | open a list by name (or collection id), also a hidden one |
 | `:sync` | sync now (needs `[sync]` in the config; [sync.md](sync.md)) |
+| `:sync on` / `:sync off` | switch automatic sync on or off ([sync.md](sync.md#when-edits-sync)); on starts a sync when edits are unsynced |
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | show unreadable files and sync errors; j/k scroll |
@@ -289,9 +293,10 @@ The status line says why, and nothing is written:
 - **`cannot write: …`**: the operation journal could not be opened
   ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
 
-Success messages clear after five seconds. When sync is on, a background sync starts once writes pause for three seconds, so quick writes in a
+Success messages clear after five seconds. Writes sync in batches: after `batch_size` unsynced
+edits, or `max_wait_secs` after the oldest one, a background sync starts, so quick writes in a
 row (closing checklist items one by one) do not wait on a sync started by the one before.
-Quitting starts a pending sync at once.
+Quitting starts no sync; the batch waiter sends the last edits ([sync.md](sync.md#when-edits-sync)).
 
 ## Not in the TUI yet
 

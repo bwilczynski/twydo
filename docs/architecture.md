@@ -240,10 +240,16 @@ process lets go of it, or by the kernel if the process dies.
 The sync runner takes its locks in a fixed order: its own run lock (`<state>/sync/run.lock`, so
 only one sync runs at a time), then the vdir lock, then the conflicts lock.
 
+The batch waiter (`tdo sync --background --when-due`, [sync.md](sync.md#when-edits-sync)) holds
+`<state>/sync/waiter.lock` without waiting, so at most one waits per vdir; it takes the run lock
+only when it syncs. Two plain files steer the background syncs: `<state>/sync/off`, present
+while automatic sync is off (every background run then skips), and `<state>/sync/ended`, which
+every run that is not skipped rewrites atomically when it ends.
+
 ## Reading
 
 The TUI loads the whole vdir into a snapshot, renders views from it, and reloads when files in
-the vdir change (for example after a sync) and when a manual `:sync` finishes, without waiting
-for the watcher. Once a minute it moves its clock on, so "today" and the date groups stay
+the vdir change (for example after a sync) and when `<state>/sync/ended` changes (any sync
+ended), without waiting for the watcher. Once a minute it moves its clock on, so "today" and the date groups stay
 current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.

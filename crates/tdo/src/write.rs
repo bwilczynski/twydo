@@ -1,6 +1,6 @@
 //! Runs the TUI's write requests through the store and turns the result into a message.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
@@ -8,6 +8,7 @@ use twydo_core::config::Config;
 use twydo_core::edit::Op;
 use twydo_core::model::Status;
 use twydo_core::store::{Store, WriteError};
+use twydo_core::sync::batch::{Trigger, after_write};
 use twydo_core::sync::running::{StopResult, clear_stop, request_stop, running};
 use twydo_core::views::Snapshot;
 
@@ -26,11 +27,6 @@ pub enum Request {
 pub const LOCK_WAIT: Duration = Duration::from_secs(2);
 /// How long a write waits for a sync it asked to stop.
 pub const STOP_WAIT: Duration = Duration::from_secs(10);
-
-/// How long saves must pause before the after-edit sync starts (issue #19). A sync started
-/// at once holds the vdir, so the next quick save (closing checklist items one by one)
-/// would wait on it.
-pub const SYNC_DELAY: Duration = Duration::from_secs(3);
 
 /// Why a write did not happen.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,47 +49,44 @@ impl Refused {
     }
 }
 
-/// Starts the after-edit sync; called once saves pause, when sync is configured.
-pub type SyncTrigger = Box<dyn FnMut(&Config)>;
+/// Starts what a write asked for (see [`after_write`]): a sync now or the batch waiter.
+pub type SyncTrigger = Box<dyn FnMut(&Config, Trigger)>;
 
 /// The TUI's store for the session, holding its undo/redo stack.
 pub struct Writer {
     store: Result<Store, String>,
     config: Config,
-    after_write: SyncTrigger,
+    trigger: SyncTrigger,
     /// Titles of the writes `u` would undo and `Ctrl-r` would redo, in step with the store's
     /// session stacks, so the messages can name the task.
     done: Vec<String>,
     undone: Vec<String>,
     lock_wait: Duration,
     stop_wait: Duration,
-    /// When the last write that wants an after-edit sync happened; None: no sync is due.
-    sync_due: Option<Instant>,
 }
 
 impl Writer {
-    /// The embedded matrix; syncs in the background after writes.
+    /// The embedded matrix; starts a background sync or the batch waiter after writes.
     pub fn open(cfg: &Config) -> Writer {
         Writer::open_with(
             cfg,
             Matrix::embedded().clone(),
-            Box::new(|c| crate::cli::sync::spawn_background(c, Some(&c.vdir))),
+            Box::new(|c, t| crate::cli::sync::spawn(c, Some(&c.vdir), t)),
         )
     }
 
     /// Never fails: an open error is kept and returned by every [`Writer::run`].
-    pub fn open_with(cfg: &Config, matrix: Matrix, after_write: SyncTrigger) -> Writer {
+    pub fn open_with(cfg: &Config, matrix: Matrix, trigger: SyncTrigger) -> Writer {
         Writer {
             store: Store::open_with(cfg, matrix)
                 .map(|(s, _)| s)
                 .map_err(|e| format!("cannot write: {e}")),
             config: cfg.clone(),
-            after_write,
+            trigger,
             done: Vec::new(),
             undone: Vec::new(),
             lock_wait: LOCK_WAIT,
             stop_wait: STOP_WAIT,
-            sync_due: None,
         }
     }
 
@@ -114,7 +107,7 @@ impl Writer {
         let wait = self.lock_wait;
         let written = self.write(snap, req, now, wait);
         if written.is_ok() {
-            self.sync_soon();
+            self.sync_after(now);
         }
         written
     }
@@ -135,10 +128,10 @@ impl Writer {
         let wait = self.stop_wait;
         let written = self.write(snap, req, now, wait);
         // The request held off other syncs until this write; withdraw it either way, and
-        // before the after-edit sync starts, which would otherwise stop itself.
+        // before the sync after the write starts, which would otherwise stop itself.
         let _ = clear_stop(&self.config);
         if written.is_ok() {
-            self.sync_soon();
+            self.sync_after(now);
         }
         match written {
             Ok(m) if stopped => Ok(format!("{m} · sync stopped")),
@@ -194,33 +187,10 @@ impl Writer {
         Ok(message)
     }
 
-    /// Schedules the after-edit sync when sync is configured: it starts once nothing
-    /// was written for [`SYNC_DELAY`] (see [`Writer::sync_if_quiet`]). Each call pushes it back.
-    pub fn sync_soon(&mut self) {
-        if self
-            .config
-            .sync
-            .as_ref()
-            .is_some_and(|s| s.edits_trigger_sync())
-        {
-            self.sync_due = Some(Instant::now());
-        }
-    }
-
-    /// Starts the scheduled sync if [`SYNC_DELAY`] has passed since the last write by `now`.
-    pub fn sync_if_quiet(&mut self, now: Instant) {
-        if self
-            .sync_due
-            .is_some_and(|t| now.saturating_duration_since(t) >= SYNC_DELAY)
-        {
-            self.flush_sync();
-        }
-    }
-
-    /// Starts the scheduled sync now, if one is due (on quit).
-    pub fn flush_sync(&mut self) {
-        if self.sync_due.take().is_some() {
-            (self.after_write)(&self.config);
+    /// Starts a sync now when the batch is due, else makes sure the batch waiter runs.
+    fn sync_after(&mut self, now: DateTime<Utc>) {
+        if let Some(t) = after_write(&self.config, now) {
+            (self.trigger)(&self.config, t);
         }
     }
 }

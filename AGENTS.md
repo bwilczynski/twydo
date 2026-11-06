@@ -61,8 +61,11 @@ app replacing 2Do for one user, plan by plan.
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
    parser), manual order `J`/`K`, the write queue in `twydo-core` (edits during a sync are
-   queued instead of refused; high-level view in §4.5 of the phone web app design below, which
-   needs its own design first), or Plan 2 (notifier). Write the plan first. Before Plan 2,
+   queued instead of refused; design
+   [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
+   issue #38; plan 1, batched sync with `tdo sync on|off`, is in
+   `docs/superpowers/plans/2026-11-06-write-queue-1-batched-sync.md`: Tasks 1-6 done), or Plan 2
+   (notifier). Write the plan first. Before Plan 2,
    decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
    [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has
    no build date).
