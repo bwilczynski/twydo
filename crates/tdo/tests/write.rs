@@ -500,6 +500,47 @@ fn stop_and_run_kills_an_orphaned_sync_and_saves() {
     assert_eq!(st.last_error.as_deref(), Some("sync stopped"));
 }
 
+/// Final review: recording an orphan stop is not an attempt, so edits made before it still
+/// count for batching (a waiter is due), with the backoff pushing the deadline.
+#[test]
+fn edits_before_an_orphan_stop_still_count() {
+    use std::os::unix::process::CommandExt;
+    let env = Env::new();
+    let cfg = sync_config(&env);
+    let (mut w, _) = writer(&cfg);
+    let before = Utc::now() - chrono::Duration::seconds(10);
+    w.run(&env.snapshot(), &complete_a(), before).unwrap();
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    sync_dir(&cfg);
+    let mut orphan = std::process::Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    gone.wait().unwrap();
+    record_running(
+        &cfg,
+        &Running {
+            runner_pid: gone.id(),
+            runner_start: None,
+            child_pgid: Some(orphan.id()),
+            child_start: process_start(orphan.id()),
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(
+        twydo_core::sync::running::request_stop(&cfg).unwrap(),
+        twydo_core::sync::running::StopResult::Killed
+    );
+    orphan.wait().unwrap();
+    twydo_core::sync::running::clear_stop(&cfg).unwrap();
+    let st = twydo_core::sync::status::SyncStatus::load(&state).unwrap();
+    assert_eq!(st.last_attempt, None);
+    let next = st.next_attempt.expect("the stop records a backoff");
+    assert_eq!(batch::due(&cfg, Utc::now()).unwrap(), Due::At(next));
+}
+
 #[test]
 fn stop_and_run_gives_up_when_the_lock_stays_held() {
     let env = Env::new();

@@ -415,10 +415,10 @@ pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
     let Some(_run_lock) = run_lock(&sync_dir, true)? else {
         return Ok(());
     };
+    // Not an attempt that began: `last_attempt` stays, so the edits the stopped run did not
+    // sync still count for batching.
     let mut status = SyncStatus::load(state)?;
-    let now = Utc::now();
-    status.last_attempt = Some(now);
-    record_failure(&mut status, sync, "sync stopped", now);
+    record_failure(&mut status, sync, "sync stopped", Utc::now());
     status.save(state)
 }
 
