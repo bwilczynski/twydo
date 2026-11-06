@@ -37,7 +37,7 @@ Approved in the issue #46 session, including name-first list display. Implemente
 - Existing keyboard tests now assert the explicit picker action in place of the former optional UID. The existing move lifecycle test caught early dismissal; preserving the picker until `write_finished` restored that behavior.
 - Separate code review checked cancellation, ID-based selection, empty/hidden lists and existing picker actions. Both findings were fixed and covered by failing-then-passing tests. The long duplicate-name finding was treated as required disambiguation, rather than deferred polish.
 - Recovery and keyboard tests pass; final workspace lint, complete tests and documentation links are checked before handoff.
-- Changes remain uncommitted for the user’s diff review. No NAS, phone, production account or task data was accessed.
+- At the initial handoff, changes were left uncommitted for the user’s diff review. No NAS, phone, production account or task data was accessed.
 
 ## Approved review follow-ups
 
@@ -48,3 +48,9 @@ The user requested the original work be committed first and each follow-up be co
 3. Size retirement confirmation to its wrapped text and give it a matching title. Retain the larger recovery preview. Test compact placement, wrapped text on a narrow terminal, and recovery confirmation preview.
 
 Verification: targeted tests per commit, then full lint, tests and documentation links.
+
+### Follow-up results
+
+All three follow-ups are implemented in separate commits, after the initial plan and chooser commits. Error guidance covers the status line, errors panel and CLI report; chooser markers use existing per-list status, including the trailing-semicolon error form. Confirmation height uses the wrapped text’s inner width, including borders correctly; width-sweep regressions cover 30–120 columns and recovery still displays its preview.
+
+A separate review found the border-width calculation issue; its failing width-sweep test passed after correction. No remaining review findings. Final verification: `mise run lint`, `mise run test` (912 Rust tests and 49 Python tests, plus documentation links), and `git diff --check` passed. No device or production access.

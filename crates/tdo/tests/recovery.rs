@@ -89,6 +89,9 @@ fn recover_browser_previews_notes_and_can_choose_destination() {
     assert!(a.picker.is_some());
     a.handle_key(key(KeyCode::Enter));
     assert!(a.confirmation.is_some());
+    let text = render(&a);
+    assert!(text.contains("Keep me"), "{text}");
+    assert!(text.contains("Keep my notes"), "{text}");
     a.handle_key(key(KeyCode::Esc));
     assert!(a.confirmation.is_none());
     assert_eq!(fs::read_dir(cfg.vdir.join("inbox")).unwrap().count(), 1);
@@ -305,4 +308,71 @@ fn forget_chooser_marks_only_lists_reported_not_found() {
     assert!(text.contains("▌ Offline List"), "{text}");
     assert!(!text.contains("Personal Tasks · Not Found"), "{text}");
     assert!(!text.contains("Offline List · Not Found"), "{text}");
+}
+
+fn rendered_lines(a: &App, width: u16, height: u16) -> Vec<String> {
+    let mut terminal =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+    terminal.draw(|f| tdo::ui::draw(f, a)).unwrap();
+    terminal
+        .backend()
+        .buffer()
+        .content()
+        .chunks(width as usize)
+        .map(|row| row.iter().map(|c| c.symbol()).collect())
+        .collect()
+}
+
+#[test]
+fn forget_confirmation_fits_its_text_without_an_empty_preview() {
+    let (_dir, cfg) = env();
+    let mut a = app(&cfg);
+    command(&mut a, "forget-list old");
+    let lines = rendered_lines(&a, 120, 40);
+    let top = lines
+        .iter()
+        .position(|line| line.contains("Forget list"))
+        .expect("forget confirmation title");
+    let left = lines[top].chars().position(|c| c == '╭').unwrap();
+    let bottom = (top + 1..lines.len())
+        .find(|i| lines[*i].chars().nth(left) == Some('╰'))
+        .unwrap();
+    assert!(
+        bottom - top <= 5,
+        "confirmation has excessive blank space: {lines:#?}"
+    );
+    assert!(lines[top + 1].contains("Did you delete"), "{lines:#?}");
+    assert!(
+        lines[top + 1..bottom]
+            .iter()
+            .any(|line| line.contains("cancel")),
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn forget_confirmation_wraps_the_whole_question_on_narrow_terminals() {
+    let (_dir, cfg) = env();
+    fs::write(
+        cfg.vdir.join("old/displayname"),
+        "Synthetic list with a longer name for wrapping",
+    )
+    .unwrap();
+    let mut a = app(&cfg);
+    command(&mut a, "forget-list old");
+    for width in 30..=120 {
+        let lines = rendered_lines(&a, width, 40);
+        let top = lines
+            .iter()
+            .position(|line| line.contains("Forget list"))
+            .expect("forget confirmation title");
+        assert!(
+            lines[top + 1].contains("Did you delete"),
+            "width {width}: {lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains("cancel")),
+            "width {width}: {lines:#?}"
+        );
+    }
 }
