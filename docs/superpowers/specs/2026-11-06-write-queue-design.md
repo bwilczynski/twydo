@@ -249,9 +249,9 @@ After every applied or drained edit, the writer checks the rule (in `twydo-core`
   --background` now (detached, as today). If the size is reached during a burst, start the
   waiter as below; it wakes once the burst pauses.
 - Otherwise: make sure one **batch waiter** exists: a detached `tdo sync --background
-  --when-due` that sleeps until the oldest unsynced edit's deadline, re-checks the rule (the
-  edits may already have been synced by the timer or `:sync`), and runs a sync if it is
-  still due. One waiter per vdir, held by a lock file in `<vdir-state>/sync/`; a second
+  --when-due` that waits for the batch's deadline, re-checking the rule once a second (more
+  edits can fill the batch and bring the deadline forward; the timer or `:sync` may already
+  have sent everything), and runs a sync once it is due. One waiter per vdir, held by a lock file in `<vdir-state>/sync/`; a second
   one exits at once.
 
 The waiter is a separate process, so it works the same for the TUI and `tdo op`, and it
@@ -269,12 +269,14 @@ outlives the TUI: quitting with unsynced edits needs no special sync (D11).
    waiter holds it, it exits at once.
 3. **Loop:**
    - If sync is off, or nothing counts as unsynced (§7.1), it exits.
-   - Otherwise it sleeps until the deadline: the oldest unsynced edit's time plus
-     `max_wait_secs`, or the runner's backoff time (`status.next_attempt`) if that is later.
-     The deadline is wall clock, so after the laptop wakes from sleep it is already past
-     and the sync runs at once.
-   - On waking it checks again. The timer, `:sync` or a size-triggered sync may have sent
-     everything already. If a sync is still due, it runs one in-process (the same
+   - Otherwise it waits for the deadline (§7.1: the size limit after a 3-second pause, or the
+     oldest unsynced edit's time plus `max_wait_secs`, or the runner's backoff time
+     (`status.next_attempt`) if that is later), checking the rule again once a second, since
+     later edits can fill the batch and bring the deadline forward. The deadline is wall
+     clock, so after the laptop wakes from sleep it is already past and the sync runs at
+     once.
+   - Each check may find that the timer, `:sync` or a size-triggered sync has sent
+     everything already. Once a sync is due, it runs one in-process (the same
      `sync::run` as `tdo sync --background`), then loops: edits made during that sync get
      their own deadline.
 4. **Exit without losing an edit:** before exiting it releases the lock and checks once
