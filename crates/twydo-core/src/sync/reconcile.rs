@@ -103,8 +103,11 @@ pub fn reconcile(
         now.checked_sub_signed(chrono::Duration::days(i64::from(sync.retention_days)))
     {
         rec.pruned = journal.prune(before)?.len() + conflicts.prune(before)?.len();
-        if let Some(queue) = Queue::existing(journal.state_dir()) {
-            rec.pruned += queue.prune(before)?;
+        // The queue never fails a sync: a refusal that cannot be pruned waits for the next run.
+        if let Some(queue) = Queue::existing(journal.state_dir())
+            && let Ok(n) = queue.prune(before)
+        {
+            rec.pruned += n;
         }
     }
     Ok(rec)
