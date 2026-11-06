@@ -70,11 +70,6 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         rest.push(Span::raw("  "));
     }
     rest.push(match (prompt, &app.message) {
-        // The stop question waits for y/n whatever the mode, so it must be seen.
-        _ if app.stop_question().is_some() => Span::styled(
-            app.stop_question().unwrap_or_default().to_string(),
-            theme::warning(),
-        ),
         // A refused new row's reason.
         (Some(p), _) if app.new_row.as_ref().is_some_and(|r| r.error.is_some()) => {
             Span::styled(p, theme::warning())
@@ -173,8 +168,8 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
             Style::new(),
         ));
     }
-    if s.pending > 0 {
-        out.push((format!(" · {} pending", s.pending), Style::new()));
+    if s.pending + s.queued > 0 {
+        out.push((format!(" · {} pending", s.pending + s.queued), Style::new()));
     }
     match s.conflicts.len() {
         0 => {}

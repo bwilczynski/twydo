@@ -504,6 +504,38 @@ fn status_line(buf: &Buffer) -> String {
 }
 
 #[test]
+fn status_counts_queued_edits_as_pending() {
+    let mut a = app();
+    let st = twydo_core::sync::status::SyncStatus {
+        last_success: Some(utc(14, 57)),
+        ..Default::default()
+    };
+    let mut s = summary(st, 1, vec![]);
+    s.queued = 2;
+    a.set_sync(Some(s));
+    let buf = render(&mut a, 140, 20);
+    let l = status_line(&buf);
+    assert!(l.contains("synced 3m ago · 3 pending"), "{l}");
+}
+
+#[test]
+fn a_queued_edit_is_marked_on_its_row() {
+    let mut a = app();
+    let first = row_title(&a, 0);
+    let second = row_title(&a, 1);
+    let uid = a.snapshot.tasks[a.visible_rows()[0].task].uid.clone();
+    let marked = a.snapshot.clone().with_pending([uid].into());
+    a.reload(marked);
+    let buf = render(&mut a, 120, 30);
+    let (x, y) = find_in_tasks(&buf, &first);
+    let row: String = (x..buf.area.width).map(|c| buf[(c, y)].symbol()).collect();
+    assert!(row.starts_with(&format!("{first} (queued)")), "{row}");
+    let (x, y) = find_in_tasks(&buf, &second);
+    let row: String = (x..buf.area.width).map(|c| buf[(c, y)].symbol()).collect();
+    assert!(!row.contains("(queued)"), "{row}");
+}
+
+#[test]
 fn status_shows_sync_off_with_the_pending_count() {
     let mut a = app();
     let st = twydo_core::sync::status::SyncStatus {
@@ -1172,30 +1204,6 @@ fn another_task_opens_details_at_the_top() {
     press(&mut a, 'j');
     press(&mut a, 'k');
     assert!(details_text(&mut a).contains("Long notes task"));
-}
-
-/// Issue #10: the stop question must be visible over the form's key hints.
-#[test]
-fn stop_question_shows_while_the_form_is_open() {
-    let mut a = app();
-    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
-    a.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
-    let tdo::app::Outcome::Write(req) =
-        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
-    else {
-        panic!("expected a write");
-    };
-    a.write_busy(
-        req,
-        Some(std::time::Duration::from_secs(14)),
-        a.write_snapshot().clone(),
-    );
-    let buf = render(&mut a, 120, 30);
-    let last = line(&buf, 29);
-    assert!(
-        last.contains("sync running for 14s — stop it and save? (y/n)"),
-        "{last}"
-    );
 }
 
 #[test]

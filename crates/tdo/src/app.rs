@@ -9,7 +9,6 @@ pub use newrow::{NewRow, default_list};
 
 use std::cell::Cell;
 use std::collections::HashSet;
-use std::time::Duration;
 
 use chrono::DateTime;
 use chrono_tz::Tz;
@@ -68,6 +67,8 @@ const NUMBERED_VIEWS: [View; 5] = [
     View::Next3Days,
 ];
 
+// `Write` carries a whole `Request`; one outcome is returned per key.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Continue,
@@ -87,8 +88,6 @@ pub enum Outcome {
     Write(Request),
     /// Edit these notes in `$EDITOR`; the loop reports back with [`App::notes_edited`].
     EditNotes(String),
-    /// Stop the running sync, then write; the loop reports back with [`App::write_finished`].
-    StopSyncAndWrite(Request),
     ForgetList(twydo_core::retired::Preview),
 }
 
@@ -162,25 +161,10 @@ pub struct App {
     details_uid: Option<String>,
     /// The furthest the Details pane can scroll; the renderer sets it on each draw.
     pub(crate) details_max: Cell<u16>,
-    /// A write a running sync blocked, and the question asking whether to stop the sync.
-    stop_prompt: Option<(Request, String)>,
-    /// The snapshot that blocked write was made against, kept until its retry finishes, so
-    /// the retry is checked against what the user decided on rather than a later reload.
-    stop_base: Option<Snapshot>,
     /// A repeating task being completed. Completing keeps its UID on the next occurrence, so
     /// the next reload keeps the cursor's row instead of following that UID to its new date.
     /// Cleared by [`App::write_refused`]: after a refused write the task is still open.
     completing_repeat: Option<String>,
-}
-
-/// How long something has run: `45s`, `2m 14s`, `1h 3m`.
-pub fn fmt_elapsed(d: Duration) -> String {
-    let s = d.as_secs();
-    match s {
-        0..60 => format!("{s}s"),
-        60..3600 => format!("{}m {}s", s / 60, s % 60),
-        _ => format!("{}h {}m", s / 3600, s % 3600 / 60),
-    }
 }
 
 /// Terminal width at which the Details pane becomes visible.
@@ -191,8 +175,6 @@ const RELOAD_FAILED: &str = "reload failed: ";
 const CONFIRM_X: &str = "? x to confirm";
 /// The message a sync that went well leaves.
 pub const SYNC_DONE: &str = "sync done";
-/// After declining to stop a sync.
-const NOT_SAVED: &str = "not saved; the sync is still running";
 /// How long a success message stays.
 const MESSAGE_SECS: i64 = 5;
 
@@ -236,8 +218,6 @@ impl App {
             details_scroll: 0,
             details_uid: None,
             completing_repeat: None,
-            stop_prompt: None,
-            stop_base: None,
             details_max: Cell::new(0),
         }
     }
@@ -564,7 +544,6 @@ impl App {
     /// search, overlay and sidebar keys do not use it, so their input always goes through.
     pub fn key_at(&mut self, k: KeyEvent, now: DateTime<Tz>) -> Outcome {
         let uses_task_cursor = self.mode == Mode::Normal
-            && self.stop_prompt.is_none()
             && self.form.is_none()
             && self.new_row.is_none()
             && self.picker.is_none()
@@ -608,9 +587,6 @@ impl App {
     fn dispatch_key(&mut self, k: KeyEvent) -> Outcome {
         if self.confirmation.is_some() {
             return self.confirmation_key(k);
-        }
-        if self.stop_prompt.is_some() {
-            return self.stop_prompt_key(k);
         }
         if self.picker.is_some() {
             return self.picker_key(k);
@@ -901,9 +877,6 @@ impl App {
     /// file that exists, so nothing can go stale under it; it is checked against the tasks as
     /// they are now, so a parent deleted or closed meanwhile refuses the item.
     pub fn write_snapshot(&self) -> &Snapshot {
-        if let Some(base) = &self.stop_base {
-            return base;
-        }
         match (&self.form, &self.form_base) {
             (Some(f), Some(base)) if f.uid.is_some() => base,
             _ => &self.snapshot,
@@ -1104,54 +1077,9 @@ impl App {
         self.completing_repeat = None;
     }
 
-    /// A write found the vdir busy. With a duration: keep `req` with `base`, the snapshot it
-    /// was made against (taken before any reload), and ask the stop question. Without (nothing
-    /// the TUI can stop): the plain busy message, as a refused write.
-    pub fn write_busy(&mut self, req: Request, running_for: Option<Duration>, base: Snapshot) {
-        let Some(d) = running_for else {
-            self.write_finished(Err(twydo_core::store::WriteError::Busy.to_string()));
-            return;
-        };
-        let question = format!(
-            "sync running for {} — stop it and save? (y/n)",
-            fmt_elapsed(d)
-        );
-        self.transient = None;
-        self.message = Some(question.clone());
-        self.stop_prompt = Some((req, question));
-        self.stop_base = Some(base);
-    }
-
-    /// The open stop question, if any; the status line shows it over any mode's hints.
-    pub fn stop_question(&self) -> Option<&str> {
-        self.stop_prompt.as_ref().map(|(_, q)| q.as_str())
-    }
-
-    /// `y` stops the sync and writes; `n` or Esc gives up the write; other keys do nothing.
-    fn stop_prompt_key(&mut self, k: KeyEvent) -> Outcome {
-        match k.code {
-            KeyCode::Char('y') => {
-                let (req, _) = self.stop_prompt.take().expect("asking");
-                self.note_repeat_completion(&req);
-                Outcome::StopSyncAndWrite(req)
-            }
-            KeyCode::Char('n') | KeyCode::Esc => {
-                self.stop_prompt = None;
-                self.write_finished(Err(NOT_SAVED.into()));
-                Outcome::Continue
-            }
-            _ => {
-                // Keep the question in sight if something replaced it meanwhile.
-                self.message = self.stop_prompt.as_ref().map(|(_, q)| q.clone());
-                Outcome::Continue
-            }
-        }
-    }
-
     /// A write requested by [`Outcome::Write`] ended: show its result.
     pub fn write_finished(&mut self, result: Result<String, String>) {
         self.picker = None;
-        self.stop_base = None;
         let adding = self.adding.take();
         let converting = self.converting.take();
         // A refused edit keeps the form (and its typing, unless the task changed meanwhile),
