@@ -250,8 +250,15 @@ The next sync first runs the ordinary `vdirsyncer discover <pair>`, with the con
 executable/configuration, timeout, and lock protection. It never automatically answers yes
 to creation prompts. This refreshes the cached collection set before sync and metasync.
 A discovery failure keeps the backup and discovery request, reports the failure, and blocks
-ordinary sync until discovery succeeds. With explicit collection names in the vdirsyncer
-configuration, remove the deleted entry there before retrying. The usual
+ordinary sync until discovery succeeds. If several lists were removed remotely, forgetting
+one can leave discovery blocked on another. The last Not Found reports for remaining local
+lists stay available in `:errors` and the `:forget-list` chooser; remote missing-collection
+diagnostics from discovery add new reports. Retired lists leave that report, and a later
+ordinary sync replaces it with current results. Even without a recognized per-list report,
+the discovery failure points to `:forget-list` for other lists you know you deleted; the
+underlying vdirsyncer diagnostic is available in `:errors` and the CLI report. Confirm each
+remote deletion separately; Twydo never retires another list automatically. With explicit collection names in the
+vdirsyncer configuration, remove the deleted entry there before retrying. The usual
 `collections = ["from a", "from b"]` setup needs no configuration change.
 Only confirm deletion of a list you actually removed remotely: an existing remote list
 can be discovered and downloaded again.

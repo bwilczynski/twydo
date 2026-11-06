@@ -256,6 +256,7 @@ fn one_pass(
         running: &guard,
     };
     let rediscover = state.join("sync/rediscover");
+    let mut discovery_reports = BTreeMap::new();
     let discovery = if rediscover.exists() {
         let mut ran = run_command(&child_env, &["discover".into(), sync.pair.clone()])?;
         let success = matches!(&ran.outcome, Outcome::Exited(st) if st.success())
@@ -267,8 +268,23 @@ fn one_pass(
             remove_durable(&rediscover)?;
             None
         } else {
+            discovery_reports = missing_during_discovery(cfg, sync, status, &ran.stderr)?;
+            // transient() reports the first critical line. Keep the actual diagnostic
+            // there too, even when this vdirsyncer version uses an unrecognized format.
+            let detail = ran
+                .stderr
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
             ran.stderr = format!(
-                "critical: list discovery failed; backup retained; check vdirsyncer configuration before retrying\n{}",
+                "critical: list discovery failed; use :forget-list to choose other lists you deleted; backup retained; otherwise check vdirsyncer configuration before retrying{}\n{}",
+                if detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {detail}")
+                },
                 ran.stderr
             );
             Some(ran)
@@ -374,6 +390,11 @@ fn one_pass(
     // attempt would most likely get stuck the same way.
     let transient = transient(sync, &ran, &out, &collections)
         .or_else(|| pass_stopped.then(|| "sync stopped".to_string()));
+    // Discovery did not sync these lists. Keep its reports for the UI without letting
+    // historical errors count as fresh evidence for reconciliation or force-delete.
+    for (id, error) in discovery_reports {
+        collections.entry(id).or_insert(error);
+    }
     status.last_attempt = Some(now);
     status.collections = collections.clone();
     status.metasync_error = report.metasync_error.clone();
@@ -390,6 +411,59 @@ fn one_pass(
     report.collections = collections;
     report.transient = transient;
     Ok(())
+}
+
+/// A failed discovery may stop at the first missing collection, before sync can report
+/// the others. Retain prior Not Found reports for active local lists and add the remote
+/// missing-collection diagnostics emitted by this discovery. Neither proves deletion.
+fn missing_during_discovery(
+    cfg: &Config,
+    sync: &SyncConfig,
+    status: &SyncStatus,
+    stderr: &str,
+) -> io::Result<BTreeMap<String, CollState>> {
+    let active = crate::vdir::load(&cfg.vdir)?.collections;
+    let mut missing: BTreeMap<_, _> = active
+        .iter()
+        .filter_map(|c| match status.collections.get(&c.id) {
+            Some(error @ CollState::Error { message })
+                if message.trim_end_matches(';').ends_with("Not Found") =>
+            {
+                Some((c.id.clone(), error.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    for line in stderr.lines() {
+        let line = line.trim();
+        let line = line.strip_prefix("warning: ").unwrap_or(line);
+        let Some((name, storage)) = line
+            .strip_prefix("No collection ")
+            .and_then(|s| s.rsplit_once(" found for storage "))
+        else {
+            continue;
+        };
+        let Some(storage) = storage.strip_suffix('.') else {
+            continue;
+        };
+        if storage.is_empty() || storage == sync.local_storage {
+            continue;
+        }
+        let Ok(id) = serde_json::from_str::<String>(name) else {
+            continue;
+        };
+        if active.iter().any(|c| c.id == id) {
+            missing.insert(
+                id,
+                CollState::Error {
+                    message: format!(
+                        "collection missing from storage {storage} during discovery: Not Found"
+                    ),
+                },
+            );
+        }
+    }
+    Ok(missing)
 }
 
 /// Counts a transient failure in `status` and sets its backoff.

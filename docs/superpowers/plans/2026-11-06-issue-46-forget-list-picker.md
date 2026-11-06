@@ -54,3 +54,19 @@ Verification: targeted tests per commit, then full lint, tests and documentation
 All three follow-ups are implemented in separate commits, after the initial plan and chooser commits. Error guidance covers the status line, errors panel and CLI report; chooser markers use existing per-list status, including the trailing-semicolon error form. Confirmation height uses the wrapped text’s inner width, including borders correctly; width-sweep regressions cover 30–120 columns and recovery still displays its preview.
 
 A separate review found the border-width calculation issue; its failing width-sweep test passed after correction. No remaining review findings. Final verification: `mise run lint`, `mise run test` (912 Rust tests and 49 Python tests, plus documentation links), and `git diff --check` passed. No device or production access.
+
+## Multiple missing lists follow-up
+
+User-reported regression: retirement triggers discovery, and failed discovery replaces previously reported per-list errors with an empty map. Preserve unresolved Not Found reports only for still-active local lists when discovery fails. Recognize remote missing-collection discovery diagnostics so a newly reported missing list is also visible; exclude local-storage warnings. Keep this reporting separate from reconciliation and force-delete decisions. A subsequent ordinary sync replaces the retained reports.
+
+Tests: synthetic runner with multiple prior missing lists and failed discovery/retries/success; real filesystem-pair discovery with two remotely removed lists and a surviving list; no recreation or unconfirmed retirement. Update sync docs and commit this bug fix separately after lint/full tests.
+
+Multiple-list results: all three new regressions failed before the fix and passed afterward. The real vdirsyncer filesystem test confirms that the remaining missing list is reported after the first retirement, its local task stays intact until separately confirmed, neither removed server list is recreated, and syncing resumes with the surviving list. Separate review found no remaining issues. `mise run lint`, `mise run test` (915 Rust tests, 49 Python tests, documentation links), and `git diff --check` passed.
+
+## Generic discovery failure follow-up
+
+The user still sees the exact generic discovery failure with no remaining-list guidance. The prior fix assumed available per-list reports. It also left the prepended generic error as the first unattributed line, hiding vdirsyncer's actual diagnostic.
+
+Add failing tests for the exact saved generic error with an empty collection map, and a failed-discovery runner with no collection diagnostics. Show `:forget-list` guidance in the status/error views even for that saved error; retain actual discovery stderr in the reported failure so unrecognized diagnostic formats remain visible. Do not mark unrecognized lists as known missing or advise forgetting lists the user did not delete. Run full verification and commit separately.
+
+Generic-error results: the exact legacy-message TUI regression and the runner guidance assertion failed before the correction. Both pass now, and the runner retains the actual diagnostic in persisted status. Separate review found no remaining issues. Full verification passed: `mise run lint`, `mise run test` (916 Rust tests, 49 Python tests, documentation links), and `git diff --check`.
