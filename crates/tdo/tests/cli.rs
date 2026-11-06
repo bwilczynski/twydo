@@ -434,13 +434,35 @@ mod sync {
     }
 
     #[test]
+    fn when_due_waiter_exits_when_nothing_is_unsynced() {
+        let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
+        let o = fx.tdo(&["sync", "--background", "--when-due"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(
+            !fx.path("marker").exists(),
+            "nothing was due, yet it synced"
+        );
+        let o = fx.tdo(&["sync", "--when-due"]);
+        assert_eq!(o.status.code(), Some(2), "--when-due requires --background");
+
+        let cfg = Config::load(&fx.config_path()).unwrap();
+        let cmd = tdo::cli::sync::background_command(Path::new("tdo"), &cfg, None, true).unwrap();
+        let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
+        assert_eq!(args, ["sync", "--background", "--when-due"]);
+    }
+
+    #[test]
     fn spawn_background_starts_runner() {
         let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
         let marker = fx.path("marker");
         let cfg = Config::load(&fx.config_path()).unwrap();
-        let mut cmd =
-            tdo::cli::sync::background_command(Path::new(env!("CARGO_BIN_EXE_tdo")), &cfg, None)
-                .expect("sync is configured");
+        let mut cmd = tdo::cli::sync::background_command(
+            Path::new(env!("CARGO_BIN_EXE_tdo")),
+            &cfg,
+            None,
+            false,
+        )
+        .expect("sync is configured");
         cmd.env("XDG_CONFIG_HOME", fx.path("xdg"));
         tdo::cli::sync::detach(cmd);
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -454,6 +476,8 @@ mod sync {
 
         let mut no_sync = cfg.clone();
         no_sync.sync = None;
-        assert!(tdo::cli::sync::background_command(Path::new("tdo"), &no_sync, None).is_none());
+        assert!(
+            tdo::cli::sync::background_command(Path::new("tdo"), &no_sync, None, false).is_none()
+        );
     }
 }

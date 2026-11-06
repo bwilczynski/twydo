@@ -8,7 +8,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions, TryLockError};
+use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -19,6 +19,7 @@ use chrono::{DateTime, Utc};
 
 use super::SyncError;
 use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
+use super::lock::LockFile;
 use super::manifest::Manifest;
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
@@ -91,36 +92,9 @@ const POLL: Duration = Duration::from_millis(25);
 /// A requested rerun happens at most this many times per call.
 const MAX_RERUNS: usize = 2;
 
-/// The exclusive lock on `<state>/sync/run.lock`, released on drop. It unlocks explicitly
-/// rather than relying on close: a child forked by another thread holds a copy of the
-/// descriptor until it execs, and would keep the lock alive.
-pub(crate) struct RunLock(File);
-
-impl RunLock {
-    /// Blocks for the lock, or with `try_only` returns `None` when another runner holds it.
-    pub(crate) fn take(sync_dir: &Path, try_only: bool) -> io::Result<Option<RunLock>> {
-        let f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(sync_dir.join("run.lock"))?;
-        if !try_only {
-            f.lock()?;
-            return Ok(Some(RunLock(f)));
-        }
-        match f.try_lock() {
-            Ok(()) => Ok(Some(RunLock(f))),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(e),
-        }
-    }
-}
-
-impl Drop for RunLock {
-    fn drop(&mut self) {
-        let _ = self.0.unlock();
-    }
+/// The exclusive lock on `<state>/sync/run.lock` (see [`LockFile::take`]).
+pub(crate) fn run_lock(sync_dir: &Path, try_only: bool) -> io::Result<Option<LockFile>> {
+    LockFile::take(&sync_dir.join("run.lock"), try_only)
 }
 
 fn skipped(s: Skip) -> RunReport {
@@ -163,7 +137,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     let requested = sync_dir.join("requested");
 
     // Step 1: the run lock, held until this function returns.
-    let Some(_run_lock) = RunLock::take(&sync_dir, opts.background)? else {
+    let Some(_run_lock) = run_lock(&sync_dir, opts.background)? else {
         File::create(&requested)?;
         return Ok(skipped(Skip::Busy));
     };
@@ -437,7 +411,7 @@ pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
     };
     let sync_dir = state.join("sync");
     fs::create_dir_all(&sync_dir)?;
-    let Some(_run_lock) = RunLock::take(&sync_dir, true)? else {
+    let Some(_run_lock) = run_lock(&sync_dir, true)? else {
         return Ok(());
     };
     let mut status = SyncStatus::load(state)?;

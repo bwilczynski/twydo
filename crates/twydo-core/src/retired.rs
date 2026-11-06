@@ -12,7 +12,7 @@ use crate::conflicts::ConflictStore;
 use crate::store::fsio::{VdirLock, sync_dir, write_atomic};
 use crate::store::journal::{Entry, Journal, new_op_id, recover_locked};
 use crate::store::{bind_vdir_state, existing_vdir_state};
-use crate::sync::run::RunLock;
+use crate::sync::run::run_lock;
 use crate::vdir;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,7 +273,7 @@ pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backu
     }
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
     private_dir(&state.join("sync"))?;
-    let _run = RunLock::take(&state.join("sync"), false)?;
+    let _run = run_lock(&state.join("sync"), false)?;
     let _lock = VdirLock::exclusive(&state)?;
     let journal = Journal::open(&state)?;
     let recovered = recover_locked(&cfg.vdir, &journal)?;
