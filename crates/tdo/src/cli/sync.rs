@@ -9,6 +9,7 @@ use twydo_core::config::Config;
 use twydo_core::sync::run::{RunOptions, RunReport, run};
 use twydo_core::sync::status::CollState;
 use twydo_core::sync::summary;
+use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
 
 use super::{EXIT_ERROR, load_vdir, resolve_config};
 
@@ -16,8 +17,9 @@ const NOT_CONFIGURED: &str = "sync is not configured: add a [sync] table (docs/s
 
 /// `tdo sync`: exit 0 when every collection is fine, 1 when the run had conflicts, emptied
 /// lists or a failure, 2 on a configuration or IO error. `background` prints nothing on
-/// success.
-pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i32 {
+/// success. `when_due` (with `background`) runs the batch waiter instead: it exits 0 unless
+/// an IO error stops it.
+pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete: &[String]) -> i32 {
     let cfg = match resolve_config(vdir) {
         Ok(c) => c,
         Err(e) => return error(&e),
@@ -27,6 +29,17 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
     }
     if cfg.sync.is_none() {
         return error(&NOT_CONFIGURED);
+    }
+    if when_due {
+        let opts = RunOptions {
+            background: true,
+            ..RunOptions::default()
+        };
+        let mut sync = || run(&cfg, &opts, Utc::now());
+        return match wait_and_sync(&cfg, &mut SystemClock, &mut sync) {
+            Ok(_) => 0,
+            Err(e) => error(&e),
+        };
     }
     let mut ids = Vec::with_capacity(force_delete.len());
     for name in force_delete {
@@ -233,20 +246,28 @@ pub fn status(vdir: Option<&Path>) -> i32 {
     0
 }
 
-/// The command that runs a background sync: `exe [--vdir <flag>] sync --background`,
-/// with stdin, stdout and stderr null. `None` when sync is not configured.
+/// The command that runs a background sync: `exe [--vdir <flag>] sync --background`, plus
+/// `--when-due` for the batch waiter, with stdin, stdout and stderr null, in a process group
+/// of its own so that closing the terminal does not kill it. `None` when sync is not
+/// configured.
 pub fn background_command(
     exe: &Path,
     config: &Config,
     vdir_flag: Option<&Path>,
+    when_due: bool,
 ) -> Option<Command> {
     config.sync.as_ref()?;
     let mut cmd = Command::new(exe);
     if let Some(v) = vdir_flag {
         cmd.arg("--vdir").arg(v);
     }
-    cmd.args(["sync", "--background"])
-        .stdin(Stdio::null())
+    cmd.args(["sync", "--background"]);
+    if when_due {
+        cmd.arg("--when-due");
+    }
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     Some(cmd)
@@ -268,7 +289,7 @@ pub fn spawn_background(config: &Config, vdir_flag: Option<&Path>) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    if let Some(cmd) = background_command(&exe, config, vdir_flag) {
+    if let Some(cmd) = background_command(&exe, config, vdir_flag, false) {
         detach(cmd);
     }
 }

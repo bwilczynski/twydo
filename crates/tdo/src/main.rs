@@ -40,6 +40,9 @@ enum Command {
         /// For the timer: no waiting for a running sync, honour backoff, quiet on success
         #[arg(long)]
         background: bool,
+        /// With --background: wait until unsynced edits are due, then sync (the batch waiter)
+        #[arg(long, hide = true, requires = "background")]
+        when_due: bool,
         /// Apply an emptied list to both sides (collection id or display name)
         #[arg(long, value_name = "LIST")]
         force_delete: Vec<String>,
@@ -77,10 +80,12 @@ fn main() {
         }
         Command::Sync {
             background,
+            when_due,
             force_delete,
         } => std::process::exit(cli::sync::sync(
             cli.vdir.as_deref(),
             background,
+            when_due,
             &force_delete,
         )),
         Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),

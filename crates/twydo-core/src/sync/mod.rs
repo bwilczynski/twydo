@@ -4,6 +4,7 @@
 pub mod batch;
 pub mod ended;
 pub mod hook;
+mod lock;
 pub mod manifest;
 pub mod output;
 pub mod reconcile;
@@ -12,6 +13,7 @@ pub mod run;
 pub mod running;
 pub mod status;
 pub mod switch;
+pub mod waiter;
 
 use std::io;
 
