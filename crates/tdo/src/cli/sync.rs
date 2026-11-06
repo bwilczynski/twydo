@@ -221,10 +221,11 @@ pub fn switch_command(vdir: Option<&Path>, on: bool) -> i32 {
 }
 
 /// Switches automatic sync (`tdo sync on|off`, `:sync on|off`). Turning it on with unsynced
-/// edits starts a background sync at once.
+/// edits starts a background sync at once. Once the switch is set, the call succeeds: an
+/// error reading the unsynced edits starts a sync too, which checks again itself.
 pub fn set_switch(cfg: &Config, vdir_flag: Option<&Path>, on: bool) -> std::io::Result<()> {
     switch::set(cfg, !on)?;
-    if on && batch::due(cfg, Utc::now())? != Due::Nothing {
+    if on && !matches!(batch::due(cfg, Utc::now()), Ok(Due::Nothing)) {
         spawn(cfg, vdir_flag, Trigger::SyncNow);
     }
     Ok(())
