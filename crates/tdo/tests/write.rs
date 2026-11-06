@@ -862,6 +862,7 @@ fn check_queued_orphan_stop(delay_status: bool) {
     use std::process::{Command, Stdio};
     let env = Env::new();
     let mut cfg = sync_config(&env);
+    cfg.sync.as_mut().unwrap().after_edit = Some(false);
     cfg.sync.as_mut().unwrap().metasync = false;
     let marker = env.dir.path().join("started-again");
     let fake = env.dir.path().join("fake.sh");
@@ -877,7 +878,7 @@ fn check_queued_orphan_stop(delay_status: bool) {
     fs::write(
         config_root.join("twydo/config.toml"),
         format!(
-            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\n",
+            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\nafter_edit = false\n",
             cfg.vdir.display(),
             cfg.state_dir().display(),
             fake.display()

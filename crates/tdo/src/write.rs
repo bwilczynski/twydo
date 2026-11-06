@@ -197,7 +197,12 @@ impl Writer {
     /// Schedules the after-edit sync when sync is configured: it starts once nothing
     /// was written for [`SYNC_DELAY`] (see [`Writer::sync_if_quiet`]). Each call pushes it back.
     pub fn sync_soon(&mut self) {
-        if self.config.sync.is_some() {
+        if self
+            .config
+            .sync
+            .as_ref()
+            .is_some_and(|s| s.edits_trigger_sync())
+        {
             self.sync_due = Some(Instant::now());
         }
     }
