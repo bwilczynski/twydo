@@ -245,7 +245,9 @@ it is refused, the overlay drops it and the row shows the current file.
 
 After every applied or drained edit, the writer checks the rule (in `twydo-core`):
 
-- If the size is reached: start `tdo sync --background` now (detached, as today).
+- If the size is reached and edits have paused for 3 seconds (§7.1): start `tdo sync
+  --background` now (detached, as today). If the size is reached during a burst, start the
+  waiter as below; it wakes once the burst pauses.
 - Otherwise: make sure one **batch waiter** exists: a detached `tdo sync --background
   --when-due` that sleeps until the oldest unsynced edit's deadline, re-checks the rule (the
   edits may already have been synced by the timer or `:sync`), and runs a sync if it is
