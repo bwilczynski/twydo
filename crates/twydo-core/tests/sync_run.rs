@@ -128,6 +128,24 @@ fn failed_rediscovery_blocks_sync_and_is_retried_before_sync() {
     fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
     let first = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(first.transient.as_deref().unwrap().contains("discovery"));
+    assert!(
+        first.transient.as_deref().unwrap().contains(":forget-list"),
+        "{:?}",
+        first.transient
+    );
+    assert!(
+        first
+            .transient
+            .as_deref()
+            .unwrap()
+            .contains("discovery unavailable"),
+        "{:?}",
+        first.transient
+    );
+    assert_eq!(
+        SyncStatus::load(&state).unwrap().last_error,
+        first.transient
+    );
     assert_eq!(
         fs::read_to_string(state.join("sync/calls")).unwrap(),
         "discover\n"
@@ -1775,4 +1793,110 @@ fn switch_survives_and_clears() {
     assert!(is_off(&fx.cfg).unwrap());
     set(&fx.cfg, false).unwrap();
     assert!(!is_off(&fx.cfg).unwrap());
+}
+
+#[test]
+fn failed_rediscovery_keeps_other_missing_lists_until_a_real_sync_updates_them() {
+    let fx = Fx::new(
+        r#"
+        dir=$(dirname "$TWYDO_SYNC_HOOKLOG")
+        if [ "$1" = discover ] && [ ! -f "$dir/allow" ]; then
+            echo 'warning: No collection "c2" found for storage twydo_remote.' >&2
+            exit 1
+        fi
+        [ "$1" = sync ] && printf 'Syncing twydo/c2\nSyncing twydo/c3\n' >&2
+        exit 0
+    "#,
+    );
+    for id in ["c2", "c3", "healthy"] {
+        fs::create_dir_all(fx.cfg.vdir.join(id)).unwrap();
+        fs::write(
+            fx.cfg.vdir.join(id).join("task.ics"),
+            task(id, "Synthetic task"),
+        )
+        .unwrap();
+    }
+    let state = fx.state();
+    let missing = CollState::Error {
+        message: "Unknown error occurred: Not Found".into(),
+    };
+    SyncStatus {
+        collections: std::collections::BTreeMap::from([
+            ("c1".into(), missing.clone()),
+            ("c2".into(), missing.clone()),
+            ("c3".into(), missing.clone()),
+            ("ghost".into(), missing.clone()),
+            ("healthy".into(), CollState::Ok),
+        ]),
+        ..Default::default()
+    }
+    .save(&state)
+    .unwrap();
+    twydo_core::retired::forget(
+        &fx.cfg,
+        &twydo_core::retired::preview(&fx.cfg, "c1").unwrap(),
+        now(),
+    )
+    .unwrap();
+    let first = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(first.transient.as_deref().unwrap().contains("discovery"));
+    assert!(
+        matches!(first.collections.get("c2"), Some(CollState::Error { message }) if message.ends_with("Not Found")),
+        "{:?}",
+        first.collections
+    );
+    assert_eq!(first.collections.get("c3"), Some(&missing));
+    for id in ["c1", "ghost", "healthy"] {
+        assert!(
+            !first.collections.contains_key(id),
+            "must not retain {id}: {:?}",
+            first.collections
+        );
+    }
+    assert_eq!(
+        SyncStatus::load(&state).unwrap().collections,
+        first.collections
+    );
+    let retry = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(retry.collections, first.collections);
+    fs::write(state.join("sync/allow"), "").unwrap();
+    let recovered = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(recovered.transient.is_none());
+    assert_eq!(recovered.collections.get("c2"), Some(&CollState::Ok));
+    assert_eq!(recovered.collections.get("c3"), Some(&CollState::Ok));
+    assert!(!fx.cfg.vdir.join("c1").exists());
+    assert_eq!(
+        fs::read_to_string(fx.cfg.vdir.join("c3/task.ics")).unwrap(),
+        task("c3", "Synthetic task")
+    );
+}
+
+#[test]
+fn discovery_marks_only_active_lists_missing_from_remote_storage() {
+    let fx = Fx::new(
+        r#"
+        echo 'warning: No collection "c2" found for storage twydo_remote.' >&2
+        echo 'warning: No collection "c1" found for storage twydo_local.' >&2
+        echo 'warning: No collection "ghost" found for storage twydo_remote.' >&2
+        echo 'warning: No collection not-json found for storage twydo_remote.' >&2
+        exit 1
+    "#,
+    );
+    fs::create_dir_all(fx.cfg.vdir.join("c2")).unwrap();
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(report.collections.len(), 1, "{:?}", report.collections);
+    assert!(
+        matches!(report.collections.get("c2"), Some(CollState::Error { message }) if message.ends_with("Not Found"))
+    );
+    assert!(
+        report
+            .transient
+            .as_deref()
+            .unwrap()
+            .contains("discovery failed")
+    );
+    assert!(state.join("sync/rediscover").exists());
 }

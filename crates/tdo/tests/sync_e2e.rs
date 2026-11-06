@@ -1098,3 +1098,75 @@ fn forgetting_the_last_collection_does_not_resurrect_it() {
     assert!(!p.server().join(COLL).exists());
     assert!(!p.vdir().join(COLL).exists());
 }
+
+#[test]
+fn forgetting_one_of_several_deleted_lists_keeps_remaining_list_guidance() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for id in ["c2", "c3"] {
+        fs::create_dir_all(p.server().join(id)).unwrap();
+        fs::create_dir_all(p.vdir().join(id)).unwrap();
+        fs::write(
+            p.server().join(id).join("keep.ics"),
+            task(id, "Synthetic task"),
+        )
+        .unwrap();
+    }
+    assert_eq!(p.vdirsyncer(&["discover", "twydo"]).0, 0);
+    assert_eq!(p.tdo_sync().0, 0);
+    let c2_path = fs::read_dir(p.vdir().join("c2"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "ics"))
+        .expect("downloaded synthetic c2 task");
+    fs::remove_dir_all(p.server().join(COLL)).unwrap();
+    fs::remove_dir_all(p.server().join("c2")).unwrap();
+    let mut cfg =
+        twydo_core::config::Config::load(&p.root().join("config/twydo/config.toml")).unwrap();
+    cfg.state_dir = Some(p.state().join("twydo"));
+    twydo_core::retired::forget(
+        &cfg,
+        &twydo_core::retired::preview(&cfg, COLL).unwrap(),
+        chrono::Utc::now(),
+    )
+    .unwrap();
+    let (code, error) = p.tdo_sync();
+    assert_ne!(code, 0, "rediscovery must not recreate c2");
+    let status = twydo_core::sync::status::SyncStatus::load(&p.vdir_state()).unwrap();
+    assert!(
+        status.collections.contains_key("c2"),
+        "remaining list lost: {status:?}; {error}"
+    );
+    assert!(!status.collections.contains_key(COLL));
+    assert!(error.contains(":forget-list"), "{error}");
+    assert!(!p.server().join("c2").exists());
+    assert_eq!(
+        fs::read_to_string(&c2_path).unwrap(),
+        task("c2", "Synthetic task")
+    );
+    assert!(
+        matches!(status.collections.get("c2"), Some(twydo_core::sync::status::CollState::Error { message }) if message.ends_with("Not Found"))
+    );
+    twydo_core::retired::forget(
+        &cfg,
+        &twydo_core::retired::preview(&cfg, "c2").unwrap(),
+        chrono::Utc::now(),
+    )
+    .unwrap();
+    let (code, error) = p.tdo_sync();
+    assert_eq!(
+        code, 0,
+        "sync should resume after both confirmations: {error}"
+    );
+    for id in [COLL, "c2"] {
+        assert!(!p.server().join(id).exists(), "must not recreate {id}");
+        assert!(!p.vdir().join(id).exists());
+    }
+    let status = twydo_core::sync::status::SyncStatus::load(&p.vdir_state()).unwrap();
+    assert_eq!(
+        status.collections.get("c3"),
+        Some(&twydo_core::sync::status::CollState::Ok)
+    );
+    assert!(!status.collections.contains_key("c2"));
+    assert!(status.last_error.is_none());
+}

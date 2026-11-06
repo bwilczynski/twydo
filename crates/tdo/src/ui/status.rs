@@ -152,8 +152,13 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
                 t.with_timezone(&app.snapshot.tz()).format("%H:%M")
             )
         });
+        let error = if err.starts_with("list discovery failed;") {
+            "list discovery failed (:forget-list for other deleted lists; :errors)"
+        } else {
+            err.as_str()
+        };
         out.push((
-            format!("sync failed: {err}{}", retry.unwrap_or_default()),
+            format!("sync failed: {error}{}", retry.unwrap_or_default()),
             theme::overdue(),
         ));
     } else {

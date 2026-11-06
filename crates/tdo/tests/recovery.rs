@@ -291,6 +291,7 @@ fn missing_list_sync(a: &mut App) {
         },
         pending: 0,
         conflicts: vec![],
+        off: false,
     }));
 }
 
@@ -375,4 +376,36 @@ fn forget_confirmation_wraps_the_whole_question_on_narrow_terminals() {
             "width {width}: {lines:#?}"
         );
     }
+}
+
+#[test]
+fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
+    use twydo_core::sync::{SyncSummary, status::SyncStatus};
+    let (_dir, cfg) = env();
+    let mut a = app(&cfg);
+    // Exact persisted message reported by the user: earlier attempts erased list errors.
+    a.set_sync(Some(SyncSummary {
+        status: SyncStatus {
+            last_error: Some("list discovery failed; backup retained; check vdirsyncer configuration before retrying".into()),
+            ..Default::default()
+        },
+        pending: 0,
+        conflicts: vec![],
+        off: false,
+    }));
+    let status = render(&a);
+    assert!(status.contains(":forget-list"), "{status}");
+    command(&mut a, "errors");
+    let text = render(&a);
+    assert!(text.contains(":forget-list to choose"), "{text}");
+    assert!(text.contains("deleted"), "{text}");
+    assert!(text.contains("check vdirsyncer configuration"), "{text}");
+    a.handle_key(key(KeyCode::Esc));
+    command(&mut a, "forget-list");
+    let text = render(&a);
+    assert!(text.contains("Old Projects"), "{text}");
+    assert!(
+        !text.contains("Old Projects · Not Found"),
+        "unknown state must not be presented as known missing: {text}"
+    );
 }

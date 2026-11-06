@@ -116,9 +116,14 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
                 }
             }
         }
-        if !sync_errors && let Some(error) = &summary.status.last_error {
+        if let Some(error) = &summary.status.last_error
+            && (!sync_errors || error.starts_with("list discovery failed;"))
+        {
             sync_errors = true;
             lines.push(Line::raw(format!("Sync: {error}")));
+            if error.starts_with("list discovery failed;") && !error.contains(":forget-list") {
+                lines.push(Line::raw("If you deleted other lists on another device, use :forget-list to choose them."));
+            }
         }
     }
     if lines.is_empty() {

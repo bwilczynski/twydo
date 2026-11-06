@@ -13,7 +13,8 @@ use super::hook::HookRecord;
 use super::output::SyncOutput;
 use crate::store::fsio::write_atomic;
 
-/// How one collection came out of the last run.
+/// The last reported result for a collection. Failed rediscovery can retain an earlier
+/// Not Found report until an ordinary sync updates it or the local list is retired.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum CollState {
