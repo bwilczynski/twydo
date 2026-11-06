@@ -305,6 +305,16 @@ count. `tdo status` shows `failures: n (next attempt ...)` and the last error. A
 blocks local use or notifications: the runner holds no exclusive lock while it waits on the
 network.
 
+## The write queue
+
+The queue's layout, claiming and the strict checks are in
+[architecture.md](architecture.md#the-write-queue). From the outside: a write that finds the
+lock taken is queued and applied at the next drain point, which is the sync runner (step 3 after
+recovery, step 5 after reconcile), the TUI when a sync ends or starts, any writer that gets the
+lock, or `tdo op --wait`. Rebasing is strict for now: an item whose file changed on another
+device is refused, never merged. A queued edit counts as unsynced from when it was queued, so a
+batch ages from then, not from the drain.
+
 ## Stopping a sync
 
 A sync holds the vdir for as long as vdirsyncer runs, and a slow one (for example vdirsyncer

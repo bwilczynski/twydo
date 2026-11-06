@@ -64,8 +64,9 @@ app replacing 2Do for one user, plan by plan.
    queued instead of refused; design
    [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
    issue #38; write-queue plan 1, batched sync with `tdo sync on|off`, merged (PR #50); plan 2
-   (the queue, strict checks) is in progress in
-   `docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`), or Plan 2
+   (the queue with strict whole-file checks) done
+   (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`); next is plan 3, rebasing
+   (spec §6.4 steps 2-4) behind a `rebase-merge` compat row), or Plan 2
    (notifier). Write the plan first. Before Plan 2,
    decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
    [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has

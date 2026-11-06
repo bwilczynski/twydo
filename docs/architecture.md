@@ -74,7 +74,10 @@ Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same wa
 2. **Edit.** The `edit` functions produce the new file contents. Only the properties the
    operation is about change, plus `DTSTAMP`, `LAST-MODIFIED` and their counterparts in 2Do's
    metadata; every other line keeps its bytes.
-3. **Store.** Under the exclusive vdir lock, the store checks that every file it is about to
+3. **Store.** `Store::submit` prepares the operation (gate and plan, against the view with queued
+   writes laid over it, see [The write queue](#the-write-queue)), then tries the exclusive vdir
+   lock for 250 ms. With the lock it drains the queue and commits; without it the prepared
+   operation is queued instead. Committing: under the lock, the store checks that every file it is about to
    write still holds the bytes the caller loaded (otherwise: "changed on disk; reload and try
    again"), records the operation in the journal, applies it, and marks it applied. Files the
    operation relies on but does not write are checked the same way: the parent of a new item,
@@ -84,6 +87,33 @@ Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same wa
 
 An operation that touches a family (a project or checklist and its items) writes the parent and
 every affected child in one journal entry, so it is applied completely or not at all.
+
+## The write queue
+
+A write that cannot get the vdir lock within 250 ms (a sync holds it) is queued instead of
+refused, so `Store::submit` never reports "busy". The queue lives under `<vdir-state>/queue/`:
+
+- `<id>.json`: a queued item. It stores the op and the journal entry planned against the
+  caller's view (`writes[].before` and holds are its base, `family` is the family guard), so a
+  queued create keeps the UID the view showed. After pushing, `submit` tries the lock once more
+  and drains at once if it got it. Ids sort in creation order (time, per-process sequence, pid).
+- `<id>.claim`: an item being applied. A drainer renames `<id>.json` to `<id>.claim` before it
+  commits; undoing a queued edit removes `<id>.json` instead. Whichever filesystem call wins
+  decides, and the loser backs off, so no lock is needed to cancel.
+- `refused/<id>.json`: why an item was refused (with `shown`, whether the user was told),
+  pruned after `retention_days`.
+
+Draining (oldest id first) happens in any writer that gets the lock, in the sync runner (after
+recovery and after reconcile), in the TUI when a sync ends and at startup, and in `tdo op --wait`
+([sync.md](sync.md#what-tdo-sync-does)). Each item has the gate re-checked on the current files and its
+base compared strictly, whole file by whole file; a mismatch refuses the item. A stuck journal
+stops the drain and the items stay queued. The journal entry an item produces records
+`from_queue {id, queued}`: an item named by an entry is removed, never applied twice, and
+batching ages the entry by `queued`, not by the drain time.
+
+`queue::view` lays queued writes over the loaded files while their base still matches, so the
+TUI and `tdo op` read their own queued edits; the TUI marks those rows ` (queued)` and counts
+them in `N pending`.
 
 ## The operation journal
 
@@ -233,8 +263,8 @@ undo keeps working until then. `prepared` and `abandoned` entries are never prun
 
 `<state>/vdir.lock` is an advisory lock, one per vdir. Writers hold it exclusively for the whole
 protocol above. The sync runner holds it shared while vdirsyncer runs, so readers continue and
-writers wait; the TUI does not wait for it: a write during a sync is refused with "a sync is
-running; try again in a moment", so the screen never freezes. The lock is released when the
+writers wait; the TUI does not wait for it: a write during a sync is queued, so the screen never
+freezes. The lock is released when the
 process lets go of it, or by the kernel if the process dies.
 
 The sync runner takes its locks in a fixed order: its own run lock (`<state>/sync/run.lock`, so
