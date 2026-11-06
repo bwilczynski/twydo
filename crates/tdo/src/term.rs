@@ -69,11 +69,17 @@ fn event_loop(
     root: &Path,
     tz: Tz,
 ) -> io::Result<()> {
+    // Configuration warnings are the first status-line message.
+    let warnings = app.snapshot.config.warnings();
+    if !warnings.is_empty() {
+        app.message = Some(warnings.join("; "));
+    }
     // Without a watcher the app still works; it just does not live-reload.
     let watcher = match watch(root) {
         Ok(w) => Some(w),
         Err(e) => {
-            app.message = Some(format!("live reload unavailable: {e}"));
+            app.message
+                .get_or_insert_with(|| format!("live reload unavailable: {e}"));
             None
         }
     };
@@ -165,7 +171,7 @@ fn event_loop(
                             let cfg = &app.snapshot.config;
                             let result = resolve(cfg, &id, keep, Utc::now());
                             // Same rule as `tdo conflicts resolve`: sync after a resolve
-                            // that worked, when `[sync] after_edit` is on.
+                            // that worked, when sync is configured.
                             if result.is_ok() {
                                 writer.sync_soon();
                             }

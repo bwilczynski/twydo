@@ -210,10 +210,7 @@ fn move_message_names_list() {
 fn after_edit_triggers_sync_only_on_success() {
     let env = Env::new();
     let mut cfg = env.config();
-    cfg.sync = Some(twydo_core::config::SyncConfig {
-        after_edit: true,
-        ..Default::default()
-    });
+    cfg.sync = Some(twydo_core::config::SyncConfig::default());
     let (mut w, calls) = writer(&cfg);
     assert!(w.run(&env.snapshot(), &Request::Undo, now()).is_err());
     w.flush_sync();
@@ -221,20 +218,6 @@ fn after_edit_triggers_sync_only_on_success() {
     assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
     w.flush_sync();
     assert_eq!(calls.get(), 1);
-}
-
-#[test]
-fn no_sync_without_after_edit() {
-    let env = Env::new();
-    let mut cfg = env.config();
-    cfg.sync = Some(twydo_core::config::SyncConfig {
-        after_edit: false,
-        ..Default::default()
-    });
-    let (mut w, calls) = writer(&cfg);
-    assert!(w.run(&env.snapshot(), &complete_a(), now()).is_ok());
-    w.flush_sync();
-    assert_eq!(calls.get(), 0);
 }
 
 /// Issue #19: a save does not start the sync at once, or the next quick save (closing
@@ -879,7 +862,6 @@ fn check_queued_orphan_stop(delay_status: bool) {
     use std::process::{Command, Stdio};
     let env = Env::new();
     let mut cfg = sync_config(&env);
-    cfg.sync.as_mut().unwrap().after_edit = false;
     cfg.sync.as_mut().unwrap().metasync = false;
     let marker = env.dir.path().join("started-again");
     let fake = env.dir.path().join("fake.sh");
@@ -895,7 +877,7 @@ fn check_queued_orphan_stop(delay_status: bool) {
     fs::write(
         config_root.join("twydo/config.toml"),
         format!(
-            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\nafter_edit = false\n",
+            "vdir = '{}'\nstate_dir = '{}'\ntimezone = 'America/New_York'\n[sync]\ncommand = '{}'\nmetasync = false\n",
             cfg.vdir.display(),
             cfg.state_dir().display(),
             fake.display()

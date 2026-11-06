@@ -80,7 +80,7 @@ impl Pair {
             p.root().join("config/twydo/config.toml"),
             format!(
                 "vdir = \"{}\"\ntimezone = \"UTC\"\n[writes]\nmode = \"test\"\n\
-                 [sync]\nvdirsyncer_config = \"{}\"\nafter_edit = false\n{extra}",
+                 [sync]\nvdirsyncer_config = \"{}\"\n{extra}",
                 p.vdir().display(),
                 p.vdirsyncer_config().display()
             ),

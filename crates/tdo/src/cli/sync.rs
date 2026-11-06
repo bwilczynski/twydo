@@ -22,6 +22,9 @@ pub fn sync(vdir: Option<&Path>, background: bool, force_delete: &[String]) -> i
         Ok(c) => c,
         Err(e) => return error(&e),
     };
+    if !background {
+        print_warnings(&cfg);
+    }
     if cfg.sync.is_none() {
         return error(&NOT_CONFIGURED);
     }
@@ -180,11 +183,18 @@ fn collection_id(cfg: &Config, name: &str) -> Result<String, String> {
 }
 
 /// `tdo status`: last success, pending entries, conflicts, failures and per-list state.
+fn print_warnings(cfg: &Config) {
+    for w in cfg.warnings() {
+        eprintln!("warning: {w}");
+    }
+}
+
 pub fn status(vdir: Option<&Path>) -> i32 {
     let cfg = match resolve_config(vdir) {
         Ok(c) => c,
         Err(e) => return error(&e),
     };
+    print_warnings(&cfg);
     let s = match summary(&cfg) {
         Ok(Some(s)) => s,
         Ok(None) => return error(&NOT_CONFIGURED),

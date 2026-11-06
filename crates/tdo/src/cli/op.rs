@@ -494,9 +494,9 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     Ok(())
 }
 
-/// Starts a background sync after a write that exited 0, when `[sync] after_edit` is on.
+/// Starts a background sync after a write that exited 0, when sync is configured.
 fn sync_after_write(cfg: &Config, vdir: Option<&Path>) {
-    if cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
+    if cfg.sync.is_some() {
         spawn_background(cfg, vdir);
     }
 }
