@@ -18,6 +18,8 @@ use crate::store::existing_vdir_state;
 /// The longest single sleep of [`SystemClock`], so that a changed wall clock (a laptop
 /// waking from sleep) is noticed within this time.
 const SLICE: StdDuration = StdDuration::from_secs(5);
+/// Recheck the journal while waiting: later edits can bring the size deadline forward.
+const RECHECK: Duration = Duration::seconds(1);
 /// How long the waiter pauses after its sync found another runner busy. That runner was
 /// asked to run once more and will most likely cover the edits; the pause keeps the waiter
 /// from spinning until it does.
@@ -75,7 +77,8 @@ pub fn wait_and_sync(
 ///
 /// 1. Takes `<vdir-state>/sync/waiter.lock` without blocking; if another waiter holds it,
 ///    returns [`WaiterExit::AlreadyRunning`].
-/// 2. While sync is on and something is due: sleeps until the deadline, or runs `sync`
+/// 2. While sync is on and something is due: rechecks at least once a second until the
+///    deadline, or runs `sync`
 ///    when it has come, then checks again (edits made during that sync get their own
 ///    deadline). A sync that found another runner busy is retried after a short pause.
 /// 3. Before exiting: releases the lock, calls `after_unlock` (a test hook), and checks once
@@ -105,9 +108,10 @@ pub fn wait_and_sync_with(
         if switch::is_off(cfg)? {
             return Ok(WaiterExit::SwitchedOff);
         }
-        match batch::due(cfg, clock.now())? {
+        let now = clock.now();
+        match batch::due(cfg, now)? {
             Due::At(t) => {
-                clock.sleep_until(t);
+                clock.sleep_until(t.min(now + RECHECK));
                 continue;
             }
             Due::Now => {

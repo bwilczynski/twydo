@@ -79,10 +79,11 @@ writer checks that rule:
   `tdo sync --background` at once.
 - **Otherwise:** it starts the **batch waiter**, a detached `tdo sync --background --when-due`.
   The waiter takes `sync/waiter.lock` without waiting; if another waiter holds it, it exits at
-  once, so there is one per vdir. It sleeps until the sync is due (wall clock: after the laptop
-  wakes it is already past), checks again (the timer or `:sync` may have sent everything
-  meanwhile, or more edits pushed the pause out), syncs if a sync is still due, and loops while
-  edits keep arriving. It exits when nothing is unsynced or automatic sync is off.
+  once, so there is one per vdir. While waiting, it rechecks once per second: more edits can
+  fill the batch and bring the deadline forward, or push the quiet period out; the timer or
+  `:sync` may have sent everything meanwhile. Deadlines use wall clock, so an overdue sync
+  starts after the laptop wakes. It syncs when due and loops while edits keep arriving,
+  exiting when nothing is unsynced or automatic sync is off.
 
 Background syncs and the batch waiter run in their own process group, so closing the terminal
 or pressing Ctrl-C does not stop them. A waiter that fails (it cannot read the journal, say)
