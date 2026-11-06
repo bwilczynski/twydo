@@ -30,6 +30,11 @@ stderr.
 `tdo op` (add, edit, complete, reopen, delete, move, undo, check, journal, recover, abandon) is
 the scriptable write interface. It prints the operation id and exits 0; exit 1 means the
 operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, config or IO error.
+While a sync holds the vdir the write is queued instead: it prints
+`queued (a sync is running): <queue id>` and exits 0 at once. `--wait` (on every write
+subcommand, `undo` included) waits for the outcome: the journal entry id and exit 0 once it is
+applied, or the refusal on stderr and exit 1 if it was not saved. Refusals of queued writes that
+nobody has been told about yet are printed on stderr by the next `tdo op` ([sync.md](sync.md#stopping-a-sync)).
 `tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries of
 their vdir, kept under `state_dir`.
 
