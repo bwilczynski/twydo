@@ -230,7 +230,9 @@ The record of a list is only as good as the last sync that wrote it:
 - A sync that fails for a list (an error in it, or a run that timed out or printed errors of its
   own) drops the list's record, since it may have downloaded tasks the record lacks. The list is
   not forced automatically until the next clean sync of it records it again. A list reported as
-  emptied keeps its record: vdirsyncer transfers nothing in it.
+  emptied keeps its record: vdirsyncer transfers nothing in it. The runner captures this
+  record before applying post-sync queued edits, so deleting the final task from the queue
+  retains the evidence needed to send that deletion automatically on the next pass.
 - An unreadable `sync/manifest.json` counts as no record: the run goes on, warns
   `tdo: warning: sync/manifest.json is unreadable (...); emptied lists will not be applied
   automatically until the next sync rewrites it`, and rewrites the file at its end.

@@ -375,6 +375,19 @@ fn one_pass(
         report.unexpected.extend(r.unexpected);
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
+        // Record the files the completed sync saw, before queued edits change them. In
+        // particular, a queued deletion of the final task must not erase the evidence
+        // needed to authorize force-delete on the next pass.
+        let uncertain = !out.unattributed.is_empty() || killed.is_some();
+        if let Err(e) = manifest
+            .update(&cfg.vdir, &collections, uncertain)
+            .and_then(|()| manifest.save(state))
+        {
+            report.warnings.push(format!(
+                "sync/manifest.json could not be written ({e}); emptied lists will not be \
+                 applied automatically until a sync writes it"
+            ));
+        }
         // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
         // sends them.
         let drained = drain_into(cfg, &_excl, now, &mut report.warnings);
@@ -391,19 +404,6 @@ fn one_pass(
             File::create(state.join("sync").join("requested"))?;
         }
         report.drained.extend(drained);
-        // The evidence a later auto-force needs (see [`Manifest::update`]). A failure here
-        // is a warning, so the status below is still saved; the file was removed before
-        // vdirsyncer ran, so no stale evidence is left behind.
-        let uncertain = !out.unattributed.is_empty() || killed.is_some();
-        if let Err(e) = manifest
-            .update(&cfg.vdir, &collections, uncertain)
-            .and_then(|()| manifest.save(state))
-        {
-            report.warnings.push(format!(
-                "sync/manifest.json could not be written ({e}); emptied lists will not be \
-                 applied automatically until a sync writes it"
-            ));
-        }
     }
 
     // Step 6: status.
