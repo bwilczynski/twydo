@@ -1,8 +1,8 @@
 //! `tdo op`: the core write operations as scriptable commands.
 //!
-//! Exit 0 prints the operation id, or `queued (a sync is running): <queue id>` when a sync holds
-//! the vdir and the write waits in the queue (`--wait` waits for its outcome instead of
-//! returning at once); 1 means blocked, stale or stuck (reason on stderr); 2 is a usage,
+//! Exit 0 prints the operation id, or `queued (a sync is running): <queue id>` when a sync
+//! holds the vdir and the write waits in the queue (`--wait` waits for its outcome instead
+//! of returning at once); 1 means blocked, stale or stuck (reason on stderr); 2 is a usage,
 //! configuration, IO or edit error.
 
 use std::path::{Path, PathBuf};
@@ -291,8 +291,8 @@ fn edit_changes(
     Ok(changes)
 }
 
-/// Load the vdir (with queued writes laid over it) under the shared lock of `state` (the store's per-vdir state dir), so the
-/// gate and `op check` never see a partly applied operation. The lock is released before
+/// Load the vdir (with queued writes laid over it) under the shared lock of `state` (the
+/// store's per-vdir state dir), so the gate and `op check` never see a partly applied operation. The lock is released before
 /// this returns: the store takes the exclusive lock on its own descriptor, and two flocks in
 /// one process block each other (R2).
 fn snapshot(cfg: &Config, state: &Path) -> Result<Snapshot, Failure> {
@@ -569,18 +569,25 @@ fn finish(
 
 /// Waits until queued item `id` is neither pending nor claimed, then returns the journal entry
 /// the drain made from it. While it waits it drains the queue itself whenever the vdir lock is
-/// free (the sync that held it may be gone, and nothing else is bound to drain). A refusal is printed, marked shown and fails with the blocked exit
-/// code; an item that vanished without either (someone cancelled it) fails the same way.
+/// free (the sync that held it may be gone, and nothing else is bound to drain). A first
+/// look that still finds it pending says so once on stderr. A refusal is printed, marked
+/// shown and fails with the blocked exit code; an item that vanished without either (someone
+/// cancelled it) fails the same way.
 fn wait_for(store: &mut Store, id: &str) -> Result<String, Failure> {
     let state = store.state_dir().to_path_buf();
     let state = state.as_path();
     let dir = state.join("queue");
+    let mut told = false;
     // Pending first, then claimed: a drain renames the one to the other, so checking in this
     // order never sees an item in flight as gone.
     while dir.join(format!("{id}.json")).exists() || dir.join(format!("{id}.claim")).exists() {
         match store.drain(Utc::now()) {
             Ok(_) | Err(WriteError::Busy) => {}
             Err(e) => return Err(e.into()),
+        }
+        if !told && dir.join(format!("{id}.json")).exists() {
+            eprintln!("waiting for the sync to finish (queued {id})");
+            told = true;
         }
         std::thread::sleep(WAIT_POLL);
     }

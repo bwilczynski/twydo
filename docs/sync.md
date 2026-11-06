@@ -308,7 +308,11 @@ network.
 ## Stopping a sync
 
 A sync holds the vdir for as long as vdirsyncer runs, and a slow one (for example vdirsyncer
-waiting for a password prompt) holds the vdir meanwhile; saves are queued until it ends. `tdo` can stop a
+waiting for a password prompt) holds the vdir meanwhile; saves are queued until it ends.
+`tdo op` queues too: it prints `queued (a sync is running): <queue id>` and exits 0, or with
+`--wait` waits (saying so once on stderr), then prints the journal entry id (exit 0) or the
+refusal on stderr (exit 1). A queued write that is refused is reported once on stderr by the
+next `tdo op` or `tdo sync`. `tdo` can stop a
 running sync, though no TUI key does today:
 
 - While vdirsyncer runs, the runner keeps `sync/running.json`: its own process id, vdirsyncer's
