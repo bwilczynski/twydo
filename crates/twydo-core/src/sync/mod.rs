@@ -1,6 +1,7 @@
 //! Sync runner support: vdirsyncer output parsing, conflict handling, the runner and its
 //! status.
 
+pub mod batch;
 pub mod ended;
 pub mod hook;
 pub mod manifest;
@@ -10,6 +11,7 @@ pub mod resolve;
 pub mod run;
 pub mod running;
 pub mod status;
+pub mod switch;
 
 use std::io;
 
@@ -37,6 +39,8 @@ pub struct SyncSummary {
     pub pending: usize,
     /// Unresolved conflicts.
     pub conflicts: Vec<Conflict>,
+    /// Automatic sync is switched off (see [`switch`]).
+    pub off: bool,
 }
 
 /// The sync state of `cfg`'s vdir; `None` without `[sync]`. Creates nothing: a vdir with no
@@ -50,6 +54,7 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
             status: SyncStatus::default(),
             pending: 0,
             conflicts: Vec::new(),
+            off: false,
         }));
     };
     let pending = if state.join("journal").is_dir() {
@@ -67,5 +72,6 @@ pub fn summary(cfg: &Config) -> io::Result<Option<SyncSummary>> {
         status: SyncStatus::load(&state)?,
         pending,
         conflicts,
+        off: state.join("sync").join("off").try_exists()?,
     }))
 }

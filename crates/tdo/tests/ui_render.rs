@@ -471,6 +471,7 @@ fn summary(
         status,
         pending,
         conflicts,
+        off: false,
     }
 }
 

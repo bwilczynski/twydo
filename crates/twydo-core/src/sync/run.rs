@@ -43,6 +43,8 @@ pub struct RunOptions {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Skip {
     NotConfigured,
+    /// A background run while automatic sync is switched off.
+    Off,
     /// Another runner holds the run lock; it was asked to run once more.
     Busy,
     /// A background run during backoff.
@@ -152,6 +154,9 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     let Some(sync) = &cfg.sync else {
         return Ok(skipped(Skip::NotConfigured));
     };
+    if opts.background && super::switch::is_off(cfg)? {
+        return Ok(skipped(Skip::Off));
+    }
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
     let sync_dir = state.join("sync");
     fs::create_dir_all(&sync_dir)?;

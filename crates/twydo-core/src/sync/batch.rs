@@ -1,0 +1,89 @@
+//! The batching rule: when an automatic sync is due, given the unsynced edits.
+
+use std::io;
+
+use chrono::{DateTime, Duration, Utc};
+
+use super::status::SyncStatus;
+use super::switch;
+use crate::config::Config;
+use crate::store::existing_vdir_state;
+use crate::store::journal::Journal;
+
+/// When the next automatic sync should run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Due {
+    /// No unsynced edits.
+    Nothing,
+    /// Run now.
+    Now,
+    /// Run at this time, unless something makes it due sooner.
+    At(DateTime<Utc>),
+}
+
+/// Pure rule. Edits older than `last_attempt` do not count (that attempt covered them). The
+/// deadline is `max_wait` after the oldest counted edit, pushed out by backoff
+/// (`next_attempt`). A sync is due at `size` edits unless backing off, or at the deadline.
+pub fn decide(
+    edits: &[DateTime<Utc>],
+    last_attempt: Option<DateTime<Utc>>,
+    next_attempt: Option<DateTime<Utc>>,
+    size: u32,
+    max_wait: std::time::Duration,
+    now: DateTime<Utc>,
+) -> Due {
+    let counted: Vec<DateTime<Utc>> = edits
+        .iter()
+        .copied()
+        .filter(|t| last_attempt.is_none_or(|l| *t >= l))
+        .collect();
+    let Some(oldest) = counted.iter().min().copied() else {
+        return Due::Nothing;
+    };
+    let wait = Duration::from_std(max_wait).unwrap_or(Duration::MAX);
+    let mut deadline = oldest
+        .checked_add_signed(wait)
+        .unwrap_or(DateTime::<Utc>::MAX_UTC);
+    if let Some(n) = next_attempt {
+        deadline = deadline.max(n);
+    }
+    let backing_off = next_attempt.is_some_and(|n| n > now);
+    if counted.len() >= size as usize && !backing_off {
+        return Due::Now;
+    }
+    if now >= deadline {
+        return Due::Now;
+    }
+    Due::At(deadline)
+}
+
+/// [`decide`] over the journal's unsynced entries and the sync status. `Nothing` without
+/// `[sync]`, when switched off, or when there is no state yet. Creates nothing.
+pub fn due(cfg: &Config, now: DateTime<Utc>) -> io::Result<Due> {
+    let Some(sync) = &cfg.sync else {
+        return Ok(Due::Nothing);
+    };
+    if switch::is_off(cfg)? {
+        return Ok(Due::Nothing);
+    }
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+        return Ok(Due::Nothing);
+    };
+    if !state.join("journal").is_dir() {
+        return Ok(Due::Nothing);
+    }
+    let edits: Vec<DateTime<Utc>> = Journal::open(&state)?
+        .pending()?
+        .iter()
+        .map(|e| e.created)
+        .collect();
+    let status = SyncStatus::load(&state)?;
+    Ok(decide(
+        &edits,
+        status.last_attempt,
+        status.next_attempt,
+        sync.batch_size,
+        std::time::Duration::from_secs(sync.max_wait_secs),
+        now,
+    ))
+}
