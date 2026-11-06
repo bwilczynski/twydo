@@ -117,11 +117,12 @@ fn valid_id(id: &str) -> io::Result<()> {
 }
 
 impl Journal {
-    /// Opens the journal under `state_dir`, creating `<state>/journal/` if needed.
+    /// The state directory this journal lives in.
     pub fn state_dir(&self) -> &Path {
         self.dir.parent().expect("journal state directory")
     }
 
+    /// Opens the journal under `state_dir`, creating `<state>/journal/` if needed.
     pub fn open(state_dir: &Path) -> io::Result<Journal> {
         let dir = state_dir.join("journal");
         if !dir.is_dir() {

@@ -378,7 +378,12 @@ fn one_pass(
         // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
         // sends them.
         let drained = drain_into(cfg, &_excl, now, &mut report.warnings);
+        // Not after a stopped or failed pass: a rerun would stop or fail the same way, and the
+        // batch waiter covers those edits.
+        let failed =
+            pass_stopped || killed.is_some() || transient(sync, &ran, &out, &collections).is_some();
         if !last_pass
+            && !failed
             && drained
                 .iter()
                 .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))

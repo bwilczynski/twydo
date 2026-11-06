@@ -2043,7 +2043,7 @@ fn runner_drains_and_reruns_to_send() {
 }
 
 #[test]
-fn drain_refusal_is_a_warning_not_a_failure() {
+fn drain_refusal_does_not_fail_the_run() {
     let mut fx = Fx::new(&format!("{}\nexit 0", cat_fixture("clean.txt")));
     seed_tasks(&mut fx);
     queue_rename(&fx);
@@ -2066,4 +2066,39 @@ fn drain_refusal_is_a_warning_not_a_failure() {
         .unwrap_or_else(|v: Vec<_>| panic!("{v:?}"));
     assert!(refusal.stale);
     assert!(fs::read_to_string(&path).unwrap().contains("SUMMARY:other"));
+}
+
+#[test]
+fn stopped_pass_that_drained_leaves_no_rerun_request() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    let file = queue_rename(&fx);
+    let queue_dir = fx.state().join("queue");
+    let staged = fx.path("staged.json");
+    fs::rename(queue_dir.join(&file), &staged).unwrap();
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "cp '{}' '{}/{file}'\nsleep 30",
+            staged.display(),
+            queue_dir.display()
+        ),
+    );
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    wait_for_child(&fx);
+    // Let the fake queue its item before the stop.
+    assert!(wait_for(&queue_dir.join(&file)));
+    request_stop(&fx.cfg).unwrap();
+    let r = t.join().unwrap();
+    assert!(r.stopped);
+    assert!(
+        r.drained
+            .iter()
+            .any(|d| matches!(d.outcome, DrainOutcome::Applied(_))),
+        "{:?}",
+        r.drained
+    );
+    assert!(!fx.state().join("sync/requested").exists());
 }

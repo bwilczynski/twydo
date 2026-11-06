@@ -358,7 +358,12 @@ impl Queue {
 
     fn refusals(&self) -> io::Result<Vec<Refusal>> {
         let mut out = Vec::new();
-        for dent in fs::read_dir(self.refused())? {
+        let dir = match fs::read_dir(self.refused()) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(out),
+            Err(e) => return Err(e),
+        };
+        for dent in dir {
             let dent = dent?;
             let name = dent.file_name();
             let Some(name) = name.to_str() else { continue };
