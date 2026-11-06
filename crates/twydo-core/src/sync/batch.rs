@@ -25,12 +25,14 @@ pub enum Due {
 /// edits is not interrupted by its own sync (which holds the vdir while it runs).
 pub const QUIET: Duration = Duration::seconds(3);
 
-/// Pure rule. Edits older than `last_attempt` do not count (that attempt covered them). The
-/// deadline is `max_wait` after the oldest counted edit, pushed out by backoff
+/// Pure rule. Each edit is `(written, edited)`: when its journal entry was written and when the
+/// user made the edit (the same, unless it was drained from the write queue). An edit written
+/// before `last_attempt` does not count (that attempt covered it). The age and the quiet period
+/// use `edited`. The deadline is `max_wait` after the oldest counted edit, pushed out by backoff
 /// (`next_attempt`). At `size` edits a sync is due once the newest has been quiet for
 /// [`QUIET`], unless backing off, and never later than the deadline.
 pub fn decide(
-    edits: &[DateTime<Utc>],
+    edits: &[(DateTime<Utc>, DateTime<Utc>)],
     last_attempt: Option<DateTime<Utc>>,
     next_attempt: Option<DateTime<Utc>>,
     size: u32,
@@ -39,8 +41,8 @@ pub fn decide(
 ) -> Due {
     let counted: Vec<DateTime<Utc>> = edits
         .iter()
-        .copied()
-        .filter(|t| last_attempt.is_none_or(|l| *t >= l))
+        .filter(|(written, _)| last_attempt.is_none_or(|l| *written >= l))
+        .map(|(_, edited)| *edited)
         .collect();
     let (Some(oldest), Some(newest)) =
         (counted.iter().min().copied(), counted.iter().max().copied())
@@ -82,10 +84,15 @@ pub fn due(cfg: &Config, now: DateTime<Utc>) -> io::Result<Due> {
     if !state.join("journal").is_dir() {
         return Ok(Due::Nothing);
     }
-    let edits: Vec<DateTime<Utc>> = Journal::open(&state)?
+    let edits: Vec<(DateTime<Utc>, DateTime<Utc>)> = Journal::open(&state)?
         .pending()?
         .iter()
-        .map(|e| e.created)
+        .map(|e| {
+            (
+                e.created,
+                e.from_queue.as_ref().map_or(e.created, |q| q.queued),
+            )
+        })
         .collect();
     let status = SyncStatus::load(&state)?;
     Ok(decide(
