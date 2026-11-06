@@ -110,7 +110,7 @@ impl Clock for FakeClock {
     }
 
     fn sleep_until(&mut self, t: DateTime<Utc>) {
-        assert!(self.sleeps.len() < 20, "the waiter spins");
+        assert!(self.sleeps.len() < 2000, "the waiter spins");
         self.sleeps.push(t);
         (self.on_sleep)();
         if t > self.now.get() {
@@ -156,7 +156,7 @@ fn sleeps_to_the_deadline_then_syncs_once() {
     };
     let exit = wait_and_sync(&fx.cfg, &mut c, &mut sync).unwrap();
     assert_eq!(exit, WaiterExit::NothingDue);
-    assert_eq!(c.sleeps, vec![oldest + Duration::seconds(60)]);
+    assert_eq!(now.get(), oldest + Duration::seconds(60));
     assert_eq!(syncs, 1);
 }
 
@@ -241,7 +241,7 @@ fn edit_during_its_sync_gets_its_own_deadline() {
     let exit = wait_and_sync(&fx.cfg, &mut c, &mut sync).unwrap();
     assert_eq!(exit, WaiterExit::NothingDue);
     let first = start() + Duration::seconds(60);
-    assert_eq!(c.sleeps, vec![first, first + Duration::seconds(61)]);
+    assert_eq!(now.get(), first + Duration::seconds(61));
     assert_eq!(syncs, 2);
 }
 
@@ -267,7 +267,7 @@ fn edit_landing_at_exit_is_picked_up() {
     };
     let exit = wait_and_sync_with(&fx.cfg, &mut c, &mut sync, &mut after_unlock).unwrap();
     assert_eq!(exit, WaiterExit::NothingDue);
-    assert_eq!(c.sleeps, vec![start() + Duration::seconds(60)]);
+    assert_eq!(now.get(), start() + Duration::seconds(60));
     assert_eq!(syncs, 1);
     assert_eq!(*unlocks.borrow(), 2);
 }
@@ -289,7 +289,7 @@ fn backoff_is_honoured() {
     };
     let exit = wait_and_sync(&fx.cfg, &mut c, &mut sync).unwrap();
     assert_eq!(exit, WaiterExit::NothingDue);
-    assert_eq!(c.sleeps, vec![start() + Duration::minutes(10)]);
+    assert_eq!(now.get(), start() + Duration::minutes(10));
     assert_eq!(syncs, 1);
 }
 
@@ -314,6 +314,44 @@ fn busy_runner_is_retried_after_a_pause() {
     let exit = wait_and_sync(&fx.cfg, &mut c, &mut sync).unwrap();
     assert_eq!(exit, WaiterExit::NothingDue);
     let deadline = start() + Duration::seconds(60);
-    assert_eq!(c.sleeps, vec![deadline, deadline + Duration::seconds(5)]);
+    assert_eq!(now.get(), deadline + Duration::seconds(5));
     assert_eq!(syncs, 2);
+}
+
+#[test]
+fn filling_a_batch_while_sleeping_advances_the_sync() {
+    let fx = Fx::new();
+    edit(&fx.cfg, "e1", start());
+    let (now, mut c) = clock();
+    let cfg = fx.cfg.clone();
+    let n = now.clone();
+    let mut filled = false;
+    c.on_sleep = Box::new(move || {
+        if !filled {
+            filled = true;
+            // Four more writes arrive while the first edit's waiter owns the lock.
+            for i in 2..=5 {
+                edit(&cfg, &format!("e{i}"), start());
+            }
+            // Each writer starts another waiter; none can replace the sleeping one.
+            let mut other_clock = FakeClock::new(n.clone());
+            let mut unexpected_sync = || panic!("a second waiter must not sync");
+            assert_eq!(
+                wait_and_sync(&cfg, &mut other_clock, &mut unexpected_sync).unwrap(),
+                WaiterExit::AlreadyRunning
+            );
+        }
+    });
+    let cfg = fx.cfg.clone();
+    let mut sync_times = Vec::new();
+    let mut sync = || -> Result<RunReport, SyncError> {
+        sync_times.push(now.get());
+        fake_sync(&cfg, now.get());
+        Ok(RunReport::default())
+    };
+    assert_eq!(
+        wait_and_sync(&fx.cfg, &mut c, &mut sync).unwrap(),
+        WaiterExit::NothingDue
+    );
+    assert_eq!(sync_times, vec![start() + Duration::seconds(3)]);
 }
