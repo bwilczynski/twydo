@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/bwilczynski/twydo/compare/v0.1.4...v0.1.5) - 2026-11-06
+
+### Added
+
+- *(tui)* show sync activity in the status line
+- *(op)* queue writes during a sync; --wait for the outcome
+- *(tui)* queue saves during a sync instead of asking to stop it
+- *(sync)* the runner drains the write queue
+- *(store)* undo and redo of queued edits
+- *(views)* show queued edits over the loaded files
+- *(tui)* choose lists by name when forgetting
+- batched syncs after edits and an automatic-sync switch
+- *(sync)* batch waiter process (tdo sync --background --when-due)
+- *(sync)* batching rule and automatic-sync switch
+- *(config)* add batch_size and max_wait_secs; retire after_edit
+- *(tui)* reload when any sync ends
+- limit list Done sections to the last 30 days
+- show future and completed work in lists
+- *(store)* one write path that queues while the vdir is busy
+- *(store)* on-disk write queue
+- *(sync)* record a sync-ended event for every run
+
+### Fixed
+
+- *(op)* say once that --wait is waiting for a sync; document queued op in sync.md
+- *(sync)* preserve missing-list guidance during rediscovery
+- *(tui)* fit forget confirmation to its wrapped text
+- *(sync)* turn sync on even when the edits cannot be read
+- *(sync)* keep edits counted after an orphan stop
+- *(sync)* wait for a pause before a size-triggered sync
+- *(config)* keep after_edit = false suppressing syncs until batching lands
+- preserve selection when reopening detached children
+- *(sync)* capture manifest before draining queued edits
+- *(store)* keep recoverable queued writes pending after I/O errors
+- *(store)* preserve commit order when draining queued edits
+- *(sync)* no rerun after a stopped pass; the queue never fails a sync
+- *(store)* undo skips a queued step a drain refused
+- *(sync)* age drained edits from when they were queued
+- *(store)* keep a submitted item queued when the recheck drain fails
+- *(sync)* recheck batch deadlines while the waiter sleeps
+
+### Performance
+
+- *(views)* list the journal once per overlay
+
 ## [0.1.4](https://github.com/bwilczynski/twydo/compare/v0.1.3...v0.1.4) - 2026-11-05
 
 ### Added
