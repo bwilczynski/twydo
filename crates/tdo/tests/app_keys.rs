@@ -307,6 +307,7 @@ fn with_conflicts(a: &mut App, cs: Vec<twydo_core::conflicts::Conflict>) {
         pending: 0,
         conflicts: cs,
         off: false,
+        queued: 0,
     }));
 }
 

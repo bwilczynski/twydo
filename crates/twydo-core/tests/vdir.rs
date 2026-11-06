@@ -153,3 +153,45 @@ fn load_follows_symlinks() {
     assert_eq!(r.errors.len(), 1);
     assert_eq!(r.errors[0].0, root.join("plain/dangling.ics"));
 }
+
+#[test]
+fn overlay_replaces_creates_and_removes() {
+    use twydo_core::store::journal::Write;
+    let task = |uid: &str, title: &str| {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:{title}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"
+        )
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(&root.join("l/a.ics"), &task("a", "A"));
+    write(&root.join("l/b.ics"), &task("b", "B"));
+    write(&root.join("l/c.ics"), &task("c", "C"));
+    let mut report = load(root).unwrap();
+    let writes = [
+        Write {
+            path: "l/a.ics".into(),
+            before: Some(task("a", "A")),
+            after: Some(task("a", "A2")),
+        },
+        Write {
+            path: "l/b.ics".into(),
+            before: Some(task("b", "B")),
+            after: None,
+        },
+        Write {
+            path: "l/d.ics".into(),
+            before: None,
+            after: Some(task("d", "D")),
+        },
+    ];
+    report.overlay_writes(root, &writes);
+
+    write(&root.join("l/a.ics"), &task("a", "A2"));
+    fs::remove_file(root.join("l/b.ics")).unwrap();
+    write(&root.join("l/d.ics"), &task("d", "D"));
+    let fresh = load(root).unwrap();
+    assert_eq!(report.tasks, fresh.tasks);
+    assert_eq!(report.sources, fresh.sources);
+    assert_eq!(report.errors, fresh.errors);
+}

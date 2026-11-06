@@ -472,6 +472,7 @@ fn summary(
         pending,
         conflicts,
         off: false,
+        queued: 0,
     }
 }
 

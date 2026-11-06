@@ -120,6 +120,7 @@ fn errors_keep_missing_list_names_and_commands_available_after_sync() {
         pending: 0,
         conflicts: vec![],
         off: false,
+        queued: 0,
     }));
     assert!(render(&a).contains(":forget-list to choose"));
     command(&mut a, "errors");
@@ -292,6 +293,7 @@ fn missing_list_sync(a: &mut App) {
         pending: 0,
         conflicts: vec![],
         off: false,
+        queued: 0,
     }));
 }
 
@@ -392,6 +394,7 @@ fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
         pending: 0,
         conflicts: vec![],
         off: false,
+        queued: 0,
     }));
     let status = render(&a);
     assert!(status.contains(":forget-list"), "{status}");

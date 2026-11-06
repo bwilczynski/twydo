@@ -613,7 +613,7 @@ impl Store {
         now: DateTime<Utc>,
     ) -> Result<Vec<Step>, WriteError> {
         let queue = Queue::open(&self.state)?;
-        let mut snap = Snapshot::new(crate::vdir::load(&self.vdir)?, self.cfg.clone());
+        let mut report = crate::vdir::load(&self.vdir)?;
         let mut steps: Vec<Step> = Vec::new();
         for item in queue.list()? {
             if let Some(entry) = self.journal.by_queue_id(&item.id)? {
@@ -635,6 +635,7 @@ impl Store {
             };
             let result = match &item.kind {
                 Kind::Op { op, prepared } => {
+                    let snap = Snapshot::new(report.clone(), self.cfg.clone());
                     let today = item.created.with_timezone(&snap.tz()).date_naive();
                     gate::check(&snap, &self.matrix, self.mode, op, today)
                         .map_err(WriteError::Blocked)
@@ -645,7 +646,9 @@ impl Store {
             match result {
                 Ok(id) => {
                     queue.done(&item.id)?;
-                    snap = Snapshot::new(crate::vdir::load(&self.vdir)?, self.cfg.clone());
+                    if let Some(entry) = self.journal.get(&id)? {
+                        report.overlay_writes(&self.vdir, &entry.writes);
+                    }
                     steps.push(Step::new(item, DrainOutcome::Applied(id)));
                 }
                 Err(e @ WriteError::Stuck(_)) => {

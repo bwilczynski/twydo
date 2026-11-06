@@ -32,6 +32,8 @@ pub struct Snapshot {
     parents: Vec<Option<usize>>,
     children: Vec<Vec<usize>>,
     sources: HashMap<PathBuf, Vec<u8>>,
+    /// UIDs of tasks with a queued edit laid over them.
+    pending: HashSet<String>,
 }
 
 impl Snapshot {
@@ -102,7 +104,19 @@ impl Snapshot {
             parents,
             children,
             sources: report.sources,
+            pending: HashSet::new(),
         }
+    }
+
+    /// Marks the tasks with these UIDs as having a queued, not yet applied, edit.
+    pub fn with_pending(mut self, uids: HashSet<String>) -> Snapshot {
+        self.pending = uids;
+        self
+    }
+
+    /// Whether task `idx` shows a queued edit that is not on disk yet.
+    pub fn is_pending(&self, idx: usize) -> bool {
+        self.pending.contains(&self.tasks[idx].uid)
     }
 
     /// Indices of the tasks whose parent is `idx`, in load order.

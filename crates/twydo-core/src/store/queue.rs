@@ -1,6 +1,7 @@
 //! The on-disk write queue: `<state>/queue/<id>.json` items waiting for the vdir lock.
 //! See the write-queue design (`docs/superpowers/specs/2026-11-06-write-queue-design.md`).
 
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,10 +12,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
-use super::journal::{Entry, FamilyGuard, Write};
-use super::{Drained, Store, WriteError};
+use super::journal::{Entry, FamilyGuard, Journal, Write};
+use super::{Drained, Store, WriteError, existing_vdir_state};
 use crate::config::Config;
 use crate::edit::Op;
+use crate::vdir::LoadReport;
+use crate::views::Snapshot;
 
 /// Current queue file format.
 pub const FORMAT: u32 = 1;
@@ -104,6 +107,71 @@ pub fn drain_with_lock(
     now: DateTime<Utc>,
 ) -> Result<Vec<Drained>, WriteError> {
     Store::for_drain(cfg)?.drain_locked(held, now)
+}
+
+/// Whether every file `item` was planned against still holds what it read: its writes'
+/// `before` and, for an op, its holds. Otherwise the drain will refuse it.
+fn base_matches(item: &Item, report: &LoadReport, vdir: &Path) -> bool {
+    let holds: &[(String, String)] = match &item.kind {
+        Kind::Op { prepared, .. } => &prepared.holds,
+        Kind::Revert { .. } => &[],
+    };
+    let source = |rel: &str| report.sources.get(&vdir.join(rel)).map(Vec::as_slice);
+    item.writes()
+        .iter()
+        .all(|w| source(&w.path) == w.before.as_deref().map(str::as_bytes))
+        && holds
+            .iter()
+            .all(|(rel, bytes)| source(rel) == Some(bytes.as_bytes()))
+}
+
+/// The snapshot of `report` with the queued items laid over it, so a queued edit shows as if
+/// applied (spec §6.5), and the tasks they touch marked pending. An item is laid over only
+/// while every file it was planned against is as it expected: otherwise the drain will refuse
+/// it and the row shows the file. Without state or a readable queue this is a plain
+/// [`Snapshot::new`]. A reverted entry whose journal record cannot be read is not marked.
+pub fn view(mut report: LoadReport, cfg: Config) -> Snapshot {
+    let layers = (|| -> Option<(Vec<Item>, Option<Journal>)> {
+        let state = existing_vdir_state(&cfg.state_dir(), &cfg.vdir).ok()??;
+        let queue = Queue::existing(&state)?;
+        let journal = state
+            .join("journal")
+            .is_dir()
+            .then(|| Journal::open(&state).ok())
+            .flatten();
+        let items = queue
+            .list()
+            .ok()?
+            .into_iter()
+            .filter(|i| !queue.is_refused(&i.id).unwrap_or(false))
+            .collect();
+        Some((items, journal))
+    })();
+    let Some((items, journal)) = layers else {
+        return Snapshot::new(report, cfg);
+    };
+    let mut pending = HashSet::new();
+    for item in items {
+        // Applied but not yet removed (a drain is between its commit and `done`).
+        if let Some(j) = &journal
+            && j.by_queue_id(&item.id).ok().flatten().is_some()
+        {
+            continue;
+        }
+        if !base_matches(&item, &report, &cfg.vdir) {
+            continue;
+        }
+        report.overlay_writes(&cfg.vdir, item.writes());
+        match &item.kind {
+            Kind::Op { prepared, .. } => pending.extend(prepared.entry.uids.iter().cloned()),
+            Kind::Revert { entry, .. } => {
+                if let Some(e) = journal.as_ref().and_then(|j| j.get(entry).ok().flatten()) {
+                    pending.extend(e.uids);
+                }
+            }
+        }
+    }
+    Snapshot::new(report, cfg).with_pending(pending)
 }
 
 /// A queue id: `<%Y%m%dT%H%M%S%6fZ>-<seq:08>-<pid:010>`. Fixed widths, so string order is
