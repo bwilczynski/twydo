@@ -90,7 +90,7 @@ On a checklist or project, a write acts on the whole family; see
 |---|---|
 | `:list <name>` | open a list by name (or collection id), also a hidden one |
 | `:sync` | sync now (needs `[sync]` in the config; [sync.md](sync.md)) |
-| `:sync on` / `:sync off` | switch automatic sync on or off ([sync.md](sync.md#when-edits-sync)); on starts a sync when edits are unsynced |
+| `:sync on` / `:sync off` | switch automatic sync on or off ([sync.md](sync.md#when-edits-sync)); on starts a sync when edits are unsynced; any other argument shows the usage |
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | show unreadable files and sync errors; j/k scroll |
@@ -293,10 +293,12 @@ The status line says why, and nothing is written:
 - **`cannot write: …`**: the operation journal could not be opened
   ([architecture.md](architecture.md#the-operation-journal)). Your tasks are still shown.
 
-Success messages clear after five seconds. Writes sync in batches: after `batch_size` unsynced
-edits, or `max_wait_secs` after the oldest one, a background sync starts, so quick writes in a
-row (closing checklist items one by one) do not wait on a sync started by the one before.
-Quitting starts no sync; the batch waiter sends the last edits ([sync.md](sync.md#when-edits-sync)).
+Success messages clear after five seconds. Writes sync in batches: a background sync starts
+once `batch_size` edits are unsynced and edits have paused for 3 seconds, or `max_wait_secs`
+after the oldest one, so quick writes in a row (closing checklist items one by one) are not
+interrupted by their own sync. A save made while a sync is running still waits for it (see
+above). Quitting starts no sync; the batch waiter sends the last edits
+([sync.md](sync.md#when-edits-sync)).
 
 ## Not in the TUI yet
 

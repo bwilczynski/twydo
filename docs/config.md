@@ -49,14 +49,15 @@ and conflict handling are in [sync.md](sync.md).
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
 | `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
-| `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced. Must be at least 1. |
+| `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
 | `max_wait_secs` | integer | `60` | A sync is due this many seconds after the oldest unsynced edit. Must be at least 1. |
 | `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
 | `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |
 
-`after_edit` is no longer used: it is accepted and ignored, and `tdo sync` and `tdo status` and the TUI
-warn about it. Edits sync in batches (`batch_size`, `max_wait_secs`); `tdo sync off` keeps syncs manual.
+`after_edit` is no longer used: it is accepted and ignored, and `tdo sync` and `tdo status` and
+the TUI warn about it. Edits sync in batches (`batch_size`, `max_wait_secs`); `tdo sync off`
+keeps syncs manual.
 
 ## `[lists.<id>]`
 
