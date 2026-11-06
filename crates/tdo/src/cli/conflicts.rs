@@ -8,10 +8,11 @@ use twydo_core::config::Config;
 use twydo_core::conflicts::{Conflict, ConflictState, ConflictStore, Side};
 use twydo_core::ical;
 use twydo_core::store::existing_vdir_state;
+use twydo_core::sync::batch::after_resolve;
 use twydo_core::sync::hook::{VDIR_ENV, conflict_hook};
 use twydo_core::sync::resolve::{Keep as CoreKeep, Resolution, resolve};
 
-use super::sync::spawn_background;
+use super::sync::spawn;
 use super::{EXIT_ERROR, resolve_config};
 
 /// Which version to keep.
@@ -188,6 +189,7 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
     };
     match resolve(&cfg, id, side, Utc::now()) {
         Ok(r) => {
+            let recorded = r == Resolution::Recorded;
             match r {
                 Resolution::Recorded => {
                     println!("recorded; the next sync applies it");
@@ -196,8 +198,8 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
                 Resolution::Written(_) => println!("written; conflict resolved"),
                 Resolution::KeptCurrent => println!("kept as it is now; conflict resolved"),
             }
-            if cfg.sync.as_ref().is_some_and(|s| s.edits_trigger_sync()) {
-                spawn_background(&cfg, vdir);
+            if let Some(t) = after_resolve(&cfg, recorded, Utc::now()) {
+                spawn(&cfg, vdir, t);
             }
             0
         }

@@ -76,6 +76,8 @@ pub enum Outcome {
     Sync {
         force_delete: Option<String>,
     },
+    /// Switch automatic sync on (`true`) or off.
+    SyncSwitch(bool),
     /// Keep one version of conflict `id`.
     Resolve {
         id: String,
@@ -1255,6 +1257,11 @@ impl App {
         match cmd {
             "" => {}
             "q" | "quit" => return Outcome::Quit,
+            "sync" if !arg.is_empty() => match arg {
+                "on" => return Outcome::SyncSwitch(true),
+                "off" => return Outcome::SyncSwitch(false),
+                _ => self.message = Some("usage: :sync [on|off]".into()),
+            },
             "sync" | "sync!" => {
                 if cmd == "sync!" && arg.is_empty() {
                     self.message = Some("usage: :sync! <list>".into());

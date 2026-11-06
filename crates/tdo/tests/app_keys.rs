@@ -326,6 +326,15 @@ fn sync_command_returns_sync_outcome() {
 }
 
 #[test]
+fn colon_sync_off_and_on() {
+    let mut a = app();
+    assert_eq!(run_cmd(&mut a, ":sync off"), Outcome::SyncSwitch(false));
+    assert_eq!(run_cmd(&mut a, ":sync on"), Outcome::SyncSwitch(true));
+    assert_eq!(run_cmd(&mut a, ":sync bogus"), Outcome::Continue);
+    assert_eq!(a.message.as_deref(), Some("usage: :sync [on|off]"));
+}
+
+#[test]
 fn sync_bang_passes_list() {
     let mut a = app();
     assert_eq!(

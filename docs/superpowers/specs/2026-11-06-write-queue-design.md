@@ -257,7 +257,7 @@ outlives the TUI: quitting with unsynced edits needs no special sync (D11).
 1. **Who starts it:** any process that just applied or drained an edit and found the size
    limit not reached: the TUI's writer, `tdo op`, or the sync runner after a drain left
    edits unsynced. It is started the way `spawn_background` starts a sync today: the
-   `tdo` executable, detached in its own session (so closing the terminal does not kill
+   `tdo` executable, detached in its own process group (so closing the terminal does not kill
    it), stdin and stdout closed. Starting it is cheap and unconditional; the lock decides
    whether it stays.
 2. **One per vdir:** it takes `<vdir-state>/sync/waiter.lock` without blocking. If another

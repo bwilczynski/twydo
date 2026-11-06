@@ -6,10 +6,11 @@ use std::process::{Command, Stdio};
 
 use chrono::{DateTime, Utc};
 use twydo_core::config::Config;
+use twydo_core::sync::batch::{self, Due, Trigger};
 use twydo_core::sync::run::{RunOptions, RunReport, run};
 use twydo_core::sync::status::CollState;
-use twydo_core::sync::summary;
 use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
+use twydo_core::sync::{summary, switch};
 
 use super::{EXIT_ERROR, load_vdir, resolve_config};
 
@@ -195,13 +196,50 @@ fn collection_id(cfg: &Config, name: &str) -> Result<String, String> {
     }
 }
 
-/// `tdo status`: last success, pending entries, conflicts, failures and per-list state.
 fn print_warnings(cfg: &Config) {
     for w in cfg.warnings() {
         eprintln!("warning: {w}");
     }
 }
 
+/// `tdo sync on|off`: switches automatic sync. Turning it on with unsynced edits starts a
+/// background sync. Exit 0, or 2 when sync is not configured or on an IO error.
+pub fn switch_command(vdir: Option<&Path>, on: bool) -> i32 {
+    let cfg = match resolve_config(vdir) {
+        Ok(c) => c,
+        Err(e) => return error(&e),
+    };
+    print_warnings(&cfg);
+    if cfg.sync.is_none() {
+        return error(&NOT_CONFIGURED);
+    }
+    if let Err(e) = set_switch(&cfg, vdir, on) {
+        return error(&e);
+    }
+    println!("{}", switch_message(on));
+    0
+}
+
+/// Switches automatic sync (`tdo sync on|off`, `:sync on|off`). Turning it on with unsynced
+/// edits starts a background sync at once.
+pub fn set_switch(cfg: &Config, vdir_flag: Option<&Path>, on: bool) -> std::io::Result<()> {
+    switch::set(cfg, !on)?;
+    if on && batch::due(cfg, Utc::now())? != Due::Nothing {
+        spawn(cfg, vdir_flag, Trigger::SyncNow);
+    }
+    Ok(())
+}
+
+/// The confirmation for `tdo sync on|off` and `:sync on|off`.
+pub fn switch_message(on: bool) -> &'static str {
+    if on {
+        "automatic sync on"
+    } else {
+        "automatic sync off"
+    }
+}
+
+/// `tdo status`: last success, pending entries, conflicts, failures and per-list state.
 pub fn status(vdir: Option<&Path>) -> i32 {
     let cfg = match resolve_config(vdir) {
         Ok(c) => c,
@@ -221,6 +259,7 @@ pub fn status(vdir: Option<&Path>) -> i32 {
     let st = &s.status;
     println!("last sync: {}", when(st.last_success));
     println!("last attempt: {}", when(st.last_attempt));
+    println!("automatic sync: {}", if s.off { "off" } else { "on" });
     println!("pending: {}", s.pending);
     println!("conflicts: {}", s.conflicts.len());
     for c in &s.conflicts {
@@ -286,10 +325,20 @@ pub fn detach(mut cmd: Command) {
 /// Starts `tdo [--vdir <flag>] sync --background` detached when `config.sync` is set. Errors
 /// are ignored: the timer catches up.
 pub fn spawn_background(config: &Config, vdir_flag: Option<&Path>) {
+    start(config, vdir_flag, false);
+}
+
+/// Starts what a write asked for, detached: a background sync now, or the batch waiter.
+/// Nothing without `[sync]`; errors are ignored (the timer or the next edit catches up).
+pub fn spawn(config: &Config, vdir_flag: Option<&Path>, t: Trigger) {
+    start(config, vdir_flag, t == Trigger::Waiter);
+}
+
+fn start(config: &Config, vdir_flag: Option<&Path>, when_due: bool) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    if let Some(cmd) = background_command(&exe, config, vdir_flag, false) {
+    if let Some(cmd) = background_command(&exe, config, vdir_flag, when_due) {
         detach(cmd);
     }
 }

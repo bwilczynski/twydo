@@ -57,8 +57,50 @@ in [config.md](config.md) (`[sync]`).
      (launchd does not expand `~`), then
      `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.twydo.sync.plist`.
 
-   Both run `tdo sync --background` every minute. Independently of the timer, `tdo op` writes and
-   `tdo conflicts resolve` start a detached `tdo sync --background`. The TUI starts it once edits pause for three seconds, and at once on quit.
+   Both run `tdo sync --background` every minute. The timer also pulls changes made on other
+   devices; edits made here sync without it too ([When edits sync](#when-edits-sync)).
+
+## When edits sync
+
+Edits sync in batches, so a run of quick edits (closing checklist items one by one) does not
+wait on a sync started by the one before. An edit is **unsynced** while its journal entry is
+applied, not yet confirmed by a sync, and made after the last sync attempt began; entries an
+earlier sync saw and left pending (an open conflict, a list that did not count) wait for you or
+the next sync instead. A sync is **due** when `batch_size` edits (default 5) are unsynced, or
+`max_wait_secs` (default 60) after the oldest of them ([config.md](config.md)), or later while
+the runner backs off.
+
+After every write (the TUI, `tdo op`, a `tdo conflicts resolve` that writes the vdir) the
+writer checks that rule:
+
+- **Batch full:** it starts a detached `tdo sync --background` at once.
+- **Otherwise:** it starts the **batch waiter**, a detached `tdo sync --background --when-due`.
+  The waiter takes `sync/waiter.lock` without waiting; if another waiter holds it, it exits at
+  once, so there is one per vdir. It sleeps until the oldest unsynced edit's deadline (wall
+  clock: after the laptop wakes it is already past), checks again (the timer or `:sync` may have
+  sent everything meanwhile), syncs if a sync is still due, and loops while edits keep arriving.
+  It exits when nothing is unsynced or automatic sync is off.
+
+Background syncs and the batch waiter run in their own process group, so closing the terminal
+or pressing Ctrl-C does not stop them. A waiter that fails (it cannot read the journal, say)
+exits silently: the timer or the next edit catches up. Quitting the TUI starts no sync: a waiter
+started by the last edit outlives it and sends that edit within `max_wait_secs`.
+
+A conflict choice recorded for a held conflict is not an edit and only applies on a sync, so
+`resolve` starts one at once. `:sync` and `tdo sync` sync now, whatever the count.
+
+**Turning automatic sync off.** `tdo sync off` (or `:sync off` in the TUI) stores
+`sync/off`, so it lasts across restarts and every process sees it. While off, every automatic
+sync skips quietly and records no failure: the timer, the TUI's startup sync, the batch waiter
+and the batch-full sync. Edits stay local and pending; the TUI's status line shows `sync off`
+with the pending count, and `tdo status` prints `automatic sync: off`. `:sync` and `tdo sync`
+still run once. `tdo sync on` (`:sync on`) removes the file and, with unsynced edits, starts a
+sync at once.
+
+**The "sync ended" event.** Every run that is not skipped ends, clean, failed or stopped, by
+atomically writing `sync/ended` (a run id and the time). The TUI checks it and reloads when it
+changes, so it shows what any sync brought in (startup, waiter, timer, systemd or `tdo sync`
+in another terminal), even when no file change was reported.
 
 ## What `tdo sync` does
 
@@ -285,6 +327,9 @@ read; do not edit them while a sync runs.
 
 | Path | Content |
 |---|---|
+| `sync/off` | exists while automatic sync is off (`tdo sync off`); see [When edits sync](#when-edits-sync) |
+| `sync/waiter.lock` | the batch waiter's lock (one waiter per vdir) |
+| `sync/ended` | the last run that ended: `run_id` and `at`; the TUI reloads when it changes |
 | `sync/rediscover` | a confirmed list retirement requires ordinary discovery before another sync; removed only when discovery succeeds |
 | `retired/<id>/` | permanent local-list backup, journal/conflict evidence, and recovery operation; see [deleted lists and recovery](#deleted-lists-and-recovery) |
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |

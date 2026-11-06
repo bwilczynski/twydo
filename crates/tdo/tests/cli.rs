@@ -434,6 +434,42 @@ mod sync {
     }
 
     #[test]
+    fn sync_off_and_on_switch_automatic_sync() {
+        let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
+        let o = fx.tdo(&["sync", "off"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(stdout(&o).contains("automatic sync off"), "{}", stdout(&o));
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(out.contains("automatic sync: off"), "{out}");
+        let o = fx.tdo(&["sync", "--background"]);
+        assert_eq!(o.status.code(), Some(0));
+        assert!(
+            !fx.path("marker").exists(),
+            "a background sync ran while off"
+        );
+
+        let o = fx.tdo(&["sync", "on"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(stdout(&o).contains("automatic sync on"), "{}", stdout(&o));
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(out.contains("automatic sync: on"), "{out}");
+    }
+
+    #[test]
+    fn sync_off_without_config_exits_2() {
+        let fx = Fx::new(None);
+        for arg in ["off", "on"] {
+            let o = fx.tdo(&["sync", arg]);
+            assert_eq!(o.status.code(), Some(2));
+            assert!(
+                stderr(&o).contains("sync is not configured: add a [sync] table (docs/sync.md)"),
+                "{}",
+                stderr(&o)
+            );
+        }
+    }
+
+    #[test]
     fn when_due_waiter_exits_when_nothing_is_unsynced() {
         let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
         let o = fx.tdo(&["sync", "--background", "--when-due"]);

@@ -35,8 +35,11 @@ enum Command {
         #[command(subcommand)]
         command: Option<cli::conflicts::ConflictsCommand>,
     },
-    /// Sync the vdir with vdirsyncer (`[sync]` in the config)
+    /// Sync the vdir with vdirsyncer (`[sync]` in the config); `on`/`off` switch automatic sync
     Sync {
+        /// Switch automatic sync (timer, startup, after edits) on or off instead of syncing
+        #[arg(value_enum, conflicts_with_all = ["background", "force_delete"])]
+        switch: Option<Switch>,
         /// For the timer: no waiting for a running sync, honour backoff, quiet on success
         #[arg(long)]
         background: bool,
@@ -60,6 +63,12 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Switch {
+    On,
+    Off,
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command.unwrap_or(Command::Tui) {
@@ -79,6 +88,14 @@ fn main() {
             std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
         }
         Command::Sync {
+            switch: Some(switch),
+            ..
+        } => std::process::exit(cli::sync::switch_command(
+            cli.vdir.as_deref(),
+            matches!(switch, Switch::On),
+        )),
+        Command::Sync {
+            switch: None,
             background,
             when_due,
             force_delete,

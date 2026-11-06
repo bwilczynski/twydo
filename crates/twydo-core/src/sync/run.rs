@@ -34,7 +34,8 @@ use crate::store::journal::{Journal, Stage, recover_locked};
 /// How `run` was asked to run.
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
-    /// Timer or after-edit trigger: never wait for another runner, honour backoff.
+    /// Timer, startup, waiter or batch-full sync: never wait for another runner, honour
+    /// backoff.
     pub background: bool,
     /// Collection ids to sync with `--force-delete` (the user's confirmation).
     pub force_delete: Vec<String>,
@@ -401,7 +402,7 @@ fn record_failure(status: &mut SyncStatus, sync: &SyncConfig, msg: &str, now: Da
 }
 
 /// Records a sync whose runner was gone and whose vdirsyncer [`super::running::request_stop`]
-/// killed: nobody else will, and without a backoff the after-edit sync could start another
+/// killed: nobody else will, and without a backoff the sync after the write could start another
 /// stuck run at once. Under the run lock, like every status write; when another runner holds
 /// it, its run began before the stop, so it stops before vdirsyncer (`sync/last_stop`) and
 /// records the stop itself.
