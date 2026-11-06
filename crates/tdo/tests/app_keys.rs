@@ -633,7 +633,7 @@ fn m_opens_picker_without_current_list() {
     let task = a.snapshot.tasks[a.selected().unwrap()].clone();
     assert_eq!(a.handle_key(key('m')), Outcome::Continue);
     let p = a.picker.as_ref().expect("picker open");
-    assert_eq!(p.uid.as_deref(), Some(task.uid.as_str()));
+    assert_eq!(p.action, tdo::app::ListPickerAction::Move(task.uid.clone()));
     let want: Vec<String> = list_ids_in_sidebar(&a)
         .into_iter()
         .filter(|id| *id != task.collection)
@@ -780,7 +780,11 @@ fn card_list_field_picks_without_writing() {
     assert_eq!(a.form.as_ref().unwrap().focus, Field::List);
     assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
     let p = a.picker.as_ref().expect("picker open");
-    assert_eq!(p.uid, None, "picking for the card");
+    assert_eq!(
+        p.action,
+        tdo::app::ListPickerAction::SetList,
+        "picking for the card"
+    );
     assert!(!p.lists.contains(&task.collection));
     a.handle_key(key('j'));
     let to = a.picker.as_ref().unwrap().lists[1].clone();

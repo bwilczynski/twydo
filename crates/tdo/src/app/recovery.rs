@@ -33,7 +33,25 @@ impl Confirmation {
 impl App {
     pub(super) fn forget_command(&mut self, arg: &str) {
         if arg.is_empty() {
-            self.message = Some("usage: :forget-list <list name or collection id>".into());
+            let mut collections: Vec<_> = self.snapshot.collections.iter().collect();
+            collections.sort_by_key(|c| {
+                (
+                    c.display_name.as_deref().unwrap_or(&c.id).to_lowercase(),
+                    c.id.clone(),
+                )
+            });
+            let lists: Vec<_> = collections.into_iter().map(|c| c.id.clone()).collect();
+            if lists.is_empty() {
+                self.message = Some("no lists to forget".into());
+                return;
+            }
+            self.recovery = None;
+            self.message = None;
+            self.picker = Some(ListPicker {
+                action: ListPickerAction::Forget,
+                lists,
+                cursor: 0,
+            });
             return;
         }
         match retired::preview(&self.snapshot.config, arg) {
@@ -173,8 +191,11 @@ impl App {
             }
             KeyCode::Char('r') => {
                 if let Some(b) = panel.backups.get(panel.cursor) {
-                    self.recovery_target = Some(b.id.clone());
+                    let id = b.id.clone();
                     self.open_list_picker(None, "");
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.action = ListPickerAction::Recover(id);
+                    }
                 }
             }
             _ => {}

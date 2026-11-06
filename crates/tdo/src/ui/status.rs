@@ -140,7 +140,7 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
     if let Some((id, _)) = missing {
         out.push((
             format!(
-                "list {:?}: Not Found (:forget-list {id}; :errors)",
+                "list {:?}: Not Found (:forget-list to choose; :errors)",
                 list_name(&app.snapshot, id)
             ),
             theme::overdue(),
