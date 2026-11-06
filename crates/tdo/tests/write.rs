@@ -12,7 +12,7 @@ use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::edit::{Change, Op};
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::sync::batch::Trigger;
+use twydo_core::sync::batch::{self as batch, Due, QUIET, Trigger};
 use twydo_core::sync::running::{Running, process_start};
 use twydo_core::views::Snapshot;
 
@@ -218,26 +218,27 @@ fn first_save_starts_the_waiter() {
     assert_eq!(*fired.borrow(), [Trigger::Waiter]);
 }
 
+/// Final review: the fifth save of a burst does not start a sync that would hold the vdir
+/// against the sixth; the waiter syncs once the saves pause for `QUIET`.
 #[test]
-fn fifth_save_syncs_now() {
+fn fifth_save_starts_the_waiter_until_saves_pause() {
     let env = Env::new();
     let mut cfg = sync_config(&env);
     cfg.sync.as_mut().unwrap().batch_size = 5;
     let (mut w, fired) = writer(&cfg);
+    let at = |i: i64| now() + chrono::Duration::seconds(i);
     for i in 0..5 {
         let edit = Request::Apply(Op::Edit {
             uid: TASK_A.into(),
             changes: vec![Change::Summary(format!("A{i}"))],
         });
-        w.run(&env.snapshot(), &edit, now()).unwrap();
+        w.run(&env.snapshot(), &edit, at(i)).unwrap();
     }
     let fired = fired.borrow();
     assert_eq!(fired.len(), 5);
-    assert!(
-        fired[..4].iter().all(|t| *t == Trigger::Waiter),
-        "{fired:?}"
-    );
-    assert_eq!(fired[4], Trigger::SyncNow);
+    assert!(fired.iter().all(|t| *t == Trigger::Waiter), "{fired:?}");
+    assert_eq!(batch::due(&cfg, at(4)).unwrap(), Due::At(at(4) + QUIET));
+    assert_eq!(batch::due(&cfg, at(4) + QUIET).unwrap(), Due::Now);
 }
 
 #[test]

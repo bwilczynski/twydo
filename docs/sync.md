@@ -62,24 +62,27 @@ in [config.md](config.md) (`[sync]`).
 
 ## When edits sync
 
-Edits sync in batches, so a run of quick edits (closing checklist items one by one) does not
-wait on a sync started by the one before. An edit is **unsynced** while its journal entry is
-applied, not yet confirmed by a sync, and made after the last sync attempt began; entries an
-earlier sync saw and left pending (an open conflict, a list that did not count) wait for you or
-the next sync instead. A sync is **due** when `batch_size` edits (default 5) are unsynced, or
-`max_wait_secs` (default 60) after the oldest of them ([config.md](config.md)), or later while
-the runner backs off.
+Edits sync in batches. An edit is **unsynced** while its journal entry is applied, not yet
+confirmed by a sync, and made after the last sync attempt began; entries an earlier sync saw
+and left pending (an open conflict, a list that did not count) wait for you or the next sync
+instead. A sync is **due** once `batch_size` edits (default 5) are unsynced and edits have
+paused for 3 seconds, or `max_wait_secs` (default 60) after the oldest of them
+([config.md](config.md)), whichever comes first, or later while the runner backs off. The
+pause keeps a run of quick edits (closing checklist items one by one) from being interrupted by
+its own sync. A save made while a sync is running still waits for it
+([tui.md](tui.md#when-a-write-is-refused)); the write queue will remove that later.
 
 After every write (the TUI, `tdo op`, a `tdo conflicts resolve` that writes the vdir) the
 writer checks that rule:
 
-- **Batch full:** it starts a detached `tdo sync --background` at once.
+- **Due now** (edits have paused, or the oldest is overdue): it starts a detached
+  `tdo sync --background` at once.
 - **Otherwise:** it starts the **batch waiter**, a detached `tdo sync --background --when-due`.
   The waiter takes `sync/waiter.lock` without waiting; if another waiter holds it, it exits at
-  once, so there is one per vdir. It sleeps until the oldest unsynced edit's deadline (wall
-  clock: after the laptop wakes it is already past), checks again (the timer or `:sync` may have
-  sent everything meanwhile), syncs if a sync is still due, and loops while edits keep arriving.
-  It exits when nothing is unsynced or automatic sync is off.
+  once, so there is one per vdir. It sleeps until the sync is due (wall clock: after the laptop
+  wakes it is already past), checks again (the timer or `:sync` may have sent everything
+  meanwhile, or more edits pushed the pause out), syncs if a sync is still due, and loops while
+  edits keep arriving. It exits when nothing is unsynced or automatic sync is off.
 
 Background syncs and the batch waiter run in their own process group, so closing the terminal
 or pressing Ctrl-C does not stop them. A waiter that fails (it cannot read the journal, say)

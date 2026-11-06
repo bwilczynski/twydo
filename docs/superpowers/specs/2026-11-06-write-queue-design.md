@@ -235,6 +235,9 @@ it is refused, the overlay drops it and the row shows the current file.
   item that came from the queue, the queue item's `created`.
 - A sync is **due** when the number of unsynced edits reaches `batch_size`, or when
   `max_wait_secs` have passed since the oldest unsynced edit.
+  When the size limit is reached, the sync waits until edits have paused for 3 seconds, so a
+  burst of edits is not interrupted by its own sync *(my call, after the final review of
+  plan 1)*.
 - Queued items do not count until applied; they are applied at the next drain, which the
   running sync does itself, and then fall under the same rule with their original time.
 

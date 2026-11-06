@@ -21,9 +21,14 @@ pub enum Due {
     At(DateTime<Utc>),
 }
 
+/// How long edits must pause, once `batch_size` are waiting, before the batch syncs: a burst of
+/// edits is not interrupted by its own sync (which holds the vdir while it runs).
+pub const QUIET: Duration = Duration::seconds(3);
+
 /// Pure rule. Edits older than `last_attempt` do not count (that attempt covered them). The
 /// deadline is `max_wait` after the oldest counted edit, pushed out by backoff
-/// (`next_attempt`). A sync is due at `size` edits unless backing off, or at the deadline.
+/// (`next_attempt`). At `size` edits a sync is due once the newest has been quiet for
+/// [`QUIET`], unless backing off, and never later than the deadline.
 pub fn decide(
     edits: &[DateTime<Utc>],
     last_attempt: Option<DateTime<Utc>>,
@@ -37,7 +42,9 @@ pub fn decide(
         .copied()
         .filter(|t| last_attempt.is_none_or(|l| *t >= l))
         .collect();
-    let Some(oldest) = counted.iter().min().copied() else {
+    let (Some(oldest), Some(newest)) =
+        (counted.iter().min().copied(), counted.iter().max().copied())
+    else {
         return Due::Nothing;
     };
     let wait = Duration::from_std(max_wait).unwrap_or(Duration::MAX);
@@ -49,7 +56,10 @@ pub fn decide(
     }
     let backing_off = next_attempt.is_some_and(|n| n > now);
     if counted.len() >= size as usize && !backing_off {
-        return Due::Now;
+        let quiet = newest
+            .checked_add_signed(QUIET)
+            .unwrap_or(DateTime::<Utc>::MAX_UTC);
+        deadline = deadline.min(quiet);
     }
     if now >= deadline {
         return Due::Now;
