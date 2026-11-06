@@ -954,7 +954,19 @@ impl Store {
 
     /// The journal protocol (the caller holds the lock): prepare, apply, mark applied. A
     /// conflict leaves the entry Prepared, which blocks later writes until it is abandoned.
-    fn run(&self, e: Entry) -> Result<String, WriteError> {
+    fn run(&self, mut e: Entry) -> Result<String, WriteError> {
+        // The exclusive vdir lock serializes commits across stores and processes. A drain
+        // passes the same `now` for every item, so persist a strictly increasing commit
+        // time rather than letting reconciliation break ties with random journal ids.
+        if let Some(last) = self.journal.list()?.iter().map(|e| e.created).max()
+            && last >= e.created
+        {
+            e.created = last
+                .checked_add_signed(chrono::Duration::nanoseconds(1))
+                .ok_or_else(|| {
+                    io_error(io::ErrorKind::InvalidData, "journal commit time overflow")
+                })?;
+        }
         self.journal.prepare(&e)?;
         match apply_entry(&self.vdir, &e) {
             Ok(()) => {}

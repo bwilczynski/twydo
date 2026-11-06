@@ -494,6 +494,74 @@ fn second_queued_edit_builds_on_the_first() {
 }
 
 #[test]
+fn drained_edits_preserve_the_latest_version_in_conflicts() {
+    let env = env();
+    let mut store = env.store(matrix());
+    let sync = VdirLock::shared(&env.state).unwrap();
+    for text in ["first", "latest"] {
+        store
+            .submit(&view(&env), &title(A, text), text, "op", now())
+            .unwrap();
+    }
+    drop(sync);
+    let drained = store.drain(later()).unwrap();
+    let journal = Journal::open(&env.state).unwrap();
+    let entries: Vec<_> = drained
+        .iter()
+        .map(|d| {
+            let DrainOutcome::Applied(id) = &d.outcome else {
+                panic!("{d:?}")
+            };
+            journal.get(id).unwrap().unwrap()
+        })
+        .collect();
+    assert!(
+        entries[0].created < entries[1].created,
+        "commit times must preserve drain order"
+    );
+
+    // Another writer uses the same clock reading after the drain.
+    let mut next = env.store(matrix());
+    let Submitted::Applied(id) = next
+        .submit(&env.snap(), &title(A, "newest"), "newest", "op", later())
+        .unwrap()
+    else {
+        panic!("free lock")
+    };
+    assert!(entries[1].created < journal.get(&id).unwrap().unwrap().created);
+
+    let conflicts = twydo_core::conflicts::ConflictStore::open(&env.state).unwrap();
+    let output = twydo_core::sync::output::parse(
+        "twydo",
+        &format!("Syncing twydo/list1\nCopying (uploading) item {A} to twydo_remote/list1\n"),
+    );
+    let states = [("list1".to_string(), twydo_core::sync::status::CollState::Ok)]
+        .into_iter()
+        .collect();
+    twydo_core::sync::reconcile::reconcile(
+        &env.vdir,
+        &journal,
+        &conflicts,
+        &Default::default(),
+        &states,
+        &journal.pending().unwrap(),
+        &output,
+        &[],
+        later(),
+    )
+    .unwrap();
+    let recorded = conflicts.list().unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert!(
+        recorded[0]
+            .local
+            .as_ref()
+            .unwrap()
+            .contains("SUMMARY:newest")
+    );
+}
+
+#[test]
 fn queued_create_keeps_its_uid() {
     let env = env();
     let mut store = env.store(matrix());
