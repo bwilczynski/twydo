@@ -70,7 +70,7 @@ impl Store {
                 self.check_holds(&w.path, w.before.as_deref())?;
             }
             let id = self.run(entry)?;
-            self.done.push(id.clone());
+            self.done.push(super::Step::Applied(id.clone()));
             self.undone.clear();
             return Ok((id, true));
         }
@@ -169,7 +169,7 @@ impl Store {
         b.recovery = Some(entry.clone());
         crate::retired::save(&self.state, &b)?;
         let id = self.run(entry)?;
-        self.done.push(id.clone());
+        self.done.push(super::Step::Applied(id.clone()));
         self.undone.clear();
         Ok((id, true))
     }

@@ -15,7 +15,7 @@ use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::ical::{Component, parse};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
-use twydo_core::store::{self, Store, WriteError};
+use twydo_core::store::{self, Store, Submitted, WriteError};
 
 use common::Env;
 
@@ -240,7 +240,9 @@ fn undo_restores_bytes_exactly() {
     let applied = env.files();
     assert_ne!(applied, before);
 
-    let undo_id = store.undo_last(later()).unwrap();
+    let Submitted::Applied(undo_id) = store.undo_last(later()).unwrap() else {
+        panic!("the lock is free");
+    };
     assert_eq!(env.files(), before);
     let undo = Journal::open(&env.state)
         .unwrap()

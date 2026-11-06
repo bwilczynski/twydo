@@ -158,8 +158,8 @@ impl Writer {
                 Ok((id, true)) => Ok(id),
                 Err(e) => Err(e),
             },
-            Request::Undo => store.undo_last(now),
-            Request::Redo => store.redo_last(now),
+            Request::Undo => store.undo_last(now).map(|_| String::new()),
+            Request::Redo => store.redo_last(now).map(|_| String::new()),
         };
         match done {
             Ok(_) => {}
