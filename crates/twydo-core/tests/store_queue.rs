@@ -278,12 +278,8 @@ fn own_refusal_is_returned_to_the_submitter() {
     assert!(matches!(got, Err(WriteError::Stale(_))), "{got:?}");
 }
 
-#[test]
-fn stuck_journal_stops_the_drain() {
-    let env = env();
-    let mut store = env.store(matrix());
-    queued_edit(&env, &mut store, title(A, "renamed"));
-    // An unfinished entry whose file does not hold what it expects can never finish.
+/// An unfinished entry whose file does not hold what it expects can never finish.
+fn make_stuck(env: &Env) {
     let journal = Journal::open(&env.state).unwrap();
     journal
         .prepare(&Entry {
@@ -305,9 +301,80 @@ fn stuck_journal_stops_the_drain() {
             }],
         })
         .unwrap();
+}
+
+#[test]
+fn stuck_journal_stops_the_drain() {
+    let env = env();
+    let mut store = env.store(matrix());
+    queued_edit(&env, &mut store, title(A, "renamed"));
+    make_stuck(&env);
     let before = read(&env, A);
     let got = store.drain(later());
     assert!(matches!(got, Err(WriteError::Stuck(_))), "{got:?}");
     assert_eq!(read(&env, A), before);
     assert_eq!(queue(&env).len().unwrap(), 1);
+}
+
+#[test]
+fn submit_with_stuck_older_item_stays_queued() {
+    let env = env();
+    let mut older = env.store(matrix());
+    let mut store = env.store(matrix());
+    let older_id = queued_edit(&env, &mut older, title(A, "older"));
+    make_stuck(&env);
+    let before = read(&env, B);
+    let mut held = Some(VdirLock::exclusive(&env.state).unwrap());
+    let got = store
+        .submit_with(
+            &env.snap(),
+            &title(B, "ours"),
+            "ours",
+            "op",
+            later(),
+            &mut || {
+                held.take();
+            },
+        )
+        .unwrap();
+    let Submitted::Queued(item) = got else {
+        panic!("{got:?}");
+    };
+    assert_eq!(read(&env, B), before);
+    let ids: Vec<String> = queue(&env)
+        .list()
+        .unwrap()
+        .into_iter()
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(ids, vec![older_id, item.id]);
+}
+
+#[test]
+fn submit_whose_own_item_hits_stuck_stays_queued() {
+    let env = env();
+    let mut store = env.store(matrix());
+    make_stuck(&env);
+    let before = read(&env, A);
+    let mut held = Some(VdirLock::exclusive(&env.state).unwrap());
+    let got = store
+        .submit_with(
+            &env.snap(),
+            &title(A, "ours"),
+            "ours",
+            "op",
+            now(),
+            &mut || {
+                held.take();
+            },
+        )
+        .unwrap();
+    let Submitted::Queued(item) = got else {
+        panic!("{got:?}");
+    };
+    assert_eq!(read(&env, A), before);
+    let listed = queue(&env).list().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, item.id);
+    assert!(env.journal().iter().all(|e| e.from_queue.is_none()));
 }

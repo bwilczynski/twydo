@@ -559,13 +559,10 @@ impl Store {
         let Some(lock) = VdirLock::try_exclusive(&self.state)? else {
             return Ok(Submitted::Queued(item));
         };
-        let steps = match self.drain_steps(&lock, now) {
-            Ok(steps) => steps,
-            Err(e) => {
-                // Our item was not applied and the caller gets the error: do not keep it.
-                queue.done(&item.id)?;
-                return Err(e);
-            }
+        // Anything but a refusal of our own item (stuck journal, I/O) leaves it queued for the
+        // next drain: the caller is told it is pending, never "not saved" and applied later.
+        let Ok(steps) = self.drain_steps(&lock, now) else {
+            return Ok(Submitted::Queued(item));
         };
         for step in steps {
             if step.drained.item.id != item.id {
