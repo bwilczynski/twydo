@@ -53,7 +53,7 @@ impl Refused {
     }
 }
 
-/// Starts the after-edit sync; called once saves pause, when `[sync] after_edit` is on.
+/// Starts the after-edit sync; called once saves pause, when sync is configured.
 pub type SyncTrigger = Box<dyn FnMut(&Config)>;
 
 /// The TUI's store for the session, holding its undo/redo stack.
@@ -194,10 +194,10 @@ impl Writer {
         Ok(message)
     }
 
-    /// Schedules the after-edit sync when `[sync] after_edit` is on: it starts once nothing
+    /// Schedules the after-edit sync when sync is configured: it starts once nothing
     /// was written for [`SYNC_DELAY`] (see [`Writer::sync_if_quiet`]). Each call pushes it back.
     pub fn sync_soon(&mut self) {
-        if self.config.sync.as_ref().is_some_and(|s| s.after_edit) {
+        if self.config.sync.is_some() {
             self.sync_due = Some(Instant::now());
         }
     }

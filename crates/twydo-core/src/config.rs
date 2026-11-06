@@ -110,7 +110,12 @@ pub struct SyncConfig {
     /// Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.
     pub vdirsyncer_config: Option<PathBuf>,
     pub metasync: bool,
-    pub after_edit: bool,
+    /// Unsynced edits that make a sync due.
+    pub batch_size: u32,
+    /// Seconds after the oldest unsynced edit at which a sync is due.
+    pub max_wait_secs: u64,
+    /// Retired and ignored; see [`Config::warnings`].
+    pub after_edit: Option<bool>,
     pub timeout_secs: u64,
     pub max_backoff_secs: u64,
     pub retention_days: u32,
@@ -124,7 +129,9 @@ impl Default for SyncConfig {
             command: "vdirsyncer".into(),
             vdirsyncer_config: None,
             metasync: true,
-            after_edit: true,
+            batch_size: 5,
+            max_wait_secs: 60,
+            after_edit: None,
             timeout_secs: 300,
             max_backoff_secs: 1800,
             retention_days: 30,
@@ -279,7 +286,32 @@ impl Config {
                     .map(|p| expand_tilde(&p, Path::new(&home)));
             }
         }
+        if let Some(sync) = &cfg.sync {
+            for (key, zero) in [
+                ("batch_size", sync.batch_size == 0),
+                ("max_wait_secs", sync.max_wait_secs == 0),
+            ] {
+                if zero {
+                    return Err(ConfigError::Invalid {
+                        path: path.to_path_buf(),
+                        message: format!("[sync] {key} must be at least 1"),
+                    });
+                }
+            }
+        }
         Ok(cfg)
+    }
+
+    /// Non-fatal notes about the loaded configuration, for the user to see.
+    pub fn warnings(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.sync.as_ref().is_some_and(|s| s.after_edit.is_some()) {
+            out.push(
+                "[sync] after_edit is no longer used: edits sync in batches (batch_size, max_wait_secs); use `tdo sync off` to keep syncs manual"
+                    .to_string(),
+            );
+        }
+        out
     }
 
     /// Configured zone, else the system zone, else UTC.

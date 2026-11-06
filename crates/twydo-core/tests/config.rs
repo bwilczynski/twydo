@@ -155,7 +155,9 @@ fn sync_defaults() {
             command: "vdirsyncer".into(),
             vdirsyncer_config: None,
             metasync: true,
-            after_edit: true,
+            batch_size: 5,
+            max_wait_secs: 60,
+            after_edit: None,
             timeout_secs: 300,
             max_backoff_secs: 1800,
             retention_days: 30,
@@ -199,4 +201,39 @@ fn work_days_default_and_custom() {
     assert_eq!(c.work_days, vec![Sun, Mon, Tue]);
     assert!(parse("vdir = \"/x\"\nwork_days = []").is_err());
     assert!(parse("vdir = \"/x\"\nwork_days = [\"funday\"]").is_err());
+}
+
+#[test]
+fn sync_defaults_batch_and_wait() {
+    let s = parse("vdir = \"/x\"\n[sync]\n").unwrap().sync.unwrap();
+    assert_eq!((s.batch_size, s.max_wait_secs), (5, 60));
+}
+
+#[test]
+fn zero_batch_size_is_refused() {
+    let e = parse("vdir = \"/x\"\n[sync]\nbatch_size = 0\n").unwrap_err();
+    assert!(e.to_string().contains("batch_size"), "{e}");
+}
+
+#[test]
+fn zero_max_wait_is_refused() {
+    let e = parse("vdir = \"/x\"\n[sync]\nmax_wait_secs = 0\n").unwrap_err();
+    assert!(e.to_string().contains("max_wait_secs"), "{e}");
+}
+
+#[test]
+fn after_edit_false_still_loads_with_a_warning() {
+    let c = parse("vdir = \"/x\"\n[sync]\nafter_edit = false\n").unwrap();
+    assert_eq!(
+        c.warnings(),
+        vec![
+            "[sync] after_edit is no longer used: edits sync in batches (batch_size, max_wait_secs); use `tdo sync off` to keep syncs manual"
+        ]
+    );
+    assert!(
+        parse("vdir = \"/x\"\n[sync]\n")
+            .unwrap()
+            .warnings()
+            .is_empty()
+    );
 }

@@ -396,7 +396,7 @@ fn op_journal_shows_synced() {
 }
 
 /// Adds a `[sync]` table whose command is a fake script touching `marker`; returns the marker.
-fn with_fake_sync(env: &Env, after_edit: bool) -> PathBuf {
+fn with_fake_sync(env: &Env) -> PathBuf {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
     let marker = env.dir.path().join("marker");
@@ -416,7 +416,7 @@ fn with_fake_sync(env: &Env, after_edit: bool) -> PathBuf {
         .unwrap();
     write!(
         cfg,
-        "[sync]\ncommand = \"{}\"\nmetasync = false\nafter_edit = {after_edit}\n",
+        "[sync]\ncommand = \"{}\"\nmetasync = false\n",
         fake.display()
     )
     .unwrap();
@@ -440,7 +440,7 @@ fn marker_stays_absent(marker: &Path) -> bool {
 #[test]
 fn op_triggers_background_sync() {
     let env = Env::new("test");
-    let marker = with_fake_sync(&env, true);
+    let marker = with_fake_sync(&env);
     let o = env.op(&["complete", TASK_E]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(marker_appears(&marker), "no background sync after op edit");
@@ -449,7 +449,7 @@ fn op_triggers_background_sync() {
 #[test]
 fn op_check_does_not_trigger_sync() {
     let env = Env::new("test");
-    let marker = with_fake_sync(&env, true);
+    let marker = with_fake_sync(&env);
     for args in [&["check", TASK_E][..], &["journal"], &["recover"]] {
         let o = env.op(args);
         assert!(o.status.success(), "{}", err(&o));
@@ -460,22 +460,10 @@ fn op_check_does_not_trigger_sync() {
 #[test]
 fn failed_op_does_not_trigger_sync() {
     let env = Env::new("verified");
-    let marker = with_fake_sync(&env, true);
+    let marker = with_fake_sync(&env);
     let o = env.op(&["complete", TASK_E]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
     assert!(marker_stays_absent(&marker), "blocked op started a sync");
-}
-
-#[test]
-fn after_edit_false_does_not_trigger() {
-    let env = Env::new("test");
-    let marker = with_fake_sync(&env, false);
-    let o = env.op(&["complete", TASK_E]);
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(
-        marker_stays_absent(&marker),
-        "after_edit = false still synced"
-    );
 }
 
 #[test]

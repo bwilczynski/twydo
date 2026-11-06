@@ -58,8 +58,7 @@ in [config.md](config.md) (`[sync]`).
      `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.twydo.sync.plist`.
 
    Both run `tdo sync --background` every minute. Independently of the timer, `tdo op` writes and
-   `tdo conflicts resolve` start a detached `tdo sync --background` when `[sync] after_edit` is on
-   (the default). The TUI starts it once edits pause for three seconds, and at once on quit.
+   `tdo conflicts resolve` start a detached `tdo sync --background`. The TUI starts it once edits pause for three seconds, and at once on quit.
 
 ## What `tdo sync` does
 

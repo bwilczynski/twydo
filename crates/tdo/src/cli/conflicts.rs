@@ -196,7 +196,7 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
                 Resolution::Written(_) => println!("written; conflict resolved"),
                 Resolution::KeptCurrent => println!("kept as it is now; conflict resolved"),
             }
-            if cfg.sync.as_ref().is_some_and(|s| s.after_edit) {
+            if cfg.sync.is_some() {
                 spawn_background(&cfg, vdir);
             }
             0
