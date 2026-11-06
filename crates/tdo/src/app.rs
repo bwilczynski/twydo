@@ -401,6 +401,9 @@ impl App {
 
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
     pub fn reload(&mut self, s: Snapshot) {
+        let was_completed = self
+            .selected()
+            .is_some_and(|i| self.snapshot.tasks[i].status == Status::Completed);
         let completing = self.completing_repeat.take();
         let uid = self
             .selected_uid()
@@ -425,6 +428,19 @@ impl App {
         match side.and_then(|v| self.sidebar_items().iter().position(|x| *x == v)) {
             Some(p) => self.sidebar_cursor = p,
             None => self.sync_sidebar(),
+        }
+        // Reopening a detached Done child can nest it beneath a collapsed parent.
+        // Reveal its ancestors before restoring the cursor to the reopened task.
+        if was_completed
+            && matches!(self.view, View::All | View::List(_))
+            && let Some(i) = uid.as_deref().and_then(|u| self.snapshot.find(u))
+            && self.snapshot.tasks[i].status == Status::Open
+        {
+            let mut parent = self.snapshot.parent(i);
+            while let Some(p) = parent {
+                self.expanded.insert(self.snapshot.tasks[p].uid.clone());
+                parent = self.snapshot.parent(p);
+            }
         }
         self.restore(uid);
     }

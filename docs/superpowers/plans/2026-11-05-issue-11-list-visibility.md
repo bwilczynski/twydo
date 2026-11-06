@@ -85,3 +85,12 @@ Unknown completion dates remain available in the dedicated Done view.
 
 Follow-up verification: core view tests 33/33; full Rust and Python suites, lint and
 documentation links passed. Read-only review found no actionable defects.
+
+## PR #47 review correction: reopened child selection
+
+- [x] Reproduce lost selection when reopening a detached completed child beneath a
+  collapsed parent in All and ordinary lists.
+- [x] Expand the reopened child's ancestors before restoring selection; unchanged
+  reloads leave collapsed families alone. Document the behavior in `docs/tui.md`.
+- [x] Verify regression coverage for project and checklist parents in both views,
+  full lint/tests and documentation links, and obtain an independent code review.
