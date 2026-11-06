@@ -306,6 +306,7 @@ fn with_conflicts(a: &mut App, cs: Vec<twydo_core::conflicts::Conflict>) {
         status: Default::default(),
         pending: 0,
         conflicts: cs,
+        off: false,
     }));
 }
 

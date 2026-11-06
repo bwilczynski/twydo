@@ -1745,3 +1745,34 @@ fn each_run_has_a_new_run_id() {
     let second = ended::read(&fx.cfg).unwrap().unwrap();
     assert_ne!(first.run_id, second.run_id);
 }
+
+#[test]
+fn switched_off_background_run_is_skipped() {
+    let fx = Fx::new("touch \"$(dirname \"$0\")/marker\"");
+    twydo_core::sync::switch::set(&fx.cfg, true).unwrap();
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert_eq!(r.skipped, Some(Skip::Off));
+    assert!(!fx.path("marker").exists());
+    assert!(ended::read(&fx.cfg).unwrap().is_none());
+}
+
+#[test]
+fn switched_off_manual_run_still_runs() {
+    let fx = Fx::new("exit 0");
+    twydo_core::sync::switch::set(&fx.cfg, true).unwrap();
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.skipped.is_none());
+    assert!(ended::read(&fx.cfg).unwrap().is_some());
+}
+
+#[test]
+fn switch_survives_and_clears() {
+    use twydo_core::sync::switch::{is_off, set};
+    let fx = Fx::new("exit 0");
+    assert!(!is_off(&fx.cfg).unwrap());
+    assert!(!fx.path("state").exists());
+    set(&fx.cfg, true).unwrap();
+    assert!(is_off(&fx.cfg).unwrap());
+    set(&fx.cfg, false).unwrap();
+    assert!(!is_off(&fx.cfg).unwrap());
+}

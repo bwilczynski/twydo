@@ -116,6 +116,7 @@ fn errors_keep_missing_list_names_and_commands_available_after_sync() {
         },
         pending: 0,
         conflicts: vec![],
+        off: false,
     }));
     command(&mut a, "errors");
     let backend = ratatui::backend::TestBackend::new(120, 30);
