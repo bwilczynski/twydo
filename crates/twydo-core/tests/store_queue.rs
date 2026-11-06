@@ -222,7 +222,7 @@ fn a_claim_that_was_also_refused_is_dropped() {
     let item = q.list().unwrap().remove(0);
     // A crash inside `Queue::refuse`: the refusal was written, the claim not removed.
     assert!(q.claim(&item.id).unwrap());
-    q.refuse(&item, "gone", now()).unwrap();
+    q.refuse(&item, "gone", false, now()).unwrap();
     q.push(&item).unwrap();
     assert!(q.claim(&item.id).unwrap());
     let before = read(&env, A);

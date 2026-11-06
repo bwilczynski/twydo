@@ -30,6 +30,8 @@ use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::store::bind_vdir_state;
 use crate::store::fsio::{VdirLock, remove_durable};
 use crate::store::journal::{Journal, Stage, recover_locked};
+use crate::store::queue::drain_with_lock;
+use crate::store::{DrainOutcome, Drained};
 
 /// How `run` was asked to run.
 #[derive(Debug, Clone, Default)]
@@ -72,7 +74,9 @@ pub struct RunReport {
     /// Paths the server changed again after their edit synced, confirmed with the server's
     /// version (see [`super::reconcile::Reconciled::superseded`]).
     pub superseded: Vec<String>,
-    /// Journal entries and conflicts pruned.
+    /// Queued edits the runner dealt with (applied, already applied or refused).
+    pub drained: Vec<Drained>,
+    /// Journal entries, conflicts and refusals pruned.
     pub pruned: usize,
     pub forced: Vec<String>,
     /// The part of `forced` that the runner chose itself (a list Twydo emptied).
@@ -161,6 +165,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
         one_pass(
+            pass == MAX_RERUNS,
             cfg,
             sync,
             &state,
@@ -193,9 +198,11 @@ impl Drop for EndedGuard<'_> {
     }
 }
 
-/// Steps 3 to 6.
+/// Steps 3 to 6. `last_pass`: no rerun follows, so edits drained in step 5 wait for the next
+/// sync.
 #[allow(clippy::too_many_arguments)]
 fn one_pass(
+    last_pass: bool,
     cfg: &Config,
     sync: &SyncConfig,
     state: &Path,
@@ -206,9 +213,7 @@ fn one_pass(
     report: &mut RunReport,
 ) -> Result<(), SyncError> {
     // Step 3: recovery under the exclusive lock.
-    report
-        .new_conflicts
-        .extend(recover_and_park(&cfg.vdir, state, now)?);
+    recover_and_park(cfg, state, now, report)?;
 
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
@@ -370,6 +375,17 @@ fn one_pass(
         report.unexpected.extend(r.unexpected);
         report.superseded.extend(r.superseded);
         report.pruned += r.pruned;
+        // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
+        // sends them.
+        let drained = drain_into(cfg, &_excl, now, &mut report.warnings);
+        if !last_pass
+            && drained
+                .iter()
+                .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))
+        {
+            File::create(state.join("sync").join("requested"))?;
+        }
+        report.drained.extend(drained);
         // The evidence a later auto-force needs (see [`Manifest::update`]). A failure here
         // is a warning, so the status below is still saved; the file was removed before
         // vdirsyncer ran, so no stale evidence is left behind.
@@ -585,13 +601,22 @@ fn transient(
 /// conflict (the vdir keeps the file as it is), and the entry is abandoned. Writes already
 /// applied stay. Entries that cannot be read or have an invalid path are left stuck. Returns
 /// the new conflict ids.
-fn recover_and_park(vdir: &Path, state: &Path, now: DateTime<Utc>) -> io::Result<Vec<String>> {
-    let _lock = VdirLock::exclusive(state)?;
+fn recover_and_park(
+    cfg: &Config,
+    state: &Path,
+    now: DateTime<Utc>,
+    out: &mut RunReport,
+) -> io::Result<()> {
+    let vdir = &cfg.vdir;
+    let lock = VdirLock::exclusive(state)?;
     let journal = Journal::open(state)?;
     let report = recover_locked(vdir, &journal)?;
     let mut ids = Vec::new();
     if report.stuck.is_empty() {
-        return Ok(ids);
+        // Nothing stuck: apply what was queued while no sync held the lock.
+        out.drained
+            .extend(drain_into(cfg, &lock, now, &mut out.warnings));
+        return Ok(());
     }
     let conflicts = ConflictStore::open(state)?;
     for (id, _reason) in &report.stuck {
@@ -651,7 +676,25 @@ fn recover_and_park(vdir: &Path, state: &Path, now: DateTime<Utc>) -> io::Result
         }
         journal.set_stage(id, Stage::Abandoned)?;
     }
-    Ok(ids)
+    out.new_conflicts.extend(ids);
+    Ok(())
+}
+
+/// Drains the write queue under `held`. An error (a stuck journal, an unreadable queue) is a
+/// warning, never a failed run; the items stay queued.
+fn drain_into(
+    cfg: &Config,
+    held: &VdirLock,
+    now: DateTime<Utc>,
+    warnings: &mut Vec<String>,
+) -> Vec<Drained> {
+    match drain_with_lock(cfg, held, now) {
+        Ok(d) => d,
+        Err(e) => {
+            warnings.push(format!("queued edits were not applied: {e}"));
+            Vec::new()
+        }
+    }
 }
 
 /// `vdir/rel` when `rel` is a plain relative path inside the vdir.

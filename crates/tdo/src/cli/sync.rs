@@ -6,6 +6,8 @@ use std::process::{Command, Stdio};
 
 use chrono::{DateTime, Utc};
 use twydo_core::config::Config;
+use twydo_core::store::DrainOutcome;
+use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::sync::batch::{self, Due, Trigger};
 use twydo_core::sync::run::{RunOptions, RunReport, run};
 use twydo_core::sync::status::CollState;
@@ -60,6 +62,17 @@ pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete:
     if report.skipped.is_some() {
         return 0;
     }
+    if report
+        .drained
+        .iter()
+        .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))
+        && let Some(trigger) = batch::after_write(&cfg, Utc::now())
+    {
+        spawn(&cfg, vdir, trigger);
+    }
+    if !background {
+        print_refusals(&cfg);
+    }
     let names = list_names(&cfg, &report);
     let problems = problems(&report, &names);
     for p in &problems {
@@ -89,6 +102,21 @@ pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete:
         0
     } else {
         1
+    }
+}
+
+/// Tells the user about queued edits that were refused and not yet shown, once.
+fn print_refusals(cfg: &Config) {
+    let Ok(Some(state)) = twydo_core::store::existing_vdir_state(&cfg.state_dir(), &cfg.vdir)
+    else {
+        return;
+    };
+    let Some(queue) = Queue::existing(&state) else {
+        return;
+    };
+    for r in queue.unshown().unwrap_or_default() {
+        eprintln!("tdo: {}", refusal_message(&r));
+        let _ = queue.mark_shown(&r.item.id);
     }
 }
 

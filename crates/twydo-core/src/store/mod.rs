@@ -208,13 +208,13 @@ pub enum Step {
 }
 
 /// A queued item a drain dealt with.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Drained {
     pub item: Item,
     pub outcome: DrainOutcome,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DrainOutcome {
     /// Committed; the journal entry id.
     Applied(String),
@@ -695,7 +695,8 @@ impl Store {
                 }
                 Err(e) => {
                     let reason = e.to_string();
-                    queue.refuse(&item, &reason, now)?;
+                    let stale = matches!(e, WriteError::Stale(_));
+                    queue.refuse(&item, &reason, stale, now)?;
                     steps.push(DrainStep {
                         drained: Drained {
                             item,

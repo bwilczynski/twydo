@@ -185,7 +185,7 @@ fn refuse_moves_to_refused_and_is_unshown_until_marked() {
     let i = simple(t0());
     q.push(&i).unwrap();
     assert!(q.claim(&i.id).unwrap());
-    q.refuse(&i, "stale", t0()).unwrap();
+    q.refuse(&i, "stale", false, t0()).unwrap();
     assert!(q.list().unwrap().is_empty());
     let u = q.unshown().unwrap();
     assert_eq!(u.len(), 1);
@@ -204,10 +204,28 @@ fn prune_drops_old_refusals() {
     for (i, at) in [(&old, t0()), (&new, t0() + Duration::days(2))] {
         q.push(i).unwrap();
         q.claim(&i.id).unwrap();
-        q.refuse(i, "r", at).unwrap();
+        q.refuse(i, "r", false, at).unwrap();
     }
     assert_eq!(q.prune(t0() + Duration::days(1)).unwrap(), 1);
     let left = q.unshown().unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].item.id, new.id);
+}
+
+#[test]
+fn refusal_message_names_the_task_and_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let q = Queue::open(dir.path()).unwrap();
+    for (stale, want) in [
+        (true, "Not saved: \"a task\" changed on another device"),
+        (false, "Not saved: \"a task\": nope"),
+    ] {
+        let i = simple(t0());
+        q.push(&i).unwrap();
+        q.claim(&i.id).unwrap();
+        q.refuse(&i, "nope", stale, t0()).unwrap();
+        let r = q.unshown().unwrap().pop().unwrap();
+        assert_eq!(twydo_core::store::queue::refusal_message(&r), want);
+        q.mark_shown(&i.id).unwrap();
+    }
 }

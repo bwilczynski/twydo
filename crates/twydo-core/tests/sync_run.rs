@@ -1,17 +1,23 @@
 //! The sync runner against fake vdirsyncer commands (small `sh` scripts).
 #![cfg(unix)]
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeZone, Utc};
+use twydo_core::config::WriteMode;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::conflicts::{ConflictKind, ConflictStore, Side};
+use twydo_core::edit::{Change, Op};
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
+use twydo_core::store::queue::Queue;
+use twydo_core::store::{DrainOutcome, Store, Submitted};
 use twydo_core::sync::ended;
 use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
@@ -21,6 +27,7 @@ use twydo_core::sync::running::{
     Running, StopResult, clear_stop, process_start, request_stop, running,
 };
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
+use twydo_core::views::Snapshot;
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 1, 10, 0, 0).unwrap()
@@ -1903,4 +1910,160 @@ fn discovery_marks_only_active_lists_missing_from_remote_storage() {
             .contains("discovery failed")
     );
     assert!(state.join("sync/rediscover").exists());
+}
+
+const QA: &str = "0a04f22aeb294b719633c978fe1975e5";
+
+/// Copies the synthetic plan 4 tasks into `c1` and lets the drain's gate pass (test mode).
+fn seed_tasks(fx: &mut Fx) {
+    let src =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1/plan4-list1/02-edit");
+    for e in fs::read_dir(src).unwrap() {
+        let p = e.unwrap().path();
+        if p.extension().is_some_and(|x| x == "ics") {
+            fs::copy(&p, fx.cfg.vdir.join("c1").join(p.file_name().unwrap())).unwrap();
+        }
+    }
+    fx.cfg.timezone = Some("America/New_York".to_string());
+    fx.cfg.writes.mode = WriteMode::Test;
+}
+
+fn qa_path(fx: &Fx) -> PathBuf {
+    fx.cfg.vdir.join("c1").join(format!("{QA}.ics"))
+}
+
+/// Queues a title edit of `QA` the way a writer does while a sync holds the lock; returns
+/// the queue item's file name.
+fn queue_rename(fx: &Fx) -> String {
+    let matrix = common::matrix(
+        &["one-time", "monthly", "date-only", "timed", "start-date"],
+        "unverified",
+        &[],
+    );
+    let (mut store, _) = Store::open_with(&fx.cfg, matrix).unwrap();
+    let snap = Snapshot::new(
+        twydo_core::vdir::load(&fx.cfg.vdir).unwrap(),
+        fx.cfg.clone(),
+    );
+    let op = Op::Edit {
+        uid: QA.into(),
+        changes: vec![Change::Summary("renamed".into())],
+    };
+    let held = VdirLock::exclusive(&fx.state()).unwrap();
+    let got = store
+        .submit(
+            &snap,
+            &op,
+            "rename",
+            "op",
+            now() - chrono::Duration::minutes(5),
+        )
+        .unwrap();
+    drop(held);
+    let Submitted::Queued(item) = got else {
+        panic!("should queue")
+    };
+    format!("{}.json", item.id)
+}
+
+#[test]
+fn runner_drains_before_syncing() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    let seen = fx.path("seen.ics");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "cp '{}' '{}'\n{}\nexit 0",
+            qa_path(&fx).display(),
+            seen.display(),
+            cat_fixture("clean.txt")
+        ),
+    );
+    queue_rename(&fx);
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert!(
+        fs::read_to_string(&seen)
+            .unwrap()
+            .contains("SUMMARY:renamed")
+    );
+    let [d] = r.drained.as_slice() else {
+        panic!("{:?}", r.drained)
+    };
+    let DrainOutcome::Applied(id) = &d.outcome else {
+        panic!("{d:?}")
+    };
+    assert_eq!(r.confirmed, vec![id.clone()]);
+    assert!(synced(&fx, id));
+    assert!(Queue::open(&fx.state()).unwrap().is_empty().unwrap());
+}
+
+#[test]
+fn runner_drains_and_reruns_to_send() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    let file = queue_rename(&fx);
+    // Stage the item outside the queue; the fake's first call puts it back, as a writer that
+    // found the lock busy would while vdirsyncer runs.
+    let queue_dir = fx.state().join("queue");
+    let staged = fx.path("staged.json");
+    fs::rename(queue_dir.join(&file), &staged).unwrap();
+    let calls = fx.path("calls");
+    let seen = fx.path("seen.ics");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!(
+            "echo call >> '{calls}'\nif [ -e '{staged}' ]; then cp '{staged}' '{q}/{file}'; rm '{staged}'; \
+             else cp '{qa}' '{seen}'; fi\n{clean}\nexit 0",
+            calls = calls.display(),
+            staged = staged.display(),
+            q = queue_dir.display(),
+            qa = qa_path(&fx).display(),
+            seen = seen.display(),
+            clean = cat_fixture("clean.txt"),
+        ),
+    );
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
+    assert!(
+        fs::read_to_string(&seen)
+            .unwrap()
+            .contains("SUMMARY:renamed")
+    );
+    let [d] = r.drained.as_slice() else {
+        panic!("{:?}", r.drained)
+    };
+    let DrainOutcome::Applied(id) = &d.outcome else {
+        panic!("{d:?}")
+    };
+    assert!(r.confirmed.contains(id), "{:?}", r.confirmed);
+    assert!(synced(&fx, id));
+}
+
+#[test]
+fn drain_refusal_is_a_warning_not_a_failure() {
+    let mut fx = Fx::new(&format!("{}\nexit 0", cat_fixture("clean.txt")));
+    seed_tasks(&mut fx);
+    queue_rename(&fx);
+    // The file changes after the edit was queued: the drain refuses it.
+    let path = qa_path(&fx);
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replacen("SUMMARY:", "SUMMARY:other ", 1)).unwrap();
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert!(r.skipped.is_none());
+    assert!(r.transient.is_none(), "{:?}", r.transient);
+    let [d] = r.drained.as_slice() else {
+        panic!("{:?}", r.drained)
+    };
+    assert!(matches!(d.outcome, DrainOutcome::Refused(_)), "{d:?}");
+    let q = Queue::open(&fx.state()).unwrap();
+    let [refusal] = q
+        .unshown()
+        .unwrap()
+        .try_into()
+        .unwrap_or_else(|v: Vec<_>| panic!("{v:?}"));
+    assert!(refusal.stale);
+    assert!(fs::read_to_string(&path).unwrap().contains("SUMMARY:other"));
 }
