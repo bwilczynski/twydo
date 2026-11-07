@@ -107,7 +107,13 @@ actions or individual parse errors. Exit 2 means a configuration, invocation or 
 failure. An explicit `--matrix` that cannot be loaded is an error; without it, the matrix
 built into the binary is used.
 
-For the existing per-task diagnostic, use `tdo op check <uid>`.
+For one task, `tdo op check <uid>` uses the same probes and reports `allowed`,
+`refused` with a reason, `inapplicable`, or `needs input`. It does not treat a title
+edit as permission for arbitrary fields, or a new plain task as proof for creating
+a matching family. Both commands include queued edits in their task view and use
+`[writes] mode`; neither starts a sync or drains pending writes. Existing startup
+journal recovery still applies. This increment improves reporting; it does not
+change which writes are admitted.
 
 `[writes] mode = "test"` relaxes the check: it drops the `twydo_to_iphone` and `iphone_to_twydo`
 columns of the operation rows and the checklist item-dates edge case (both apply only in verified

@@ -170,13 +170,32 @@ fn op_check_lists_every_kind() {
     let o = env.op(&["check", TASK_E]);
     assert!(o.status.success(), "{}", err(&o));
     let text = out(&o);
-    let kinds: Vec<&str> = text.lines().map(|l| l.split(':').next().unwrap()).collect();
-    assert_eq!(
-        kinds,
-        ["create", "edit", "complete", "reopen", "move", "delete"],
+    for action in [
+        "edit title",
+        "edit notes",
+        "complete",
+        "reopen",
+        "delete",
+        "create",
+        "edit dates",
+        "edit repeat",
+        "convert",
+        "move",
+        "reorder",
+        "insert",
+    ] {
+        assert!(
+            text.lines().any(|l| l.starts_with(&format!("{action}: "))),
+            "{text}"
+        );
+    }
+    assert!(text.contains("complete: allowed"), "{text}");
+    assert!(text.contains("reopen: inapplicable"), "{text}");
+    assert!(
+        text.contains("move: needs input: destination list"),
         "{text}"
     );
-    assert!(text.contains("complete: ok"), "{text}");
+    assert!(!text.contains("edit: ok"), "{text}");
 }
 
 #[test]
@@ -736,6 +755,21 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     assert_eq!(o.status.code(), Some(1));
     assert!(err(&o).contains("captured"), "{}", err(&o));
     assert_eq!(fs::read(target).unwrap(), before);
+    let single = env.tdo(&["op", "check", uid]);
+    assert_eq!(single.status.code(), Some(0), "{}", err(&single));
+    assert!(
+        out(&single).contains("edit notes: refused:"),
+        "{}",
+        out(&single)
+    );
+    let aggregate = env.tdo(&["check"]);
+    assert_eq!(aggregate.status.code(), Some(0), "{}", err(&aggregate));
+    let reason = out(&single)
+        .lines()
+        .find_map(|line| line.strip_prefix("edit notes: refused: "))
+        .unwrap()
+        .to_owned();
+    assert!(out(&aggregate).contains(&reason), "{}", out(&aggregate));
 }
 
 /// What a running sync does to a writer: holds the vdir lock shared, so a save cannot get the
@@ -840,4 +874,158 @@ fn op_prints_unshown_refusals_once() {
     assert!(err(&first).contains("Not saved"), "{}", err(&first));
     let second = env.op(&["journal"]);
     assert!(!err(&second).contains("Not saved"), "{}", err(&second));
+}
+
+#[test]
+fn both_reports_use_the_configured_mode_and_real_gate() {
+    use chrono::Utc;
+    use twydo_core::{
+        compat::Matrix,
+        config::Config,
+        edit::{Change, Op},
+        gate,
+        views::Snapshot,
+    };
+    for mode in ["verified", "test"] {
+        let env = Env::new(mode);
+        let cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
+        let matrix = Matrix::load(&env.dir.path().join("matrix.toml")).unwrap();
+        let snap = Snapshot::new(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg.clone());
+        let task = &snap.tasks[snap.find(TASK_E).unwrap()];
+        let single = env.op(&["check", TASK_E]);
+        let m = env.dir.path().join("matrix.toml");
+        let aggregate = env.tdo(&["check", "--matrix", m.to_str().unwrap()]);
+        assert_eq!(single.status.code(), Some(0));
+        assert_eq!(aggregate.status.code(), Some(0));
+        for (action, op) in [
+            (
+                "edit title",
+                Op::Edit {
+                    uid: TASK_E.into(),
+                    changes: vec![Change::Summary(task.summary.clone())],
+                },
+            ),
+            (
+                "edit notes",
+                Op::Edit {
+                    uid: TASK_E.into(),
+                    changes: vec![Change::Description(task.description.clone())],
+                },
+            ),
+            ("delete", Op::Delete { uid: TASK_E.into() }),
+        ] {
+            match gate::check(
+                &snap,
+                &matrix,
+                cfg.writes.mode,
+                &op,
+                Utc::now().with_timezone(&cfg.tz()).date_naive(),
+            ) {
+                Ok(()) => assert!(
+                    out(&single).contains(&format!("{action}: allowed")),
+                    "{}",
+                    out(&single)
+                ),
+                Err(b) => {
+                    assert!(
+                        out(&single).contains(&format!("{action}: refused: {b}")),
+                        "{}",
+                        out(&single)
+                    );
+                    assert!(out(&aggregate).contains(&b.0), "{}", out(&aggregate));
+                }
+            }
+        }
+        assert!(out(&aggregate).contains(&format!("mode={mode}")));
+        assert_eq!(
+            env.op(&["check", "synthetic-missing-uid"]).status.code(),
+            Some(1)
+        );
+    }
+}
+
+#[test]
+fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
+    use twydo_core::{
+        compat::Matrix,
+        config::Config,
+        edit::{NewTask, Op},
+        store::{Store, Submitted, queue},
+        views::Snapshot,
+    };
+    let env = Env::new("test");
+    let mut cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
+    cfg.state_dir = Some(env.state().join("twydo"));
+    let matrix = Matrix::load(&env.dir.path().join("matrix.toml")).unwrap();
+    let (mut store, _) = Store::open_with(&cfg, matrix).unwrap();
+    let lock = sync_holds_vdir(&env);
+    let report = twydo_core::vdir::load(&env.vdir()).unwrap();
+    let count = report.tasks.len();
+    let snap = Snapshot::new(report, cfg.clone());
+    let op = Op::Create(NewTask::plain("list1", "Synthetic queued report target"));
+    let result = store
+        .submit(
+            &snap,
+            &op,
+            "Synthetic queued creation",
+            "test",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    let Submitted::Queued(item) = result else {
+        panic!("creation was not queued")
+    };
+    let queued = queue::view(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg);
+    let uid = queued
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Synthetic queued report target")
+        .unwrap()
+        .uid
+        .clone();
+    let queue_path = env
+        .vdir_state()
+        .join("queue")
+        .join(format!("{}.json", item.id));
+    let queue_bytes = fs::read(&queue_path).unwrap();
+    drop(lock);
+    // Configure a marker only after enqueueing, so the preparation is not a sync trigger.
+    let marker = with_fake_sync(&env);
+    let files: Vec<_> = fs::read_dir(env.vdir().join("list1"))
+        .unwrap()
+        .map(|e| {
+            let p = e.unwrap().path();
+            let b = fs::read(&p).unwrap();
+            (p, b)
+        })
+        .collect();
+    let single = env.op(&["check", &uid]);
+    assert_eq!(single.status.code(), Some(0), "{}", err(&single));
+    assert!(
+        out(&single).contains("edit title: allowed"),
+        "{}",
+        out(&single)
+    );
+    let m = env.dir.path().join("matrix.toml");
+    let aggregate = env.tdo(&["check", "--matrix", m.to_str().unwrap(), "--verbose"]);
+    assert_eq!(aggregate.status.code(), Some(0), "{}", err(&aggregate));
+    assert!(
+        out(&aggregate).contains(&format!("tasks: {}", count + 1)),
+        "{}",
+        out(&aggregate)
+    );
+    assert!(
+        out(&aggregate).contains("Synthetic queued report target"),
+        "{}",
+        out(&aggregate)
+    );
+    assert_eq!(fs::read(queue_path).unwrap(), queue_bytes);
+    assert_eq!(
+        twydo_core::vdir::load(&env.vdir()).unwrap().tasks.len(),
+        count
+    );
+    for (p, before) in files {
+        assert_eq!(fs::read(p).unwrap(), before);
+    }
+    assert!(marker_stays_absent(&marker), "reporting started sync");
 }

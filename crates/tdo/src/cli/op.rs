@@ -13,18 +13,17 @@ use clap::{Args, Subcommand, ValueEnum};
 use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
-use twydo_core::gate;
 use twydo_core::model::TaskKind;
 use twydo_core::repeatinput::{self, RepeatSpec};
-use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::Journal;
-use twydo_core::store::queue::{self, Queue, Refusal, refusal_message};
+use twydo_core::store::queue::{Queue, Refusal, refusal_message};
 use twydo_core::store::{Store, Submitted, WriteError, existing_vdir_state};
 use twydo_core::sync::batch::after_write;
 use twydo_core::views::Snapshot;
 
+use super::permissions::{probes, task_lines};
 use super::sync::{print_refusals, spawn};
-use super::{CliError, EXIT_ERROR, resolve_config};
+use super::{CliError, EXIT_ERROR, permission_snapshot, resolve_config};
 use crate::write::op_title;
 
 /// A task type, as `--kind` spells it.
@@ -119,7 +118,7 @@ pub enum OpCommand {
         #[arg(long, help = WAIT_HELP)]
         wait: bool,
     },
-    /// Show whether each operation kind is allowed for a task
+    /// Show concrete permissions and actions needing proposed input for a task
     Check { uid: String },
     /// List journal entries
     Journal,
@@ -291,25 +290,6 @@ fn edit_changes(
     Ok(changes)
 }
 
-/// Load the vdir (with queued writes laid over it) under the shared lock of `state` (the
-/// store's per-vdir state dir), so the gate and `op check` never see a partly applied
-/// operation. The lock is released before this returns: the store takes the exclusive lock on
-/// its own descriptor, and two flocks in one process block each other (R2).
-fn snapshot(cfg: &Config, state: &Path) -> Result<Snapshot, Failure> {
-    let lock = VdirLock::reader(state).map_err(|source| CliError::Lock {
-        path: state.to_path_buf(),
-        source,
-    })?;
-    let report = twydo_core::vdir::load(&cfg.vdir).map_err(|source| CliError::Vdir {
-        path: cfg.vdir.clone(),
-        source,
-    });
-    drop(lock);
-    Ok(queue::view(report?, cfg.clone()))
-}
-
-const CHECK_KINDS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
-
 fn check_lines(
     snap: &Snapshot,
     matrix: &Matrix,
@@ -320,43 +300,7 @@ fn check_lines(
     let Some(idx) = snap.find(uid) else {
         return Err(Failure::Blocked(format!("no task with UID {uid}")));
     };
-    let task = &snap.tasks[idx];
-    let today = now.with_timezone(&snap.tz()).date_naive();
-    let other = snap.collections.iter().find(|c| c.id != task.collection);
-    let mut out = Vec::new();
-    for kind in CHECK_KINDS {
-        let op = match kind {
-            "create" => Op::Create(NewTask::plain(&task.collection, "x")),
-            "edit" => Op::Edit {
-                uid: uid.to_string(),
-                changes: vec![Change::Summary(task.summary.clone())],
-            },
-            "complete" => Op::Complete {
-                uid: uid.to_string(),
-            },
-            "reopen" => Op::Reopen {
-                uid: uid.to_string(),
-            },
-            "move" => match other {
-                Some(c) => Op::Move {
-                    uid: uid.to_string(),
-                    to: c.id.clone(),
-                },
-                None => {
-                    out.push("move: no other list".to_string());
-                    continue;
-                }
-            },
-            _ => Op::Delete {
-                uid: uid.to_string(),
-            },
-        };
-        out.push(match gate::check(snap, matrix, mode, &op, today) {
-            Ok(()) => format!("{kind}: ok"),
-            Err(b) => format!("{kind}: {b}"),
-        });
-    }
-    Ok(out)
+    Ok(task_lines(&probes(snap, matrix, mode, idx, now)))
 }
 
 /// Run an `op` subcommand; returns the process exit code.
@@ -433,7 +377,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         OpCommand::Edit(a) => {
             wait = a.wait;
             let (has_due, declared) = if a.repeat.is_some() || a.kind.is_some() {
-                let snap = snapshot(&cfg, store.state_dir())?;
+                let snap = permission_snapshot(&cfg)?;
                 let t = snap.find(&a.uid).map(|i| &snap.tasks[i]);
                 (
                     t.is_some_and(|t| t.due.is_some()) && !a.clear_due,
@@ -450,7 +394,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         OpCommand::Complete { uid, all, wait: w } => {
             wait = w;
             if !all {
-                let snap = snapshot(&cfg, store.state_dir())?;
+                let snap = permission_snapshot(&cfg)?;
                 if let Some(i) = snap.find(&uid) {
                     let open = snap.open_items(i);
                     if open > 0 {
@@ -528,14 +472,14 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             return Ok(());
         }
         OpCommand::Check { uid } => {
-            let snap = snapshot(&cfg, store.state_dir())?;
+            let snap = permission_snapshot(&cfg)?;
             for line in check_lines(&snap, &matrix, cfg.writes.mode, &uid, now)? {
                 println!("{line}");
             }
             return Ok(());
         }
     };
-    let snap = snapshot(&cfg, store.state_dir())?;
+    let snap = permission_snapshot(&cfg)?;
     let label = op_title(&snap, &op);
     let submitted = store.submit(&snap, &op, &label, "op", now)?;
     finish(&mut store, &cfg, vdir, submitted, wait)

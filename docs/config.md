@@ -30,6 +30,12 @@ stderr.
 `tdo op` (add, edit, complete, reopen, delete, move, undo, check, journal, recover, abandon) is
 the scriptable write interface. It prints the operation id and exits 0; exit 1 means the
 operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, config or IO error.
+`tdo op check <uid>` is a report: it exits 0 after listing concrete permissions even
+when actions are refused, and exits 1 if the UID is missing. `tdo check` summarizes
+permissions for all loaded tasks. It exits 0 when the report is produced, including
+refusals or individual parse errors, and 2 on configuration or vdir-read failure.
+Both reports honor `[writes] mode`, include queued edits, and distinguish operations
+that need proposed field values or a destination. See [compatibility.md](compatibility.md).
 While a sync holds the vdir the write is queued instead: it prints
 `queued (a sync is running): <queue id>` and exits 0 at once. `--wait` (on every write
 subcommand, `undo` included) waits for the outcome: the journal entry id and exit 0 once it is

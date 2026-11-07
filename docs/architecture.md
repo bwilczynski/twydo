@@ -62,6 +62,20 @@ The repository is a Cargo workspace with two crates.
 **`tdo`**, the binary: the CLI subcommands (`cli/`), the TUI's state and keys (`app.rs`), the
 edit card's state (`form.rs`), the terminal loop with live reload (`term.rs`), and rendering (`ui/`).
 
+## Permission reports
+
+`tdo check` separates data health, repeat-class evidence and effective operation
+admission. It and `tdo op check <uid>` share concrete title/notes/lifecycle/delete
+probes that call `gate::check` in the configured write mode. Both read under the
+existing reader lock and apply `queue::view` after loading, matching the CLI write
+path's view of pending changes. Startup journal recovery remains in place; reporting
+does not drain the queue or schedule sync. Export and TUI loading are unchanged.
+
+These are gate probes, not store plans: actual values, destinations, conflicts,
+recovery status and stale dependencies can still affect a subsequent save.
+Parameterized actions are explicitly marked as needing input. Rule-level pass
+verdicts never imply that every operation is allowed.
+
 ## The write path
 
 Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same way:
