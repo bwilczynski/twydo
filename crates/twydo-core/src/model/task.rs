@@ -76,6 +76,18 @@ pub fn tasks_from_calendar(cal: &Calendar, collection: &str, path: &Path) -> Vec
     let mut task = read_todo(master, collection, path);
     if todos.len() > 1 || master.prop("RECURRENCE-ID").is_some() {
         task.blocked = Some("recurrence overrides are not supported".to_string());
+    } else if master.props_named("UID").nth(1).is_some() {
+        task.blocked = Some("multiple UID properties are not supported".to_string());
+    } else if master
+        .props_named("RELATED-TO")
+        .filter(|p| {
+            p.param("RELTYPE")
+                .is_none_or(|r| r.eq_ignore_ascii_case("PARENT"))
+        })
+        .nth(1)
+        .is_some()
+    {
+        task.blocked = Some("multiple parent links are not supported".to_string());
     }
     vec![task]
 }
