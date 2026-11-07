@@ -1,0 +1,7 @@
+scenario = "issue41-item-reorder"
+step = "070-phone-insertion-display"
+device = "iphone"
+action = "User synced and confirmed MIKE/Before/Zulu/Alpha/After display under both parents with Manually selected. All 12 server resources byte-unchanged from 060. Requested only four Before/After uppercase renames and sync for preservation; return pending."
+base_step = "060-twydo-inserted"
+unchanged_files = ["2a01813b8ed34b9ebe0a83fa0bcb339b.ics", "3873be9bf6d64de590d591cc787044bb.ics", "25606a40735741cba229db38d41f40c7.ics", "42d75a3f97c0457dbb65648803cddca9.ics", "7e8de07f2ff845a19145dc0875aceb83.ics", "b0268ab4689f4206a905b68e1600ff65.ics", "d528606ffbed438db6ecf175c0ccb7cb.ics", "72e7cd12fd744219aef31707cc158978.ics", "03fff855c20b4ddd960f0a594036aae7.ics", "7a038ef0c3114b2b8e0757be9b1d3d34.ics", "7e93d19fbaa04c64b4e2d106cdffcc8d.ics", "ff2e240d9d8c40e48de7a913a729eb24.ics"]
+captured_at = "2026-11-06T22:40:38.050846+00:00"
