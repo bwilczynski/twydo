@@ -10,14 +10,16 @@ use twydo_core::model::Status;
 use twydo_core::views::Snapshot;
 
 use super::permissions::{Availability, probes};
-use super::{CliError, load_snapshot, task_rule_class};
+use super::{CliError, permission_snapshot, recover_at_startup, resolve_config, task_rule_class};
 
 pub fn run(vdir: Option<&Path>, matrix_path: Option<&Path>, verbose: bool) -> Result<(), CliError> {
     let matrix = match matrix_path {
         None => Matrix::embedded().clone(),
         Some(p) => Matrix::load(p)?,
     };
-    let snap = load_snapshot(vdir)?;
+    let cfg = resolve_config(vdir)?;
+    recover_at_startup(&cfg);
+    let snap = permission_snapshot(&cfg)?;
     println!("Data health");
     println!("tasks: {}", snap.tasks.len());
     println!("parse errors: {}", snap.errors.len());

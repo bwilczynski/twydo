@@ -67,13 +67,13 @@
 
 **Interfaces:** Add `pub(super) fn permission_snapshot(cfg: &Config) -> Result<Snapshot, CliError>` in `cli/mod.rs`: load the vdir through the existing reader lock, release it as existing op snapshot code does, then apply `queue::view(report, cfg.clone())`. Keep startup recovery behavior in existing callers. Both reports use this helper; export/TUI loaders retain their current behavior.
 
-- [ ] Update `op_check_lists_every_kind` to assert the concrete Task 1 action labels and distinct lifecycle/input states. Add verified/test mode comparisons against direct gate decisions with a custom baseline-only matrix. Missing UID keeps exit 1.
-- [ ] Add a fixture-backed comparison: per-task title/notes/delete refusals match the corresponding aggregate groups from `tdo check`, including recurring-checklist or from-completion text restrictions. Do not change those restrictions in this increment.
-- [ ] Add pending-queue regression with temporary vdir/state/config: enqueue a creation or deletion while the vdir is locked, release it without draining, then verify both commands see the same overlay. Assert queue/task bytes remain unchanged by reporting and no sync process is launched. Reuse existing queue helpers, not phone data.
-- [ ] Preserve the existing reader-lock test and no-sync check regression. Isolate both XDG_CONFIG_HOME and XDG_STATE_HOME in new command fixtures.
-- [ ] Run `cargo test -p tdo --test cli_op`; verify new output/overlay tests fail before integration.
-- [ ] Replace `check_lines` with Task 1 helpers; use `permission_snapshot` in both check paths. Preserve op command Store startup/recovery and all non-reporting operation behavior. Map helper errors through existing Failure/CliError conversions.
-- [ ] Run `cargo test -p tdo --test cli --test cli_op`; require all pass. Update architecture/config docs for the shared permission report and overlay.
+- [x] Update `op_check_lists_every_kind` to assert the concrete Task 1 action labels and distinct lifecycle/input states. Add verified/test mode comparisons against direct gate decisions with a custom baseline-only matrix. Missing UID keeps exit 1.
+- [x] Add a fixture-backed comparison: per-task title/notes/delete refusals match the corresponding aggregate groups from `tdo check`, including recurring-checklist or from-completion text restrictions. Do not change those restrictions in this increment.
+- [x] Add pending-queue regression with temporary vdir/state/config: enqueue a creation or deletion while the vdir is locked, release it without draining, then verify both commands see the same overlay. Assert queue/task bytes remain unchanged by reporting and no sync process is launched. Reuse existing queue helpers, not phone data.
+- [x] Preserve the existing reader-lock test and no-sync check regression. Isolate both XDG_CONFIG_HOME and XDG_STATE_HOME in new command fixtures.
+- [x] Run `cargo test -p tdo --test cli_op`; verify new output/overlay tests fail before integration.
+- [x] Replace `check_lines` with Task 1 helpers; use `permission_snapshot` in both check paths. Preserve op command Store startup/recovery and all non-reporting operation behavior. Map helper errors through existing Failure/CliError conversions.
+- [x] Run `cargo test -p tdo --test cli --test cli_op`; require all pass. Update architecture/config docs for the shared permission report and overlay.
 
 ### Task 4: Record policy and validate the increment
 

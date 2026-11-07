@@ -92,6 +92,13 @@ pub fn load_vdir(config: &Config) -> Result<twydo_core::vdir::LoadReport, CliErr
     })
 }
 
+/// Load the writer's visible tasks, including pending queued changes. Release the reader
+/// lock before projecting the queue, as the existing CLI write path does.
+pub(super) fn permission_snapshot(config: &Config) -> Result<Snapshot, CliError> {
+    let report = load_vdir(config)?;
+    Ok(twydo_core::store::queue::view(report, config.clone()))
+}
+
 /// The shared lock of `config`'s vdir (see [`VdirLock::reader`]), from its per-vdir state
 /// dir; `None` when that dir does not exist.
 pub fn reader_lock(config: &Config) -> Result<Option<VdirLock>, CliError> {
