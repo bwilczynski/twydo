@@ -101,6 +101,8 @@ permission snapshot: later conflicts, changed dependencies and other store preco
 can still prevent a write. An empty input explicitly reports no tasks to assess. If files
 cannot be parsed, permission counts cover only loaded tasks.
 
+Queued refusal notifications can contain task titles, so `tdo op check` leaves them
+unshown for the next ordinary operation; use `tdo op journal` to see them.
 Task titles and parse-error paths are omitted unless `--verbose` is supplied; task notes
 are never printed by this report. Exit 0 means a report was produced, even with refused
 actions or individual parse errors. Exit 2 means a configuration, invocation or vdir-read

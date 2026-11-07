@@ -870,6 +870,21 @@ fn op_prints_unshown_refusals_once() {
     let o = env.op(&["edit", TASK_A, "--title", "Renamed"]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(!err(&o).contains("Not saved"), "{}", err(&o));
+    let queue = twydo_core::store::queue::Queue::existing(&env.vdir_state()).unwrap();
+    let pending = queue.unshown().unwrap();
+    assert_eq!(pending.len(), 1);
+    let before = serde_json::to_value(&pending).unwrap();
+    let private_label = &pending[0].item.label;
+    for report in [env.op(&["check", TASK_E]), env.tdo(&["check"])] {
+        assert_eq!(report.status.code(), Some(0), "{}", err(&report));
+        assert!(!err(&report).contains("Not saved"), "{}", err(&report));
+        assert!(!err(&report).contains(private_label), "{}", err(&report));
+        assert!(!out(&report).contains(private_label), "{}", out(&report));
+        assert_eq!(
+            serde_json::to_value(queue.unshown().unwrap()).unwrap(),
+            before
+        );
+    }
     let first = env.op(&["journal"]);
     assert!(err(&first).contains("Not saved"), "{}", err(&first));
     let second = env.op(&["journal"]);

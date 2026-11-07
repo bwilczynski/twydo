@@ -77,16 +77,32 @@
 
 ### Task 4: Record policy and validate the increment
 
-- [ ] Amend main spec §5–6 to describe evidence for an operation's actual write contract, using representative interoperability plus preservation reasoning and distinguishing it from direct phone coverage. Keep targeted recurrence execution requirements. Link the approved design as authority; update §9 so no global check result implies all operations are enabled.
-- [ ] Record follow-ups: text-edit audit first, then deletion/moves, using specific blocker/write set/reusable evidence/missing proof/boundary. Exact-operation dry run is a follow-up. Do not create the next implementation plan or widen gates in this increment.
-- [ ] Run `cargo test --workspace`, `python3 -m unittest discover -s tools/tests -t .`, `python3 tools/check_links.py`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`, and `git diff --check`. A fresh worktree may need bootstrap/build artifacts; reuse a suitable disk-backed target directory if necessary.
-- [ ] Review the whole change against the five Review Focus entries; fix any material findings and rerun affected checks. Confirm no core gate/store writer or compatibility-verdict changes slipped in. Record results here.
-- [ ] Offer the required final diff review unless a live review is running. Hold commits while the user reviews. Suggested later commit: `fix(cli): report effective operation permissions` with explicit paths and no attribution.
+- [x] Amend main spec §5–6 to describe evidence for an operation's actual write contract, using representative interoperability plus preservation reasoning and distinguishing it from direct phone coverage. Keep targeted recurrence execution requirements. Link the approved design as authority; update §9 so no global check result implies all operations are enabled.
+- [x] Record follow-ups: text-edit audit first, then deletion/moves, using specific blocker/write set/reusable evidence/missing proof/boundary. Exact-operation dry run is a follow-up. Do not create the next implementation plan or widen gates in this increment.
+- [x] Run `cargo test --workspace`, `python3 -m unittest discover -s tools/tests -t .`, `python3 tools/check_links.py`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`, and `git diff --check`. A fresh worktree may need bootstrap/build artifacts; reuse a suitable disk-backed target directory if necessary.
+- [x] Review the whole change against the five Review Focus entries; fix any material findings and rerun affected checks. Confirm no core gate/store writer or compatibility-verdict changes slipped in. Record results here.
+- [x] The user declined live review and requested focused commits throughout implementation; changes are committed without holding a working-tree diff open. No agent attribution.
 
 ## Checkpoint
 
-Tasks 1–3 are implemented and committed. Task 4 policy updates and final validation
-are in progress. No compatibility verdicts or core writer/gate behavior changed.
+Tasks 1–4 complete. Reporting and policy documentation are committed. No
+compatibility verdicts or core writer/gate behavior changed.
+
+Final validation: 1,052 Rust tests and 49 Python tests pass, along with clippy
+(warnings denied), formatting, documentation links and whitespace checks.
+Independent whole-branch review found no remaining critical, important or minor
+issues. Synthetic process probes also checked default stdout/stderr privacy,
+partial parse failures and lifecycle/duplicate-identity reporting.
+
+Review fixed a reproduced stderr privacy issue: `tdo op check` formerly printed
+queued-refusal notifications containing task labels and marked them shown. It now
+leaves those notifications pending for an ordinary operation or `tdo op journal`.
+The regression failed before the fix and passes afterward. No further device or
+server work was performed.
+
+Review boundaries: new writer permissions remain for subsequent increments;
+exact-operation planning and eventual write success are outside permission
+snapshots; this increment adds no new device-interoperability evidence.
 
 Next: audit title/notes restrictions on recurring checklists and from-completion
 tasks. For each blocker record the writer's actual field/resource changes,
