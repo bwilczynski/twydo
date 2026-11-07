@@ -60,7 +60,7 @@ app replacing 2Do for one user, plan by plan.
    Next on the roadmap: those follow-ups as needed, then the design's later features (indent and
    outdent, yank and paste, list management, Project View; these fold in most of Plan 5b),
    natural-language input on the new row (phase 3, reusing `twydo_core::dateinput` and the repeat
-   parser), manual order `J`/`K`, the write queue in `twydo-core` (edits during a sync are
+   parser), the write queue in `twydo-core` (edits during a sync are
    queued instead of refused; design
    [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
    issue #38; write-queue plan 1, batched sync with `tdo sync on|off`, merged (PR #50); plan 2
@@ -71,6 +71,19 @@ app replacing 2Do for one user, plan by plan.
    decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
    [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has
    no build date).
+
+## Issue 41 checkpoint
+
+Checklist/project item reordering (`J`/`K`) and saved `o`/`O` placement are implemented;
+see `docs/superpowers/plans/2026-11-06-issue41-item-reorder.md` and the session record in
+`docs/reference/phase0/issue41-item-reorder.md`. Ordering is a DisplayOrder-only operation
+for recurring and non-recurring families; it preserves dates, recurrence, alarms and
+completion state rather than requiring unrelated operation verdicts. Anchored creation
+also passes the existing Create gate. The phone must select **Manually** to display the
+saved ranks. Both bounded phone rounds passed; direct samples were plain families and
+recurring-family coverage uses exact preservation tests over existing captures. Do not
+repeat uploads/phone actions or delete the synthetic families. Additional device scope
+requires fresh approval.
 
 ## Ground rules
 

@@ -108,6 +108,10 @@ pub fn check(
     op: &Op,
     today: NaiveDate,
 ) -> Result<(), Blocked> {
+    if matches!(op, Op::Reorder { .. } | Op::CreateAt { .. }) {
+        return check_order(snap, m, mode, op, today);
+    }
+
     // Rule 0: a save is its edit, then its move, each checked against the loaded tasks.
     if let Op::Save { uid, changes, to } = op {
         if !changes.is_empty() || to.is_none() {
@@ -150,7 +154,7 @@ pub fn check(
             known_list(snap, &n.collection)?;
             None
         }
-        Op::Save { .. } => unreachable!("handled by rule 0"),
+        Op::Save { .. } | Op::Reorder { .. } | Op::CreateAt { .. } => unreachable!("handled above"),
         Op::Edit { uid, .. } | Op::Complete { uid } | Op::Reopen { uid } | Op::Delete { uid } => {
             Some(lookup(snap, uid)?)
         }
@@ -970,6 +974,8 @@ fn known_list(snap: &Snapshot, id: &str) -> Result<(), Blocked> {
 fn op_name(op: &Op) -> &'static str {
     match op {
         Op::Create(_) => "create",
+        Op::CreateAt { .. } => "insert",
+        Op::Reorder { .. } => "reorder",
         Op::Edit { .. } => "edit",
         Op::Complete { .. } => "complete",
         Op::Reopen { .. } => "reopen",
@@ -1529,4 +1535,79 @@ fn is_history_copy(t: &Task) -> bool {
         && json_meta(t)
             .and_then(|m| m.get_str("RUID").map(str::to_string))
             .is_some_and(|r| !r.is_empty() && r != t.uid)
+}
+
+/// Ordering originates in Twydo: 2Do has no phone reorder control. Its evidence is
+/// display of Twydo-written positions and preservation through an unrelated phone edit.
+fn check_order(
+    snap: &Snapshot,
+    m: &Matrix,
+    mode: WriteMode,
+    op: &Op,
+    today: NaiveDate,
+) -> Result<(), Blocked> {
+    let (anchor, name) = match op {
+        Op::Reorder { anchor, .. } => (anchor, "reorder"),
+        Op::CreateAt { anchor, .. } => (anchor, "insert"),
+        _ => unreachable!(),
+    };
+    let a = lookup(snap, anchor)?;
+    let p = snap.parent(a).ok_or_else(|| {
+        Blocked("ordering is available only for items within a checklist or project".into())
+    })?;
+    let head = &snap.tasks[p];
+    if head.parent.is_some() {
+        return blocked(NESTED);
+    }
+    let family = match declared_kind(head) {
+        TaskKind::Checklist => "checklist",
+        TaskKind::Project => "project",
+        TaskKind::Task => return blocked(PLAIN_PARENT),
+    };
+    match op {
+        Op::Reorder { uid, .. } => {
+            let i = lookup(snap, uid)?;
+            if i == a || snap.parent(i) != Some(p) {
+                return blocked("ordering needs two different items in the same parent");
+            }
+        }
+        Op::CreateAt { task, .. } => {
+            if task.parent.as_deref() != Some(snap.tasks[p].uid.as_str()) {
+                return blocked("insertion anchor must belong to the destination parent");
+            }
+            check(snap, m, mode, &Op::Create(task.clone()), today)?;
+        }
+        _ => unreachable!(),
+    }
+    for i in std::iter::once(p).chain(snap.children(p).iter().copied()) {
+        let t = &snap.tasks[lookup(snap, &snap.tasks[i].uid)?];
+        if !known_task_type(t) {
+            return blocked("this 2Do task type is not verified yet");
+        }
+        if t.collection != head.collection || json_meta(t).is_none() {
+            return blocked("item ordering needs same-list editable JSON metadata");
+        }
+        if i != p && (declared_kind(t) != TaskKind::Task || !snap.children(i).is_empty()) {
+            return blocked(NESTED);
+        }
+        // Only DisplayOrder and modification stamps change. Recurrence/date/status
+        // classifications belong to operations that edit or execute those fields,
+        // not to this metadata-only write. CreateAt already passed the Create gate.
+    }
+    order_row(m, mode, family, name)
+}
+
+fn order_row(m: &Matrix, mode: WriteMode, case: &str, name: &str) -> Result<(), Blocked> {
+    let row = m
+        .operation(case, name)
+        .ok_or_else(|| Blocked(format!("{name} for {case} items is not verified yet")))?;
+    if !matches!(row.iphone_baseline, Verdict::Pass | Verdict::Unsupported)
+        || (mode == WriteMode::Verified
+            && (row.twydo_to_iphone != Verdict::Pass || row.iphone_to_twydo != Verdict::Pass))
+    {
+        return blocked(format!(
+            "{name} for {case} items is not verified yet (phone display/preservation)"
+        ));
+    }
+    Ok(())
 }

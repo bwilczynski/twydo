@@ -48,8 +48,8 @@ impl Store {
             | Op::Reopen { uid }
             | Op::Move { uid, .. }
             | Op::Delete { uid } => uid,
-            Op::Edit { uid, .. } => uid,
-            Op::Create(task) => match &task.parent {
+            Op::Edit { uid, .. } | Op::Reorder { uid, .. } => uid,
+            Op::Create(task) | Op::CreateAt { task, .. } => match &task.parent {
                 Some(parent) => parent,
                 None => return Ok(None),
             },
@@ -73,7 +73,7 @@ impl Store {
             return Ok(None);
         };
         // Individual deletion also depends on the loaded parent and sibling set.
-        let idx = if matches!(op, Op::Delete { .. }) {
+        let idx = if matches!(op, Op::Delete { .. } | Op::Reorder { .. }) {
             snap.parent(idx).unwrap_or(idx)
         } else {
             idx

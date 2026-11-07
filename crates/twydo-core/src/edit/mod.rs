@@ -89,11 +89,28 @@ impl NewTask {
 }
 
 /// A write operation on the task store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Placement {
+    Before,
+    After,
+}
+
+/// A write operation on the task store.
 // `Create` carries a whole `RepeatSpec`; ops are built one at a time, never in bulk.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     Create(NewTask),
+    CreateAt {
+        task: NewTask,
+        anchor: String,
+        placement: Placement,
+    },
+    Reorder {
+        uid: String,
+        anchor: String,
+        placement: Placement,
+    },
     Edit {
         uid: String,
         changes: Vec<Change>,

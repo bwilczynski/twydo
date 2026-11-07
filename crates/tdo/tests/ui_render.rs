@@ -219,7 +219,7 @@ fn modes_help_and_messages_render() {
     a.show_help = true;
     let t = text(&render(&mut a, 120, 40));
     assert!(t.contains("Help"), "{t}");
-    assert!(t.contains("(after gate)"), "{t}");
+    assert!(t.contains("reorder nested items"), "{t}");
     assert!(t.contains("toggle done"), "{t}");
 }
 

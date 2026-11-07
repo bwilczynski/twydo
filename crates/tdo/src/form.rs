@@ -6,7 +6,7 @@ use chrono::{NaiveDate, Weekday};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use twydo_core::dateinput::{self, input_text};
-use twydo_core::edit::{Change, Due, NewTask, Op};
+use twydo_core::edit::{Change, Due, NewTask, Op, Placement};
 use twydo_core::model::repeat::parse_rrule;
 use twydo_core::model::{Task, TaskKind};
 use twydo_core::repeatinput::{self, EXAMPLES, RepeatSpec};
@@ -62,6 +62,8 @@ struct Values {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EditForm {
+    /// Anchored sibling placement, retained when the input row becomes a card.
+    pub insertion: Option<(String, Placement)>,
     /// The task being edited; `None` for a new task.
     pub uid: Option<String>,
     pub focus: Field,
@@ -162,6 +164,7 @@ impl EditForm {
             start: v.start.clone(),
             repeat: v.repeat.clone(),
             notes: v.notes.clone(),
+            insertion: None,
             item_of: None,
             error: None,
             parent,
@@ -380,7 +383,16 @@ impl EditForm {
     /// nothing would be written.
     pub fn save(&self, today: NaiveDate, work_days: &[Weekday]) -> Result<Op, String> {
         let Some(uid) = &self.uid else {
-            return self.create(today, work_days).map(Op::Create);
+            return self
+                .create(today, work_days)
+                .map(|task| match &self.insertion {
+                    Some((anchor, placement)) => Op::CreateAt {
+                        task,
+                        anchor: anchor.clone(),
+                        placement: *placement,
+                    },
+                    None => Op::Create(task),
+                });
         };
         let changes = self.changes(today, work_days)?;
         let to = (self.list != self.initial.list).then(|| self.list.clone());

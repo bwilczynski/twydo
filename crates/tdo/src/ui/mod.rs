@@ -250,7 +250,7 @@ const HELP: &[(&str, &str, bool)] = &[
         "new task below / above (Enter save, Tab card)",
         false,
     ),
-    ("J  K", "move task down/up", true),
+    ("J  K", "reorder nested items down/up (Tasks pane)", false),
     ("dd", "delete", false),
     ("u  Ctrl-r", "undo / redo", false),
     ("t  T", "due today / tomorrow", false),

@@ -292,3 +292,15 @@ the vdir change (for example after a sync) and when `<state>/sync/ended` changes
 ended), without waiting for the watcher. Once a minute it moves its clock on, so "today" and the date groups stay
 current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.
+
+### Explicit sibling order
+
+Reordering and anchored insertion use one family journal entry, submitted through the same
+write queue as other edits. They rank the resulting complete sibling sequence with shared
+`DisplayOrder` integers, changing only differing ranks. Parent and unchanged sibling bytes
+and family membership are durable dependencies, checked on commit, queue drain, recovery
+and undo. Queued moves are visible in the overlay and subsequent moves plan against it.
+The ordering gate validates family structure and editable JSON, then checks the verified
+DisplayOrder operation by declared parent kind. It does not classify recurrence, dates,
+alarms or completion state: they are preserved fields. Anchored insertion separately
+passes the existing complete Create gate before applying its saved placement.
