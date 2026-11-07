@@ -1,11 +1,24 @@
 # Plan 8 iPhone session: finish the existing TUI write surface
 
-Status: **batch 1, RFRA and bounded C29 phone rounds complete; C29 B-only evidence runs
-through 031, with three further scoped operation rows enabled locally**. Later Plan 8 batches
-and full-surface TUI acceptance remain open. Execution requires the recorded user approval;
-this document itself does not authorize access.
+Status: **batch 1, RFRA, bounded C29 and issue-27 representative phone rounds complete**.
+Issue 27 adds two dedicated individual-item deletion permissions after return 040.
+Later Plan 8 batches and full-surface TUI acceptance remain open. Execution requires
+recorded user approval; this document itself does not authorize access.
 
-## Latest increment: issue 29 repeating checklists
+## Latest increment: issue 27 individual-item deletion
+
+The [four-example session](issue27-item-deletion.md) completes baseline 000–030,
+Twydo writer/upload 031–038 and phone note-edit return 040. All six representative
+deletions on each side remove only the selected child resource, retaining empty
+parent type/status/dates/rules. The two new item-delete rows generalize this
+preservation operation across recognized flat checklist/project families, with
+local tests for scheduling, status, history, opaque content, stale dependencies,
+undo/redo, recovery, queue and actual TUI selection. Earlier C29 item-delete
+restrictions below describe the former scope and are superseded for deletion only.
+Other Plan 8 actions remain unfinished. Do not repeat these phone rounds or clean
+up the eight new synthetic parents without fresh consent.
+
+## Previous increment: issue 29 repeating checklists
 
 The [bounded B-only session](plan8-checklist-29-checklist.md) adds direct monthly
 checklist creation, monthly-task conversion, title/notes, item creation/use and
@@ -13,7 +26,8 @@ individual open-item deletion while open siblings remain. Phone evidence is
 complete through capture 031. Every new snapshot comes from capture B; capture A
 was not used for new evidence or changed. The three new matrix rows are narrowly
 guarded; weekly/yearly/ending/completion-anchored checklist creation, ordinary
-schedule changes and last/completed/project-item deletion stay blocked.
+schedule changes stayed blocked at that checkpoint; issue 27 now supersedes the
+last/completed/project-item deletion refusals.
 
 B-only regressions use existing targets: `edit_complete` (converted history identity),
 `edit_fields` (phone return notes/items), `store_family` (creation/identity, deletion,

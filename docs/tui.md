@@ -267,10 +267,18 @@ repeat changes, monthly checklist completion/reset, and narrowly scoped until co
 reopening. The [compatibility table](compatibility.md#what-is-verified-today) gives the exact
 shapes. For plain date-only monthly day 1–28 checklists (interval 1, due anchored, no end,
 start, alerts or delay), the new-task card can create a repeating checklist, `cc` converts an
-existing monthly task, `a` adds items, and the edit card saves titles/notes. `dd` deletes one
-open item while other open siblings remain; `u`/`Ctrl-r` undo/redo without overwriting changed
-family data. Date/start/time/interval edits, other type changes and last/completed-item deletion
-stay refused. A mixed save containing a refused field retains all typed text.
+existing monthly task, `a` adds items, and the edit card saves titles/notes. Date/start/time/
+interval edits and other type changes stay refused. A mixed save containing a refused field
+retains all typed text.
+
+`dd` on a selected checklist/project item removes only that item, including a completed or
+last item and an item under a completed parent. Completed checklist items are selectable in
+the Done section of All or an ordinary list; completed project items are also in Done. Empty parents remain visible in their eligible views and keep their type,
+state, dates and repeat rules. Item deletion supports recognized recurring families and
+independently recurring project children; it does not advance recurrence. `u`/`Ctrl-r`
+restore/redo exact item bytes and identities; a changed parent, sibling or membership makes
+stale inverses refuse safely. Saves during sync retain the same strict queue preconditions.
+See [item behavior](tasks.md#completing-reopening-moving-deleting) for structural refusals.
 
 The field takes no day of the month: monthly and yearly repeats follow the due date, so set the
 day in Due. While the field is empty, the text beside it lists examples; otherwise it shows the

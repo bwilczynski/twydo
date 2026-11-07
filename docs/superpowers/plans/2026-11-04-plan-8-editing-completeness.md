@@ -1,12 +1,22 @@
 # Plan 8: close the task-editing compatibility gaps
 
 Date: 2026-11-04. Status: batch 1, RF/RA and bounded C29 complete (B-only C29 through 031);
-thirteen scoped operation rows and narrow until execution enabled. Later batches/full TUI surface remain pending.
+individual-item deletion now adds two operation-level permissions alongside narrow until execution. Later batches/full TUI surface remain pending.
 See the session's regression map and local closeout for exact enabled/refused shapes.
 
 ## Resume checkpoint — start here after the required project/spec reading
 
-- Current increment branch: `feat/29-repeating-checklist`, based on `a047f71` on main.
+- Latest increment: **issue 27 individual-item deletion**, branch `issue27-item-delete`
+  based on `9f9f40d`. The [four-example session](../../reference/phase0/issue27-item-deletion.md)
+  completed phone baseline 000–030, Twydo writer/upload 031–038 and phone return 040.
+  `checklist-item.delete` / `project-item.delete` generalize the single-resource removal
+  invariant to recognized flat families, including completed/last items, without enabling
+  unrelated recurrence execution. **Do not repeat the device rounds.** Exact preservation,
+  stale-family, inverse/recovery/queue and actual TUI key tests cover the implementation.
+  The formerly scoped C29 deletion limits below are historical; other operation limits remain.
+  The existing Twydo test list was cleared once with explicit user consent and fresh backups;
+  the eight new empty synthetic parents remain, with no further cleanup authorized.
+- Earlier C29 increment branch: `feat/29-repeating-checklist`, based on `a047f71` on main.
   Earlier batch 1/RFRA implementation is already in the base; do not replay it.
   C29 phone evidence is complete through B-only capture 031; local promotion closes
   three scoped operation rows. The full Plan 8 surface remains unfinished.
@@ -21,7 +31,11 @@ See the session's regression map and local closeout for exact enabled/refused sh
   `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
   are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
   [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
-- Matrix accounting after C29: 109 operation rows. iPhone baseline has 79 passing,
+- Matrix accounting after issue 27: 115 operation rows, with 81 iPhone-baseline passes,
+  28 unverified and 6 unsupported; Twydo-to-iPhone has 81 passing and 34 unverified.
+  This includes the four intervening ordering rows; unsupported phone reorder controls
+  do not imply unsupported preservation of Twydo-written ranks.
+- Historical matrix accounting after C29: 109 operation rows. iPhone baseline has 79 passing,
   28 unverified and 2 unsupported; Twydo-to-iPhone has 75 passing and 34 unverified.
   These are row counts, not remaining-feature counts: unused attribute placeholders,
   overlapping reopen cases, absent rows and guarded combinations need separate review.
@@ -266,7 +280,9 @@ switch production writes to test mode. Keep credentials and raw production expor
   class-specific reopen coverage if the copy no longer carries the original rule.
 - [ ] Capture ended-series reopen before implementing it. Separate this from undo and from
   reopening a completed occurrence copy; test repeating again after reopen.
-- [ ] Capture standalone item delete/move/reopen and adding to completed parents. Add dedicated
+- [x] Verify standalone item deletion through the issue-27 representatives and preservation tests;
+  dedicated item-delete rows preserve parents/siblings/schedules and empty-parent types/states.
+- [ ] Capture standalone item move/reopen and adding to completed parents. Add dedicated
   policy/operation cases where whole-family evidence cannot establish standalone semantics.
 - [ ] Test grouped saves, stale family snapshots, undo/redo, interruption/recovery and conflict
   handling for every new multi-resource path. Preserve remote edits on undo.

@@ -201,17 +201,21 @@ target, and the directory is fsynced. Removals unlink and then fsync the directo
   one.
 - `synced` (optional): when a sync confirmed that the server holds the result.
 - `holds` (optional): read dependencies as `[relative path, full contents]` pairs.
-  Recurring-checklist item operations retain the parent bytes (and deletion also
-  retains sibling bytes) here. Apply, recovery, undo and redo require them to remain
+  Recurring-checklist item edits retain parent bytes; individual checklist/project item
+  deletion retains parent and sibling bytes. Ordering and item creation also retain their
+  family dependencies. Apply, recovery, undo and redo require these bytes to remain
   unchanged. They are never written or treated as sync mutations. Older entries
   without this field have no durable read dependencies.
-- `family` (optional): the collection, parent UID and loaded family paths for an item
-  creation or an individual recurring-checklist item deletion. Under the vdir lock, a rescan rejects newly joined
-  members before applying, undoing, redoing or recovering the deletion. Byte dependencies
-  guard the original members; an operation's own created/deleted path is included and may
-  be present/absent for idempotent recovery. Item creation records sibling byte dependencies
-  because its append position depends on the complete loaded sibling set.
-  This guard is retained by inverse entries and is absent from older journal entries.
+- `family` (optional): the collection, parent UID and loaded family paths for item
+  creation, ordering or individual item deletion. Under the vdir lock, a rescan rejects
+  newly joined members before applying, undoing, redoing or recovering the operation.
+  Byte dependencies guard original members; the operation's own created/deleted path
+  is included and may be present/absent for idempotent recovery. Item creation records
+  sibling byte dependencies because its append position depends on the loaded sibling
+  set. The guard is retained by inverse entries and absent from older journal entries.
+  Membership is checked on parsed, unfolded calendar links, so folding cannot hide a
+  newly joined item. An unreadable calendar resource outside the recorded member paths
+  cannot safely be excluded from the family and makes the operation refuse.
 
 Writes are ordered so that a completed occurrence is created before its live task advances: if
 an operation stops halfway, there is never a live task that has moved on without its history

@@ -119,10 +119,13 @@ batches remain unfinished. A passing row is combined with the shape restrictions
 | Recurring checklist | Monthly only³ | Text/conversion only³ | Monthly only¹ | — | — | — |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Repeating item of a project | — | ✅ | ✅ | ✅ | — | — |
+| Repeating item of a project | — | ✅ | ✅ | ✅ | — | ✅ |
 
 “—” means not verified yet. Repeat changes use separate rows from ordinary edits. The complete
 column also needs the rule/modifier's execution verdict and the gate's scheduling/family checks.
+
+Parent Delete columns describe whole-family deletion. Selected-item deletion uses the two
+dedicated rows below, independently of the item's ordinary task/repeat operation rows.
 
 The newly enabled operations are:
 
@@ -134,7 +137,8 @@ The newly enabled operations are:
 | `recurring-checklist.repeat` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
 | `recurring-checklist.create` | ³Direct plain monthly checklist creation and adding items under an open monthly checklist: interval 1, date-only day 1–28, due anchored, no end/start/alert/delay |
 | `recurring-checklist.edit` | ³Title/notes on those open parents/items; convert a top-level open monthly task to a checklist, preserving recurrence. No due/start/time/interval or other type changes |
-| `recurring-checklist-item.delete` | Delete one open undated/inherited-date item while at least one other open item remains under that monthly parent; all siblings must be open. Parent, siblings and history stay unchanged |
+| `checklist-item.delete` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
+| `project-item.delete` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
 | `recurring-checklist.complete` | ¹Plain monthly day 1–28, interval 1, date-only, due anchored, no end/start/alert/delay; mixed or all-done items, no cancelled items |
 | `ended-until-daily.reopen` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
 | `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
@@ -157,18 +161,29 @@ deletion within scope ³. New items carry inherited parent-date copies; reset re
 live copies. A phone-converted parent's internal identity is retained live, while its history
 parent and copied items receive consistent new identities. Deletion removes exactly one item;
 parent/sibling read dependencies protect apply, undo, redo and recovery against remote changes.
-Weekly/yearly creation/conversion/completion, ordinary due/start/time/interval changes, last-item
-or completed-item deletion and completed-parent item operations remain unverified. A mixed card
+Weekly/yearly creation/conversion/completion, ordinary due/start/time/interval changes, and
+completed-parent item creation/reopening remain unverified. A mixed card
 save that includes a refused field writes nothing and retains its text. Pure previously captured
 monthly/weekly repeat changes remain supported separately.
 
 Existing repeat completion support remains: daily, weekly, weekday sets, monthly including the
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
 The [Plan 7 session](reference/phase0/plan7-capture.md) supplies those fixtures. Recurring projects
-that end or repeat from completion remain refused. Moving one item, deleting project/plain-checklist items or shapes outside scope ³, editing existing
+that end or repeat from completion remain refused. Moving one item, editing existing
 weekly/interval-2 from-completion tasks, project repeat changes, empty-project-to-checklist
 conversion and native alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
+
+The [issue 27 session](reference/phase0/issue27-item-deletion.md) verifies representative
+checklist/project item deletions in both directions, including last/completed items, a
+completed parent, monthly/weekly parents and an independently recurring project child.
+All six phone deletions and six Twydo deletions remove exactly one resource; the phone then
+edits all four Twydo-empty parents while preserving type, dates, rules and completion state.
+Local exact-preservation tests generalize this invariant across recognized schedules,
+statuses, alerts, history and opaque content, with durable family checks through queue,
+undo/redo and recovery. This is operation-level generalization, not a device test of every
+combination. Nested families, ambiguous identities (including multiple UID properties or
+parent links), broken links, unreadable metadata and unrecognized rules stay refused. No recurrence-execution support is inferred from deletion.
 
 The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) records both-direction
 phone checks and exact writer comparisons for the two from-completion rows. Retained inactive

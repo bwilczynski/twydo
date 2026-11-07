@@ -76,19 +76,23 @@ the family, where those operations are verified:
 - Cancelled items (from other apps) are left as they are by complete and reopen, and go with the
   family on move and delete.
 - Moving one item and reopening an item of a completed parent remain refused.
-- `dd` can delete one **open item of an open recurring monthly checklist** while another open
-  item remains, within the narrow schedule below. All siblings must be open and carry only
-  inherited or absent dates. Only that item is removed; parent, siblings and history stay
-  unchanged. Last/only-item, completed-item, project-item and plain-checklist-item deletion
-  remain unverified. Parent/sibling changes make apply, undo, redo or recovery refuse safely.
+- `dd` deletes the **selected item of a checklist or project**, including a completed or
+  last/only item and an item under a completed parent. The empty parent keeps its type and
+  state. Only the selected resource is removed; parent, siblings, dates, recurrence, alerts
+  and history stay unchanged. Recognized recurring families and independently recurring
+  project items use the same operation, without requiring recurrence-execution permission.
+  Parent/sibling or membership changes make apply, undo, redo and recovery refuse safely.
+  Broken links, duplicate identities, unreadable metadata, unrecognized rules and nested
+  families remain refused. The [representative phone session](reference/phase0/issue27-item-deletion.md)
+  and local preservation tests establish this operation invariant.
 
-A **recurring checklist** has narrower verified support: plain monthly day 1–28, interval 1,
+Creating, editing schedules and completing a **recurring checklist** have narrower verified support: plain monthly day 1–28, interval 1,
 date-only, due anchored, no end/start/alerts/delay. Completing it copies the parent/items to
 history, preserves prior item completion times, then reopens live items and removes inherited
 date copies. It still needs its own final tick. Cancelled items and independent item starts or
 times are refused. In this scope you can create the checklist directly, convert an existing
-monthly task, add items, edit parent/item titles and notes, tick items and delete one open
-item while open siblings remain. Date/start/time/interval and other type edits remain refused;
+monthly task, add items, edit parent/item titles and notes, and tick items. Individual item
+deletion follows the general rule above. Date/start/time/interval and other type edits remain refused;
 pure monthly/weekly repeat changes are covered separately below.
 
 ## Repeats
