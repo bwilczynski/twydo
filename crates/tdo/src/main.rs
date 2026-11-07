@@ -52,7 +52,7 @@ enum Command {
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
-    /// Report whether every active repeat rule class is verified
+    /// Report data health, recurrence evidence and operation permissions
     Check {
         /// Compatibility matrix file (default: the matrix built into tdo)
         #[arg(long, value_name = "PATH")]

@@ -33,8 +33,9 @@ Switching 2Do's sync method replaces what the server holds, so do it carefully:
    `python3 tools/reconcile.py inventory.2do.json export.json` reports tasks and lists that do not
    match. Its output contains list names (and titles with `--show-titles`).
 
-Then run `tdo check`: it reports the repeat kinds in your data, whether each is verified, and any
-task Twydo cannot read.
+Then run `tdo check`: it reports data health, repeat-class evidence and the actual
+permissions for the tasks it can load. A class verdict is not a promise that every
+operation on those tasks is available.
 
 ## What Twydo keeps intact
 
@@ -83,8 +84,30 @@ The part in parentheses names the direction that is missing: `twydo_to_iphone` (
 not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked
 reading the iPhone's). Reading is never refused: every task is shown.
 
-To see what is allowed for one task: `tdo op check <uid>` prints each operation with `ok` or the
-reason. To see it for your whole data: `tdo check`.
+`tdo check` separates three questions:
+
+- **Data health:** task count, per-file parse errors and model-level read-only resources,
+  including completed tasks. These counts alone do not establish write permissions.
+- **Recurrence evidence:** preservation, execution and editing verdicts for repeat classes
+  on open tasks. Shape restrictions and operation-specific evidence still apply.
+- **Operation availability:** allowed, refused, inapplicable and needs-input counts for
+  concrete actions, using the configured write mode and the writer's gate. Refusals are
+  grouped by action and reason. Title and notes edits are separate; complete applies to
+  open tasks and reopen to completed tasks. Cancelled tasks have neither lifecycle probe.
+
+Dates, repeats, conversion, creation, moves and sibling placement need proposed values
+or a destination/context; the report does not invent successful edits for them. It is a
+permission snapshot: later conflicts, changed dependencies and other store preconditions
+can still prevent a write. An empty input explicitly reports no tasks to assess. If files
+cannot be parsed, permission counts cover only loaded tasks.
+
+Task titles and parse-error paths are omitted unless `--verbose` is supplied; task notes
+are never printed by this report. Exit 0 means a report was produced, even with refused
+actions or individual parse errors. Exit 2 means a configuration, invocation or vdir-read
+failure. An explicit `--matrix` that cannot be loaded is an error; without it, the matrix
+built into the binary is used.
+
+For the existing per-task diagnostic, use `tdo op check <uid>`.
 
 `[writes] mode = "test"` relaxes the check: it drops the `twydo_to_iphone` and `iphone_to_twydo`
 columns of the operation rows and the checklist item-dates edge case (both apply only in verified

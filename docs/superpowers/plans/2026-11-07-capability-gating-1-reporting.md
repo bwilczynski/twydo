@@ -54,14 +54,14 @@
 
 **Interfaces:** `check::run` keeps its existing signature. Consume Task 1 probes. Retain existing per-rule evidence lines, but remove all `GATE: PASSED` / `GATE: NOT PASSED` output.
 
-- [ ] Replace old global-gate assertions in `tests/cli.rs` with failures requiring separate `Data health`, `Recurrence evidence`, and `Operation availability` output. Pin `parse errors` and `model read-only resources` counts; include blocked completed resources, not just open resources.
-- [ ] Reproduce the misleading success: a synthetic daily task with passing rule rows but missing operation rows reports healthy input and refused title/delete actions, with reasons. Alter only the rule edit verdict to unverified: retain that evidence and derive permissions from actual gate results rather than inventing a global failure.
-- [ ] Add empty-vdir and malformed-file assertions, completed/history lifecycle reporting, duplicate identities and cancelled applicability. Counts are per task/action probe, not unique UID lookup; summaries distinguish allowed/refused/inapplicable/needs-input and group refusals by action/reason.
-- [ ] Pin default privacy and --verbose expansion with synthetic titles/notes/paths; notes are never needed in either output. A missing explicit --matrix exits 2 with a load error. Successful reports containing refusals or per-file parse errors exit 0. Invalid config/unreadable vdir exits 2.
-- [ ] Run `cargo test -p tdo --test cli gate::`; verify expected new-output failures.
-- [ ] Implement the report, using `Matrix::load` for any explicit matrix. Display configured write mode and describe rule verdicts as evidence, not permissions. Include task count and explicit empty-input message. Use stable action/reason ordering and verbose titles only beneath their relevant groups.
-- [ ] Update command help and `docs/compatibility.md` with actual report meaning, exit convention, partial-input caveat and parameterized-action limitations. Do not claim generic edit/create/move permission.
-- [ ] Run `cargo test -p tdo --test cli gate::`; require all pass.
+- [x] Replace old global-gate assertions in `tests/cli.rs` with failures requiring separate `Data health`, `Recurrence evidence`, and `Operation availability` output. Pin `parse errors` and `model read-only resources` counts; include blocked completed resources, not just open resources.
+- [x] Reproduce the misleading success: a synthetic daily task with passing rule rows but missing operation rows reports healthy input and refused title/delete actions, with reasons. Alter only the rule edit verdict to unverified: retain that evidence and derive permissions from actual gate results rather than inventing a global failure.
+- [x] Add empty-vdir and malformed-file assertions, completed/history lifecycle reporting, duplicate identities and cancelled applicability. Counts are per task/action probe, not unique UID lookup; summaries distinguish allowed/refused/inapplicable/needs-input and group refusals by action/reason.
+- [x] Pin default privacy and --verbose expansion with synthetic titles/notes/paths; notes are never needed in either output. A missing explicit --matrix exits 2 with a load error. Successful reports containing refusals or per-file parse errors exit 0. Invalid config/unreadable vdir exits 2.
+- [x] Run `cargo test -p tdo --test cli gate::`; verify expected new-output failures.
+- [x] Implement the report, using `Matrix::load` for any explicit matrix. Display configured write mode and describe rule verdicts as evidence, not permissions. Include task count and explicit empty-input message. Use stable action/reason ordering and verbose titles only beneath their relevant groups.
+- [x] Update command help and `docs/compatibility.md` with actual report meaning, exit convention, partial-input caveat and parameterized-action limitations. Do not claim generic edit/create/move permission.
+- [x] Run `cargo test -p tdo --test cli gate::`; require all pass.
 
 ### Task 3: Align per-task checks and queued data
 
