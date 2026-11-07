@@ -85,6 +85,12 @@
 
 ## Checkpoint
 
-Design approved. Plan prepared; implementation has not started. This plan covers
-only truthful reporting and policy documentation. Feature unblocking follows as
-separate increments under the approved capability contracts.
+Tasks 1–3 are implemented and committed. Task 4 policy updates and final validation
+are in progress. No compatibility verdicts or core writer/gate behavior changed.
+
+Next: audit title/notes restrictions on recurring checklists and from-completion
+tasks. For each blocker record the writer's actual field/resource changes,
+reusable phone evidence, preservation tests, minimum missing proof and admission
+boundary. Then inspect standalone/family deletion and moves separately. Reuse
+completed deletion/ordering rounds. Exact-operation dry run remains a follow-up.
+Write the next implementation plan only after this reporting increment closes.

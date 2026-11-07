@@ -110,8 +110,13 @@ be used occasionally against the same data.
 - **Repeat rules vs the iPhone:** existing rules are preserved without normalization on unrelated
   edits. A versioned compatibility matrix records preservation, execution/completion, and
   creation/editing support separately. No rule, including monthly/yearly, is presumed safe before
-  verification. Unsupported operations are blocked with a reason; tasks remain visible and their
-  known current due dates still drive reminders. Unrelated safe edits may proceed.
+  verification of the behavior being exercised. Gate each operation by the fields/resources it
+  changes and the invariants it preserves. Representative interoperability evidence can support
+  broader shapes through exact preservation tests; unchanged schedules do not require execution
+  or recurrence-edit verdicts. Unsupported operations are blocked with a reason; tasks remain
+  visible and their known current due dates still drive reminders. Unrelated safe edits may proceed.
+  The approved [incremental capability-gating design](2026-11-07-capability-gating-design.md)
+  defines evidence scope and the migration policy.
 - **Parent tasks:** projects and checklists may share a visual presentation but retain their types.
   Project children keep independent dates, recurrence, Today membership, and notifications.
   Checklist items inherit the parent's scheduling and do not notify independently. Completing
@@ -157,9 +162,17 @@ in fixtures. Record unsupported or unverified cases explicitly.
 
 The matrix covers create, edit, complete, reopen, move, and delete. Phase 0 records the Mac/iPhone
 baseline, expected resource changes, and the acceptance cases for Twydo. Before enabling a Twydo
-operation, verify it in both directions, including a subsequent iPhone edit on Twydo-written data.
-Passing unchanged round trips is insufficient. Capturing the baseline and acceptance cases is a
-prerequisite; testing the implementation against them follows implementation and precedes release.
+capability, establish representative interoperability in both directions, including a subsequent
+iPhone edit on Twydo-written data where applicable. Passing unchanged round trips is insufficient.
+Document the operation's write contract, structural prerequisites and failure mechanisms; distinguish
+directly observed shapes from support generalized through preservation tests. Reuse existing captures.
+Do not require every recurrence/status/date combination when those fields remain unchanged. Every
+additional phone case must identify an unresolved interoperability question that existing evidence or
+local tests cannot answer. Recurrence advancement, date/anchor changes, endings, alarms, child resets
+and history still require targeted evidence for the semantics actually exercised. Known failures only
+block operations that depend on the failed behavior; malformed identities, unsafe relationships,
+stale dependencies, conflict and recovery protections remain binding. Capturing the baseline and
+acceptance cases is a prerequisite; implementation tests follow and precede release.
 
 Expected mapping (from `docs/reference/2do/06-sync.md` §1.7, §2.6; to be confirmed by the samples):
 
@@ -328,14 +341,25 @@ Keymap (my proposal, builder may refine; 2Do equivalents in `docs/reference/2do/
 
 - **Compatibility gate:** phase 0 supplies the versioned fixtures/matrix in §6. Daily-use release
   requires preservation of all imported resources and verified execution of every active rule in
-  the user's inventory. Unverified rule editors remain unavailable with a reason.
+  the user's inventory. Unverified rule editors remain unavailable with a reason. Support for
+  unrelated operations is assessed independently under the capability contract in §6.
+- **Permission reporting:** `tdo check` separates data health, recurrence evidence and concrete
+  operation availability using the same gate and queued task view as `tdo op check <uid>`.
+  Broad rule verdicts and zero model-level blocks do not imply all operations are allowed.
+  Show refused actions with reasons, distinguish inapplicable actions and required input,
+  include completed resources where relevant, and omit titles/parse paths without `--verbose`.
+  A produced report exits 0 even with restrictions or per-file parse errors; invocation,
+  configuration and vdir-read failures exit 2. The report is a permission snapshot; proposed
+  values and store preconditions may still prevent a write.
 - **Core tests:** every enabled repeat rule and edge case in §6; local-day/DST boundaries, Today,
   Next 3 Days, Scheduled precedence, grouping, archive flags, and independent project children.
 - **Round trips:** an unchanged resource is byte-equal, including timestamps; an edit changes only
   intended properties and their verified metadata counterparts. Test unknown parameters/components,
   Unicode, folded lines, new identities, parent links, and conflicting metadata representations.
-- **Interop:** create/edit/complete/reopen/move/delete from both Twydo and iPhone, sync, then edit
-  again from the other side. Check history, next occurrence, child dates/repeats, alarms, and metadata.
+- **Interop:** representative create/edit/complete/reopen/move/delete from both Twydo and iPhone,
+  sync, then edit again from the other side. Select cases by distinct failure mechanism and the
+  operation's write set, not a Cartesian product. Check history, next occurrence, child
+  dates/repeats, alarms and metadata when the operation affects them; otherwise prove preservation.
 - **Failures/conflicts:** concurrent desktop/phone completion, completion-versus-edit,
   delete-versus-edit, partial upload, and interruptions at each local journal stage. Both versions
   remain recoverable, unrelated tasks sync, and retries do not duplicate history or lose occurrences.
