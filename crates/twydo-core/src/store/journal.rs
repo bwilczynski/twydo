@@ -320,11 +320,9 @@ pub(super) fn check_family(vdir: &Path, f: &FamilyGuard) -> Result<(), ApplyErro
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => return Err(e.into()),
         };
-        let needle = f.parent_uid.as_bytes();
-        if !bytes.windows(needle.len()).any(|w| w == needle) {
-            continue;
-        }
-        // Mentions the parent: an item of it, or unreadable (then refuse to be safe).
+        // Parse before comparing links: valid folding can split a parent UID
+        // across physical lines. An unreadable resource cannot be excluded from
+        // this family safely, so it also refuses the operation.
         let joined = match crate::ical::parse(&bytes) {
             Ok(cal) => cal.root.children_named("VTODO").any(|t| {
                 t.props_named("RELATED-TO")

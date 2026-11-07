@@ -10,6 +10,10 @@
 //!    the cases the edit leaves;
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
+//!    1a. individual deletion with dedicated `checklist-item` / `project-item` rows:
+//!    validate the flat family and check its deletion verdict, without requiring
+//!    unrelated scheduling operations. Matrices without these rows retain the C29 path;
+//!
 //!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
 //!    so each child must pass the same lookup, then have cases (rule 2) and, if it repeats,
 //!    its class's preserve verdict (rule 4), or the op is refused with the child's reason.
@@ -164,6 +168,24 @@ pub fn check(
             Some(i)
         }
     };
+
+    // Individual deletion removes a file without editing or executing schedules.
+    // Its dedicated evidence therefore precedes the ordinary task/family cases.
+    // Older matrices keep their existing narrow C29 path below.
+    if let (Some(i), Op::Delete { .. }) = (target, op)
+        && let Some(p) = snap.parent(i)
+    {
+        let case = match declared_kind(&snap.tasks[p]) {
+            TaskKind::Checklist => Some("checklist-item"),
+            TaskKind::Project => Some("project-item"),
+            TaskKind::Task => None,
+        };
+        if let Some(case) = case
+            && m.operation(case, "delete").is_some()
+        {
+            return check_item_delete(snap, m, mode, p, case);
+        }
+    }
 
     // Rule 1b: family operations.
     if let Some(i) = target {
@@ -867,6 +889,47 @@ pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
             .children(idx)
             .iter()
             .any(|&c| snap.tasks[c].due.is_some())
+}
+
+/// A dedicated item-delete verdict authorizes only removal of the selected
+/// resource. All family members must have unambiguous identities and form one
+/// recognized, same-list, flat family. Their schedules/statuses are held byte for
+/// byte by the store; field-edit and recurrence-execution verdicts do not apply.
+fn check_item_delete(
+    snap: &Snapshot,
+    m: &Matrix,
+    mode: WriteMode,
+    parent: usize,
+    case: &str,
+) -> Result<(), Blocked> {
+    let head = &snap.tasks[parent];
+    if head.parent.is_some() {
+        return blocked(NESTED);
+    }
+    for i in std::iter::once(parent).chain(snap.children(parent).iter().copied()) {
+        lookup(snap, &snap.tasks[i].uid)?;
+    }
+    for i in std::iter::once(parent).chain(snap.children(parent).iter().copied()) {
+        let t = &snap.tasks[i];
+        if !known_task_type(t) {
+            return blocked("this 2Do task type is not verified yet");
+        }
+        if t.meta.unreadable {
+            return blocked("item deletion needs readable task metadata");
+        }
+        if t.collection != head.collection {
+            return blocked("an item must be in the list of its checklist or project");
+        }
+        if i != parent && (declared_kind(t) != TaskKind::Task || !snap.children(i).is_empty()) {
+            return blocked(NESTED);
+        }
+        if task_rule_class(t, snap)
+            .is_some_and(|class| class.split('+').next() == Some("unrecognized"))
+        {
+            return blocked("item deletion needs recognized repeat rules");
+        }
+    }
+    operation_row(m, mode, case, "delete")
 }
 
 /// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`], then have

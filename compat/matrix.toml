@@ -1451,3 +1451,25 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/060-twydo-inserted", "fixtures/phase0/v1/issue41-item-reorder/070-phone-insertion-display", "fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename"]
 notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
+
+[[operation]]
+case = "checklist-item"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/issue27-items/001-seeded", "fixtures/phase0/v1/issue27-items/010-phone-delete-q", "fixtures/phase0/v1/issue27-items/030-phone-delete-last-items", "fixtures/phase0/v1/issue27-items/031-twydo-delete-checklist-q", "fixtures/phase0/v1/issue27-items/034-twydo-delete-completed-checklist-x", "fixtures/phase0/v1/issue27-items/036-twydo-delete-monthly-last-q", "fixtures/phase0/v1/issue27-items/038-twydo-upload", "fixtures/phase0/v1/issue27-items/040-phone-return-notes"]
+notes = "Issue 27 representative session (docs/reference/phase0/issue27-item-deletion.md): remove only the selected item; parent, siblings, schedules, identity and history remain byte-unchanged. Four representative pairs establish ordinary/completed/last item deletion, completed parents, monthly/weekly parents and an independently repeating project child; phone subsequently edits all Twydo-empty parents. Generalized to recognized flat same-list families through exact preservation, queue, stale-family, inverse/recovery and shipping-TUI tests; not separate device proof for every status/rule combination. No recurrence execution or whole-parent deletion authority is inferred."
+
+[[operation]]
+case = "project-item"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/issue27-items/001-seeded", "fixtures/phase0/v1/issue27-items/010-phone-delete-q", "fixtures/phase0/v1/issue27-items/020-phone-complete-project", "fixtures/phase0/v1/issue27-items/030-phone-delete-last-items", "fixtures/phase0/v1/issue27-items/032-twydo-delete-recurring-project-q", "fixtures/phase0/v1/issue27-items/033-twydo-complete-project", "fixtures/phase0/v1/issue27-items/035-twydo-delete-completed-project-x", "fixtures/phase0/v1/issue27-items/037-twydo-delete-weekly-last-q", "fixtures/phase0/v1/issue27-items/038-twydo-upload", "fixtures/phase0/v1/issue27-items/040-phone-return-notes"]
+notes = "Issue 27 representative session (docs/reference/phase0/issue27-item-deletion.md): remove only the selected item; parent, siblings, schedules, identity and history remain byte-unchanged. Four representative pairs establish ordinary/completed/last item deletion, completed parents, monthly/weekly parents and an independently repeating project child; phone subsequently edits all Twydo-empty parents. Generalized to recognized flat same-list families through exact preservation, queue, stale-family, inverse/recovery and shipping-TUI tests; not separate device proof for every status/rule combination. No recurrence execution or whole-parent deletion authority is inferred."

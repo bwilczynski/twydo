@@ -459,7 +459,7 @@ impl Store {
             matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
         let durable_holds = member_parent.is_some_and(|p| {
             creating_item
-                || matches!(op, Op::Reorder { .. })
+                || matches!(op, Op::Reorder { .. } | Op::Delete { .. })
                 || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
                     && snap.tasks[p].rrule.is_some())
         });
@@ -1300,8 +1300,8 @@ impl Store {
                 let t = self.target(snap, uid)?;
                 let mut plan = one("delete", uid, t.remove());
                 if let Some(p) = snap.find(uid).and_then(|i| snap.parent(i)) {
-                    // The gate depends on the parent's schedule and open siblings.
-                    // Hold all of them until the deletion commits under the shared lock.
+                    // Preserve the loaded parent and siblings, including their schedules
+                    // and states, until deletion commits under the shared lock.
                     for &i in std::iter::once(&p).chain(snap.children(p)) {
                         if snap.tasks[i].uid != *uid {
                             plan.holds
