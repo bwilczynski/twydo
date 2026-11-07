@@ -330,7 +330,11 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     let now = Utc::now();
     let today = now.with_timezone(&cfg.tz()).date_naive();
     let (mut store, report) = Store::open_with(&cfg, matrix.clone())?;
-    print_refusals(&cfg);
+    // Permission reports must not disclose task labels or consume notifications.
+    // The next ordinary operation (including `journal`) still reports them once.
+    if !matches!(&cmd, OpCommand::Check { .. }) {
+        print_refusals(&cfg);
+    }
     let journal_dir = store.state_dir().join("journal");
     for (id, reason) in &report.stuck {
         if reason.starts_with("unreadable journal entry") {
