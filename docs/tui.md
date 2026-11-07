@@ -80,6 +80,7 @@ These act when the Tasks or Details pane has focus.
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
 | `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
 | `o` / `O` | new task below / above the selected one ([Adding tasks](#adding-tasks)) |
+| `J` / `K` | move a nested checklist/project item after/before the next/previous visible sibling in the Tasks pane (requires ordering compatibility evidence) |
 | `a` | new item at the end of the selected project or checklist; on a plain task, asks whether to make it one first |
 | `ct` / `cp` / `cc` | change the selected task's type to task / project / checklist; any other second key cancels. A project with items can't be converted, as on the iPhone: the write is refused with the reason. The type it already has writes nothing (a plain task with items shows as a project, but `ct` on it says it is already a task) |
 | `i`, or `Enter` on a task without items | edit card |
@@ -155,6 +156,13 @@ list; the status line shows where the task will go:
 
 The default list is `default_list` from the config ([config.md](config.md)), else the list named
 Inbox, else the first list.
+
+On an item, `o`/`O` save immediately after/before that sibling in the parent’s shared
+`DisplayOrder` sequence, including when Tab opens the card. The saved position uses the same
+DisplayOrder operation for recurring and non-recurring families. Select **Manually** on
+the phone to display it there. Creating the new item must also pass the existing creation
+checks, as when using `a` to append. Standalone task placement
+continues to follow the view’s sort.
 
 On the row:
 
@@ -310,8 +318,28 @@ interrupted by their own sync. A save made while a sync is running is queued (se
 Quitting starts no sync; the batch waiter sends the last edits
 ([sync.md](sync.md#when-edits-sync)).
 
+## Reordering items
+
+In the Tasks pane, `J` moves a nested item after its next visible sibling and `K` before
+its previous visible sibling. At either end, a message is shown and nothing is saved.
+Selection follows the moved item. Moves stay within the same parent and displayed section;
+independently shown project items in flat date views and detached children cannot be moved
+with these keys. Sidebar/Details focus and overlays do not issue moves.
+
+With a search hiding siblings, the move is relative to the next visible sibling in the full
+saved sequence. For example, A,B,C,D with B hidden becomes B,C,A,D when A moves past C.
+Hidden siblings keep their relative order. Details uses the resulting sibling sequence.
+Each move is one undo step; a move during sync is queued and appears immediately, like other
+edits. Refused stale queued moves are reported through the normal queue feedback.
+
+Reordering works within recurring and non-recurring checklists/projects, including dated
+families and families with completed/cancelled siblings. It changes only shared item ranks
+and modification timestamps; recurrence, dates, alarms and completion state are preserved.
+Select **Manually** in 2Do to see the saved order there. Twydo does not change that phone
+setting. The saved `o`/`O` position uses the same ordering operation, while creation itself
+keeps its existing compatibility checks. Details:
+[ordering compatibility](compatibility.md#item-reordering).
+
 ## Not in the TUI yet
 
-Natural-language input on the new row (dates typed with the title), `J` / `K` (manual order;
-until then `o` and `O` differ only while typing), alerts and list management. `J` and `K` show
-`not available yet`; the help marks them `(after gate)`.
+Natural-language input on the new row (dates typed with the title), alerts and list management.

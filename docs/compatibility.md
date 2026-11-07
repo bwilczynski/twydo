@@ -47,13 +47,17 @@ containing list's date/title sort; Details uses the same sequence. The
 [ordering check](reference/phase0/issue35-checklist-order.md) covered undated items under
 non-recurring checklist and project parents: phone-created sequences, phone appends,
 Twydo appends displayed last on the phone, and subsequent phone renames preserving identity
-and position. Existing siblings remained byte-unchanged. This does not establish drag
-reordering or project-specific phone sort preferences, and does not widen recurrence gates.
+and position. Existing siblings remained byte-unchanged. The later
+[reordering round](reference/phase0/issue41-item-reorder.md) verified explicit ranks with
+**Manually** selected on the phone, including preservation through phone renames. This
+does not add phone-side drag reordering or widen recurrence gates.
 
 ## Verified mode
 
-Twydo writes a change only the way 2Do writes it: each kind of write is first made on the iPhone
-and captured, so Twydo can write the same bytes (the `iphone_baseline` column). A write counts as
+Most writes first require an iPhone-originated capture, so Twydo can use the same
+representation (the `iphone_baseline` column). Twydo-originated item reordering/insertion
+has the bounded exception described [below](#item-reordering), because the phone does not
+offer the reorder operation. A write counts as
 verified once Twydo's own result was also checked on the iPhone: read back correctly, and edited
 again (the `twydo_to_iphone` and `iphone_to_twydo` columns). The results are recorded in
 [`compat/matrix.toml`](../compat/matrix.toml), which is built into `tdo`. Many writes have a
@@ -73,6 +77,7 @@ converting a project with items to a checklist is not supported by 2Do
 "Not verified yet" means Twydo has not checked the write against the iPhone. "Not supported by
 2Do" means the iPhone itself cannot do it (it greys out the type selector on a project with
 items), so there is nothing to verify and the write stays refused in every mode, including `test`.
+The bounded Twydo-originated ordering exception below is checked separately.
 
 The part in parentheses names the direction that is missing: `twydo_to_iphone` (the iPhone has
 not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked
@@ -83,8 +88,8 @@ reason. To see it for your whole data: `tdo check`.
 
 `[writes] mode = "test"` relaxes the check: it drops the `twydo_to_iphone` and `iphone_to_twydo`
 columns of the operation rows and the checklist item-dates edge case (both apply only in verified
-mode), but still needs the phone's baseline (`iphone_baseline`), the rule verdicts and the safety
-rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
+mode), but still needs the phone's baseline (`iphone_baseline`, except the bounded
+Twydo-originated ordering operations), the rule verdicts and the safety rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
 separate test account, and must never point at your real data: an unverified write can produce
 something 2Do on the iPhone reads differently. See [config.md](config.md).
 
@@ -209,3 +214,36 @@ Twydo's change read by the iPhone. The session logs are in
 Verifying more needs a 2Do device and a test account. The method is in the
 [phase-0 checklist](reference/phase0/README.md); `tools/seed_fixture.py` sets up test tasks on
 the server so they do not have to be typed on the phone.
+
+## Item reordering
+
+`J`/`K` reordering works in recurring and non-recurring checklists/projects, including
+dated families, alarms and completed/cancelled siblings. It changes only `DisplayOrder`
+and normal modification timestamps. The gate requires a recognized, non-nested family,
+editable JSON metadata, valid identities/links and the verified ordering row for the
+parent's kind. Dates, recurrence and completion are preserved rather than edited or run,
+so their separate operation verdicts do not apply to a pure reorder.
+
+On the phone, select **Manually** to display Twydo's saved sequence. Status sort did not
+show the intended manual sequence; changing to Manually made it appear. No shared sort
+setting was observed, and Twydo does not change the phone's sort setting or add a picker.
+
+The direct [phone samples](reference/phase0/issue41-item-reorder.md) used open, undated,
+non-recurring parents and verified display plus preservation through unrelated renames.
+Applying the same field operation to other recurrence/date/status contexts is supported
+by exact field-preservation tests over the existing recurring checklist/project captures,
+including queue/undo and an already-supported recurring completion. This is preservation
+reasoning, not a new phone round or a new recurrence execution/edit verification.
+
+Anchored `o`/`O` insertion uses the same verified rank operation, and **also must pass the
+existing Create gate** for the new item and its family. Thus it retains all existing
+creation, inherited-date and recurrence restrictions; ordering approval cannot authorize
+an otherwise unverified create. The phone displayed before/after placement and preserved
+ranks/identities/links/creation times through Before/After → BEFORE/AFTER renames. It also
+added its documented producer/sync/audio initialization properties to the new tasks.
+
+Phone-side reordering is unavailable. For these two Twydo-originated operations only, an
+unsupported phone baseline does not prevent verification: the required evidence is that
+the phone displays Twydo's order and preserves it through an unrelated edit and sync.
+Other operations keep their existing phone-baseline requirements. Further device/server
+rounds require fresh approval. No account or global write-mode change is performed.

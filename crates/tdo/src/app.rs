@@ -181,10 +181,6 @@ pub const SYNC_DONE: &str = "sync done";
 /// How long a success message stays.
 const MESSAGE_SECS: i64 = 5;
 
-fn blocked(action: &str) -> String {
-    format!("{action}: not available yet")
-}
-
 impl App {
     pub fn new(snapshot: Snapshot, now: DateTime<Tz>) -> App {
         App {
@@ -615,10 +611,6 @@ impl App {
         }
     }
 
-    fn block(&mut self, action: &str) {
-        self.message = Some(blocked(action));
-    }
-
     fn normal_key(&mut self, k: KeyEvent) -> Outcome {
         if self.show_errors {
             match k.code {
@@ -713,7 +705,7 @@ impl App {
             return Outcome::Continue;
         }
         // An overlay hides the task list: keys that write or edit must not reach it.
-        if self.overlay_open() && "xtT[]{}duimroOac ".contains(c) {
+        if self.overlay_open() && "xtT[]{}duimroOac JK".contains(c) {
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
@@ -772,12 +764,70 @@ impl App {
             'o' | 'O' if self.focus != Pane::Sidebar => self.open_new_row(c == 'o'),
             'a' if self.focus != Pane::Sidebar => self.add_items(),
             'i' => self.open_form(Field::Title),
-            'J' | 'K' => self.block("move task"),
+            'J' | 'K' => return self.reorder_item(c == 'J'),
             'r' => self.open_form(Field::Repeat),
             'm' => self.open_picker(),
             _ => {}
         }
         Outcome::Continue
+    }
+
+    fn reorder_item(&mut self, down: bool) -> Outcome {
+        let context = "J/K reorder nested items in the Tasks pane";
+        if self.focus != Pane::Tasks {
+            self.message = Some(context.into());
+            return Outcome::Continue;
+        }
+        let visible = self.visible_rows();
+        let Some(row) = visible.get(self.cursor) else {
+            return Outcome::Continue;
+        };
+        let Some(parent) = self.snapshot.parent(row.task).filter(|_| row.depth > 0) else {
+            self.message = Some(context.into());
+            return Outcome::Continue;
+        };
+        // Use the original groups so a move never crosses a displayed section.
+        let result = build_view(&self.snapshot, &self.view, self.now, &self.expanded);
+        let siblings: Vec<_> = result
+            .groups
+            .iter()
+            .find(|(_, rows)| rows.iter().any(|r| r.task == row.task))
+            .into_iter()
+            .flat_map(|(_, rows)| rows)
+            .filter(|r| {
+                r.depth > 0
+                    && self.snapshot.parent(r.task) == Some(parent)
+                    && visible.iter().any(|v| v.task == r.task)
+            })
+            .collect();
+        let Some(at) = siblings.iter().position(|r| r.task == row.task) else {
+            return Outcome::Continue;
+        };
+        let next = if down {
+            at.checked_add(1)
+        } else {
+            at.checked_sub(1)
+        };
+        let Some(neighbor) = next.and_then(|n| siblings.get(n)) else {
+            self.message = Some(
+                if down {
+                    "already the last visible item"
+                } else {
+                    "already the first visible item"
+                }
+                .into(),
+            );
+            return Outcome::Continue;
+        };
+        Outcome::Write(Request::Apply(Op::Reorder {
+            uid: self.snapshot.tasks[row.task].uid.clone(),
+            anchor: self.snapshot.tasks[neighbor.task].uid.clone(),
+            placement: if down {
+                twydo_core::edit::Placement::After
+            } else {
+                twydo_core::edit::Placement::Before
+            },
+        }))
     }
 
     /// The write a key makes on the selected task: none outside the task panes, on an empty

@@ -8,6 +8,7 @@
 mod family;
 pub mod fsio;
 pub mod journal;
+mod order;
 pub mod queue;
 mod retired;
 
@@ -445,15 +446,20 @@ impl Store {
         let plan = self.plan(snap, op, now)?;
         let holds = plan.holds;
         let member_parent = match op {
-            Op::Create(n) => n.parent.as_deref().and_then(|uid| snap.find(uid)),
-            Op::Edit { uid, .. } | Op::Save { uid, .. } | Op::Delete { uid } => {
-                snap.find(uid).and_then(|i| snap.parent(i))
+            Op::Create(n) | Op::CreateAt { task: n, .. } => {
+                n.parent.as_deref().and_then(|uid| snap.find(uid))
             }
+            Op::Edit { uid, .. }
+            | Op::Save { uid, .. }
+            | Op::Delete { uid }
+            | Op::Reorder { uid, .. } => snap.find(uid).and_then(|i| snap.parent(i)),
             _ => None,
         };
-        let creating_item = matches!(op, Op::Create(_)) && member_parent.is_some();
+        let creating_item =
+            matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
         let durable_holds = member_parent.is_some_and(|p| {
             creating_item
+                || matches!(op, Op::Reorder { .. })
                 || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
                     && snap.tasks[p].rrule.is_some())
         });
@@ -480,7 +486,11 @@ impl Store {
             } else {
                 Vec::new()
             },
-            family: if durable_holds && matches!(op, Op::Create(_) | Op::Delete { .. }) {
+            family: if durable_holds
+                && matches!(
+                    op,
+                    Op::Create(_) | Op::CreateAt { .. } | Op::Reorder { .. } | Op::Delete { .. }
+                ) {
                 family.clone()
             } else {
                 None
@@ -1139,6 +1149,7 @@ impl Store {
         // A checklist or project with children: the op acts on the whole family.
         let parent = |uid: &str| snap.find(uid).filter(|&i| !snap.children(i).is_empty());
         Ok(match op {
+            Op::Reorder { .. } | Op::CreateAt { .. } => self.plan_order(snap, op, now)?,
             Op::Create(n) => {
                 let uid = new_uid();
                 let parent_json_uid = n.parent.as_deref().and_then(|p| parent_json_uid(snap, p));

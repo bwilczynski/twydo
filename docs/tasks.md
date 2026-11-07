@@ -280,6 +280,15 @@ The Details pane uses the same item sequence. For legacy items tied on both posi
 creation time, UID is only a deterministic fallback: a family move/history copy can change
 that tie order because it assigns fresh UIDs. Unknown historical insertion order cannot be
 recovered from tied fields; Twydo does not renumber existing items to guess it.
+An explicit `J`/`K` move or anchored `o`/`O` insertion deliberately gives the resulting
+complete sibling sequence zero-based `DisplayOrder` ranks, including completed items.
+Only differing ranks are rewritten, with normal modification timestamps; creation times
+and unrelated metadata remain intact. `a` and subsequent Enter-chain items append.
+Ordering is independent of recurrence, dates, alarms and completion state: those fields
+are preserved, so recurring checklists/projects use the same `DisplayOrder` operation.
+Phone display requires **Manually** selected in 2Do. Anchored insertion additionally needs
+the existing new-item creation checks. Sorting preferences and independently displayed
+project-item scheduling are unaffected.
 
 ## Alerts
 

@@ -138,12 +138,15 @@ fn enter_on_leaf_opens_form() {
 }
 
 #[test]
-fn keys_without_support_are_blocked_with_reason() {
+fn reorder_keys_explain_the_required_nested_item_context() {
     let mut a = app();
-    for (k, name) in [(key('J'), "move task"), (key('K'), "move task")] {
+    for k in [key('J'), key('K')] {
         a.message = None;
         assert_eq!(a.handle_key(k), Outcome::Continue);
-        assert_eq!(a.message, Some(format!("{name}: not available yet")));
+        assert_eq!(
+            a.message,
+            Some("J/K reorder nested items in the Tasks pane".into())
+        );
     }
     a.handle_key(code(KeyCode::Esc));
     assert!(a.message.is_none());
@@ -573,7 +576,7 @@ fn successful_reload_clears_reload_failed_message() {
     // Other messages survive a reload.
     a.handle_key(key('J'));
     a.reload(snapshot_of(report()));
-    assert!(a.message.as_deref().unwrap().starts_with("move task:"));
+    assert!(a.message.as_deref().unwrap().starts_with("J/K reorder"));
 }
 
 #[test]
@@ -1028,7 +1031,10 @@ fn newer_message_is_not_cleared_by_old_timer() {
     a.expire_message(t0);
     a.handle_key(key('J'));
     a.expire_message(t0 + chrono::Duration::seconds(60));
-    assert_eq!(a.message.as_deref(), Some("move task: not available yet"));
+    assert_eq!(
+        a.message.as_deref(),
+        Some("J/K reorder nested items in the Tasks pane")
+    );
 }
 
 #[test]
@@ -1553,10 +1559,14 @@ fn o_on_item_targets_parent() {
     assert_eq!(r.anchor.as_deref(), Some(charger.as_str()));
     type_str(&mut a, "Socks");
     assert_eq!(
-        create_op(a.handle_key(code(KeyCode::Enter))),
-        NewTask {
-            parent: Some(PACKING.into()),
-            ..NewTask::plain("personal", "Socks")
+        write_op(a.handle_key(code(KeyCode::Enter))),
+        Op::CreateAt {
+            task: NewTask {
+                parent: Some(PACKING.into()),
+                ..NewTask::plain("personal", "Socks")
+            },
+            anchor: charger,
+            placement: twydo_core::edit::Placement::After,
         }
     );
 }

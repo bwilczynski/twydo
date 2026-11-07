@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use twydo_core::edit::{Change, NewTask, Op};
+use twydo_core::edit::{Change, NewTask, Op, Placement};
 use twydo_core::model::TaskKind;
 use twydo_core::views::{Snapshot, View};
 
@@ -19,6 +19,8 @@ pub(super) const ASK_ITEMS: &str = "Add items: make it a (p)roject or (c)hecklis
 /// The row being typed: where the task goes and where the row is drawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewRow {
+    /// None for append; explicit sibling placement for o/O.
+    pub insertion: Option<(String, Placement)>,
     pub target: NewTarget,
     pub title: String,
     /// Drawn below `anchor` (`o`, `a`, the chain), else above it (`O`).
@@ -83,7 +85,20 @@ impl App {
             return;
         }
         let anchor = selected.map(|i| self.snapshot.tasks[i].uid.clone());
+        let insertion = target.parent.as_ref().and(anchor.clone()).map(|uid| {
+            (
+                uid,
+                if below {
+                    Placement::After
+                } else {
+                    Placement::Before
+                },
+            )
+        });
         self.show_row(target, anchor, below);
+        if let Some(row) = &mut self.new_row {
+            row.insertion = insertion;
+        }
     }
 
     /// `a`: an item row at the end of the selected parent (or of the selected item's parent);
@@ -158,6 +173,7 @@ impl App {
     fn show_row(&mut self, target: NewTarget, anchor: Option<String>, below: bool) {
         self.message = None;
         self.new_row = Some(NewRow {
+            insertion: None,
             target,
             title: String::new(),
             below,
@@ -207,7 +223,9 @@ impl App {
             self.close_row();
             return Outcome::Continue;
         }
-        let form = EditForm::new_task(row.target.clone(), row.title.clone(), self.snapshot.tz());
+        let mut form =
+            EditForm::new_task(row.target.clone(), row.title.clone(), self.snapshot.tz());
+        form.insertion = row.insertion.clone();
         let saved = form.save(self.now.date_naive(), &self.snapshot.config.work_days);
         let row = self.new_row.as_mut().expect("row is open");
         match saved {
@@ -229,6 +247,7 @@ impl App {
             return;
         };
         let mut form = EditForm::new_task(row.target, row.title, self.snapshot.tz());
+        form.insertion = row.insertion;
         if let Some(next) = form.fields().get(1) {
             form.focus = *next;
         }
@@ -239,7 +258,7 @@ impl App {
 
     /// Remember a create, so [`App::follow_created`] can find the task it wrote.
     pub(super) fn note_create(&mut self, op: &Op) {
-        if let Op::Create(task) = op {
+        if let Op::Create(task) | Op::CreateAt { task, .. } = op {
             self.adding = Some(Adding {
                 task: task.clone(),
                 before: self.snapshot.tasks.iter().map(|t| t.uid.clone()).collect(),
@@ -304,6 +323,7 @@ impl App {
             .map(|p| self.last_item_anchor(p))
             .unwrap_or(uid);
         if let Some(row) = self.new_row.as_mut() {
+            row.insertion = None;
             row.anchor = Some(anchor);
             row.below = true;
         }

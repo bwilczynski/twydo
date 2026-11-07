@@ -188,3 +188,17 @@ new UID; items moved with their parent point at the parent's new UID.
 Outside the vdir, under the state directory ([architecture.md](architecture.md)): the operation
 journal, sync status and manifest, and conflicts (both versions of a conflicted task). All are
 plain JSON or `.ics` files you can inspect. None of them is a second copy of your tasks.
+
+### Explicit item positions
+
+An explicit sibling move or anchored insertion assigns zero-based `DisplayOrder` ranks
+to the resulting complete family sequence (including completed/cancelled items). Only
+resources with differing numeric ranks are rewritten; unrelated metadata and creation
+timestamps are preserved. This resolves legacy ties deliberately during that action.
+Reading, ordinary edits and appending do not renumber older items or infer historical order.
+Compatibility checks for these new writes are separate from append checks.
+
+Ordering writes preserve the raw recurrence/date/alarm/status properties and all unrelated
+JSON metadata. They do not execute or edit recurrence. Consequently recurring parents and
+mixed completion states use the same DisplayOrder representation as plain families; their
+recurrence execution permissions remain independent.

@@ -1403,3 +1403,51 @@ id = "reopen-undo-before-after-sync"
 observed = "Plan 4 session: Twydo undo of a yearly completion before sync uploaded nothing (iPhone unchanged); undo of a monthly completion after sync restored the live due date and removed the history copy on the iPhone (no stray copy). Covers Twydo undo only, not 2Do reopen semantics."
 verdict = "pass"
 evidence = ["fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/06-undo-after-sync"]
+
+# Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
+[[operation]]
+case = "checklist"
+op = "reorder"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/020-twydo-reordered", "fixtures/phase0/v1/issue41-item-reorder/040-manual-display", "fixtures/phase0/v1/issue41-item-reorder/050-phone-rename"]
+notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
+
+# Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
+[[operation]]
+case = "checklist"
+op = "insert"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/060-twydo-inserted", "fixtures/phase0/v1/issue41-item-reorder/070-phone-insertion-display", "fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename"]
+notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
+
+# Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
+[[operation]]
+case = "project"
+op = "reorder"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/020-twydo-reordered", "fixtures/phase0/v1/issue41-item-reorder/040-manual-display", "fixtures/phase0/v1/issue41-item-reorder/050-phone-rename"]
+notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
+
+# Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
+[[operation]]
+case = "project"
+op = "insert"
+iphone_baseline = "unsupported"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/060-twydo-inserted", "fixtures/phase0/v1/issue41-item-reorder/070-phone-insertion-display", "fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename"]
+notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."

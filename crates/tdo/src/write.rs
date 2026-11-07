@@ -267,13 +267,14 @@ fn step(
 /// The title of the task an operation writes, as it is before the write.
 pub fn op_title(snap: &Snapshot, op: &Op) -> String {
     let uid = match op {
-        Op::Create(t) => return t.summary.trim().to_string(),
+        Op::Create(t) | Op::CreateAt { task: t, .. } => return t.summary.trim().to_string(),
         Op::Edit { uid, .. }
         | Op::Save { uid, .. }
         | Op::Complete { uid }
         | Op::Reopen { uid }
         | Op::Move { uid, .. }
-        | Op::Delete { uid } => uid,
+        | Op::Delete { uid }
+        | Op::Reorder { uid, .. } => uid,
     };
     snap.find(uid)
         .map_or_else(|| uid.clone(), |i| snap.tasks[i].summary.clone())
@@ -327,7 +328,8 @@ fn success(snap: &Snapshot, op: &Op) -> String {
         Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} {items} · u to undo"),
         Op::Delete { .. } => "deleted · u to undo".into(),
         Op::Edit { .. } | Op::Save { .. } => "saved".into(),
-        Op::Create(_) => "added".into(),
+        Op::Create(_) | Op::CreateAt { .. } => "added".into(),
+        Op::Reorder { .. } => "reordered · u to undo".into(),
         Op::Move { to, .. } => {
             let name = snap
                 .collections
