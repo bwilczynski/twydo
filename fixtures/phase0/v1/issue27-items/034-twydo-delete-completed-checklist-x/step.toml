@@ -1,0 +1,5 @@
+scenario = "issue27-items"
+step = "034-twydo-delete-completed-checklist-x"
+device = "twydo"
+action = "delete twydo-i27-c-b-x on reserved writer twin; capture exact resource set."
+captured_at = "2026-11-07T14:50:12Z"

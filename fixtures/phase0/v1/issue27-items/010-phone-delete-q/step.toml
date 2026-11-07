@@ -1,0 +1,5 @@
+scenario = "issue27-items"
+step = "010-phone-delete-q"
+device = "iphone"
+action = "Delete only open q in plain checklist ca and independently weekly-repeating q in plain project pa; retain completed x and all parents/twins."
+captured_at = "2026-11-07T14:24:07Z"

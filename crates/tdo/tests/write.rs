@@ -826,6 +826,7 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
 /// These fixtures are copied to a tempdir; no production vdir, config or sync is used.
 mod verified_recurrence_tui {
     use super::{Env, now, writer};
+    use chrono::{TimeZone, Utc};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::fs;
     use std::path::Path;
@@ -866,7 +867,16 @@ mod verified_recurrence_tui {
             .visible_rows()
             .iter()
             .position(|r| a.snapshot.tasks[r.task].uid == uid)
-            .unwrap();
+            .unwrap_or_else(|| {
+                panic!(
+                    "{uid} missing from {:?}; visible {:?}",
+                    a.view,
+                    a.visible_rows()
+                        .iter()
+                        .map(|r| &a.snapshot.tasks[r.task].uid)
+                        .collect::<Vec<_>>()
+                )
+            });
     }
     fn request(o: Outcome) -> Request {
         match o {
@@ -1234,5 +1244,107 @@ mod verified_recurrence_tui {
             fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap(),
             before
         );
+    }
+
+    fn item_bytes(e: &Env) -> std::collections::BTreeMap<String, Vec<u8>> {
+        fs::read_dir(e.vdir().join("list1"))
+            .unwrap()
+            .map(|p| p.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|ext| ext == "ics"))
+            .map(|p| {
+                (
+                    p.file_name().unwrap().to_str().unwrap().to_owned(),
+                    fs::read(p).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn item_app(e: &Env, parent: &str) -> App {
+        let at = Utc.with_ymd_and_hms(2026, 11, 7, 16, 0, 0).unwrap();
+        let mut a = App::new(
+            e.snapshot(),
+            at.with_timezone(&chrono_tz::America::New_York),
+        );
+        a.expanded.insert(parent.into());
+        a
+    }
+
+    #[test]
+    fn individual_item_deletion_keys_target_open_completed_and_last_items_and_restore_bytes() {
+        for (step, prefix, child, done) in [
+            ("001-seeded", "c", "q", false),
+            ("001-seeded", "p", "q", false),
+            ("020-phone-complete-project", "c", "x", false),
+            ("020-phone-complete-project", "p", "x", true),
+            ("020-phone-complete-project", "m", "q", false),
+            ("020-phone-complete-project", "w", "q", false),
+        ] {
+            let e = env_in("issue27-items", step);
+            let parent = format!("twydo-i27-{prefix}-a");
+            let uid = format!("{parent}-{child}");
+            let before = item_bytes(&e);
+            let mut expected = before.clone();
+            expected.remove(&(uid.clone() + ".ics"));
+            let (mut w, _) = writer(&e.config());
+            let mut a = item_app(&e, &parent);
+            select(&mut a, &uid, done);
+            assert!(!matches!(a.handle_key(key('d')), Outcome::Write(_)));
+            let r = request(a.handle_key(key('d')));
+            assert!(
+                matches!(&r, Request::Apply(twydo_core::edit::Op::Delete { uid: target }) if target == &uid)
+            );
+            run(&e, &mut a, &mut w, r);
+            assert_eq!(item_bytes(&e), expected, "{uid}");
+            let p = a.snapshot.find(&parent).unwrap();
+            assert_eq!(
+                a.snapshot.tasks[p].kind,
+                if matches!(prefix, "c" | "m") {
+                    TaskKind::Checklist
+                } else {
+                    TaskKind::Project
+                }
+            );
+            // Empty parents remain visible in their eligible view.
+            a.handle_key(key('2'));
+            assert!(
+                a.visible_rows()
+                    .iter()
+                    .any(|r| a.snapshot.tasks[r.task].uid == parent)
+            );
+            let r = request(a.handle_key(key('u')));
+            run(&e, &mut a, &mut w, r);
+            assert_eq!(item_bytes(&e), before);
+            let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+            run(&e, &mut a, &mut w, r);
+            assert_eq!(item_bytes(&e), expected);
+        }
+    }
+
+    #[test]
+    fn individual_item_deletion_keys_queue_during_sync_and_undo_after_drain() {
+        let e = env_in("issue27-items", "020-phone-complete-project");
+        let parent = "twydo-i27-p-a";
+        let uid = "twydo-i27-p-a-x";
+        let before = item_bytes(&e);
+        let (mut w, _) = writer(&e.config());
+        let mut a = item_app(&e, parent);
+        select(&mut a, uid, true);
+        a.handle_key(key('d'));
+        let r = request(a.handle_key(key('d')));
+        let state = twydo_core::store::vdir_state_dir(&e.config().state_dir(), &e.vdir()).unwrap();
+        let lock = twydo_core::store::fsio::VdirLock::exclusive(&state).unwrap();
+        let message = w.run(a.write_snapshot(), &r, now()).unwrap();
+        assert!(message.contains("queued"));
+        assert_eq!(item_bytes(&e), before);
+        drop(lock);
+        w.drain(now());
+        a.reload(e.snapshot());
+        let mut expected = before.clone();
+        expected.remove(&(uid.to_owned() + ".ics"));
+        assert_eq!(item_bytes(&e), expected);
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), before);
     }
 }

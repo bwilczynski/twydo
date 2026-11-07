@@ -3213,10 +3213,12 @@ mod recurring_checklist_writes {
     }
 
     #[test]
-    fn individual_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
+    fn legacy_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
         let e = env("011-phone-items-and-text");
         let mut s = e.snap();
-        let m = Matrix::embedded().clone();
+        let mut m = Matrix::embedded().clone();
+        m.operation
+            .retain(|r| !matches!(r.case.as_str(), "checklist-item" | "project-item"));
         let p = s.find(CHECKLIST_A_UID).unwrap();
         let q = *s
             .children(p)
@@ -3251,10 +3253,14 @@ mod recurring_checklist_writes {
         );
     }
     #[test]
-    fn verified_checklist_last_item_parent_and_unverified_conversion_stay_blocked() {
+    fn legacy_checklist_last_item_and_uncaptured_parent_operations_stay_blocked() {
         let e = env("011d-phone-delete-items");
         let s = e.snap();
-        let m = Matrix::embedded();
+        let mut legacy = Matrix::embedded().clone();
+        legacy
+            .operation
+            .retain(|r| !matches!(r.case.as_str(), "checklist-item" | "project-item"));
+        let m = &legacy;
         let p = s.find(CHECKLIST_A_UID).unwrap();
         let child = s.children(p)[0];
         for uid in [&s.tasks[child].uid, &s.tasks[p].uid] {
@@ -3292,5 +3298,192 @@ mod recurring_checklist_writes {
                 "{rule}"
             );
         }
+    }
+}
+
+mod individual_item_deletion {
+    use super::*;
+    use common::item_deletion as evidence;
+    use twydo_core::compat::Verdict;
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::{Alarm, Status, Trigger};
+
+    #[test]
+    fn delete_uses_item_evidence_for_open_completed_last_and_repeating_items() {
+        let matrix = evidence::matrix("pass");
+        for (step, targets) in [
+            (evidence::SEED, vec!["twydo-i27-c-a-q", "twydo-i27-p-a-q"]),
+            (
+                evidence::CLOSED,
+                vec![
+                    "twydo-i27-c-a-x",
+                    "twydo-i27-p-a-x",
+                    "twydo-i27-m-a-q",
+                    "twydo-i27-w-a-q",
+                ],
+            ),
+        ] {
+            let e = evidence::env(step);
+            let s = e.snap();
+            for uid in targets {
+                let op = Op::Delete { uid: uid.into() };
+                assert_eq!(
+                    check(&s, &matrix, WriteMode::Verified, &op, today()),
+                    Ok(()),
+                    "{uid}"
+                );
+                assert_eq!(
+                    check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
+                    Ok(()),
+                    "shipping matrix: {uid}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn delete_has_its_own_bidirectional_verdict_and_does_not_authorize_other_operations() {
+        let e = evidence::env(evidence::SEED);
+        let s = e.snap();
+        let op = Op::Delete {
+            uid: "twydo-i27-c-a-q".into(),
+        };
+        let baseline = evidence::matrix("unverified");
+        assert!(check(&s, &baseline, WriteMode::Verified, &op, today()).is_err());
+        assert_eq!(check(&s, &baseline, WriteMode::Test, &op, today()), Ok(()));
+        let m = evidence::matrix("pass");
+        for other in [
+            Op::Delete {
+                uid: "twydo-i27-m-a".into(),
+            },
+            Op::Move {
+                uid: "twydo-i27-c-a-q".into(),
+                to: "list2".into(),
+            },
+            complete("twydo-i27-w-a"),
+            reopen("twydo-i27-c-a-x"),
+        ] {
+            assert!(
+                check(&s, &m, WriteMode::Verified, &other, today()).is_err(),
+                "{other:?}"
+            );
+        }
+        for column in ["baseline", "outbound", "inbound"] {
+            let mut m = evidence::matrix("pass");
+            let row = &mut m.operation[0];
+            match column {
+                "baseline" => row.iphone_baseline = Verdict::Unverified,
+                "outbound" => row.twydo_to_iphone = Verdict::Unverified,
+                _ => row.iphone_to_twydo = Verdict::Unverified,
+            }
+            assert!(
+                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
+                "{column}"
+            );
+        }
+    }
+
+    #[test]
+    fn delete_preserves_recognized_schedules_without_execution_or_field_edit_verdicts() {
+        let e = evidence::env(evidence::SEED);
+        let base = e.snap();
+        let matrix = evidence::matrix("pass");
+        let q = base.find("twydo-i27-c-a-q").unwrap();
+        let parent = base.parent(q).unwrap();
+        let sibling = base.find("twydo-i27-c-a-x").unwrap();
+        for rule in [
+            "FREQ=DAILY",
+            "FREQ=WEEKLY;INTERVAL=3",
+            "FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            "FREQ=MONTHLY;INTERVAL=2",
+            "FREQ=MONTHLY;BYMONTHDAY=-1",
+            "FREQ=MONTHLY;BYDAY=2TU",
+            "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
+            "FREQ=MONTHLY;BYDAY=SA,SU;BYSETPOS=1",
+            "FREQ=YEARLY",
+            "FREQ=MONTHLY;COUNT=3",
+            "FREQ=MONTHLY;UNTIL=20270210",
+        ] {
+            let mut s = base.clone();
+            s.tasks[parent].rrule = Some(rule.into());
+            s.tasks[q].rrule = Some(rule.into());
+            s.tasks[sibling].rrule = Some(rule.into());
+            s.tasks[parent].from_completion = true;
+            s.tasks[parent].status = Status::Cancelled;
+            s.tasks[q].status = Status::Completed;
+            s.tasks[sibling].status = Status::Cancelled;
+            s.tasks[parent].start = Some(IcalDateTime::Date(date(2026, 12, 1)));
+            s.tasks[parent].alarms.push(Alarm {
+                trigger: Trigger::Absolute("2026-12-10T08:00:00Z".parse().unwrap()),
+                index: 0,
+            });
+            assert_eq!(
+                check(
+                    &s,
+                    &matrix,
+                    WriteMode::Verified,
+                    &Op::Delete {
+                        uid: s.tasks[q].uid.clone()
+                    },
+                    today()
+                ),
+                Ok(()),
+                "{rule}"
+            );
+        }
+    }
+}
+
+#[test]
+fn individual_delete_refuses_ambiguous_malformed_cross_list_and_nested_families() {
+    let e = common::item_deletion::env(common::item_deletion::SEED);
+    let base = e.snap();
+    let m = common::item_deletion::matrix("pass");
+    let q = base.find("twydo-i27-c-a-q").unwrap();
+    let parent = base.parent(q).unwrap();
+    let sibling = base.find("twydo-i27-c-a-x").unwrap();
+    let op = Op::Delete {
+        uid: base.tasks[q].uid.clone(),
+    };
+    for member in [q, parent, sibling] {
+        let mut s = base.clone();
+        s.tasks[member].blocked = Some("synthetic unsupported resource".into());
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+        let mut s = base.clone();
+        s.tasks[member].meta.unreadable = true;
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+        let mut s = base.clone();
+        s.tasks[member].rrule = Some("FREQ=HOURLY".into());
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+        let mut s = base.clone();
+        s.tasks.push(s.tasks[member].clone());
+        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+    }
+    let mut s = base.clone();
+    s.tasks[sibling].collection = "list2".into();
+    assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+    let mut s = base.clone();
+    s.tasks[parent].parent = Some("unresolved-parent".into());
+    assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
+    let s = snap();
+    for uid in [
+        "gate-broken-child",
+        "gate-nested-child",
+        "gate-nested-grandchild",
+        "gate-plain-child",
+        "gate-dup",
+    ] {
+        assert!(s.find(uid).is_some(), "missing negative fixture {uid}");
+        assert!(
+            check(
+                &s,
+                &m,
+                WriteMode::Verified,
+                &Op::Delete { uid: uid.into() },
+                today()
+            )
+            .is_err(),
+            "{uid}"
+        );
     }
 }
