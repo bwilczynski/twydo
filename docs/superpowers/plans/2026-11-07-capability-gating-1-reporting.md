@@ -43,12 +43,12 @@
 
 **Interfaces:** In `cli/permissions.rs`, add `pub(super) enum Availability { Allowed, Refused(String), Inapplicable(&'static str), RequiresInput(&'static str) }`, `pub(super) struct Probe { pub action: &'static str, pub availability: Availability }`, and `pub(super) fn probes(snap: &Snapshot, matrix: &Matrix, mode: WriteMode, idx: usize, now: DateTime<Utc>) -> Vec<Probe>`. Add `pub(super) fn task_lines(probes: &[Probe]) -> Vec<String>` for both commands.
 
-- [ ] Add failing module tests: title and notes map to separate `Op::Edit` values; compare their results with direct `gate::check` calls. Use a summary edit with the existing title and a description edit with the existing optional description; no writes occur.
-- [ ] Pin lifecycle states: open tasks probe complete; completed tasks probe reopen; the opposite actions are inapplicable. Cancelled tasks have both lifecycle actions inapplicable pending an explicit cancellation policy. Title, notes and delete still invoke the gate for each status.
-- [ ] Pin parameterized output: `create`, `edit dates`, `edit repeat`, `convert`, `move`, `reorder`, `insert` report required input/context, with no invented successful shape or chosen destination. Give each distinct label and short explanation. Include a reminder that this is a snapshot of admission.
-- [ ] Run `cargo test -p tdo --lib cli::permissions`; expect missing/new behavior failures before implementation.
-- [ ] Implement probes using only `gate::check`, fixed `now` converted through snapshot timezone, and the above status applicability. For duplicate identities, gate lookup must refuse; do not report permission for the first match alone.
-- [ ] Run the module tests; require all pass. Keep the new module private to CLI.
+- [x] Add failing module tests: title and notes map to separate `Op::Edit` values; compare their results with direct `gate::check` calls. Use a summary edit with the existing title and a description edit with the existing optional description; no writes occur.
+- [x] Pin lifecycle states: open tasks probe complete; completed tasks probe reopen; the opposite actions are inapplicable. Cancelled tasks have both lifecycle actions inapplicable pending an explicit cancellation policy. Title, notes and delete still invoke the gate for each status.
+- [x] Pin parameterized output: `create`, `edit dates`, `edit repeat`, `convert`, `move`, `reorder`, `insert` report required input/context, with no invented successful shape or chosen destination. Give each distinct label and short explanation. Include a reminder that this is a snapshot of admission.
+- [x] Run `cargo test -p tdo --lib cli::permissions`; expect missing/new behavior failures before implementation.
+- [x] Implement probes using only `gate::check`, fixed `now` converted through snapshot timezone, and the above status applicability. For duplicate identities, gate lookup must refuse; do not report permission for the first match alone.
+- [x] Run the module tests; require all pass. Keep the new module private to CLI.
 
 ### Task 2: Replace the misleading global pass/fail report
 

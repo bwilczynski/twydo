@@ -4,6 +4,7 @@ pub mod check;
 pub mod conflicts;
 pub mod export;
 pub mod op;
+mod permissions;
 pub mod sync;
 
 use std::path::Path;
