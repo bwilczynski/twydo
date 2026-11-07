@@ -2064,3 +2064,353 @@ mod monthly_checklist_writes {
         assert_eq!(e.files(), before);
     }
 }
+
+mod individual_item_deletion {
+    use super::*;
+    use common::item_deletion as evidence;
+
+    #[test]
+    fn item_deletions_match_phone_bytes_and_restore_exactly_through_undo_redo() {
+        for (before_step, after_step, targets) in [
+            (
+                evidence::SEED,
+                evidence::FIRST,
+                vec!["twydo-i27-c-a-q", "twydo-i27-p-a-q"],
+            ),
+            (
+                evidence::CLOSED,
+                evidence::EMPTY,
+                vec![
+                    "twydo-i27-c-a-x",
+                    "twydo-i27-p-a-x",
+                    "twydo-i27-m-a-q",
+                    "twydo-i27-w-a-q",
+                ],
+            ),
+        ] {
+            let e = evidence::env(before_step);
+            let before = e.files();
+            let mut store = e.store(evidence::matrix("pass"));
+            for uid in &targets {
+                let id = store
+                    .apply(&e.snap(), &Op::Delete { uid: (*uid).into() }, now())
+                    .unwrap();
+                let entry = Journal::open(&e.state).unwrap().get(&id).unwrap().unwrap();
+                assert_eq!(entry.writes.len(), 1);
+                assert_eq!(entry.writes[0].path, key(uid));
+                assert!(entry.writes[0].after.is_none());
+                assert!(entry.family.is_some());
+                assert!(!entry.holds.is_empty());
+            }
+            let after = evidence::env(after_step).files();
+            assert_eq!(e.files(), after, "{before_step} -> {after_step}");
+            for _ in &targets {
+                store.undo_last(later()).unwrap();
+            }
+            assert_eq!(e.files(), before);
+            for _ in &targets {
+                store.redo_last(later()).unwrap();
+            }
+            assert_eq!(e.files(), after);
+        }
+    }
+}
+
+#[test]
+fn individual_item_deletion_inverses_and_recovery_preserve_remote_family_changes() {
+    use common::item_deletion as evidence;
+    for (prefix, child) in [("c", "x"), ("p", "x"), ("m", "q"), ("w", "q")] {
+        for action in [
+            "undo-parent-change",
+            "redo-new-sibling",
+            "recover-parent-change",
+        ] {
+            let e = evidence::env(evidence::CLOSED);
+            let mut store = e.store(evidence::matrix("pass"));
+            let parent = format!("twydo-i27-{prefix}-a");
+            let uid = format!("{parent}-{child}");
+            let id = store
+                .apply(&e.snap(), &Op::Delete { uid: uid.clone() }, now())
+                .unwrap();
+            let journal = Journal::open(&e.state).unwrap();
+            journal.mark_synced(&id, later()).unwrap();
+            if action == "redo-new-sibling" {
+                store.undo_last(later()).unwrap();
+                let content = fs::read_to_string(e.file(&uid))
+                    .unwrap()
+                    .replace(&uid, "new-synthetic-item");
+                fs::write(e.file("new-synthetic-item"), content).unwrap();
+            } else {
+                let p = e.file(&parent);
+                let content = fs::read_to_string(&p)
+                    .unwrap()
+                    .replace("DESCRIPTION:x", "DESCRIPTION:remote synthetic");
+                fs::write(p, content).unwrap();
+            }
+            if action == "recover-parent-change" {
+                let mut entry = journal.get(&id).unwrap().unwrap();
+                entry.stage = Stage::Prepared;
+                // Crash before the file was removed; recovery must not ignore remote parent changes.
+                fs::write(e.file(&uid), entry.writes[0].before.as_ref().unwrap()).unwrap();
+                journal.prepare(&entry).unwrap();
+                let before = e.files();
+                let (_, report) = Store::open_with(&e.cfg, evidence::matrix("pass")).unwrap();
+                assert_eq!(report.stuck.len(), 1, "{prefix}: {action}");
+                assert_eq!(e.files(), before);
+            } else {
+                let before = e.files();
+                let count = e.journal().len();
+                let result = if action == "redo-new-sibling" {
+                    store.redo_last(later())
+                } else {
+                    store.undo_last(later())
+                };
+                assert!(
+                    matches!(result, Err(WriteError::Stale(_))),
+                    "{prefix}: {action}: {result:?}"
+                );
+                assert_eq!(e.files(), before);
+                assert_eq!(e.journal().len(), count);
+            }
+        }
+    }
+}
+
+#[test]
+fn individual_item_deletion_preserves_opaque_content_and_unexecuted_schedules() {
+    use common::item_deletion as evidence;
+    use twydo_core::edit::Due;
+    use twydo_core::ical::{Param, Property, serialize};
+    let due = chrono::NaiveDate::from_ymd_opt(2026, 12, 10).unwrap();
+    for (prefix, rule) in [
+        ("c", "monthly"),
+        ("p", "monthly after done"),
+        ("m", "yearly 3 times"),
+        ("w", "monthly until 2027-02-10"),
+    ] {
+        let e = evidence::env(evidence::SEED);
+        let parent = format!("twydo-i27-{prefix}-a");
+        let uid = format!("{parent}-q");
+        for member in [&parent, &uid] {
+            let path = e.file(member);
+            let mut cal = parse(&fs::read(&path).unwrap()).unwrap();
+            twydo_core::edit::apply_changes(
+                &mut cal,
+                &[
+                    Change::Due(Some(Due::Time(due.and_hms_opt(9, 30, 0).unwrap()))),
+                    Change::Start(Some(due.pred_opt().unwrap())),
+                    Change::Repeat(twydo_core::repeatinput::parse(rule, due, &[]).unwrap()),
+                ],
+                now(),
+            )
+            .unwrap();
+            let todo = cal
+                .root
+                .children
+                .iter_mut()
+                .find(|c| c.name == "VTODO")
+                .unwrap();
+            todo.insert_prop(
+                Property::new(
+                    "X-SYNTHETIC",
+                    vec![Param {
+                        name: "LABEL".into(),
+                        values: vec!["one,two".into()],
+                    }],
+                    "opaque value",
+                ),
+                None,
+            );
+            let mut extra = Component::new("X-SYNTHETIC-COMPONENT");
+            extra.insert_prop(Property::new("X-VALUE", vec![], "untouched"), None);
+            todo.push_child(extra);
+            let mut alarm = Component::new("VALARM");
+            alarm.insert_prop(
+                Property::new(
+                    "TRIGGER",
+                    vec![Param {
+                        name: "VALUE".into(),
+                        values: vec!["DATE-TIME".into()],
+                    }],
+                    "20261209T080000Z",
+                ),
+                None,
+            );
+            alarm.insert_prop(Property::new("ACTION", vec![], "DISPLAY"), None);
+            alarm.insert_prop(
+                Property::new("DESCRIPTION", vec![], "synthetic reminder"),
+                None,
+            );
+            todo.push_child(alarm);
+            fs::write(path, serialize(&cal)).unwrap();
+        }
+        let before = e.files();
+        let mut expected = before.clone();
+        expected.remove(&key(&uid));
+        let mut store = e.store(evidence::matrix("pass"));
+        store
+            .apply(&e.snap(), &Op::Delete { uid: uid.clone() }, now())
+            .unwrap();
+        assert_eq!(e.files(), expected, "{rule}");
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before, "opaque target must be restored exactly");
+    }
+}
+
+#[test]
+fn individual_history_item_deletion_keeps_live_family_and_other_history_untouched() {
+    let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let mut store = e.store(common::item_deletion::matrix("pass"));
+    let before = e.files();
+    let mut after = before.clone();
+    after.remove(&key(R1_COPY));
+    store
+        .apply(
+            &e.snap(),
+            &Op::Delete {
+                uid: R1_COPY.into(),
+            },
+            now(),
+        )
+        .unwrap();
+    assert_eq!(e.files(), after);
+    assert_eq!(e.files()[&key(R1)], before[&key(R1)]);
+    store.undo_last(later()).unwrap();
+    assert_eq!(e.files(), before);
+}
+
+#[test]
+fn individual_item_delete_recovery_is_idempotent_before_and_after_file_removal() {
+    use common::item_deletion as evidence;
+    for removed in [false, true] {
+        let e = evidence::env(evidence::SEED);
+        let mut store = e.store(evidence::matrix("pass"));
+        let uid = "twydo-i27-p-a-q";
+        let id = store
+            .apply(&e.snap(), &Op::Delete { uid: uid.into() }, now())
+            .unwrap();
+        let after = e.files();
+        let journal = Journal::open(&e.state).unwrap();
+        let mut entry = journal.get(&id).unwrap().unwrap();
+        entry.stage = Stage::Prepared;
+        journal.prepare(&entry).unwrap();
+        if !removed {
+            fs::write(e.file(uid), entry.writes[0].before.as_ref().unwrap()).unwrap();
+        }
+        let (_, report) = Store::open_with(&e.cfg, evidence::matrix("pass")).unwrap();
+        assert_eq!(report.resumed, vec![id]);
+        assert!(report.stuck.is_empty());
+        assert_eq!(e.files(), after);
+        let (_, report) = Store::open_with(&e.cfg, evidence::matrix("pass")).unwrap();
+        assert!(report.resumed.is_empty() && report.stuck.is_empty());
+        assert_eq!(e.journal().len(), 1);
+    }
+}
+
+#[test]
+fn item_delete_refuses_raw_duplicate_identities_and_multiple_parent_links() {
+    use common::item_deletion as evidence;
+    for extra in ["UID:another-synthetic-identity", "RELATED-TO:twydo-i27-p-a"] {
+        let e = evidence::env(evidence::SEED);
+        let uid = "twydo-i27-c-a-q";
+        let path = e.file(uid);
+        let raw = fs::read_to_string(&path)
+            .unwrap()
+            .replace("END:VTODO", &format!("{extra}\nEND:VTODO"));
+        fs::write(path, raw).unwrap();
+        let snapshot = e.snap();
+        assert!(
+            snapshot.find(uid).is_some(),
+            "unsupported resource stays readable"
+        );
+        let before = e.files();
+        let mut store = e.store(evidence::matrix("pass"));
+        assert!(
+            matches!(
+                store.apply(&snapshot, &Op::Delete { uid: uid.into() }, now()),
+                Err(WriteError::Blocked(_))
+            ),
+            "{extra}"
+        );
+        assert_eq!(e.files(), before);
+        assert!(e.journal().is_empty());
+    }
+}
+
+#[test]
+fn folded_parent_links_cannot_bypass_item_delete_family_guards() {
+    use common::item_deletion as evidence;
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+    for action in [
+        "apply",
+        "queue",
+        "undo",
+        "redo",
+        "recover-before",
+        "recover-after",
+    ] {
+        let e = evidence::env(evidence::SEED);
+        let uid = "twydo-i27-c-a-q";
+        let snapshot = e.snap();
+        let mut store = e.store(evidence::matrix("pass"));
+        let op = Op::Delete { uid: uid.into() };
+        let mut queued_lock = None;
+        if action == "queue" {
+            queued_lock = Some(VdirLock::exclusive(&e.state).unwrap());
+            assert!(matches!(
+                store.submit(&snapshot, &op, "delete", "op", now()).unwrap(),
+                Submitted::Queued(_)
+            ));
+        } else if action != "apply" {
+            let id = store.apply(&snapshot, &op, now()).unwrap();
+            if action == "redo" {
+                store.undo_last(later()).unwrap();
+            }
+            if action.starts_with("recover-") {
+                let journal = Journal::open(&e.state).unwrap();
+                let mut entry = journal.get(&id).unwrap().unwrap();
+                entry.stage = Stage::Prepared;
+                journal.prepare(&entry).unwrap();
+                if action == "recover-before" {
+                    fs::write(e.file(uid), entry.writes[0].before.as_ref().unwrap()).unwrap();
+                }
+            }
+        }
+        // No metadata or other raw occurrence of the parent UID can hide the folding bug.
+        let joined = b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:new-folded-item\r\nSUMMARY:synthetic\r\nRELATED-TO:twydo-i27-\r\n c-a\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        let parsed = parse(joined).unwrap();
+        assert_eq!(
+            todo_of(joined).prop("RELATED-TO").unwrap().value,
+            "twydo-i27-c-a"
+        );
+        assert_eq!(twydo_core::ical::serialize(&parsed), joined);
+        fs::write(e.file("new-folded-item"), joined).unwrap();
+        let before = e.files();
+        match action {
+            "apply" => assert!(matches!(
+                store.apply(&snapshot, &op, later()),
+                Err(WriteError::Stale(_))
+            )),
+            "queue" => {
+                drop(queued_lock);
+                let drained = store.drain(later()).unwrap();
+                assert_eq!(drained.len(), 1);
+                assert!(matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+            }
+            "undo" => assert!(matches!(
+                store.undo_last(later()),
+                Err(WriteError::Stale(_))
+            )),
+            "redo" => assert!(matches!(
+                store.redo_last(later()),
+                Err(WriteError::Stale(_))
+            )),
+            _ => {
+                let (_, report) = Store::open_with(&e.cfg, evidence::matrix("pass")).unwrap();
+                assert_eq!(report.stuck.len(), 1, "{action}");
+                assert!(report.resumed.is_empty());
+            }
+        }
+        assert_eq!(e.files(), before, "{action}: no partial writes");
+    }
+}

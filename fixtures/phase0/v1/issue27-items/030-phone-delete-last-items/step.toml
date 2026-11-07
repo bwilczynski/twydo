@@ -1,0 +1,5 @@
+scenario = "issue27-items"
+step = "030-phone-delete-last-items"
+device = "iphone"
+action = "Delete completed x from open ca and completed pa, and only open q from monthly ma and weekly wa; retain all four empty parents."
+captured_at = "2026-11-07T14:32:55Z"

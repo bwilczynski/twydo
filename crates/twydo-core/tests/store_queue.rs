@@ -864,3 +864,52 @@ fn undo_skips_a_refused_queued_step() {
         Err(WriteError::NothingToUndo)
     ));
 }
+
+#[test]
+fn individual_item_deletes_queue_and_refuse_changed_family_bytes() {
+    use common::item_deletion as evidence;
+    for prefix in ["c", "p"] {
+        for changed in [false, true] {
+            let e = evidence::env(evidence::CLOSED);
+            let mut store = e.store(evidence::matrix("pass"));
+            let parent = format!("twydo-i27-{prefix}-a");
+            let uid = format!("{parent}-x");
+            let snap = e.snap();
+            let lock = VdirLock::exclusive(&e.state).unwrap();
+            let queued = store
+                .submit(
+                    &snap,
+                    &Op::Delete { uid: uid.clone() },
+                    "delete item",
+                    "op",
+                    now(),
+                )
+                .unwrap();
+            assert!(matches!(queued, Submitted::Queued(_)));
+            if changed {
+                let path = e.file(&parent);
+                let bytes = fs::read_to_string(&path)
+                    .unwrap()
+                    .replace("DESCRIPTION:x", "DESCRIPTION:remote synthetic");
+                fs::write(path, bytes).unwrap();
+            }
+            let before = e.files();
+            drop(lock);
+            let result = store.drain(later()).unwrap();
+            assert_eq!(result.len(), 1);
+            if changed {
+                assert!(matches!(result[0].outcome, DrainOutcome::Refused(_)));
+                assert_eq!(e.files(), before);
+                assert!(e.journal().is_empty());
+            } else {
+                assert!(matches!(result[0].outcome, DrainOutcome::Applied(_)));
+                let mut expected = before;
+                expected.remove(&format!("list1/{uid}.ics"));
+                assert_eq!(e.files(), expected);
+                store.undo_last(later()).unwrap();
+                assert!(e.file(&uid).exists());
+            }
+            assert!(Queue::open(&e.state).unwrap().is_empty().unwrap());
+        }
+    }
+}

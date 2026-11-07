@@ -2,3 +2,5 @@
 crates/twydo-core/tests/data/** -text
 # Captures preserve CRLF and meaningful spaces at folded property boundaries.
 fixtures/**/*.ics -text whitespace=-blank-at-eol,cr-at-eol
+# Generated capture diffs contain the same meaningful folded-line spaces.
+fixtures/**/changes.diff whitespace=-blank-at-eol,cr-at-eol

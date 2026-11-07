@@ -1756,3 +1756,49 @@ fn checklist_phone_edits_after_second_reset_preserve_family_links() {
         &["DESCRIPTION"],
     );
 }
+
+#[test]
+fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_identity() {
+    for uid in [
+        "twydo-i27-c-b",
+        "twydo-i27-p-b",
+        "twydo-i27-m-b",
+        "twydo-i27-w-b",
+    ] {
+        let input = fixture("issue27-items", "038-twydo-upload", uid);
+        let phone = parse(&fixture("issue27-items", "040-phone-return-notes", uid)).unwrap();
+        let before = parse(&input).unwrap();
+        let mut edited = before.clone();
+        apply_changes(
+            &mut edited,
+            &[Change::Description(Some("z".into()))],
+            dtstamp(&phone),
+        )
+        .unwrap();
+        assert_eq!(
+            common::sorted(lines(&edited)),
+            common::sorted(lines(&phone)),
+            "{uid}"
+        );
+        let retained = |cal: &Calendar| {
+            common::sorted(
+                lines(cal)
+                    .into_iter()
+                    .filter(|l| {
+                        !matches!(l.1.as_str(), "DESCRIPTION" | "DTSTAMP" | "LAST-MODIFIED")
+                    })
+                    .collect(),
+            )
+        };
+        assert_eq!(
+            retained(&before),
+            retained(&phone),
+            "{uid}: only notes and stamps change"
+        );
+        assert_eq!(
+            serialize(&phone),
+            fixture("issue27-items", "040-phone-return-notes", uid),
+            "native folding must round-trip exactly"
+        );
+    }
+}

@@ -1,0 +1,5 @@
+scenario = "issue27-items"
+step = "040-phone-return-notes"
+device = "iphone"
+action = "Inspect empty cb/mb/wb and completed empty pb after Twydo deletions; edit each parent note x to z; preserve types, schedules, completion and identities."
+captured_at = "2026-11-07T15:03:07Z"
