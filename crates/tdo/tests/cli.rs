@@ -38,6 +38,7 @@ mod gate {
             .args(args)
             .current_dir(root())
             .env("XDG_CONFIG_HOME", cfg.path())
+            .env("XDG_STATE_HOME", cfg.path().join("state"))
             .output()
             .expect("run tdo")
     }
@@ -103,22 +104,23 @@ mod gate {
             "{out}"
         );
         assert!(out.contains("parse errors: 0"), "{out}");
-        // Every class of the sample (monthly, weekdays, weekly, yearly) executes since Plan 7
-        // session C, so the gate passes.
-        assert!(out.contains("GATE: PASSED"), "{out}");
-        assert!(!out.contains("GATE: NOT PASSED"), "{out}");
+        assert!(out.contains("Data health"), "{out}");
+        assert!(out.contains("Recurrence evidence"), "{out}");
+        assert!(
+            out.contains("Operation availability (mode=verified)"),
+            "{out}"
+        );
+        assert!(!out.contains("GATE:"), "{out}");
         assert!(!out.contains("Pay rent"), "{out}");
         let v = tdo(&["--vdir", sample(), "check", "--verbose"]);
         assert!(stdout(&v).contains("Pay rent"));
     }
 
     #[test]
-    fn check_missing_matrix_reports_unverified() {
+    fn check_missing_matrix_is_a_configuration_error() {
         let o = tdo(&["--vdir", sample(), "check", "--matrix", "nope.toml"]);
-        assert_eq!(o.status.code(), Some(0));
-        let out = stdout(&o);
-        assert!(out.contains("matrix not found: nope.toml"), "{out}");
-        assert!(out.contains("GATE: NOT PASSED"), "{out}");
+        assert_eq!(o.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&o.stderr).contains("nope.toml"));
     }
 
     /// An installed `tdo` runs from anywhere: without `--matrix`, `check` uses the matrix built
@@ -131,6 +133,7 @@ mod gate {
             .args(["--vdir", root().join(sample()).to_str().unwrap(), "check"])
             .current_dir(elsewhere.path())
             .env("XDG_CONFIG_HOME", cfg.path())
+            .env("XDG_STATE_HOME", cfg.path().join("state"))
             .output()
             .expect("run tdo");
         let out = stdout(&o);
@@ -197,12 +200,13 @@ mod gate {
     }
 
     #[test]
-    fn gate_passes_only_when_all_verified_and_no_parse_errors() {
+    fn healthy_data_still_reports_refused_operations() {
         let d = tempfile::tempdir().unwrap();
         let m = matrix_file(d.path(), &[("days", "pass")]);
         let good = mini_vdir(d.path(), false);
         let out = stdout(&tdo(&["--vdir", &good, "check", "--matrix", &m]));
-        assert!(out.contains("GATE: PASSED"), "{out}");
+        assert!(!out.contains("GATE:"), "{out}");
+        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
 
         let d2 = tempfile::tempdir().unwrap();
         let m2 = matrix_file(d2.path(), &[("days", "pass")]);
@@ -210,7 +214,7 @@ mod gate {
         let out = stdout(&tdo(&["--vdir", &bad, "check", "--matrix", &m2]));
         assert!(out.contains("parse errors: 1"), "{out}");
         assert!(
-            out.contains("GATE: NOT PASSED (0 rule classes unverified, 1 parse error, 0 blocked)"),
+            out.contains("parse errors: 1") && out.contains("edit title: allowed=0 refused=1"),
             "{out}"
         );
     }
@@ -230,17 +234,15 @@ mod gate {
             out.contains("days+count  1 tasks  preserve=unverified"),
             "{out}"
         );
-        assert!(
-            out.contains("GATE: NOT PASSED (1 rule classes unverified, 0 parse errors, 0 blocked)"),
-            "{out}"
-        );
+        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
         let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "pass")]);
         let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
-        assert!(out.contains("GATE: PASSED"), "{out}");
+        assert!(!out.contains("GATE:"), "{out}");
+        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
     }
 
     #[test]
-    fn blocked_open_task_fails_gate() {
+    fn model_read_only_count_includes_completed_tasks() {
         let d = tempfile::tempdir().unwrap();
         let v = d.path().join("vdir/c");
         std::fs::create_dir_all(&v).unwrap();
@@ -253,18 +255,91 @@ mod gate {
         let vd = vd.to_str().unwrap();
         let m = matrix_file(d.path(), &[("days", "pass")]);
         let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
-        assert!(out.contains("blocked: 1\n"), "{out}");
+        assert!(out.contains("model read-only resources: 2\n"), "{out}");
         assert!(
             out.contains("    recurrence overrides are not supported: 1\n"),
             "{out}"
         );
         assert!(!out.contains("Synthetic override"), "{out}");
         assert!(
-            out.contains("GATE: NOT PASSED (0 rule classes unverified, 0 parse errors, 1 blocked)"),
+            out.contains("tasks: 2") && out.contains("reopen: allowed=0 refused=1 inapplicable=1"),
             "{out}"
         );
         let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m, "--verbose"]));
         assert!(out.contains("        Synthetic override\n"), "{out}");
+    }
+    #[test]
+    fn report_separates_rule_edit_evidence_from_permissions_and_partial_parse() {
+        let d = tempfile::tempdir().unwrap();
+        let vd = mini_vdir(d.path(), true);
+        let m = matrix_file(d.path(), &[("days", "pass")]);
+        let text = std::fs::read_to_string(&m)
+            .unwrap()
+            .replace("edit = \"pass\"", "edit = \"unverified\"");
+        std::fs::write(&m, text).unwrap();
+        let result = tdo(&["--vdir", &vd, "check", "--matrix", &m]);
+        assert_eq!(result.status.code(), Some(0));
+        let out = stdout(&result);
+        assert!(out.contains("execute=pass edit=unverified"), "{out}");
+        assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
+        assert!(
+            out.contains("edit for daily tasks is not verified yet"),
+            "{out}"
+        );
+        assert!(!out.contains("b.ics"), "{out}");
+        let verbose = stdout(&tdo(&["--vdir", &vd, "check", "--matrix", &m, "--verbose"]));
+        assert!(verbose.contains("b.ics"), "{verbose}");
+    }
+
+    #[test]
+    fn empty_input_does_not_claim_all_operations_pass() {
+        let d = tempfile::tempdir().unwrap();
+        let result = tdo(&["--vdir", d.path().to_str().unwrap(), "check"]);
+        assert_eq!(result.status.code(), Some(0));
+        let out = stdout(&result);
+        assert!(out.contains("tasks: 0"), "{out}");
+        assert!(out.contains("No tasks to assess"), "{out}");
+        assert!(!out.contains("GATE:"), "{out}");
+    }
+
+    #[test]
+    fn duplicate_and_cancelled_resources_are_not_blanket_permissions() {
+        let d = tempfile::tempdir().unwrap();
+        let c = d.path().join("c");
+        std::fs::create_dir(&c).unwrap();
+        for (file, uid, status) in [
+            ("a", "duplicate", "NEEDS-ACTION"),
+            ("b", "duplicate", "COMPLETED"),
+            ("c", "cancelled", "CANCELLED"),
+        ] {
+            std::fs::write(c.join(format!("{file}.ics")), format!("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:Synthetic private title\r\nDESCRIPTION:Synthetic private note\r\nSTATUS:{status}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n")).unwrap();
+        }
+        let result = tdo(&["--vdir", d.path().to_str().unwrap(), "check"]);
+        assert_eq!(result.status.code(), Some(0));
+        let out = stdout(&result);
+        assert!(out.contains("tasks: 3"), "{out}");
+        assert!(out.contains("delete: allowed=1 refused=2"), "{out}");
+        assert!(
+            out.contains("complete: allowed=0 refused=1 inapplicable=2"),
+            "{out}"
+        );
+        assert!(
+            out.contains("reopen: allowed=0 refused=1 inapplicable=2"),
+            "{out}"
+        );
+        assert!(
+            out.contains("move: allowed=0 refused=0 inapplicable=0 needs-input=3"),
+            "{out}"
+        );
+        assert!(!out.contains("Synthetic private"), "{out}");
+        let verbose = stdout(&tdo(&[
+            "--vdir",
+            d.path().to_str().unwrap(),
+            "check",
+            "--verbose",
+        ]));
+        assert!(verbose.contains("Synthetic private title"), "{verbose}");
+        assert!(!verbose.contains("Synthetic private note"), "{verbose}");
     }
 }
 
