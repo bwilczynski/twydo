@@ -306,3 +306,23 @@ Twydo keeps every alert a task has, shows them in the Details pane (`15 min befo
 copies them with a repeating task's completed occurrence. Setting or removing a due time adds or
 drops 2Do's automatic at-due-time alert, as 2Do does. Editing alerts in the TUI (`a`) and
 desktop notifications are not available yet.
+
+### Detached history reopening
+
+Reopening a completed history task makes that occurrence open without recreating or
+advancing its repeat. It keeps its UID and foreign RUID, dates, starts, alarms and
+unrelated metadata; the original live series stays byte-identical. Only status,
+completion fields and modification stamps change. Readable JSON history with the
+captured inactive recurrence fields and no RRULE is required.
+
+Reopening a flat history project or checklist reopens the parent and **every
+completed child**, including children completed before the parent. Open and
+cancelled children stay unchanged. This is one journal/undo step; queue, undo,
+redo and crash recovery retain the family dependencies and refuse stale members.
+The project behavior is directly observed in Plan 6 H7; checklist and unchanged
+scheduling combinations are supported by exact preservation tests.
+
+An individual detached history item remains refused, including under an open
+history parent: the live-child H3 captures do not prove that separate operation.
+Reopening history does not undo the original recurrence advancement. Use undo for
+that; ended originals retaining RRULE use their separately bounded capability.

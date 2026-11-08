@@ -1134,3 +1134,63 @@ fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
     assert!(err(&o).contains("subtasks of a plain task"), "{}", err(&o));
     assert_eq!(list_files(&env), before);
 }
+
+#[test]
+fn history_reopen_reports_match_real_gate_without_task_content() {
+    let env = Env::new("verified");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan6-list1/05-complete-parent");
+    fs::remove_dir_all(env.vdir().join("list1")).unwrap();
+    fs::create_dir(env.vdir().join("list1")).unwrap();
+    for p in fs::read_dir(src).unwrap().map(|p| p.unwrap().path()) {
+        if p.extension().is_some_and(|e| e == "ics") {
+            fs::copy(&p, env.vdir().join("list1").join(p.file_name().unwrap())).unwrap();
+        }
+    }
+    fs::write(
+        env.dir.path().join("matrix.toml"),
+        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/matrix.toml")).unwrap(),
+    )
+    .unwrap();
+    let mut cfg = twydo_core::config::Config::with_vdir(env.vdir());
+    cfg.timezone = Some("America/New_York".into());
+    let snap = twydo_core::views::Snapshot::new(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg);
+    let today = chrono::Utc::now().with_timezone(&snap.tz()).date_naive();
+    let mut allowed = 0;
+    let mut refused = 0;
+    for t in snap
+        .tasks
+        .iter()
+        .filter(|t| t.status == twydo_core::model::Status::Completed)
+    {
+        let permits = twydo_core::gate::check(
+            &snap,
+            twydo_core::compat::Matrix::embedded(),
+            twydo_core::config::WriteMode::Verified,
+            &twydo_core::edit::Op::Reopen { uid: t.uid.clone() },
+            today,
+        )
+        .is_ok();
+        if permits {
+            allowed += 1;
+        } else {
+            refused += 1;
+        }
+        let output = env.tdo(&["op", "check", &t.uid]);
+        assert!(output.status.success(), "{}", err(&output));
+        assert!(out(&output).contains(if permits {
+            "reopen: allowed"
+        } else {
+            "reopen: refused"
+        }));
+        assert!(!out(&output).contains(&format!("SUMMARY:{}", t.summary)));
+    }
+    let report = env.tdo(&["check"]);
+    assert!(report.status.success(), "{}", err(&report));
+    assert!(
+        out(&report).contains(&format!("reopen: allowed={allowed} refused={refused}")),
+        "{}",
+        out(&report)
+    );
+    assert!(!out(&report).contains("r1"));
+}

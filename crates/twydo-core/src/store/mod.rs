@@ -457,7 +457,7 @@ impl Store {
         };
         let creating_item =
             matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
-        let durable_holds = matches!(op, Op::Delete { .. })
+        let durable_holds = matches!(op, Op::Delete { .. } | Op::Reopen { .. })
             || member_parent.is_some_and(|p| {
                 creating_item
                     || matches!(op, Op::Reorder { .. })
@@ -490,7 +490,11 @@ impl Store {
             family: if durable_holds
                 && matches!(
                     op,
-                    Op::Create(_) | Op::CreateAt { .. } | Op::Reorder { .. } | Op::Delete { .. }
+                    Op::Create(_)
+                        | Op::CreateAt { .. }
+                        | Op::Reorder { .. }
+                        | Op::Delete { .. }
+                        | Op::Reopen { .. }
                 ) {
                 family.clone()
             } else {

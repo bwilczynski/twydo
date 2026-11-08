@@ -359,3 +359,10 @@ keeps its existing compatibility checks. Details:
 ## Not in the TUI yet
 
 Natural-language input on the new row (dates typed with the title), alerts and list management.
+
+Completed history tasks and flat history families can be reopened with `x` or
+`Space` in Done. A family reopen changes every completed member in one undo step;
+open/cancelled children stay unchanged. It keeps dates and alerts and leaves the
+live recurring series untouched. Individual detached history children remain
+refused, including after their parent has reopened. See
+[detached history reopening](tasks.md#detached-history-reopening) for the exact boundary.

@@ -1091,6 +1091,39 @@ mod verified_recurrence_tui {
         }
     }
     #[test]
+    fn history_family_done_selection_reopens_once_and_undo_restores_bytes() {
+        let e = env_in("plan6-list1", "05-complete-parent");
+        let uid = "14b5a37a52224e8c959b5002e2275fc9";
+        let originals: Vec<_> = fs::read_dir(e.vdir().join("list1"))
+            .unwrap()
+            .map(|p| {
+                let p = p.unwrap().path();
+                let b = fs::read(&p).unwrap();
+                (p, b)
+            })
+            .collect();
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, uid, true);
+        let r = request(a.handle_key(key('x')));
+        run(&e, &mut a, &mut w, r);
+        let p = a.snapshot.find(uid).unwrap();
+        assert_eq!(a.snapshot.tasks[p].status, Status::Open);
+        assert!(a.snapshot.tasks[p].rrule.is_none());
+        for &c in a.snapshot.children(p) {
+            assert_eq!(a.snapshot.tasks[c].status, Status::Open);
+        }
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        for (p, b) in originals {
+            assert_eq!(fs::read(p).unwrap(), b);
+        }
+    }
+
+    #[test]
     fn verified_checklist_card_creation_and_conversion_are_usable() {
         let e = env_in("plan8-checklist-b", "002-seeded");
         let (mut w, _) = writer(&e.config());

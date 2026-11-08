@@ -1209,3 +1209,47 @@ mod recurrence_phone_captures {
         assert!(journal.iter().all(|e| e.writes.len() == 1));
     }
 }
+
+#[test]
+fn history_task_capability_preserves_schedule_and_series() {
+    const COPY: &str = "7d0349b58c3545d2ba6c8d87bcc45e85";
+    for alarm in [
+        "",
+        "BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER;RELATED=END:-PT15M\nDESCRIPTION:Synthetic\nEND:VALARM\n",
+        "BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER;VALUE=DATE-TIME:20261110T090000Z\nDESCRIPTION:Synthetic\nEND:VALARM\n",
+    ] {
+        let env = Env::new(WriteMode::Verified, "plan4-list1/03-complete");
+        let text = fs::read_to_string(env.file(COPY))
+            .unwrap()
+            .replace("END:VTODO", &format!("{alarm}END:VTODO"));
+        fs::write(env.file(COPY), text).unwrap();
+        let before = env.files();
+        let mut store = env.store(Matrix::embedded().clone());
+        store
+            .apply(&env.snap(), &Op::Reopen { uid: COPY.into() }, now())
+            .unwrap();
+        let after = env.files();
+        assert_eq!(before.len(), after.len());
+        for (path, bytes) in &before {
+            if path != &format!("list1/{COPY}.ics") {
+                assert_eq!(&after[path], bytes);
+            } else {
+                let held = |bytes: &[u8]| {
+                    common::sorted(
+                        common::lines(&parse(bytes).unwrap())
+                            .into_iter()
+                            .filter(|l| {
+                                !common::is_stamp(&l.1)
+                                    && !["STATUS", "COMPLETED", "PERCENT-COMPLETE"]
+                                        .contains(&l.1.as_str())
+                            })
+                            .collect(),
+                    )
+                };
+                assert_eq!(held(bytes), held(&after[path]));
+            }
+        }
+        store.undo_last(later()).unwrap();
+        assert_eq!(env.files(), before);
+    }
+}

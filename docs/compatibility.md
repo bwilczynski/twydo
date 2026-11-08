@@ -186,7 +186,7 @@ The newly enabled operations are:
 date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,
 inclusive boundary, final in-place completion and completion after reopening were checked both
 ways. Other until combinations stay refused even though offset/base-rule evidence passes.
-Count-ended originals, family history and other ended-series reopen shapes remain refused.
+Count-ended originals and other ended-series reopen shapes remain refused. Detached family history uses its separate lifecycle capability below.
 
 A recurring checklist's completion copies the family before resetting live items and removing
 inherited dates. Item history keeps earlier individual completion times. Independent item starts
@@ -314,3 +314,25 @@ unsupported phone baseline does not prevent verification: the required evidence 
 the phone displays Twydo's order and preserves it through an unrelated edit and sync.
 Other operations keep their existing phone-baseline requirements. Further device/server
 rounds require fresh approval. No account or global write-mode change is performed.
+
+### History lifecycle capabilities
+
+`history-task.reopen` admits completed, top-level detached JSON task occurrences
+with foreign RUID, no RRULE and the captured inactive recurrence metadata.
+`history-flat-family.reopen` admits recognized flat history projects/checklists
+with the same encoding. Only lifecycle fields and normal stamps change; dates,
+starts, alerts, ranks, links, series identities and unrelated properties are held.
+Cancelled/open members stay unchanged. The live original is never written.
+
+Direct evidence is Plan 4/Plan 8 standalone history reopening and Plan 6 H7 parent
+reopening (`05-complete-parent` → `06-reopen-parent`). Preservation generalization
+covers unchanged timed/start/relative/absolute-alert combinations and flat checklist
+history; these are not extra phone observations. Family dependencies persist through
+queue, recovery and inverse operations. No broad operation/rule verdict changes.
+
+Individual history children, including under reopened parents, remain refused:
+H3 captured live-child reopening, not detached-history-item reopening. No additional
+device round is proposed. Missing/custom capability rows retain legacy handling.
+Malformed/ambiguous identities, unreadable metadata, unknown types, nested,
+cross-list or disagreeing links and active/ambiguous recurrence metadata refuse.
+This capability neither restores recurrence nor rolls back its advancement.
