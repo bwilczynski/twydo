@@ -1,6 +1,7 @@
 //! TUI application state and vim-style keys. No terminal here: the renderer reads the public
 //! fields and the terminal loop feeds `handle_key` / `tick`.
 
+mod lists;
 mod newrow;
 mod recovery;
 mod structure;
@@ -8,6 +9,8 @@ mod sync_activity;
 pub use recovery::{Confirmation, RecoveryPanel};
 pub use sync_activity::SyncActivity;
 
+pub(crate) use lists::observed;
+pub use lists::{CollectionBackups, ListAction, ListCompletion};
 pub use newrow::{NewRow, default_list};
 
 use std::cell::Cell;
@@ -92,6 +95,7 @@ pub enum Outcome {
     /// Edit these notes in `$EDITOR`; the loop reports back with [`App::notes_edited`].
     EditNotes(String),
     ForgetList(twydo_core::retired::Preview),
+    ManageList(ListAction),
 }
 
 /// The action performed after choosing a list. Retirement still requires confirmation.
@@ -101,6 +105,7 @@ pub enum ListPickerAction {
     SetList,
     Recover(String),
     Forget,
+    Manage,
 }
 
 /// A destination always carries its collection separately from its parent UID.
@@ -154,6 +159,9 @@ impl ListPicker {
 }
 
 pub struct App {
+    pub config_path: Option<std::path::PathBuf>,
+    pub list_form: Option<crate::listform::ListForm>,
+    pub collection_backups: Option<CollectionBackups>,
     pub recovery: Option<RecoveryPanel>,
     pub confirmation: Option<Confirmation>,
     pub snapshot: Snapshot,
@@ -227,6 +235,9 @@ const MESSAGE_SECS: i64 = 5;
 impl App {
     pub fn new(snapshot: Snapshot, now: DateTime<Tz>) -> App {
         App {
+            config_path: None,
+            list_form: None,
+            collection_backups: None,
             recovery: None,
             confirmation: None,
             snapshot,
@@ -432,6 +443,12 @@ impl App {
 
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
     pub fn reload(&mut self, s: Snapshot) {
+        let newly_archived = match &self.view {
+            View::List(id) => {
+                !self.snapshot.config.list_prefs(id).archived && s.config.list_prefs(id).archived
+            }
+            _ => false,
+        };
         if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
             self.confirmation = None;
             self.picker = None;
@@ -457,7 +474,7 @@ impl App {
             self.message = None;
         }
         if let View::List(id) = &self.view
-            && !self.snapshot.collections.iter().any(|c| &c.id == id)
+            && (newly_archived || !self.snapshot.collections.iter().any(|c| &c.id == id))
         {
             self.view = View::Today;
         }
@@ -652,6 +669,9 @@ impl App {
         if self.picker.is_some() {
             return self.picker_key(k);
         }
+        if self.list_form.is_some() {
+            return self.list_key(k);
+        }
         if self.form.is_some() {
             return self.form_key(k);
         }
@@ -660,6 +680,9 @@ impl App {
         }
         if self.recovery.is_some() && self.mode == Mode::Normal {
             return self.recovery_key(k);
+        }
+        if self.collection_backups.is_some() && self.mode == Mode::Normal {
+            return self.collection_backup_key(k);
         }
         match self.mode {
             Mode::Normal => self.normal_key(k),
@@ -768,6 +791,11 @@ impl App {
         // An overlay hides the task list: keys that write or edit must not reach it.
         if self.overlay_open() && "xtT[]{}duimroOac JK<>".contains(c) {
             return Outcome::Continue;
+        }
+        if self.focus == Pane::Sidebar
+            && let Some(outcome) = self.sidebar_list_key(c, pending)
+        {
+            return outcome;
         }
         if matches!(c, '>' | '<') {
             if pending == Some(c) {
@@ -1081,6 +1109,8 @@ impl App {
             || self.show_conflicts
             || self.recovery.is_some()
             || self.confirmation.is_some()
+            || self.list_form.is_some()
+            || self.collection_backups.is_some()
     }
 
     fn open_picker(&mut self) {
@@ -1201,6 +1231,7 @@ impl App {
                         self.confirm_recovery(&id, target.collection())
                     }
                     ListPickerAction::Forget => self.forget_command(target.collection()),
+                    ListPickerAction::Manage => self.open_list_card(Some(target.collection())),
                 }
             }
             _ => {}
@@ -1211,7 +1242,9 @@ impl App {
     /// Pasted text (bracketed paste). It only ever fills a form field: a paste never runs
     /// as keys, so a pasted newline cannot save, complete or delete anything.
     pub fn paste(&mut self, text: &str) -> Outcome {
-        if let Some(form) = self.form.as_mut() {
+        if let Some(form) = self.list_form.as_mut() {
+            form.paste(text);
+        } else if let Some(form) = self.form.as_mut() {
             form.paste(text);
         } else {
             self.row_paste(text);
@@ -1360,6 +1393,9 @@ impl App {
             Some((c, a)) => (c, a.trim()),
             None => (line, ""),
         };
+        if !matches!(cmd, "list-backups" | "export-list-backup") {
+            self.collection_backups = None;
+        }
         match cmd {
             "" => {}
             "q" | "quit" => return Outcome::Quit,
@@ -1378,6 +1414,22 @@ impl App {
             }
             "conflicts" => self.show_conflicts = !self.show_conflicts,
             "forget-list" => self.forget_command(arg),
+            "lists" if arg.is_empty() => self.manage_lists(),
+            "lists" => self.message = Some("usage: :lists".into()),
+            "list-backups" if arg.is_empty() => self.open_collection_backups(),
+            "list-backups" => self.message = Some("usage: :list-backups".into()),
+            "export-list-backup" => {
+                if let Some((backup, destination)) = arg
+                    .split_once(char::is_whitespace)
+                    .filter(|(_, p)| !p.trim().is_empty())
+                {
+                    return Outcome::ManageList(ListAction::ExportBackup {
+                        backup: backup.into(),
+                        destination: destination.trim().into(),
+                    });
+                }
+                self.message = Some("usage: :export-list-backup <backup-id> <directory>".into());
+            }
             "recover" => self.recover_command(arg),
             "errors" => {
                 self.show_errors = !self.show_errors;

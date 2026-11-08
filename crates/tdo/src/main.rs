@@ -75,7 +75,11 @@ fn main() {
         Command::Tui => cli::load_snapshot(cli.vdir.as_deref()).map(|snapshot| {
             let tz = snapshot.tz();
             let root = snapshot.config.vdir.clone();
-            let app = App::new(snapshot, Utc::now().with_timezone(&tz));
+            let mut app = App::new(snapshot, Utc::now().with_timezone(&tz));
+            let path = twydo_core::config::Config::path();
+            if path.is_file() {
+                app.config_path = Some(path);
+            }
             if let Err(e) = term::run(app, root, tz) {
                 eprintln!("tdo: {e}");
                 std::process::exit(cli::EXIT_ERROR);

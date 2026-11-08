@@ -29,6 +29,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
             };
             ("INSERT", Some(hint))
         }
+        Mode::Insert if app.list_form.is_some() => (
+            "INSERT",
+            Some("Tab next action  Ctrl-s save to CalDAV  Esc close".into()),
+        ),
         Mode::Insert => {
             let hint = match app.form.as_ref().map(|f| f.focus) {
                 Some(Field::Notes) => {

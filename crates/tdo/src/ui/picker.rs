@@ -16,6 +16,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
         ListPickerAction::SetList => (" Choose list ", "j/k move  Enter select  Esc cancel"),
         ListPickerAction::Recover(_) => (" Recover into ", "j/k move  Enter select  Esc cancel"),
         ListPickerAction::Forget => (" Forget list ", "j/k move  Enter select  Esc cancel"),
+        ListPickerAction::Manage => (" Manage lists ", "j/k move  Enter edit  Esc cancel"),
     };
     let targets = p.visible_targets(&app.snapshot);
     let names: Vec<_> = targets
@@ -39,6 +40,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
                 })
             {
                 suffix.push_str(" · Not Found");
+            }
+            if p.action == ListPickerAction::Manage {
+                let prefs = app.snapshot.config.list_prefs(id);
+                if prefs.archived {
+                    suffix.push_str(" · archived");
+                }
+                if prefs.hidden {
+                    suffix.push_str(" · hidden");
+                }
             }
             suffix
         })

@@ -1,5 +1,10 @@
 //! Terminal loop: raw mode, key events, live reload of the vdir and the minute tick.
 
+mod lists;
+mod preferences;
+pub use lists::perform_list_action;
+pub use preferences::PreferenceWatch;
+
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
@@ -84,6 +89,8 @@ fn event_loop(
         }
     };
     let (sync_tx, sync_rx) = mpsc::channel::<String>();
+    let (list_tx, list_rx) = mpsc::channel::<crate::app::ListCompletion>();
+    let mut preference_watch = PreferenceWatch::new(app.config_path.clone(), &app.snapshot.config);
     let mut syncing = false;
     // Edits queued in an earlier session are written before the background sync starts (it
     // would hold the vdir), and refusals nobody has seen yet are shown.
@@ -149,6 +156,12 @@ fn event_loop(
                             refresh_sync(app);
                             app.write_finished(result.map_err(|e| e.message()));
                         }
+                        Outcome::ManageList(action) => lists::start(
+                            &app.snapshot.config,
+                            app.config_path.as_deref(),
+                            action,
+                            &list_tx,
+                        ),
                         Outcome::EditNotes(notes) => {
                             restore_terminal();
                             let editor = crate::editor::editor_command(
@@ -198,6 +211,16 @@ fn event_loop(
             syncing = false;
             finish_sync(app, root, message);
         }
+        for completion in list_rx.try_iter() {
+            app.list_finished(completion);
+            reload(app, root);
+            refresh_sync(app);
+        }
+        match preference_watch.poll(&app.snapshot.config) {
+            Ok(Some(config)) => reload_config(app, root, config),
+            Err(error) => app.message = Some(error),
+            _ => {}
+        }
         if let Some((_, rx)) = &watcher
             && rx.try_iter().count() > 0
         {
@@ -236,13 +259,17 @@ fn restore_terminal() {
 
 /// Reload under the shared vdir lock (see [`crate::cli::load_vdir`]).
 fn reload(app: &mut App, root: &Path) {
-    let _lock = match crate::cli::reader_lock(&app.snapshot.config) {
+    reload_config(app, root, app.snapshot.config.clone());
+}
+
+fn reload_config(app: &mut App, root: &Path, config: Config) {
+    let _lock = match crate::cli::reader_lock(&config) {
         Ok(l) => l,
         Err(e) => return app.reload_failed(e),
     };
     match twydo_core::vdir::load(root) {
         Ok(report) => {
-            let snapshot = queue::view(report, app.snapshot.config.clone());
+            let snapshot = queue::view(report, config);
             app.reload(snapshot);
         }
         Err(e) => app.reload_failed(e),

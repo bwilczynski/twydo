@@ -13,13 +13,25 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if app.recovery.is_none() && app.confirmation.is_none() {
         return;
     }
-    if let Some(confirmation @ Confirmation::Forget(_)) = &app.confirmation {
+    if let Some(confirmation) = &app.confirmation
+        && matches!(
+            confirmation,
+            Confirmation::Forget(_) | Confirmation::Archive { .. } | Confirmation::DeleteList(_)
+        )
+    {
+        let title = if matches!(confirmation, Confirmation::DeleteList(_)) {
+            " Delete list "
+        } else if matches!(confirmation, Confirmation::Archive { .. }) {
+            " Archive list "
+        } else {
+            " Forget list "
+        };
         let question = Paragraph::new(confirmation.question())
             .wrap(Wrap { trim: false })
             .block(
                 Block::bordered()
                     .border_type(BorderType::Rounded)
-                    .title(" Forget list "),
+                    .title(title),
             );
         let width = overlay_rect(area, 110, area.height).width;
         // line_count includes the top/bottom borders, but wraps at the supplied width.

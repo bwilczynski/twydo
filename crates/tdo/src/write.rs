@@ -51,6 +51,7 @@ pub type SyncTrigger = Box<dyn FnMut(&Config, Trigger)>;
 pub struct Writer {
     store: Result<Store, String>,
     config: Config,
+    matrix: Matrix,
     trigger: SyncTrigger,
     /// Titles of the writes `u` would undo and `Ctrl-r` would redo, in step with the store's
     /// session stacks, so the messages can name the task.
@@ -86,13 +87,14 @@ impl Writer {
         )
     }
 
-    /// Never fails: an open error is kept and returned by every [`Writer::run`].
+    /// Never fails: a failed open is retried on the next write, after recovery may finish.
     pub fn open_with(cfg: &Config, matrix: Matrix, trigger: SyncTrigger) -> Writer {
         Writer {
-            store: Store::open_with(cfg, matrix)
+            store: Store::open_with(cfg, matrix.clone())
                 .map(|(s, _)| s)
                 .map_err(|e| format!("cannot write: {e}")),
             config: cfg.clone(),
+            matrix,
             trigger,
             done: Vec::new(),
             undone: Vec::new(),
@@ -113,6 +115,13 @@ impl Writer {
         req: &Request,
         now: DateTime<Utc>,
     ) -> Result<String, Refused> {
+        // A pending collection fence can outlive the previous TUI. Once :lists
+        // clears it, retry initialization without replacing a healthy store's undo stack.
+        if self.store.is_err() {
+            self.store = Store::open_with(&self.config, self.matrix.clone())
+                .map(|(s, _)| s)
+                .map_err(|e| format!("cannot write: {e}"));
+        }
         let (message, applied) = self.write(snap, req, now)?;
         if applied {
             self.sync_after(now);

@@ -111,6 +111,40 @@ fn complete_then_undo_then_redo() {
 }
 
 #[test]
+fn writer_opened_during_a_pending_list_operation_recovers_after_reconciliation() {
+    let env = Env::new();
+    let mut cfg = env.config();
+    cfg.sync = Some(SyncConfig::default());
+    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+    request.action = "preview-delete".into();
+    request.collection = Some("list1".into());
+    let record = twydo_core::lists::operation::prepare(&cfg, request, now()).unwrap();
+    let (mut writer, _) = writer(&cfg);
+    assert!(writer.run(&env.snapshot(), &complete_a(), now()).is_err());
+    let mut service = twydo_core::lists::ListService::open(&cfg, None).unwrap();
+    assert!(
+        service
+            .reconcile(&record.id)
+            .unwrap_err()
+            .to_string()
+            .contains("read-only")
+    );
+    assert!(
+        twydo_core::lists::operation::active(&cfg)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        writer.run(&env.snapshot(), &complete_a(), now()),
+        Ok("done".into())
+    );
+    assert_eq!(
+        writer.run(&env.snapshot(), &Request::Undo, now()),
+        Ok("undone: A2".into())
+    );
+}
+
+#[test]
 fn success_messages_per_op() {
     let env = Env::new();
     let (mut w, _) = writer(&env.config());
