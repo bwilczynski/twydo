@@ -107,6 +107,8 @@ pub struct SyncConfig {
     pub local_storage: String,
     /// vdirsyncer executable.
     pub command: String,
+    /// Python interpreter containing the supported vdirsyncer collection adapter.
+    pub list_python: String,
     /// Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.
     pub vdirsyncer_config: Option<PathBuf>,
     pub metasync: bool,
@@ -127,6 +129,7 @@ impl Default for SyncConfig {
             pair: "twydo".into(),
             local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
+            list_python: "python3".into(),
             vdirsyncer_config: None,
             metasync: true,
             batch_size: 5,

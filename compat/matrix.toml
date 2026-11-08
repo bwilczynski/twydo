@@ -1608,3 +1608,47 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 notes = "Candidate only: removing both parent links and checklist outdent dates lack direct evidence."
+
+# Collection operations have their own evidence; task write verdicts do not authorize them.
+[[operation]]
+case = "list-create"
+op = "create"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "unverified"
+evidence = ["fixtures/phase0/v1/issue69-archive/000-seeded", "fixtures/phase0/v1/issue69-lifecycle/010-phone-confirmed"]
+notes = "Phone created one empty VTODO list during issue 69 archive round; collection properties and later synthetic task membership captured privately. Approved lifecycle round: user confirmed helper-created list name/color and both synthetic tasks after phone sync. Reverse creation/discovery remains unverified."
+
+[[operation]]
+case = "list-metadata"
+op = "edit"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate name/color-only collection changes. Refused in every write mode until interoperability and the separate list-metadata-atomicity edge both pass. The prototype read/PROPPATCH/read sequence can overwrite a concurrent phone edit. The approved Synology Calendar probe granted an exclusive lock but accepted a same-account name PROPPATCH without its token. Phone round trips alone cannot authorize promotion."
+
+[[operation]]
+case = "list-delete"
+op = "delete"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate collection deletion with confirmation, complete remote/local backup and guarded recovery. The approved Synology Calendar probe returned 204 to a stale If-Match DELETE and removed the disposable target, despite export ETags tracking membership/content changes. No safe deletion precondition was demonstrated; product deletion remains refused."
+
+[[edge_case]]
+id = "list-metadata-atomicity"
+observed = "Approved synthetic lifecycle probe on Synology Calendar: LOCK granted exclusive depth-infinity Second-60, but a same-account PROPPATCH with no token returned 207/property success and changed the name. Lockroot was omitted and lockdiscovery returned property 404 while locked. UNLOCK returned 204. No atomic metadata-write protection is demonstrated."
+verdict = "fail"
+evidence = ["fixtures/phase0/v1/issue69-lifecycle/020-guard-evidence"]
+
+[[edge_case]]
+id = "list-delete-atomicity"
+observed = "Calendar-export ETags changed after adding the remote-only synthetic task and advancing that task's DTSTAMP by one second. A DELETE using the obsolete pre-addition If-Match nevertheless returned 204; exact-target PROPFIND/GET then reported not found, and the user confirmed phone disappearance. Three exact resources remain backed up/exported. Export version coverage alone is not deletion authority."
+verdict = "fail"
+evidence = ["fixtures/phase0/v1/issue69-lifecycle/020-guard-evidence"]

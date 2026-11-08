@@ -442,6 +442,7 @@ impl Store {
         op: &Op,
         now: DateTime<Utc>,
     ) -> Result<Prepared, WriteError> {
+        crate::lists::operation::ensure_idle(&self.state)?;
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let mut plan = self.plan(snap, op, now)?;
@@ -720,6 +721,7 @@ impl Store {
         _held: &VdirLock,
         now: DateTime<Utc>,
     ) -> Result<Vec<DrainStep>, WriteError> {
+        crate::lists::operation::ensure_idle(&self.state)?;
         let queue = Queue::open(&self.state)?;
         let mut report = crate::vdir::load(&self.vdir)?;
         let mut steps: Vec<DrainStep> = Vec::new();

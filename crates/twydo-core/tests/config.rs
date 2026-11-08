@@ -153,6 +153,7 @@ fn sync_defaults() {
             pair: "twydo".into(),
             local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
+            list_python: "python3".into(),
             vdirsyncer_config: None,
             metasync: true,
             batch_size: 5,

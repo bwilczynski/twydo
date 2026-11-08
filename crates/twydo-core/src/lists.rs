@@ -1,11 +1,16 @@
 //! Collection management. Archive preferences are local configuration, not CalDAV metadata.
 
+pub mod helper;
+pub mod operation;
 pub mod prefs;
+mod remote;
+pub use remote::{ListRequest, ListResult};
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::compat::Matrix;
 use crate::config::Config;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +33,7 @@ pub struct ListService {
     config: Config,
     config_path: Option<PathBuf>,
     config_bytes: Vec<u8>,
+    matrix: Matrix,
 }
 
 pub(crate) fn invalid(message: impl Into<String>) -> io::Error {
@@ -40,10 +46,15 @@ pub(crate) fn plain_id(id: &str) -> bool {
 
 impl ListService {
     pub fn open(cfg: &Config, config_path: Option<&Path>) -> io::Result<Self> {
+        Self::open_with(cfg, config_path, Matrix::embedded().clone())
+    }
+
+    pub fn open_with(cfg: &Config, config_path: Option<&Path>, matrix: Matrix) -> io::Result<Self> {
         Ok(Self {
             config: cfg.clone(),
             config_path: config_path.map(Path::to_path_buf),
             config_bytes: config_path.map(fs::read).transpose()?.unwrap_or_default(),
+            matrix,
         })
     }
 
