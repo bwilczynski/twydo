@@ -6,6 +6,13 @@ below. Where Twydo cannot write something yet, it says so (see
 [compatibility.md](compatibility.md) for why). For how this is stored in the `.ics` files, see
 [data-model.md](data-model.md).
 
+## Archived lists
+
+List archiving is local to this desktop. It hides the list from the sidebar and follows
+the existing archived-list filters in Today, All, Scheduled and Next 3 Days. Done keeps
+its existing completed-task behavior. Archiving preserves every task byte and does not
+change archive state on the phone. Use `:lists` to find and unarchive a list.
+
 ## Kinds of task
 
 | Kind | What it is |

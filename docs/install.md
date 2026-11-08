@@ -35,6 +35,13 @@ cargo install --path crates/tdo
 
 Either puts the `tdo` binary in `~/.cargo/bin`.
 
+The collection helper is bundled in `tdo`; it does not need a source checkout at runtime.
+It needs a Python interpreter with **vdirsyncer 0.21.x** installed. Set
+[`[sync].list_python`](config.md#sync) if that interpreter differs from `python3` (for
+example, a virtual environment's `bin/python`). The helper checks its adapter before
+network access and uses the existing vdirsyncer pair, credentials and TLS settings.
+Task sync still uses `[sync].command` independently.
+
 ## Try it without your data
 
 From a clone, generate a vdir of made-up tasks with today's dates and open it:
