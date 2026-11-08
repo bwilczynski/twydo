@@ -1,0 +1,48 @@
+{
+  "format": 1,
+  "server_family": "Synology Calendar",
+  "transport": "vdirsyncer 0.21.0 via scoped helper adapter",
+  "identifiers": "Account URLs, real validators, owner markers and lock tokens omitted/anonymized",
+  "lock": {
+    "status": 200,
+    "exclusive": true,
+    "write": true,
+    "depth": "infinity",
+    "timeout_seconds": 60,
+    "lockroot_returned": false,
+    "lockdiscovery_while_locked_property_status": 404,
+    "same_account_proppatch_without_token_status": 207,
+    "displayname_property_status": 200,
+    "name_changed": true,
+    "unlock_status": 204,
+    "active_locks_returned_after_unlock": 0,
+    "enforcement_passed": false
+  },
+  "export_etag": {
+    "syntax": "strong",
+    "before_membership": "\"synthetic-export-before\"",
+    "after_membership": "\"synthetic-export-added\"",
+    "after_content": "\"synthetic-export-revised\"",
+    "membership_changed_validator": true,
+    "resource_content_changed_validator": true,
+    "metadata_rename_changed_validator": false
+  },
+  "stale_delete": {
+    "request_if_match": "\"synthetic-export-before\"",
+    "expected_status": 412,
+    "actual_status": 204,
+    "exact_target_after": "not-found (404 or 410 via adapter)",
+    "phone_disappearance_confirmed": true,
+    "condition_enforced": false
+  },
+  "backup": {
+    "complete_remote_resources": 3,
+    "local_task_files": 2,
+    "remote_only_task_included": true,
+    "raw_export_hashes_match": true,
+    "source_backup_unchanged": true,
+    "isolated_sync_profile_sealed": true,
+    "recovery_collection_created": false,
+    "other_list_mutations": false
+  }
+}

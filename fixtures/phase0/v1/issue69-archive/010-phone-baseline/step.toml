@@ -1,0 +1,10 @@
+scenario = "issue69-archive"
+step = "010-phone-baseline"
+device = "iphone"
+action = "User confirmed open task in list, All and Today, and completed task in Done after phone sync."
+captured_at = "2026-11-08T15:51:49.764917+00:00"
+base_step = "000-seeded"
+unchanged_files = ["894cc5e6dfc44c139bb97e5f648c717d.ics", "7d21972fb8a14d56af59104ad1a3ffa1.ics", "displayname"]
+returned_collection_property_count = 14
+returned_properties_equal_to_baseline = true
+resource_etags_equal_to_baseline = true

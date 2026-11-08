@@ -1,0 +1,5 @@
+scenario = "issue69-lifecycle"
+step = "000-helper-baseline"
+device = "twydo"
+action = "Approved helper-created VTODO list and two undated synthetic tasks. Final server resources match these fixtures byte-for-byte; phone confirmation is pending. Original candidates were corrected to include required DTSTAMP before the first phone check. No metadata edit, LOCK or DELETE attempted."
+captured_at = "2026-11-09T16:06:21.218858965Z"

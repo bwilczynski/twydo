@@ -1,0 +1,5 @@
+scenario = "issue69-lifecycle"
+step = "020-guard-evidence"
+device = "twydo"
+action = "Approved negative guard tests. Exclusive LOCK did not block a tokenless name-only PROPPATCH. Export ETags tracked adding the remote-only task and advancing its DTSTAMP one second, but a stale If-Match DELETE was accepted. These three resources are the exact final pre-deletion server snapshot retained in durable backup/export. Identifiers in guard-results.json are anonymized; raw DAV remains private."
+captured_at = "2026-11-09T17:53:37.382786+00:00"

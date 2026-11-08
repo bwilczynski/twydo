@@ -1,0 +1,10 @@
+scenario = "issue69-archive"
+step = "020-phone-archived"
+device = "iphone"
+action = "Phone archived list after unfinished-task warning; test content remains in Next 3 Days smart list. Completed task appears in Done only after Show all. No server-visible archive flag observed."
+captured_at = "2026-11-08T15:56:19.253730+00:00"
+base_step = "000-seeded"
+unchanged_files = ["894cc5e6dfc44c139bb97e5f648c717d.ics", "7d21972fb8a14d56af59104ad1a3ffa1.ics", "displayname"]
+returned_collection_property_count = 14
+returned_properties_equal_to_baseline = true
+resource_etags_equal_to_baseline = true
