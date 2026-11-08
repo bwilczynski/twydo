@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7](https://github.com/bwilczynski/twydo/compare/v0.1.6...v0.1.7) - 2026-11-08
+
+### Added
+
+- add gated item relocation and structure commands
+- gate recurring checklist scheduling by write scope
+- gate task and family moves by relocation effects
+- reopen detached history by lifecycle effects
+- admit deletion by exact resource scope
+
+### Fixed
+
+- avoid repeated collection scans in permission reports
+- *(cli)* keep queued refusal details out of permission reports
+- *(cli)* align task checks with queued operation permissions
+- *(cli)* separate data health from operation permissions
+
 ## [0.1.6](https://github.com/bwilczynski/twydo/compare/v0.1.5...v0.1.6) - 2026-11-07
 
 ### Added
