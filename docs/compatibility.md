@@ -359,3 +359,15 @@ device round is proposed. Missing/custom capability rows retain legacy handling.
 Malformed/ambiguous identities, unreadable metadata, unknown types, nested,
 cross-list or disagreeing links and active/ambiguous recurrence metadata refuse.
 This capability neither restores recurrence nor rolls back its advancement.
+
+### Candidate membership capabilities
+
+`item-to-project.reparent`, `item-to-checklist.reparent` and `item-outdent.reparent`
+are implemented but all shipping verdicts remain unverified. Even test mode needs
+the missing iPhone baseline. List-move captures do not prove single-item identity
+and parent-link changes. Synthetic tests establish local consistency, preservation
+and recovery; they are not device evidence. See the [bounded proposal](reference/phase0/item-relocation-capability.md).
+
+Permission reports label `reparent` as needing destination list and parent/context;
+a concrete request always passes the real gate. No broad operation or rule row
+was promoted by this candidate. UI keys and the CLI expose its truthful refusal.

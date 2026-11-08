@@ -641,7 +641,16 @@ fn m_opens_picker_without_current_list() {
         .into_iter()
         .filter(|id| *id != task.collection)
         .collect();
-    assert_eq!(p.lists, want);
+    assert_eq!(
+        p.targets
+            .iter()
+            .filter_map(|t| match t {
+                tdo::app::PickerTarget::List(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        want
+    );
     assert_eq!(p.cursor, 0);
 }
 
@@ -650,8 +659,13 @@ fn picker_enter_requests_move() {
     let mut a = app();
     let uid = selected_uid(&a);
     a.handle_key(key('m'));
-    a.handle_key(key('j'));
-    let to = a.picker.as_ref().unwrap().lists[1].clone();
+    let p = a.picker.as_mut().unwrap();
+    p.cursor = p
+        .targets
+        .iter()
+        .rposition(|t| matches!(t, tdo::app::PickerTarget::List(_)))
+        .unwrap();
+    let to = p.targets[p.cursor].collection().to_owned();
     assert_eq!(
         write_op(a.handle_key(code(KeyCode::Enter))),
         Op::Move { uid, to }
@@ -666,7 +680,7 @@ fn picker_enter_requests_move() {
 fn picker_cursor_clamps() {
     let mut a = app();
     a.handle_key(key('m'));
-    let n = a.picker.as_ref().unwrap().lists.len();
+    let n = a.picker.as_ref().unwrap().targets.len();
     for _ in 0..5 {
         a.handle_key(key('j'));
     }
@@ -691,7 +705,8 @@ fn picker_esc_closes() {
 fn m_with_single_list_shows_message() {
     let mut r = report();
     let keep = r.tasks[0].collection.clone();
-    r.tasks.retain(|t| t.collection == keep);
+    r.tasks
+        .retain(|t| t.collection == keep && t.kind == TaskKind::Task && t.parent.is_none());
     r.collections.retain(|c| c.id == keep);
     let mut a = App::new(snapshot_of(r), now());
     a.handle_key(key('2'));
@@ -788,9 +803,15 @@ fn card_list_field_picks_without_writing() {
         tdo::app::ListPickerAction::SetList,
         "picking for the card"
     );
-    assert!(!p.lists.contains(&task.collection));
+    assert!(
+        !p.targets
+            .iter()
+            .any(|t| matches!(t,tdo::app::PickerTarget::List(id) if id==&task.collection))
+    );
     a.handle_key(key('j'));
-    let to = a.picker.as_ref().unwrap().lists[1].clone();
+    let to = a.picker.as_ref().unwrap().targets[1]
+        .collection()
+        .to_owned();
     assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
     assert!(a.picker.is_none());
     assert_eq!(a.form.as_ref().unwrap().list, to);
@@ -2167,4 +2188,230 @@ fn reopening_detached_child_keeps_selection_under_a_collapsed_parent() {
             assert!(a.expanded.contains(&parent_uid));
         }
     }
+}
+
+fn structure_app() -> App {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan6-list1/04-reopen-child");
+    let mut report = twydo_core::vdir::LoadReport::default();
+    // Use a synthetic collection while retaining the existing synthetic family captures.
+    for p in std::fs::read_dir(root).unwrap().map(|e| e.unwrap().path()) {
+        if p.extension().is_some_and(|e| e == "ics") {
+            let b = std::fs::read(&p).unwrap();
+            let cal = twydo_core::ical::parse(&b).unwrap();
+            report
+                .tasks
+                .extend(twydo_core::model::tasks_from_calendar(&cal, "list1", &p));
+            report.sources.insert(p, b);
+        }
+    }
+    let original = report
+        .tasks
+        .iter()
+        .find(|t| t.uid == "c57dfd30e9574d6ba195117e73dcc6d9")
+        .unwrap();
+    let mut cal = twydo_core::ical::parse(&report.sources[&original.path]).unwrap();
+    let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("UID")
+        .unwrap()
+        .set_value("synthetic-structure-leaf");
+    todo.prop_mut("SUMMARY")
+        .unwrap()
+        .set_value("zz Synthetic structure leaf");
+    todo.remove_props("RELATED-TO");
+    for name in ["DUE", "DTSTART"] {
+        todo.remove_props(name);
+        todo.insert_prop(
+            twydo_core::ical::Property::new(
+                name,
+                vec![twydo_core::ical::Param {
+                    name: "VALUE".into(),
+                    values: vec!["DATE".into()],
+                }],
+                "20270101",
+            ),
+            None,
+        );
+    }
+    let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+    meta.remove("parentuid");
+    prop.set_value(&meta.encode());
+    let path = PathBuf::from("synthetic-structure-leaf.ics");
+    report
+        .tasks
+        .extend(twydo_core::model::tasks_from_calendar(&cal, "list1", &path));
+    report
+        .sources
+        .insert(path, twydo_core::ical::serialize(&cal));
+    report.collections.push(twydo_core::vdir::Collection {
+        id: "list1".into(),
+        display_name: Some("Synthetic list".into()),
+        path: PathBuf::from("unused"),
+        color: None,
+    });
+    let mut a = App::new(snapshot_of(report), now());
+    a.view = View::List("list1".into());
+    a.focus = Pane::Tasks;
+    a
+}
+
+#[test]
+fn structure_keys_indent_to_nearest_parent_in_list() {
+    let mut a = structure_app();
+    // The nearest eligible displayed parent above a leaf is the actual requested parent.
+    a.expanded.extend(
+        a.snapshot
+            .tasks
+            .iter()
+            .filter(|t| t.kind != TaskKind::Task)
+            .map(|t| t.uid.clone()),
+    );
+    let rows = a.visible_rows();
+    let at = rows
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].uid == "synthetic-structure-leaf")
+        .unwrap();
+    a.cursor = at;
+    let expected = rows[..at]
+        .iter()
+        .rev()
+        .find(|r| {
+            a.snapshot.tasks[r.task].kind != TaskKind::Task
+                && a.snapshot.tasks[r.task].parent.is_none()
+                && a.snapshot.tasks[r.task].status == twydo_core::model::Status::Open
+        })
+        .unwrap();
+    let parent = a.snapshot.tasks[expected.task].uid.clone();
+    let uid = selected_uid(&a);
+    a.handle_key(key('>'));
+    let outcome = a.handle_key(key('>'));
+    let outcome = if a.confirmation.is_some() {
+        a.handle_key(key('y'))
+    } else {
+        outcome
+    };
+    assert_eq!(
+        write_op(outcome),
+        Op::Reparent {
+            uid,
+            collection: "list1".into(),
+            parent: Some(parent)
+        }
+    );
+    a.view = View::All;
+    a.handle_key(key('>'));
+    assert_eq!(a.handle_key(key('>')), Outcome::Continue);
+    assert!(a.message.as_ref().unwrap().contains("list view"));
+}
+
+#[test]
+fn structure_keys_outdent_and_checklist_confirmation() {
+    let mut a = structure_app();
+    a.expanded.extend(
+        a.snapshot
+            .tasks
+            .iter()
+            .filter(|t| t.kind != TaskKind::Task)
+            .map(|t| t.uid.clone()),
+    );
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].uid == "c57dfd30e9574d6ba195117e73dcc6d9")
+        .unwrap();
+    let uid = selected_uid(&a);
+    a.handle_key(key('<'));
+    assert_eq!(
+        write_op(a.handle_key(key('<'))),
+        Op::Reparent {
+            uid: uid.clone(),
+            collection: "list1".into(),
+            parent: None
+        }
+    );
+    // Inbound date loss is explicitly confirmed, and cancelling keeps selection.
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].uid == "synthetic-structure-leaf")
+        .unwrap();
+    let selected = selected_uid(&a);
+    for answer in [KeyCode::Esc, KeyCode::Char('n'), KeyCode::Char('y')] {
+        a.handle_key(key('m'));
+        let p = a.picker.as_mut().unwrap();
+        p.cursor=p.targets.iter().position(|t|matches!(t,tdo::app::PickerTarget::Parent{uid,..} if uid=="a8dcf93bcaa14211a07481eb87af8f11")).unwrap();
+        assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+        assert!(
+            a.confirmation
+                .as_ref()
+                .unwrap()
+                .question()
+                .contains("dates")
+        );
+        let outcome = a.handle_key(code(answer));
+        if answer == KeyCode::Char('y') {
+            assert_eq!(
+                write_op(outcome),
+                Op::Reparent {
+                    uid: selected.clone(),
+                    collection: "list1".into(),
+                    parent: Some("a8dcf93bcaa14211a07481eb87af8f11".into())
+                }
+            );
+        } else {
+            assert_eq!(outcome, Outcome::Continue);
+            assert!(a.picker.is_none(), "cancel closes the relocation picker");
+        }
+        assert_eq!(selected_uid(&a), selected);
+    }
+}
+
+#[test]
+fn structure_picker_distinguishes_list_and_parent() {
+    let mut a = structure_app();
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].kind == TaskKind::Task)
+        .unwrap();
+    a.handle_key(key('m'));
+    assert!(
+        a.picker
+            .as_ref()
+            .unwrap()
+            .targets
+            .iter()
+            .any(|t| matches!(t, tdo::app::PickerTarget::Parent { .. }))
+    );
+    type_str(&mut a, "/no-such-parent");
+    assert!(
+        a.picker
+            .as_ref()
+            .unwrap()
+            .visible_targets(&a.snapshot)
+            .is_empty()
+    );
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    a.handle_key(code(KeyCode::Esc));
+    assert!(a.picker.is_none());
+}
+
+#[test]
+fn structure_confirmation_is_invalidated_by_reload() {
+    let mut a = structure_app();
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].uid == "synthetic-structure-leaf")
+        .unwrap();
+    a.handle_key(key('m'));
+    let p = a.picker.as_mut().unwrap();
+    p.cursor=p.targets.iter().position(|t|matches!(t,tdo::app::PickerTarget::Parent{uid,..} if uid=="a8dcf93bcaa14211a07481eb87af8f11")).unwrap();
+    assert_eq!(a.handle_key(code(KeyCode::Enter)), Outcome::Continue);
+    assert!(a.confirmation.is_some());
+    a.reload(a.snapshot.clone());
+    assert!(a.confirmation.is_none());
+    assert!(a.picker.is_none());
+    assert_eq!(a.handle_key(key('y')), Outcome::Continue);
 }

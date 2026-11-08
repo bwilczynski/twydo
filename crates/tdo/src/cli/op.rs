@@ -112,6 +112,16 @@ pub enum OpCommand {
         #[arg(long, help = WAIT_HELP)]
         wait: bool,
     },
+    /// Change one leaf’s parent membership (candidate; dedicated evidence required)
+    Reparent {
+        uid: String,
+        #[arg(long, value_name = "ID")]
+        list: String,
+        #[arg(long, value_name = "UID")]
+        parent: Option<String>,
+        #[arg(long, help = WAIT_HELP)]
+        wait: bool,
+    },
     /// Revert an applied operation
     Undo {
         op_id: String,
@@ -423,6 +433,19 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         OpCommand::Move { uid, to, wait: w } => {
             wait = w;
             Op::Move { uid, to }
+        }
+        OpCommand::Reparent {
+            uid,
+            list,
+            parent,
+            wait: w,
+        } => {
+            wait = w;
+            Op::Reparent {
+                uid,
+                collection: list,
+                parent,
+            }
         }
         OpCommand::Undo { op_id, wait } => {
             let submitted = store.undo(&op_id, now)?;

@@ -272,6 +272,7 @@ pub fn op_title(snap: &Snapshot, op: &Op) -> String {
         | Op::Save { uid, .. }
         | Op::Complete { uid }
         | Op::Reopen { uid }
+        | Op::Reparent { uid, .. }
         | Op::Move { uid, .. }
         | Op::Delete { uid }
         | Op::Reorder { uid, .. } => uid,
@@ -330,6 +331,7 @@ fn success(snap: &Snapshot, op: &Op) -> String {
         Op::Edit { .. } | Op::Save { .. } => "saved".into(),
         Op::Create(_) | Op::CreateAt { .. } => "added".into(),
         Op::Reorder { .. } => "reordered · u to undo".into(),
+        Op::Reparent { .. } => "relocated · u to undo".into(),
         Op::Move { to, .. } => {
             let name = snap
                 .collections

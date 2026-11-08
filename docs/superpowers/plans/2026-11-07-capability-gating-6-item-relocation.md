@@ -49,12 +49,12 @@ Initial scope: one open plain leaf, recognized open top-level destination checkl
 
 **Interfaces:** add serializable `Op::Reparent { uid: String, collection: String, parent: Option<String> }`: `parent=None` means detach into the explicit collection, `Some(uid)` means attach to that top-level parent in that collection. Existing `Op::Move` still means whole top-level task/family relocation and still refuses a single item. Candidate field writer `edit::reparented_copy(cal: &Calendar, new_uid: &str, parent: Option<&str>, clear_dates: bool, now: DateTime<Utc>) -> Result<Calendar, EditError>` must have its identity policy documented from evidence; if delete/recreate is not established, keep this writer candidate-only and name the missing proof. Preserve foreign RUID, rewrite only documented self identity and parent representations; remove parent representations on detach. Never silently retain the former RELATED-TO on an outdented resource.
 
-- [ ] Audit direct captures for any member-move representation; distinguish a list-move's recreated UID/self/foreign RUID rules from an actual reparent. Document every proposed identity/link/date change and missing proof.
-- [ ] Add `reparent_candidate_link_representations_agree`: attach/detach have matching standard/JSON parent links, deterministic single identity map and preserved foreign series links; raw duplicates/disagreements/unreadable metadata refuse.
-- [ ] Add `reparent_candidate_checklist_dates_are_explicit`: attaching a simple dated leaf clears only the supported candidate date fields; an undated leaf has no invented dates; detached checklist item is undated; recurrence/alarms requiring unverified cleanup refuse.
-- [ ] Add `reparent_shipping_requires_dedicated_evidence`: dedicated `item-to-project`, `item-to-checklist`, `item-outdent` operation cases with op `reparent` must not admit writes without applicable evidence, including test mode's baseline requirement. Tests with candidate matrices exercise the code without promoting shipping rows.
-- [ ] Run new tests and confirm the missing operation/behavior fails, implement exact operation/writer/gate, and update all exhaustive Op matches without inventing default behavior for queue or Store.
-- [ ] Run gate/edit-family/serde-related tests; commit `feat: model gated item reparenting`.
+- [x] Audit direct captures for any member-move representation; distinguish a list-move's recreated UID/self/foreign RUID rules from an actual reparent. Document every proposed identity/link/date change and missing proof.
+- [x] Add `reparent_candidate_link_representations_agree`: attach/detach have matching standard/JSON parent links, deterministic single identity map and preserved foreign series links; raw duplicates/disagreements/unreadable metadata refuse.
+- [x] Add `reparent_candidate_checklist_dates_are_explicit`: attaching a simple dated leaf clears only the supported candidate date fields; an undated leaf has no invented dates; detached checklist item is undated; recurrence/alarms requiring unverified cleanup refuse.
+- [x] Add `reparent_shipping_requires_dedicated_evidence`: dedicated `item-to-project`, `item-to-checklist`, `item-outdent` operation cases with op `reparent` must not admit writes without applicable evidence, including test mode's baseline requirement. Tests with candidate matrices exercise the code without promoting shipping rows.
+- [x] Run new tests and confirm the missing operation/behavior fails, implement exact operation/writer/gate, and update all exhaustive Op matches without inventing default behavior for queue or Store.
+- [x] Run gate/edit-family/serde-related tests; commit `feat: model gated item reparenting`.
 
 ### Task 2: Journal relocation with two-family dependencies
 
@@ -62,11 +62,11 @@ Initial scope: one open plain leaf, recognized open top-level destination checkl
 
 **Interfaces:** `Store::plan_reparent(&self, snap: &Snapshot, uid: &str, collection: &str, parent: Option<&str>, now: DateTime<Utc>) -> Result<Plan, WriteError>`. Plan the entire change once with stable IDs; hold both old/new parent bytes and member sets. Existing journal currently persists one optional FamilyGuard: extend it additively with `#[serde(default)]` multi-family dependencies if needed, keeping old journal/queue files readable and validating every dependency before commit/inverse/recovery. Do not overload one guard and lose the other family.
 
-- [ ] Add `reparent_store_updates_exact_membership_once`: source removed/replaced according to the candidate identity contract, destination member links correct, old/new parents and other siblings byte-identical, ranks append at destination using existing rank conventions. One operation/undo step.
-- [ ] Add `reparent_store_checks_both_families`: changed/deleted old or new parent, new/removed/changed sibling on either side, target edit, destination path collision and mixed raw identities all refuse without partial writes.
-- [ ] Add `reparent_queue_inverse_and_recovery_keep_both_guards`: prepared queue retains both dependency sets and stable IDs; interrupt after create/before remove, retry once, undo/redo restore exact identities/bytes; remote modifications remain protected. Deserialize old journal/queue fixtures unchanged.
-- [ ] Run new tests before implementing dependency/planner changes. Keep compatibility changes minimal and documented; do not relax strict whole-file checks or implement queue rebasing in this branch.
-- [ ] Run store-family/store-queue/journal plus complete core tests; commit `feat: journal item relocation with both parent guards`.
+- [x] Add `reparent_store_updates_exact_membership_once`: source removed/replaced according to the candidate identity contract, destination member links correct, old/new parents and other siblings byte-identical, ranks append at destination using existing rank conventions. One operation/undo step.
+- [x] Add `reparent_store_checks_both_families`: changed/deleted old or new parent, new/removed/changed sibling on either side, target edit, destination path collision and mixed raw identities all refuse without partial writes.
+- [x] Add `reparent_queue_inverse_and_recovery_keep_both_guards`: prepared queue retains both dependency sets and stable IDs; interrupt after create/before remove, retry once, undo/redo restore exact identities/bytes; remote modifications remain protected. Deserialize old journal/queue fixtures unchanged.
+- [x] Run new tests before implementing dependency/planner changes. Keep compatibility changes minimal and documented; do not relax strict whole-file checks or implement queue rebasing in this branch.
+- [x] Run store-family/store-queue/journal plus complete core tests; commit `feat: journal item relocation with both parent guards`.
 
 ### Task 3: Expose CLI and TUI structure commands with truthful refusal
 
@@ -74,12 +74,25 @@ Initial scope: one open plain leaf, recognized open top-level destination checkl
 
 **Interfaces:** add CLI `tdo op reparent <uid> --list <existing-list-id> [--parent <uid>]` using the new Op and existing queue/--wait handling. Extend the picker target representation to distinguish list and parent destinations, without treating a parent UID as a collection id. Permission probes report reparent needs destination/context, never blanket permission.
 
-- [ ] Add `structure_keys_indent_to_nearest_parent_in_list`: `>>` only in list views, nearest eligible previous same-list parent, append position; no preceding parent or a smart view yields an explanatory refusal. Exclude selected parent-with-children and nesting.
-- [ ] Add `structure_keys_outdent_and_checklist_confirmation`: `<<` detaches to the same list; checklist output undated; inbound date loss requires confirmation; Escape/No writes nothing and preserves selection. Unsupported cleanup and shipping unverified capability refuse visibly.
-- [ ] Add `structure_picker_distinguishes_list_and_parent`: filters nested targets, excludes self/invalid parents, list choices preserve existing top-level Move behavior, item choices use Reparent. No new-list creation or yank/paste in this increment.
-- [ ] Add CLI serialization/queue tests and truthful `op check`/aggregate needs-input labels. Refused writes leave journal/task bytes unchanged under shipping matrix; candidate matrix tests exercise successful commands without user data.
-- [ ] Implement the thin CLI/UI routing and help text, run focused CLI/TUI tests, update docs with candidate vs verified availability and explicit exclusions, run shared completion validation and commit `feat: add gated indent outdent and parent destinations`.
+- [x] Add `structure_keys_indent_to_nearest_parent_in_list`: `>>` only in list views, nearest eligible previous same-list parent, append position; no preceding parent or a smart view yields an explanatory refusal. Exclude selected parent-with-children and nesting.
+- [x] Add `structure_keys_outdent_and_checklist_confirmation`: `<<` detaches to the same list; checklist output undated; inbound date loss requires confirmation; Escape/No writes nothing and preserves selection. Unsupported cleanup and shipping unverified capability refuse visibly.
+- [x] Add `structure_picker_distinguishes_list_and_parent`: filters nested targets, excludes self/invalid parents, list choices preserve existing top-level Move behavior, item choices use Reparent. No new-list creation or yank/paste in this increment.
+- [x] Add CLI serialization/queue tests and truthful `op check`/aggregate needs-input labels. Refused writes leave journal/task bytes unchanged under shipping matrix; candidate matrix tests exercise successful commands without user data.
+- [x] Implement the thin CLI/UI routing and help text, run focused CLI/TUI tests, update docs with candidate vs verified availability and explicit exclusions, run shared completion validation and commit `feat: add gated indent outdent and parent destinations`.
 
 ## Checkpoint
 
-- [ ] Return implemented paths and shipping-enabled paths separately, exact evidence gaps, a minimum proposed verification checklist, commits and tests. No phone uploads, synthetic-list cleanup or unapproved evidence promotion.
+- [x] Return implemented paths and shipping-enabled paths separately, exact evidence gaps, a minimum proposed verification checklist, commits and tests. No phone uploads, synthetic-list cleanup or unapproved evidence promotion.
+
+
+## Integrated closeout (2026-11-08)
+
+Implemented and integrated on `feat/completness`; see the
+[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+for root-branch commit IDs, all final validation results, review corrections,
+execution decisions and remaining shipping refusals. The user's later instruction
+superseded the original OpenCode executor constraint. Implementation commits were
+grouped by behavior where shared prerequisites made that clearer; plan 4's due,
+interval candidate and workflow tests share one feature commit. Local synthetic
+candidate coverage does not promote missing interoperability evidence. Final review
+was performed by the author because independent review agents were unavailable.

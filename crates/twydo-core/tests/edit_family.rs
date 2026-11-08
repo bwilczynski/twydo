@@ -254,3 +254,69 @@ fn dropping_item_dates_refuses_a_timed_or_started_item() {
         assert_eq!(cal, before);
     }
 }
+
+#[test]
+fn reparent_candidate_link_representations_agree() {
+    let cal = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    let before = serialize(&cal);
+    let now = dtstamp(&cal);
+    let attached = twydo_core::edit::reparented_copy(
+        &cal,
+        "candidate-new",
+        Some("candidate-parent"),
+        false,
+        now,
+    )
+    .unwrap();
+    assert_eq!(
+        todo(&attached).prop("RELATED-TO").unwrap().value,
+        "candidate-parent"
+    );
+    assert_eq!(
+        meta(&attached).get_str("parentuid"),
+        Some("candidate-parent")
+    );
+    assert_eq!(meta(&attached).get_str("RUID"), meta(&cal).get_str("RUID"));
+    let detached =
+        twydo_core::edit::reparented_copy(&cal, "candidate-new", None, false, now).unwrap();
+    assert!(todo(&detached).prop("RELATED-TO").is_none());
+    assert!(!meta(&detached).has("parentuid"));
+    assert_eq!(serialize(&cal), before);
+    for name in ["UID", "RELATED-TO", "X-2DOAPP-METADATA"] {
+        let mut bad = cal.clone();
+        let t = bad.root.children_named_mut("VTODO").next().unwrap();
+        t.props.push(t.prop(name).unwrap().clone());
+        assert!(
+            twydo_core::edit::reparented_copy(&bad, "candidate-new", None, false, now).is_err(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn reparent_candidate_checklist_dates_are_explicit() {
+    let cal = parse(&fixture(L1, "04-reopen-child", K2)).unwrap();
+    let now = dtstamp(&cal);
+    let clean = twydo_core::edit::reparented_copy(
+        &cal,
+        "candidate-new",
+        Some("candidate-parent"),
+        true,
+        now,
+    )
+    .unwrap();
+    for name in ["DUE", "DTSTART"] {
+        assert!(todo(&clean).prop(name).is_none());
+    }
+    let repeating = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    assert!(
+        twydo_core::edit::reparented_copy(
+            &repeating,
+            "candidate-new",
+            Some("candidate-parent"),
+            true,
+            now
+        )
+        .is_err()
+    );
+}

@@ -10,6 +10,7 @@ pub mod fsio;
 pub mod journal;
 mod order;
 pub mod queue;
+mod reparent;
 mod retired;
 
 use std::fs;
@@ -489,7 +490,10 @@ impl Store {
             }
         }
         let durable_holds = checklist_schedule
-            || matches!(op, Op::Delete { .. } | Op::Reopen { .. })
+            || matches!(
+                op,
+                Op::Delete { .. } | Op::Reopen { .. } | Op::Reparent { .. }
+            )
             || member_parent.is_some_and(|p| {
                 creating_item
                     || matches!(op, Op::Reorder { .. } | Op::Delete { .. })
@@ -497,7 +501,10 @@ impl Store {
                         && snap.tasks[p].rrule.is_some())
             });
         let mut family = self.family_of(snap, op)?;
-        if creating_item && let Some(family) = family.as_mut() {
+        let relocating = matches!(op, Op::Move { .. } | Op::Save { to: Some(_), .. });
+        if (creating_item || relocating)
+            && let Some(family) = family.as_mut()
+        {
             // Recovery may find our own create already on disk. It is a known member,
             // while any additional sibling must still make the snapshot stale.
             family
@@ -555,11 +562,6 @@ impl Store {
         now: DateTime<Utc>,
     ) -> Result<String, WriteError> {
         self.check_not_stuck()?;
-        journal::check_create_identities(&self.vdir, &p.entry).map_err(|err| match err {
-            ApplyError::Conflict { path } => WriteError::Stale(self.vdir.join(path)),
-            ApplyError::Io(err) => WriteError::Io(err),
-            err => io_error(io::ErrorKind::InvalidInput, err.to_string()),
-        })?;
         for w in &p.entry.writes {
             self.check_holds(&w.path, w.before.as_deref())?;
         }
@@ -1028,6 +1030,13 @@ impl Store {
     /// The journal protocol (the caller holds the lock): prepare, apply, mark applied. A
     /// conflict leaves the entry Prepared, which blocks later writes until it is abandoned.
     fn run(&self, mut e: Entry) -> Result<String, WriteError> {
+        // Inverses can recreate resources too. Refuse existing identity collisions
+        // before preparing any entry, so a stale undo cannot block unrelated writes.
+        journal::check_create_identities(&self.vdir, &e).map_err(|err| match err {
+            ApplyError::Conflict { path } => WriteError::Stale(self.vdir.join(path)),
+            ApplyError::Io(err) => WriteError::Io(err),
+            err => io_error(io::ErrorKind::InvalidInput, err.to_string()),
+        })?;
         // The exclusive vdir lock serializes commits across stores and processes. A drain
         // passes the same `now` for every item, so persist a strictly increasing commit
         // time rather than letting reconciliation break ties with random journal ids.
@@ -1323,6 +1332,11 @@ impl Store {
                 }
                 one("reopen", uid, t.update(&cal)?)
             }
+            Op::Reparent {
+                uid,
+                collection,
+                parent,
+            } => self.plan_reparent(snap, uid, collection, parent.as_deref(), now)?,
             Op::Move { uid, to } => {
                 // H5 as captured: a new resource under a new UID, then the source removed.
                 let t = self.target(snap, uid)?;

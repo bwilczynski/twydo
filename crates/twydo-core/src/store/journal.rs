@@ -308,45 +308,63 @@ pub(super) fn check_family(vdir: &Path, f: &FamilyGuard) -> Result<(), ApplyErro
     if f.parent_uid.is_empty() {
         return Err(ApplyError::InvalidPath("empty family parent UID".into()));
     }
-    let dir = resolve(vdir, &f.collection)?;
-    for e in fs::read_dir(&dir)? {
-        let path = e?.path();
-        if path.extension().is_none_or(|x| x != "ics") {
+    // Membership references can arrive in another list too. They are malformed,
+    // but must still prevent a stale operation from orphaning or bypassing them.
+    let expected_dir = resolve(vdir, &f.collection)?;
+    fs::read_dir(expected_dir)?;
+    for collection in fs::read_dir(vdir)? {
+        let dir = collection?.path();
+        if !dir.is_dir() {
             continue;
         }
-        let rel = format!(
-            "{}/{}",
-            f.collection,
-            path.file_name().unwrap().to_string_lossy()
-        );
-        if f.loaded.contains(&rel) {
-            continue;
-        }
-        let bytes = match fs::read(&path) {
-            Ok(b) => b,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e.into()),
-        };
-        // Parse before comparing links: valid folding can split a parent UID
-        // across physical lines. An unreadable resource cannot be excluded from
-        // this family safely, so it also refuses the operation.
-        let joined = match crate::ical::parse(&bytes) {
-            Ok(cal) => cal.root.children_named("VTODO").any(|t| {
-                t.props_named("RELATED-TO").any(|p| {
-                    p.value.trim() == f.parent_uid || f.parent_aliases.contains(p.value.trim())
-                }) || t.props_named("X-2DOAPP-METADATA").any(|p| {
-                    crate::model::meta_edit::MetaJson::parse(&p.value)
-                        .and_then(|m| m.get_str("parentuid").map(str::to_owned))
-                        .is_some_and(|uid| {
-                            !uid.is_empty()
-                                && (uid == f.parent_uid || f.parent_aliases.contains(&uid))
+        let collection = dir.file_name().unwrap().to_string_lossy();
+        for e in fs::read_dir(&dir)? {
+            let path = e?.path();
+            if path.extension().is_none_or(|x| x != "ics") {
+                continue;
+            }
+            let rel = format!(
+                "{}/{}",
+                collection,
+                path.file_name().unwrap().to_string_lossy()
+            );
+            if f.loaded.contains(&rel) {
+                continue;
+            }
+            let bytes = match fs::read(&path) {
+                Ok(b) => b,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e.into()),
+            };
+            // Parse before comparing links: valid folding can split a parent UID
+            // across physical lines. An unreadable resource cannot be excluded from
+            // this family safely, so it also refuses the operation.
+            let joined = match crate::ical::parse(&bytes) {
+                Ok(cal) => cal.root.children_named("VTODO").any(|t| {
+                    t.props_named("UID")
+                        .chain(t.props_named("RELATED-TO"))
+                        .any(|p| {
+                            p.value.trim() == f.parent_uid
+                                || f.parent_aliases.contains(p.value.trim())
                         })
-                })
-            }),
-            Err(_) => true,
-        };
-        if joined {
-            return Err(ApplyError::Conflict { path: rel });
+                        || t.props_named("X-2DOAPP-METADATA").any(|p| {
+                            crate::model::meta_edit::MetaJson::parse(&p.value).is_some_and(|m| {
+                                ["uid", "parentuid"]
+                                    .iter()
+                                    .filter_map(|key| m.get_str(key))
+                                    .any(|uid| {
+                                        !uid.is_empty()
+                                            && (uid == f.parent_uid
+                                                || f.parent_aliases.contains(uid))
+                                    })
+                            })
+                        })
+                }),
+                Err(_) => true,
+            };
+            if joined {
+                return Err(ApplyError::Conflict { path: rel });
+            }
         }
     }
     Ok(())

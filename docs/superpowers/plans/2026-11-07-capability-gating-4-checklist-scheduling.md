@@ -49,12 +49,12 @@ Do not add start/time/removal or arbitrary repeat transitions in this increment.
 
 **Interfaces:** `checklist_edit::check(snap: &Snapshot, matrix: &Matrix, mode: WriteMode, idx: usize, changes: &[Change]) -> Option<Result<(), Blocked>>`. `None` means outside its narrow due/interval contract and uses the existing gate. `Some` decides only the proposed field subset; normal identity/family/known-rule safeguards still run. Use dedicated `recurring-checklist-due` / `edit` evidence, not broad recurring-checklist.edit.
 
-- [ ] Record direct captured writes, field/resource deltas and preservation reasoning for adding unchanged recurrence to the existing checklist due operation. Explain whether checklist date cleanup removes dates on any dated item or only inherited copies; retain the existing verified writer behavior for the supported input boundary.
-- [ ] Add `checklist_due_capability_changes_parent_and_cleans_inherited_items`: move due by one day, compare parent representations and item date cleanup against captures, assert metadata/status/repeat/alarms/unknown fields elsewhere are unchanged. Include empty and nonempty checklists.
-- [ ] Add `checklist_due_capability_refuses_negative_neighbors`: day29–31 target, missing due, timed/zoned due, start/time/alarms/end/delay input, independently repeating/nested/malformed item, unknown metadata or mismatched links, unsupported mixed change and a missing evidence row all stay refused.
-- [ ] Run `cargo test -p twydo-core --test gate checklist_due_capability` and `cargo test -p twydo-core --test store_family checklist_due_capability`; confirm new safe admission fails first.
-- [ ] Implement narrow due dispatch after ordinary structural validation but before unrelated captured-text restrictions. Reuse `checklist_date_change` and `Store::plan_checklist_date`; do not suppress date-cleanup guards or skip mixed-save field validation.
-- [ ] Run `cargo test -p twydo-core --test gate --test edit_fields --test store_family`; document the dedicated row/evidence only when justified and commit `feat: admit verified recurring checklist due edits` (or accurately label candidate-only support if unresolved).
+- [x] Record direct captured writes, field/resource deltas and preservation reasoning for adding unchanged recurrence to the existing checklist due operation. Explain whether checklist date cleanup removes dates on any dated item or only inherited copies; retain the existing verified writer behavior for the supported input boundary.
+- [x] Add `checklist_due_capability_changes_parent_and_cleans_inherited_items`: move due by one day, compare parent representations and item date cleanup against captures, assert metadata/status/repeat/alarms/unknown fields elsewhere are unchanged. Include empty and nonempty checklists.
+- [x] Add `checklist_due_capability_refuses_negative_neighbors`: day29–31 target, missing due, timed/zoned due, start/time/alarms/end/delay input, independently repeating/nested/malformed item, unknown metadata or mismatched links, unsupported mixed change and a missing evidence row all stay refused.
+- [x] Run `cargo test -p twydo-core --test gate checklist_due_capability` and `cargo test -p twydo-core --test store_family checklist_due_capability`; confirm new safe admission fails first.
+- [x] Implement narrow due dispatch after ordinary structural validation but before unrelated captured-text restrictions. Reuse `checklist_date_change` and `Store::plan_checklist_date`; do not suppress date-cleanup guards or skip mixed-save field validation.
+- [x] Run `cargo test -p twydo-core --test gate --test edit_fields --test store_family`; document the dedicated row/evidence only when justified and commit `feat: admit verified recurring checklist due edits` (or accurately label candidate-only support if unresolved).
 
 ### Task 2: Separate interval editing from execution
 
@@ -62,20 +62,33 @@ Do not add start/time/removal or arbitrary repeat transitions in this increment.
 
 **Interfaces:** same helper; add `recurring-checklist-interval` / `edit` row. Normalize an interval-only full `Change::Repeat` by comparing all other rule/anchor/end fields, so it has the same admission as `RepeatInterval`; no new parser.
 
-- [ ] Add `checklist_interval_capability_cli_and_card_are_equivalent`: the CLI interval-2 and card full monthly interval-2 representations produce the same parent recurrence fields, with all child bytes and other fields intact. Assert a resulting interval-2 checklist still has its actual existing completion decision; this edit cannot grant execution.
-- [ ] Add `checklist_interval_capability_rejects_anchor_end_and_class_changes`: changes to anchor/count/until/BY fields, mixed incompatible dates, missing dedicated evidence and unsupported intervals remain refused. Test with explicit candidate matrices if shipping evidence is insufficient; shipping tests must then assert refusal.
-- [ ] Run the new tests first; implement only the proven contract, retaining recurrence metadata validation and written-interval constraints. Update the evidence document to say precisely whether admission is shipping or candidate-only, and why.
-- [ ] Run affected core/CLI/TUI targets and commit `feat: separate checklist interval edit capability` (use an accurate test/candidate commit type if not enabled).
+- [x] Add `checklist_interval_capability_cli_and_card_are_equivalent`: the CLI interval-2 and card full monthly interval-2 representations produce the same parent recurrence fields, with all child bytes and other fields intact. Assert a resulting interval-2 checklist still has its actual existing completion decision; this edit cannot grant execution.
+- [x] Add `checklist_interval_capability_rejects_anchor_end_and_class_changes`: changes to anchor/count/until/BY fields, mixed incompatible dates, missing dedicated evidence and unsupported intervals remain refused. Test with explicit candidate matrices if shipping evidence is insufficient; shipping tests must then assert refusal.
+- [x] Run the new tests first; implement only the proven contract, retaining recurrence metadata validation and written-interval constraints. Update the evidence document to say precisely whether admission is shipping or candidate-only, and why.
+- [x] Run affected core/CLI/TUI targets and commit `feat: separate checklist interval edit capability` (use an accurate test/candidate commit type if not enabled).
 
 ### Task 3: End-to-end dates, dependencies and docs
 
 **Files:** `store_family.rs`, `store_queue.rs`, `journal.rs`, `crates/tdo/tests/write.rs`, `cli_op.rs`; writer fixes only if tests expose gaps; docs `docs/tasks.md`, `docs/tui.md`, `docs/compatibility.md`, this checkpoint.
 
-- [ ] Add `checklist_schedule_stale_members_refuse_atomically`: new/changed/removed items after form open or queueing cause refusal, preserve typed text and leave parent/items unchanged.
-- [ ] Add `checklist_schedule_inverse_and_recovery_keep_dates_consistent`: interrupted parent/child cleanup, retry, undo/redo and remote edits follow existing journal contracts with exact identity/date preservation. Interval edit stays one parent-resource update.
-- [ ] Add TUI date-key and card-field tests, including cancelled edit, unsupported mixed save and repeat completion after a permitted due edit; independently dated checklist-item shortcuts remain refused.
-- [ ] Update matching docs with enabled fields, unchanged completion boundary, excluded scheduling shapes and any missing bounded evidence. Run shared completion validation; commit `test: verify checklist scheduling workflows and recovery`.
+- [x] Add `checklist_schedule_stale_members_refuse_atomically`: new/changed/removed items after form open or queueing cause refusal, preserve typed text and leave parent/items unchanged.
+- [x] Add `checklist_schedule_inverse_and_recovery_keep_dates_consistent`: interrupted parent/child cleanup, retry, undo/redo and remote edits follow existing journal contracts with exact identity/date preservation. Interval edit stays one parent-resource update.
+- [x] Add TUI date-key and card-field tests, including cancelled edit, unsupported mixed save and repeat completion after a permitted due edit; independently dated checklist-item shortcuts remain refused.
+- [x] Update matching docs with enabled fields, unchanged completion boundary, excluded scheduling shapes and any missing bounded evidence. Run shared completion validation; commit `test: verify checklist scheduling workflows and recovery`.
 
 ## Checkpoint
 
-- [ ] Return enabled vs candidate-only paths, direct vs generalized evidence, commits and verification. Do not schedule or conduct a phone experiment.
+- [x] Return enabled vs candidate-only paths, direct vs generalized evidence, commits and verification. Do not schedule or conduct a phone experiment.
+
+
+## Integrated closeout (2026-11-08)
+
+Implemented and integrated on `feat/completness`; see the
+[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+for root-branch commit IDs, all final validation results, review corrections,
+execution decisions and remaining shipping refusals. The user's later instruction
+superseded the original OpenCode executor constraint. Implementation commits were
+grouped by behavior where shared prerequisites made that clearer; plan 4's due,
+interval candidate and workflow tests share one feature commit. Local synthetic
+candidate coverage does not promote missing interoperability evidence. Final review
+was performed by the author because independent review agents were unavailable.

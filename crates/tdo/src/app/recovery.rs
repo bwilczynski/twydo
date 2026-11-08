@@ -11,6 +11,9 @@ pub struct RecoveryPanel {
 
 pub enum Confirmation {
     Forget(Preview),
+    Reparent {
+        op: Box<Op>,
+    },
     Recover {
         backup: String,
         to: String,
@@ -21,6 +24,9 @@ pub enum Confirmation {
 impl Confirmation {
     pub fn question(&self) -> String {
         match self {
+            Self::Reparent { .. } => {
+                "Move into checklist and remove this task’s dates? y confirm · n/Esc cancel".into()
+            }
             Self::Forget(p) => format!(
                 "Did you delete {:?} ({}) on another device? Preserve {} task(s), including {} unsynced operation(s), then remove its local copy? y confirm · n/Esc cancel",
                 p.name, p.collection, p.tasks, p.pending
@@ -49,7 +55,9 @@ impl App {
             self.message = None;
             self.picker = Some(ListPicker {
                 action: ListPickerAction::Forget,
-                lists,
+                targets: lists.into_iter().map(PickerTarget::List).collect(),
+                query: String::new(),
+                filtering: false,
                 cursor: 0,
             });
             return;
@@ -140,6 +148,7 @@ impl App {
                 let confirmation = self.confirmation.take().expect("confirmation");
                 self.recovery = None;
                 match confirmation {
+                    Confirmation::Reparent { op } => Outcome::Write(Request::Apply(*op)),
                     Confirmation::Forget(p) => Outcome::ForgetList(p),
                     Confirmation::Recover { backup, to, .. } => {
                         Outcome::Write(Request::Recover { backup, to })
@@ -147,6 +156,9 @@ impl App {
                 }
             }
             KeyCode::Char('n') | KeyCode::Esc => {
+                if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
+                    self.picker = None;
+                }
                 self.confirmation = None;
                 self.message = Some("cancelled".into());
                 Outcome::Continue

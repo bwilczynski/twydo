@@ -1249,3 +1249,30 @@ fn capability_move_cli_uses_shipping_matrix_and_requires_destination_probe() {
     let files: Vec<_> = fs::read_dir(env.vdir().join("list2")).unwrap().collect();
     assert_eq!(files.len(), 2);
 }
+
+#[test]
+fn reparent_cli_reports_context_and_shipping_refusal() {
+    let e = Env::new("verified");
+    let before = list_files(&e);
+    let report = e.tdo(&["op", "check", TASK_A]);
+    assert!(report.status.success());
+    assert!(out(&report).contains("reparent: needs input: destination list and parent/context"));
+    let result = e.tdo(&["op", "reparent", TASK_A, "--list", "list2"]);
+    assert_eq!(result.status.code(), Some(1), "{}", err(&result));
+    assert!(err(&result).contains("item-outdent"));
+    assert_eq!(list_files(&e), before);
+    let help = e.tdo(&["op", "reparent", "--help"]);
+    assert!(help.status.success());
+    assert!(out(&help).contains("--wait"));
+    assert!(out(&help).contains("--parent"));
+    // Only this isolated test's custom matrix admits the candidate. Shipping stays refused.
+    let text = "matrix_version=1\n[[operation]]\ncase=\"item-outdent\"\nop=\"reparent\"\niphone_baseline=\"pass\"\nmac_to_iphone=\"unverified\"\niphone_to_mac=\"unverified\"\ntwydo_to_iphone=\"pass\"\niphone_to_twydo=\"pass\"\n";
+    fs::write(e.dir.path().join("matrix.toml"), text).unwrap();
+    let moved = e.op(&["reparent", TASK_A, "--list", "list2"]);
+    assert!(moved.status.success(), "{}", err(&moved));
+    assert!(!e.vdir().join(format!("list1/{TASK_A}.ics")).exists());
+    let id = out(&moved).trim().to_owned();
+    let undone = e.op(&["undo", &id]);
+    assert!(undone.status.success(), "{}", err(&undone));
+    assert_eq!(list_files(&e), before);
+}

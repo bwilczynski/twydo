@@ -843,8 +843,12 @@ fn picker_overlay_lists_names() {
         .picker
         .as_ref()
         .unwrap()
-        .lists
+        .targets
         .iter()
+        .filter_map(|target| match target {
+            tdo::app::PickerTarget::List(id) => Some(id),
+            _ => None,
+        })
         .map(|id| {
             a.snapshot
                 .collections
@@ -933,7 +937,7 @@ fn picker_scrolls_to_keep_selection_visible() {
     .unwrap();
     let mut a = App::new(snapshot_at(dir.path()), now());
     a.handle_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
-    assert_eq!(a.picker.as_ref().unwrap().lists.len(), 29);
+    assert_eq!(a.picker.as_ref().unwrap().targets.len(), 29);
     for _ in 0..40 {
         a.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
     }

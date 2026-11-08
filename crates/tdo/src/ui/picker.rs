@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use twydo_core::sync::status::CollState;
 
-use super::{bar_color, dim, list_name, overlay_rect, theme, truncate};
+use super::{bar_color, dim, overlay_rect, theme, truncate};
 use crate::app::{App, ListPicker, ListPickerAction};
 
 pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
@@ -17,16 +17,16 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
         ListPickerAction::Recover(_) => (" Recover into ", "j/k move  Enter select  Esc cancel"),
         ListPickerAction::Forget => (" Forget list ", "j/k move  Enter select  Esc cancel"),
     };
-    let names: Vec<_> = p
-        .lists
+    let targets = p.visible_targets(&app.snapshot);
+    let names: Vec<_> = targets
         .iter()
-        .map(|id| list_name(&app.snapshot, id))
+        .map(|target| target.label(&app.snapshot))
         .collect();
-    let suffixes: Vec<_> = p
-        .lists
+    let suffixes: Vec<_> = targets
         .iter()
         .zip(&names)
-        .map(|(id, name)| {
+        .map(|(target, name)| {
+            let id = target.collection();
             let mut suffix = if names.iter().filter(|other| *other == name).count() > 1 {
                 format!(" ({id})")
             } else {
@@ -58,20 +58,20 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
     let rect = overlay_rect(
         area,
         width,
-        p.lists.len().saturating_add(4).min(u16::MAX as usize) as u16,
+        targets.len().saturating_add(4).min(u16::MAX as usize) as u16,
     );
     let w = rect.width.saturating_sub(4) as usize;
     // Rows left for lists after the borders, the blank line and the hint; scroll so the
     // cursor is always among them.
     let rows = (rect.height as usize).saturating_sub(4).max(1);
     let skip = (p.cursor + 1).saturating_sub(rows);
-    let mut lines: Vec<Line> = p
-        .lists
+    let mut lines: Vec<Line> = targets
         .iter()
         .enumerate()
         .skip(skip)
         .take(rows)
-        .map(|(i, id)| {
+        .map(|(i, target)| {
+            let id = target.collection();
             let suffix = &suffixes[i];
             let label = format!(
                 "{}{}",
@@ -88,7 +88,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
             }
         })
         .collect();
-    lines.push(Line::raw(""));
+    lines.push(Line::raw(format!("Filter: {}", p.query)));
     lines.push(Line::styled(hint, dim()));
     f.render_widget(Clear, rect);
     f.render_widget(

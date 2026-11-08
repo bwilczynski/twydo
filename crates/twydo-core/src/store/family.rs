@@ -43,7 +43,11 @@ impl Store {
     /// complete, reopen, move and delete, a checklist's date change and a change of type
     /// (also as part of a save); `None` otherwise.
     pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
+        if matches!(op, Op::Reparent { .. }) {
+            return Ok(None);
+        }
         let uid = match op {
+            Op::Reparent { .. } => unreachable!(),
             Op::Complete { uid }
             | Op::Reopen { uid }
             | Op::Move { uid, .. }
@@ -117,6 +121,9 @@ impl Store {
         plan: &Plan,
         source: Option<&Family>,
     ) -> Result<Vec<Family>, WriteError> {
+        if let Op::Reparent { uid, parent, .. } = op {
+            return self.reparent_families(snap, uid, parent.as_deref(), plan);
+        }
         let uid = match op {
             Op::Move { uid, .. }
             | Op::Save {
@@ -144,12 +151,13 @@ impl Store {
             .value
             .clone();
         let collection = first.path.split('/').next().unwrap().to_string();
-        let loaded = plan
+        let mut loaded: BTreeSet<String> = plan
             .writes
             .iter()
             .filter(|w| w.before.is_none())
             .map(|w| w.path.clone())
             .collect();
+        loaded.extend(source.loaded.iter().cloned());
         let mut parent_aliases =
             crate::gate::relationships::aliases(&snap.tasks[snap.find(uid).unwrap()]);
         parent_aliases.remove(uid);

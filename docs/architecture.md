@@ -285,6 +285,8 @@ vdirsyncer started, and the next write recovers under the lock before it changes
 `u` and `Ctrl-r` in the TUI (and `tdo op undo <id>`) write a new journal entry that reverses an
 earlier one, under the same "file must still hold the expected bytes" rule: an undo after a
 sync brought in someone else's change to the same task is refused rather than overwriting it.
+If undo or redo would recreate a UID already present under another filename, it refuses
+before preparing a journal entry, so unrelated writes can continue.
 
 An entry stays pending until a sync confirms the server holds its result; the sync runner then
 sets `synced`. A synced entry is pruned `retention_days` (default 30) after confirmation, and
@@ -326,3 +328,20 @@ The ordering gate validates family structure and editable JSON, then checks the 
 DisplayOrder operation by declared parent kind. It does not classify recurrence, dates,
 alarms or completion state: they are preserved fields. Anchored insertion separately
 passes the existing complete Create gate before applying its saved placement.
+
+### Relocation dependencies
+
+List relocation and candidate single-leaf reparenting persist additive `families`
+guards alongside the legacy optional `family`. Old journal/queue JSON remains
+readable. Each guard records resource/internal parent aliases and known paths;
+commit, queue drain, undo/redo and recovery check all guards. Membership rescans
+cover other lists too, so a new cross-list standard or JSON-only reference cannot
+bypass a loaded family. Exact unchanged parent/sibling bytes remain held.
+
+Candidate reparenting plans new identity and destination rank once, then journals
+destination creation before source removal. A partially applied entry reuses that
+identity on recovery; it cannot create a second candidate. Both leaf identity guards
+recognize the old and new paths, so a retained internal JSON identity does not
+conflict with the operation's own source or destination. Destination UID checks
+also detect duplicates under other filenames. The separate membership gate keeps
+unproven encodings disabled in the shipping matrix.
