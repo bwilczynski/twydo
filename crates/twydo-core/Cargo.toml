@@ -8,6 +8,8 @@ repository.workspace = true
 description.workspace = true
 
 [dependencies]
+base64 = "0.22.1"
+sha2 = "0.10.9"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 iana-time-zone = "0.1.65"

@@ -433,7 +433,8 @@ pub fn cancel_unstarted(cfg: &Config, id: &str) -> Result<(), ListError> {
     let _lock = VdirLock::exclusive(&state)?;
     let _fence = coordinate(&state)?;
     let mut record = read(&state, id)?;
-    let definitely_unwritten = record.phase == Phase::Prepared
+    let definitely_unwritten = record.request.action == "preview-delete"
+        || record.phase == Phase::Prepared
         || (matches!(record.phase, Phase::RemoteStarted | Phase::Uncertain)
             && record.remote_target.is_none())
         || record

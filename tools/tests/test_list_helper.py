@@ -246,10 +246,78 @@ class ListHelperTests(unittest.TestCase):
             with self.assertRaises(self.h.Refused):
                 asyncio.run(self.h.read_properties(Session(data)))
 
+    def test_delete_inventory_keeps_remote_only_and_malformed_resources_exactly(self):
+        transport = InventoryDAV()
+        result = asyncio.run(self.h.capture_inventory(transport))
+        import base64
+        self.assertEqual([base64.b64decode(r["bytes"]) for r in result["resources"]],
+                         [b"malformed synthetic VTODO\x00", b"opaque synthetic resource"])
+        self.assertEqual(len(result["resources"]), 2)
+        self.assertTrue(all(c[0] in ("PROPFIND", "GET") for c in transport.calls))
+        self.assertIn("properties", result)
+
+    def test_delete_inventory_refuses_incomplete_stale_or_unsafe_results(self):
+        for fault in ("weak", "missing", "duplicate", "foreign", "nested", "failed", "changed", "get-stale", "properties"):
+            with self.subTest(fault=fault), self.assertRaises(self.h.Refused):
+                asyncio.run(self.h.capture_inventory(InventoryDAV(fault)))
+
+    def test_collection_etag_absence_does_not_weaken_resource_backup_validators(self):
+        captured=asyncio.run(self.h.capture_inventory(InventoryDAV("collection-etag-absent")))
+        self.assertEqual(len(captured["resources"]),2)
+        self.assertEqual(captured["resources"][0]["etag"],'"v0"')
 
 
+class InventoryDAV:
+    url = "https://example.com/dav/synthetic/"
 
+    def __init__(self, fault=None):
+        self.fault, self.calls, self.inventories = fault, [], 0
 
+    async def request(self, method, path="", **kwargs):
+        import xml.etree.ElementTree as ET
+        self.calls.append((method, path, kwargs))
+        status, headers = 207, {}
+        if method == "GET":
+            index = 0 if path.endswith("remote.ics") else 1
+            raw = [b"malformed synthetic VTODO\x00", b"opaque synthetic resource"][index]
+            headers["ETag"] = '"changed"' if self.fault == "get-stale" else f'"v{index}"'
+            status = 200
+        elif kwargs["headers"]["Depth"] == "0":
+            raw = b'<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/synthetic/</d:href><d:propstat><d:prop><d:displayname>Synthetic</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'
+            if self.fault == "properties":
+                raw = raw.replace(b"200 OK", b"403 Forbidden")
+        else:
+            self.inventories += 1
+            root = ET.Element("{DAV:}multistatus")
+            for index, name in enumerate(("", "remote.ics", "unknown.bin")):
+                row = ET.SubElement(root, "{DAV:}response")
+                href = self.url + name
+                if name and self.fault == "foreign": href = "https://elsewhere.example.org/" + name
+                if name and self.fault == "nested": href = self.url + "nested/" + name
+                ET.SubElement(row, "{DAV:}href").text = href
+                ps = ET.SubElement(row, "{DAV:}propstat")
+                ET.SubElement(ps, "{DAV:}status").text = "HTTP/1.1 " + ("403 Forbidden" if self.fault == "failed" else "200 OK")
+                prop = ET.SubElement(ps, "{DAV:}prop")
+                kind = ET.SubElement(prop, "{DAV:}resourcetype")
+                if not name:
+                    ET.SubElement(kind, "{DAV:}collection")
+                    if self.fault=="collection-etag-absent":
+                        absent=ET.SubElement(row,"{DAV:}propstat")
+                        ET.SubElement(ET.SubElement(absent,"{DAV:}prop"),"{DAV:}getetag")
+                        ET.SubElement(absent,"{DAV:}status").text="HTTP/1.1 404 Not Found"
+                elif self.fault != "missing":
+                    tag = f'"v{index-1}"'
+                    if self.fault == "weak": tag = "W/" + tag
+                    if self.fault == "changed" and self.inventories > 1: tag = '"changed"'
+                    ET.SubElement(prop, "{DAV:}getetag").text = tag
+                if self.fault == "duplicate" and name: root.append(row)
+            raw = ET.tostring(root)
+        class Content:
+            async def read(self, n):
+                nonlocal raw
+                result,raw=raw[:n],raw[n:]
+                return result
+        return types.SimpleNamespace(status=status,url=path or self.url,headers=headers,content=Content())
 
 
 class MemoryDAV:

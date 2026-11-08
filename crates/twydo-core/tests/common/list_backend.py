@@ -39,13 +39,18 @@ class Session(memory.MemoryDAV):
                          ignore_write=store["flags"].get("ignore_write", False))
         if self.exists:
             self.state = store["collections"][self.identity]
+        self.inventory = memory.InventoryDAV(store["flags"].get("inventory_fault"))
+        self.inventory.url = self.url
 
     @classmethod
     def init_and_remaining_args(cls, **options):
         return cls(**options), {}
 
     async def request(self, method, path="", **kwargs):
-        result = await super().request(method, path, **kwargs)
+        if method == "GET" or (method == "PROPFIND" and kwargs.get("headers", {}).get("Depth") == "1"):
+            result = await self.inventory.request(method, path, **kwargs)
+        else:
+            result = await super().request(method, path, **kwargs)
         store = load()
         store["calls"].append(method)
         if self.exists:

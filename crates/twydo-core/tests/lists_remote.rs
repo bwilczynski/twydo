@@ -459,6 +459,65 @@ fn changed_saved_write_policy_refuses_a_worker_using_old_test_mode() {
 
 #[cfg(unix)]
 #[test]
+fn changed_saved_state_binding_refuses_create_preview_and_reconciliation() {
+    for action in ["create", "preview", "reconcile"] {
+        let (d, cfg) = offline();
+        ListService::open(&cfg, None)
+            .unwrap()
+            .execute(create())
+            .unwrap();
+        let operation = if action == "reconcile" {
+            let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+            request.action = "edit".into();
+            request.collection = Some("new-id".into());
+            request.name = Some("After".into());
+            request.expected = Some(serde_json::json!({"name":"Synthetic list","color":"#379417"}));
+            Some(
+                twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now())
+                    .unwrap()
+                    .id,
+            )
+        } else {
+            None
+        };
+        let path = d.path().join("config.toml");
+        let sync = cfg.sync.as_ref().unwrap();
+        fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\npair = \"synthetic\"\nlocal_storage = \"local\"\nlist_python = {:?}\nvdirsyncer_config = {:?}\n",cfg.vdir.to_str().unwrap(),d.path().join("other-state").to_str().unwrap(),sync.list_python,sync.vdirsyncer_config.as_ref().unwrap().to_str().unwrap())).unwrap();
+        let before = fs::read(d.path().join("server.json")).unwrap();
+        let mut service = ListService::open(&cfg, Some(&path)).unwrap();
+        let message = match action {
+            "create" => service
+                .execute(ListRequest::Create {
+                    id: "second-id".into(),
+                    name: "Second".into(),
+                    color: (1, 2, 3),
+                })
+                .unwrap_err()
+                .to_string(),
+            "preview" => service.preview_delete("new-id").unwrap_err().to_string(),
+            _ => service
+                .reconcile(operation.as_deref().unwrap())
+                .unwrap_err()
+                .to_string(),
+        };
+        assert!(
+            message.contains("configuration or write policy changed"),
+            "{action}: {message}"
+        );
+        assert_eq!(fs::read(d.path().join("server.json")).unwrap(), before);
+        assert!(!d.path().join("other-state").exists());
+        if action == "reconcile" {
+            assert!(
+                twydo_core::lists::operation::active(&cfg)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn explicit_collection_save_respects_but_does_not_depend_on_automatic_sync_switch() {
     let (_d, cfg) = offline();
     twydo_core::sync::switch::set(&cfg, true).unwrap();

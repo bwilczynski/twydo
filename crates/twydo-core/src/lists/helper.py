@@ -3,6 +3,7 @@
 Importing this module does not read config, fetch credentials or access the network.
 """
 import asyncio
+import base64
 import contextlib
 import importlib
 import hashlib
@@ -39,7 +40,7 @@ def plain_id(value):
 def validate_request(request):
     if not isinstance(request, dict) or type(request.get("version")) is not int or request["version"] != 1:
         raise Refused("protocol")
-    if request.get("action") not in ("probe", "resolve", "create", "edit"):
+    if request.get("action") not in ("probe", "resolve", "create", "edit", "preview-delete"):
         raise Refused("protocol")
     mode = request.get("mode", "execute")
     if type(request.get("timeout_secs", 300)) is not int or request.get("timeout_secs", 300) < 1:
@@ -58,6 +59,8 @@ def validate_request(request):
     if request.get("config") is not None and not isinstance(request["config"], str):
         raise Refused("protocol")
     if request.get("action") != "probe" and not plain_id(request.get("collection")):
+        raise Refused("protocol")
+    if request.get("action") == "preview-delete" and (not request.get("operation") or not request.get("state")):
         raise Refused("protocol")
     if request.get("action") in ("create", "edit"):
         if not request.get("operation") or not request.get("state"):
@@ -311,12 +314,96 @@ def canonical_color(value):
     return None
 
 
+def multistatus(raw, require_success=True):
+    try:
+        root = ET.fromstring(raw)
+        if root.tag != D + "multistatus":
+            raise Refused("inventory")
+        rows = root.findall(D + "response")
+        if not rows or any(not row.findall(D + "propstat") or row.find(D + "status") is not None for row in rows) or (require_success and any((ps.findtext(D + "status") or "").split()[1:2] != ["200"]
+                           for row in rows for ps in row.findall(D + "propstat"))):
+            raise Refused("inventory")
+        return rows
+    except ET.ParseError:
+        raise Refused("inventory") from None
 
 
+async def raw_properties(session):
+    response, raw = await dav_request(session, "PROPFIND", data=b'<d:propfind xmlns:d="DAV:"><d:allprop/></d:propfind>',
+                                     headers={"Depth": "0", "Content-Type": "application/xml"})
+    if response.status != 207:
+        raise Refused("inventory")
+    multistatus(raw)
+    successful_properties(raw, session.url)
+    return raw
 
 
+async def inventory(session):
+    response, raw = await dav_request(session, "PROPFIND",
+        data=b'<d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:resourcetype/></d:prop></d:propfind>',
+        headers={"Depth": "1", "Content-Type": "application/xml"})
+    if response.status != 207:
+        raise Refused("inventory")
+    result, seen, collection = [], set(), 0
+    base = session.url.rstrip("/") + "/"
+    for row in multistatus(raw, require_success=False):
+        href = row.findtext(D + "href")
+        if not href:
+            raise Refused("inventory")
+        target = urljoin(base, href)
+        if target in seen:
+            raise Refused("inventory")
+        seen.add(target)
+        props = {}
+        for ps in row.findall(D + "propstat"):
+            prop = ps.find(D + "prop")
+            if prop is None:
+                raise Refused("inventory")
+            status = (ps.findtext(D + "status") or "").split()[1:2]
+            if status != ["200"]:
+                if target.rstrip("/") == base.rstrip("/") and status == ["404"] and [value.tag for value in prop] == [D + "getetag"]:
+                    continue
+                raise Refused("inventory")
+            for value in prop:
+                if value.tag in props:
+                    raise Refused("inventory")
+                props[value.tag] = value
+        kind = props.get(D + "resourcetype")
+        if target.rstrip("/") == base.rstrip("/"):
+            collection += 1
+            if kind is None or kind.find(D + "collection") is None:
+                raise Refused("inventory")
+            continue
+        name = target[len(base):] if target.startswith(base) else ""
+        if not plain_id(unquote(name)) or "/" in name or urlsplit(target).query or urlsplit(target).fragment:
+            raise Refused("inventory")
+        if kind is None or list(kind):
+            raise Refused("inventory")
+        etag = props.get(D + "getetag")
+        etag = etag.text if etag is not None else None
+        if not isinstance(etag, str) or not re.fullmatch(r'"[^"\x00-\x20\x7f]+"', etag):
+            raise Refused("inventory")
+        result.append({"href": target, "etag": etag})
+    if collection != 1:
+        raise Refused("inventory")
+    return sorted(result, key=lambda value: value["href"])
 
 
+async def capture_inventory(session):
+    properties = await raw_properties(session)
+    before = await inventory(session)
+    resources, total = [], 0
+    for entry in before:
+        response, raw = await dav_request(session, "GET", entry["href"], headers={"If-Match": entry["etag"]})
+        if response.status != 200 or response.headers.get("ETag") != entry["etag"]:
+            raise Refused("inventory")
+        total += len(raw)
+        if total > 32 * 1024 * 1024:
+            raise Refused("inventory")
+        resources.append(dict(entry, bytes=base64.b64encode(raw).decode(), sha256=hashlib.sha256(raw).hexdigest()))
+    if before != await inventory(session) or properties != await raw_properties(session):
+        raise Refused("stale")
+    return {"format": 1, "properties": base64.b64encode(properties).decode(), "resources": resources}
 
 
 def same_metadata(field, left, right):
@@ -545,6 +632,21 @@ async def dispatch(request, adapter, record):
                 properties = await create_task_collection(storage.session, request["name"], request["color"])
             elif action == "edit":
                 properties = await write_metadata(storage.session, changes, request["expected"])
+            elif action == "preview-delete":
+                properties = await read_properties(storage.session)
+                captured = await capture_inventory(storage.session)
+                directory = Path(request["state"]) / "lists/backups" / record["id"]
+                for parent in (directory.parent, directory):
+                    if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+                        raise Refused("operation")
+                    parent.mkdir(mode=0o700, exist_ok=True)
+                    descriptor = os.open(parent.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                atomic_json(directory / "remote.json", captured)
+                return {"backup": record["id"], "resources": len(captured["resources"]), **properties}
             else:
                 properties = await read_properties(storage.session)
             return {"collection": request["collection"], "remote_collection": identity, **properties}
@@ -595,7 +697,9 @@ def main():
                 except BaseException as error:
                     if record is not None:
                         record["phase"] = "uncertain"
-                        if mode == "execute" and isinstance(error, Refused) and error.code in ("stale", "exists"):
+                        if request["action"] == "preview-delete":
+                            record["receipt"] = {"no_remote_write": True}
+                        elif mode == "execute" and isinstance(error, Refused) and error.code in ("stale", "exists"):
                             record["receipt"] = {"no_remote_write": True, "reason": error.code}
                         atomic_json(request["operation"], record)
                     raise

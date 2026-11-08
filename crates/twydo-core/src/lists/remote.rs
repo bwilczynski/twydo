@@ -33,6 +33,11 @@ pub enum ListResult {
         operation: String,
         state: ListState,
     },
+    DeletePreview(super::backup::DeletePreview),
+    Exported {
+        backup: String,
+        destination: std::path::PathBuf,
+    },
 }
 
 pub(super) fn capability(
@@ -255,6 +260,12 @@ impl ListService {
         }
         if record.phase == Phase::Complete {
             return self.result(&record);
+        }
+        if record.request.action == "preview-delete" {
+            operation::cancel_unstarted(&self.config, id)?;
+            return Err(ListError::Refused(
+                "Interrupted read-only deletion preview cleared; request a fresh preview".into(),
+            ));
         }
         if record.phase == Phase::LocalConfirmed {
             operation::finish(&self.config, &mut record)?;
