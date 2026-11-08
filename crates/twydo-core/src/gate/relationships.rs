@@ -155,6 +155,32 @@ impl Index {
         Ok(())
     }
 
+    /// Validate each held member's aliases, not just the family's head.
+    pub(super) fn check_identity(&self, i: usize) -> Result<(), Blocked> {
+        self.validate_metadata_source(i)?;
+        if self.metadata[i]
+            .as_ref()
+            .is_some_and(|m| m.has("uid") && m.get_str("uid").is_none())
+            || self.aliases[i].iter().any(|alias| {
+                self.owners
+                    .get(alias)
+                    .is_some_and(|owners| owners.iter().any(|&owner| owner != i))
+            })
+        {
+            return blocked("text editing needs unambiguous resource and internal identities");
+        }
+        Ok(())
+    }
+
+    /// Include JSON-only incoming references when deciding whether a member is a leaf.
+    pub(super) fn has_references(&self, i: usize) -> bool {
+        self.aliases[i].iter().any(|alias| {
+            self.references
+                .get(alias)
+                .is_some_and(|refs| refs.iter().any(|&source| source != i))
+        })
+    }
+
     fn validate_metadata_source(&self, i: usize) -> Result<(), Blocked> {
         if !self.readable_sources[i] {
             return blocked("family source is unreadable");

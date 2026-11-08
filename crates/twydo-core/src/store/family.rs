@@ -39,6 +39,29 @@ struct Child {
 }
 
 impl Store {
+    /// Keep the text capability's structural dependencies through recovery and undo.
+    pub(super) fn text_edit_head(&self, snap: &Snapshot, op: &Op) -> Option<usize> {
+        self.matrix.operation("resource-text", "edit")?;
+        let (uid, changes) = match op {
+            Op::Edit { uid, changes }
+            | Op::Save {
+                uid,
+                changes,
+                to: None,
+            } => (uid, changes),
+            _ => return None,
+        };
+        if changes.is_empty()
+            || !changes
+                .iter()
+                .all(|c| matches!(c, Change::Summary(_) | Change::Description(_)))
+        {
+            return None;
+        }
+        let idx = snap.find(uid)?;
+        Some(snap.parent(idx).unwrap_or(idx))
+    }
+
     /// The task `op` acts on and the items loaded with it, for the rescan under the lock: every
     /// complete, reopen, move and delete, a checklist's date change and a change of type
     /// (also as part of a save); `None` otherwise.
@@ -77,7 +100,10 @@ impl Store {
             return Ok(None);
         };
         // Individual deletion also depends on the loaded parent and sibling set.
-        let idx = if matches!(op, Op::Delete { .. } | Op::Reorder { .. }) {
+        let text_head = self.text_edit_head(snap, op);
+        let idx = if let Some(head) = text_head {
+            head
+        } else if matches!(op, Op::Delete { .. } | Op::Reorder { .. }) {
             snap.parent(idx).unwrap_or(idx)
         } else {
             idx
@@ -97,7 +123,10 @@ impl Store {
                 )
             });
             let kind = changes.iter().any(|c| matches!(c, Change::Kind(_)));
-            if !kind && (snap.tasks[idx].kind != TaskKind::Checklist || !dates) {
+            if text_head.is_none()
+                && !kind
+                && (snap.tasks[idx].kind != TaskKind::Checklist || !dates)
+            {
                 return Ok(None);
             }
         }
@@ -109,7 +138,16 @@ impl Store {
             collection: snap.tasks[idx].collection.clone(),
             parent_uid: snap.tasks[idx].uid.clone(),
             loaded,
-            parent_aliases: crate::gate::relationships::aliases(&snap.tasks[idx]),
+            parent_aliases: if text_head.is_some() {
+                // New owners or hidden descendants of any held member make the
+                // text contract stale, just as a new child of the head does.
+                std::iter::once(idx)
+                    .chain(snap.children(idx).iter().copied())
+                    .flat_map(|i| crate::gate::relationships::aliases(&snap.tasks[i]))
+                    .collect()
+            } else {
+                crate::gate::relationships::aliases(&snap.tasks[idx])
+            },
         }))
     }
 

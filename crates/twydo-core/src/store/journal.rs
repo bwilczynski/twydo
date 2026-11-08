@@ -69,6 +69,7 @@ pub struct FamilyGuard {
     pub parent_uid: String,
     pub loaded: BTreeSet<String>,
     /// Standard and internal JSON parent identities, retained after parent removal.
+    /// Text edits also include held member identities to reject new owners/descendants.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub parent_aliases: BTreeSet<String>,
 }

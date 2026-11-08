@@ -66,6 +66,7 @@ mod checklist_edit;
 mod history_reopen;
 mod relocate;
 mod reparent;
+mod text_edit;
 
 use std::fmt;
 
@@ -235,6 +236,12 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
             Some(i)
         }
     };
+
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && let Some(result) = text_edit::check(snap, m, mode, i, changes, checker)
+    {
+        return result;
+    }
 
     if let (Some(i), Op::Move { to, .. }) = (target, op)
         && m.operation(relocate::case(snap, i), "move").is_some()

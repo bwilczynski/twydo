@@ -2898,12 +2898,12 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
     }
     for (rule, change, allowed) in [
         ("FREQ=MONTHLY", Change::Summary("changed".into()), true),
-        ("FREQ=WEEKLY", Change::Summary("changed".into()), false),
-        ("FREQ=YEARLY", Change::Summary("changed".into()), false),
+        ("FREQ=WEEKLY", Change::Summary("changed".into()), true),
+        ("FREQ=YEARLY", Change::Summary("changed".into()), true),
         (
             "FREQ=MONTHLY;INTERVAL=2",
             Change::Summary("changed".into()),
-            false,
+            true,
         ),
         ("FREQ=MONTHLY", Change::RepeatInterval(2), true),
         ("FREQ=MONTHLY", Change::RepeatInterval(3), false),
@@ -3146,6 +3146,7 @@ mod recurring_checklist_writes {
                 if (row.case == "recurring-checklist"
                     && matches!(row.op.as_str(), "create" | "edit"))
                     || row.case == "recurring-checklist-item"
+                    || row.case == "resource-text"
                 {
                     row.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
                 }
@@ -3336,9 +3337,9 @@ mod recurring_checklist_writes {
         assert_eq!(check(&s, &m, WriteMode::Verified, &mixed, today()), Ok(()));
 
         let mut no_text_evidence = m.clone();
-        no_text_evidence
-            .operation
-            .retain(|r| !(r.case == "recurring-checklist" && r.op == "edit"));
+        no_text_evidence.operation.retain(|r| {
+            !((r.case == "recurring-checklist" || r.case == "resource-text") && r.op == "edit")
+        });
         assert_eq!(
             check(&s, &no_text_evidence, WriteMode::Verified, &op, today()),
             Ok(())
@@ -4788,4 +4789,248 @@ fn reused_gate_facts_are_scoped_to_their_immutable_snapshot() {
             today()
         )
     );
+}
+
+#[test]
+fn text_capability_admits_closed_checklists_without_schedule_permissions() {
+    use common::text_edit as text;
+    let env = text::closed();
+    let s = env.snap();
+    let p = s.find(text::PARENT).unwrap();
+    let m = matrix(&[("resource-text", "edit")], "pass", "pass", &[]);
+    for i in std::iter::once(p).chain(s.children(p).iter().copied()) {
+        for change in [
+            Change::Summary("New title".into()),
+            Change::Description(Some("New notes".into())),
+            Change::Description(None),
+        ] {
+            let op = edit(&s.tasks[i].uid, vec![change]);
+            assert_eq!(
+                check(&s, &m, WriteMode::Verified, &op, today()),
+                Ok(()),
+                "{op:?}"
+            );
+            assert_eq!(
+                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
+                Ok(())
+            );
+        }
+    }
+}
+
+#[test]
+fn text_capability_has_its_own_evidence_and_keeps_nontext_restrictions() {
+    use common::text_edit as text;
+    let env = text::closed();
+    let s = env.snap();
+    let title = edit(text::PARENT, vec![Change::Summary("New title".into())]);
+    let absent = matrix(&[], "pass", "pass", &[]);
+    assert!(check(&s, &absent, WriteMode::Verified, &title, today()).is_err());
+    let baseline = matrix(&[("resource-text", "edit")], "pass", "unverified", &[]);
+    assert!(check(&s, &baseline, WriteMode::Verified, &title, today()).is_err());
+    assert!(check(&s, &baseline, WriteMode::Test, &title, today()).is_ok());
+    let missing_baseline = matrix(&[("resource-text", "edit")], "unverified", "pass", &[]);
+    assert!(check(&s, &missing_baseline, WriteMode::Test, &title, today()).is_err());
+    for changes in [
+        vec![],
+        vec![Change::RepeatInterval(2)],
+        vec![
+            Change::Summary("New".into()),
+            Change::Due(Some(Due::Date(today()))),
+        ],
+        vec![
+            Change::Summary("New".into()),
+            Change::Kind(twydo_core::model::TaskKind::Project),
+        ],
+    ] {
+        assert!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &edit(text::PARENT, changes),
+                today()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn text_capability_preserves_structural_refusals() {
+    use common::text_edit as text;
+    use twydo_core::ical::Property;
+    for variant in [
+        "uid",
+        "summary",
+        "description",
+        "metadata",
+        "unreadable",
+        "type",
+        "link",
+        "json-link",
+        "cross-list",
+        "nested",
+    ] {
+        let env = text::closed();
+        let s = env.snap();
+        let child = s.tasks[s.children(s.find(text::PARENT).unwrap())[0]]
+            .uid
+            .clone();
+        match variant {
+            "uid" | "summary" | "description" | "metadata" => {
+                text::mutate(&env, text::PARENT, |t| {
+                    let name = match variant {
+                        "uid" => "UID",
+                        "summary" => "SUMMARY",
+                        "description" => "DESCRIPTION",
+                        _ => "X-2DOAPP-METADATA",
+                    };
+                    let p = t.prop(name).unwrap().clone();
+                    t.insert_prop(p, None);
+                })
+            }
+            "unreadable" => text::mutate(&env, text::PARENT, |t| {
+                t.prop_mut("X-2DOAPP-METADATA")
+                    .unwrap()
+                    .set_value("<2Do Meta>%invalid")
+            }),
+            "type" | "json-link" => text::mutate(
+                &env,
+                if variant == "type" {
+                    text::PARENT
+                } else {
+                    &child
+                },
+                |t| {
+                    let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                    let mut meta = MetaJson::parse(&prop.value).unwrap();
+                    if variant == "type" {
+                        meta.set_i64("TaskType", 99);
+                    } else {
+                        meta.set_str("parentuid", "missing-parent");
+                    }
+                    prop.set_value(&meta.encode());
+                },
+            ),
+            "link" => text::mutate(&env, &child, |t| {
+                t.remove_props("RELATED-TO");
+            }),
+            "cross-list" => {
+                std::fs::rename(
+                    env.file(&child),
+                    env.vdir.join("list2").join(format!("{child}.ics")),
+                )
+                .unwrap();
+            }
+            "nested" => text::mutate(&env, text::PARENT, |t| {
+                t.insert_prop(Property::new("RELATED-TO", vec![], "missing-parent"), None)
+            }),
+            _ => unreachable!(),
+        }
+        let s = env.snap();
+        assert!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &edit(text::PARENT, vec![Change::Summary("New title".into())]),
+                today()
+            )
+            .is_err(),
+            "{variant}"
+        );
+    }
+}
+
+#[test]
+fn text_capability_ignores_unchanged_schedule_and_lifecycle_shapes() {
+    use common::text_edit as text;
+    use twydo_core::ical::Property;
+    for status in ["NEEDS-ACTION", "COMPLETED", "CANCELLED"] {
+        for rule in [
+            "FREQ=MONTHLY;INTERVAL=2",
+            "FREQ=YEARLY;COUNT=3",
+            "FREQ=WEEKLY;UNTIL=20271210",
+            "FREQ=MONTHLY;BYMONTHDAY=-1",
+        ] {
+            let env = text::env();
+            text::mutate(&env, text::PARENT, |t| {
+                t.prop_mut("STATUS").unwrap().set_value(status);
+                t.prop_mut("RRULE").unwrap().set_value(rule);
+                t.prop_mut("DUE").unwrap().set_params(vec![]);
+                t.prop_mut("DUE").unwrap().set_value("20261210T090000");
+                let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut meta = MetaJson::parse(&p.value).unwrap();
+                meta.set_i64("StartDate", 1796806800);
+                meta.set_i64("RecurrenceFrom", 2);
+                p.set_value(&meta.encode());
+                t.insert_prop(Property::new("X-SYNTHETIC-OPAQUE", vec![], "keep"), None);
+            });
+            let s = env.snap();
+            let op = edit(
+                text::PARENT,
+                vec![
+                    Change::Summary("Text only".into()),
+                    Change::Description(Some("Notes".into())),
+                ],
+            );
+            assert_eq!(
+                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
+                Ok(()),
+                "{status} {rule}"
+            );
+        }
+    }
+}
+
+#[test]
+fn text_capability_refuses_ambiguous_member_aliases_and_hidden_descendants() {
+    use common::text_edit as text;
+    for variant in ["alias-collision", "numeric-alias", "hidden-child"] {
+        let env = text::closed();
+        let s = env.snap();
+        let child = s.tasks[s.children(s.find(text::PARENT).unwrap())[0]]
+            .uid
+            .clone();
+        text::mutate(&env, &child, |todo| {
+            let p = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut meta = MetaJson::parse(&p.value).unwrap();
+            if variant == "numeric-alias" {
+                meta.set_i64("uid", 42);
+            } else {
+                meta.set_str("uid", "synthetic-child-alias");
+            }
+            p.set_value(&meta.encode());
+        });
+        if variant == "alias-collision" {
+            std::fs::write(env.file("collision"), "BEGIN:VCALENDAR\nBEGIN:VTODO\nUID:synthetic-child-alias\nSUMMARY:Collision\nEND:VTODO\nEND:VCALENDAR\n").unwrap();
+        } else if variant == "hidden-child" {
+            let mut cal = parse(&std::fs::read(env.file(&child)).unwrap()).unwrap();
+            let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+            todo.prop_mut("UID")
+                .unwrap()
+                .set_value("synthetic-hidden-child");
+            todo.remove_props("RELATED-TO");
+            let p = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut meta = MetaJson::parse(&p.value).unwrap();
+            meta.set_str("uid", "synthetic-hidden-child");
+            meta.set_str("parentuid", "synthetic-child-alias");
+            p.set_value(&meta.encode());
+            std::fs::write(env.file("hidden"), serialize(&cal)).unwrap();
+        }
+        for uid in [text::PARENT, &child] {
+            assert!(
+                check(
+                    &env.snap(),
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &edit(uid, vec![Change::Summary("New".into())]),
+                    today()
+                )
+                .is_err(),
+                "{variant} {uid}"
+            );
+        }
+    }
 }

@@ -303,3 +303,4 @@ pub fn check_lines(
 pub mod recurrence;
 
 pub mod item_deletion;
+pub mod text_edit;

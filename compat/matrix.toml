@@ -4,6 +4,19 @@
 # mod:* rows verify repeat modifiers; a class with a modifier passes only if its base row and every modifier row pass.
 matrix_version = 1
 
+# Text-only writes reuse the captured field writer, preserving all scheduling,
+# lifecycle, metadata and relationship bytes. See the text-edit capability audit.
+[[operation]]
+case = "resource-text"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup"]
+notes = "Direct representative SUMMARY/DESCRIPTION edits on tasks and recurring checklists/items, including phone return edits of Twydo output. Preservation generalization to recognized standalone resources and flat families across unchanged schedules and lifecycle states: only SUMMARY, DESCRIPTION, DTSTAMP and LAST-MODIFIED change. No recurrence execution/edit verdict is inferred. Readable metadata, unique identities and agreeing flat same-list links required; malformed/ambiguous fields, unknown types and nesting refuse. Mixed saves retain existing non-text contracts; missing capability rows retain legacy handling."
+
 [environment]
 mac_2do = "unavailable (subscription required)"
 iphone_2do = "3.91 build 38246"

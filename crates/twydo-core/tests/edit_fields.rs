@@ -19,6 +19,60 @@ const D: &str = "855a275473c34da9840a6a76c5f18385";
 const MONTHLY: &str = "5c072ad90a8f44f1a974e170a8a950e7";
 const YEARLY: &str = "c3e7283649dd413abf3f73745121bce5";
 
+#[test]
+fn text_capability_preserves_full_resources_including_alarms_and_metadata() {
+    use common::text_edit as text;
+    for fixture in [
+        "plan8-checklist-b/031-phone-reset-item-edits",
+        "plan6-list1/05-complete-parent",
+        "plan8-rfra/202-seeded-after-upload",
+    ] {
+        let env = common::Env::new(twydo_core::config::WriteMode::Verified, fixture);
+        for before in env.files().values() {
+            let mut cal = parse(before).unwrap();
+            let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+            let alarm = parse(b"BEGIN:VCALENDAR\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nDESCRIPTION:original alarm text\r\nX-OPAQUE:keep\r\nEND:VALARM\r\nEND:VCALENDAR\r\n").unwrap();
+            todo.push_child(alarm.root.children[0].clone());
+            let before = serialize(&cal);
+            let now = chrono::DateTime::parse_from_rfc3339("2026-12-11T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc);
+            apply_changes(
+                &mut cal,
+                &[
+                    Change::Summary("New, Unicode λ title".into()),
+                    Change::Description(Some("New notes\nline two".into())),
+                ],
+                now,
+            )
+            .unwrap();
+            let after = serialize(&cal);
+            text::assert_preserved(&before, &after);
+            let todo = common::todo(&cal);
+            assert_eq!(
+                todo.prop("SUMMARY").unwrap().value,
+                "New\\, Unicode λ title"
+            );
+            assert_eq!(
+                todo.prop("DESCRIPTION").unwrap().value,
+                "New notes\\nline two"
+            );
+            assert_eq!(
+                todo.children_named("VALARM")
+                    .last()
+                    .unwrap()
+                    .prop("DESCRIPTION")
+                    .unwrap()
+                    .value,
+                "original alarm text"
+            );
+            apply_changes(&mut cal, &[Change::Description(None)], now).unwrap();
+            text::assert_preserved(&before, &serialize(&cal));
+            assert_eq!(common::todo(&cal).prop("DESCRIPTION").unwrap().value, "");
+        }
+    }
+}
+
 fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/phase0/v1")
