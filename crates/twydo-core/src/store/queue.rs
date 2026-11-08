@@ -48,6 +48,9 @@ pub struct Prepared {
     pub entry: Entry,
     pub holds: Vec<(String, String)>,
     pub family: Option<FamilyGuard>,
+    /// Additional membership dependencies, including both sides of relocation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub families: Vec<FamilyGuard>,
 }
 
 /// What a queued item does.

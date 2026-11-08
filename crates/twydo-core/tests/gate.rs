@@ -4067,3 +4067,92 @@ fn live_parent_with_foreign_series_identity_does_not_use_history_item_policy() {
         Ok(())
     );
 }
+
+#[test]
+fn capability_move_gate_is_independent_of_schedule_execution() {
+    let s = snap();
+    let m = matrix(
+        &[("standalone-resource", "move"), ("flat-family", "move")],
+        "pass",
+        "pass",
+        &[],
+    );
+    for uid in ["gate-weekly", "gate-yearly", "gate-monthly-alarm"] {
+        let op = Op::Move {
+            uid: uid.into(),
+            to: "errands".into(),
+        };
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()),
+            Ok(()),
+            "{uid}"
+        );
+    }
+    for uid in [
+        "gate-project-child",
+        "gate-broken-child",
+        "gate-nested",
+        "gate-dup",
+    ] {
+        let op = Op::Move {
+            uid: uid.into(),
+            to: "errands".into(),
+        };
+        assert!(
+            check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
+            "{uid}"
+        );
+    }
+    for to in ["inbox", "missing"] {
+        assert!(
+            check(
+                &s,
+                &m,
+                WriteMode::Verified,
+                &Op::Move {
+                    uid: "gate-yearly".into(),
+                    to: to.into()
+                },
+                today()
+            )
+            .is_err()
+        );
+    }
+    let legacy = matrix(&[], "pass", "pass", &[]);
+    assert!(
+        check(
+            &s,
+            &legacy,
+            WriteMode::Verified,
+            &Op::Move {
+                uid: "gate-weekly".into(),
+                to: "errands".into()
+            },
+            today()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn capability_move_save_revalidates_permitted_transition_without_legacy_move_rows() {
+    let env = common::Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+    let s = env.snap();
+    let mut text = String::from("matrix_version = 1\n");
+    for (case, op) in [
+        ("one-time", "edit"),
+        ("project", "edit"),
+        ("task-to-project", "convert"),
+        ("standalone-resource", "move"),
+        ("flat-family", "move"),
+    ] {
+        text.push_str(&format!("[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"));
+    }
+    let m = Matrix::from_toml_str(&text).unwrap();
+    let op = Op::Save {
+        uid: "0a04f22aeb294b719633c978fe1975e5".into(),
+        changes: vec![Change::Kind(twydo_core::model::TaskKind::Project)],
+        to: Some("list2".into()),
+    };
+    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
+}

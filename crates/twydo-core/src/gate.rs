@@ -6,8 +6,8 @@
 //!
 //! 0. a save ([`Op::Save`]) is its edit, then its move, each checked by these rules as its
 //!    own op against the loaded tasks; the first refusal wins (an empty edit is skipped).
-//!    When the edit changes the type or repeat rule, the move also needs the `move` rows of
-//!    the cases the edit leaves;
+//!    Dedicated relocation capabilities validate the parsed post-edit snapshot. Legacy
+//!    matrices also need the `move` rows of the cases an edit leaves;
 //! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
 //!
 //!    1a. individual deletion with dedicated `checklist-item` / `project-item` rows:
@@ -63,6 +63,7 @@
 //!    matrices may use the monthly/yearly rows), checked as in rule 3 so write mode applies.
 
 mod history_reopen;
+mod relocate;
 
 use std::fmt;
 
@@ -147,8 +148,13 @@ pub fn check(
                 },
                 today,
             )?;
-            // The move writes the edited task: the cases the edit leaves need `move` rows too.
-            if let Some(a) = edited_cases(snap, lookup(snap, uid)?, changes)? {
+            let idx = lookup(snap, uid)?;
+            if m.operation(relocate::case(snap, idx), "move").is_some() {
+                let after = relocate::after_edit(snap, uid, changes, today)?;
+                return relocate::check(&after, m, mode, lookup(&after, uid)?, to);
+            }
+            // Legacy/custom matrices retain their original post-edit case checks.
+            if let Some(a) = edited_cases(snap, idx, changes)? {
                 for c in std::iter::once(a.own).chain(a.family) {
                     operation_row(m, mode, c, "move")?;
                 }
@@ -173,6 +179,12 @@ pub fn check(
             Some(i)
         }
     };
+
+    if let (Some(i), Op::Move { to, .. }) = (target, op)
+        && m.operation(relocate::case(snap, i), "move").is_some()
+    {
+        return relocate::check(snap, m, mode, i, to);
+    }
 
     // Individual deletion removes a file without editing or executing schedules.
     // Its dedicated evidence therefore precedes the ordinary task/family cases.

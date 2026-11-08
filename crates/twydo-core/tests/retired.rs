@@ -81,6 +81,7 @@ fn retirement_preserves_pending_evidence_and_the_other_half_of_a_move() {
         synced: None,
         holds: vec![],
         family: None,
+        families: Vec::new(),
         writes: vec![
             Write {
                 path: "old/task.ics".into(),

@@ -546,11 +546,11 @@ fn family_op_runs_when_unrelated_files_appear() {
     let (env, mut store) = env();
     let snap = env.snap();
     // A new task in the same list that is not K's item does not block the op.
-    let text = fs::read_to_string(env.file(K3))
-        .unwrap()
-        .replace(K3, "0000000000000000000000000000cafe");
-    let mut cal = parse(text.as_bytes()).unwrap();
+    let mut cal = parse(&fs::read(env.file(K3)).unwrap()).unwrap();
     let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("UID")
+        .unwrap()
+        .set_value("0000000000000000000000000000cafe");
     todo.prop_mut("RELATED-TO").unwrap().set_value(P);
     // Rewrite parsed metadata too: folding can split its parent UID across raw lines.
     let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
@@ -3351,5 +3351,291 @@ fn history_reopen_queue_refuses_changed_removed_and_joined_members() {
             "{change}: {result:?}"
         );
         assert_eq!(env.files(), remote);
+    }
+}
+
+#[test]
+fn capability_move_flat_family_has_one_identity_map() {
+    for uid in [K, P, R] {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let before = e.files();
+        let s = e.snap();
+        let i = s.find(uid).unwrap();
+        let n = s.children(i).len() + 1;
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(
+                &s,
+                &Op::Move {
+                    uid: uid.into(),
+                    to: "list2".into(),
+                },
+                now(),
+            )
+            .unwrap();
+        let entry = e.journal().pop().unwrap();
+        assert_eq!(entry.writes.len(), n * 2);
+        assert!(entry.writes[..n].iter().all(|w| w.before.is_none()));
+        assert!(entry.writes[n..].iter().all(|w| w.after.is_none()));
+        let moved = e.snap();
+        let parent = moved
+            .tasks
+            .iter()
+            .position(|t| t.collection == "list2" && t.parent.is_none())
+            .unwrap();
+        assert_eq!(moved.children(parent).len(), n - 1);
+        let ids: std::collections::BTreeSet<_> = entry.uids.iter().collect();
+        assert_eq!(ids.len(), n * 2);
+        // Each preserved field and unknown JSON key survives independently of the
+        // original schedule's execution/edit verdicts, including child foreign RUID.
+        for (source, dest) in entry.writes[n..].iter().zip(&entry.writes[..n]) {
+            let cal = parse(source.before.as_ref().unwrap().as_bytes()).unwrap();
+            let original = common::todo(&cal);
+            let out = parse(dest.after.as_ref().unwrap().as_bytes()).unwrap();
+            let output = common::todo(&out);
+            let kept = |l: &Line| {
+                !matches!(
+                    l.1.as_str(),
+                    "UID" | "RELATED-TO" | "X-2DOAPP-METADATA" | "DTSTAMP" | "LAST-MODIFIED"
+                )
+            };
+            assert_eq!(
+                lines(&cal).into_iter().filter(kept).collect::<Vec<_>>(),
+                lines(&out).into_iter().filter(kept).collect::<Vec<_>>()
+            );
+            let mut meta = twydo_core::model::meta_edit::MetaJson::parse(
+                &original.prop("X-2DOAPP-METADATA").unwrap().value,
+            )
+            .unwrap();
+            let old_uid = original.prop("UID").unwrap().value.as_str();
+            let new_uid = output.prop("UID").unwrap().value.as_str();
+            if meta.get_str("uid") == Some(old_uid) {
+                meta.set_str("uid", new_uid);
+            }
+            if original.prop("RELATED-TO").is_some() {
+                meta.set_str("parentuid", &moved.tasks[parent].uid);
+            } else if meta.get_str("RUID") == Some(old_uid) {
+                meta.set_str("RUID", new_uid);
+            }
+            assert_eq!(
+                output.prop("X-2DOAPP-METADATA").unwrap().value,
+                meta.encode()
+            );
+        }
+
+        for (path, bytes) in &before {
+            if !entry.writes.iter().any(|w| &w.path == path) {
+                assert_eq!(e.files().get(path), Some(bytes));
+            }
+        }
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+    }
+}
+
+fn relocation_meta(e: &Env, uid: &str, key: &str, value: &str) {
+    let path = e.file(uid);
+    let mut cal = parse(&fs::read(&path).unwrap()).unwrap();
+    let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+    meta.set_str(key, value);
+    prop.set_value(&meta.encode());
+    fs::write(path, twydo_core::ical::serialize(&cal)).unwrap();
+}
+
+#[test]
+fn capability_move_preserves_distinct_internal_parent_identity() {
+    let e = Env::new(WriteMode::Verified, FIXTURE);
+    relocation_meta(&e, P, "uid", "synthetic-internal-parent");
+    let snap = e.snap();
+    for &i in snap.children(snap.find(P).unwrap()) {
+        relocation_meta(
+            &e,
+            &snap.tasks[i].uid,
+            "parentuid",
+            "synthetic-internal-parent",
+        );
+    }
+    let mut store = e.store(Matrix::embedded().clone());
+    store
+        .apply(
+            &e.snap(),
+            &Op::Move {
+                uid: P.into(),
+                to: "list2".into(),
+            },
+            now(),
+        )
+        .unwrap();
+    let s = e.snap();
+    let p = s
+        .tasks
+        .iter()
+        .position(|t| t.collection == "list2" && t.parent.is_none())
+        .unwrap();
+    for &i in s.children(p) {
+        let meta =
+            twydo_core::model::meta_edit::MetaJson::parse(s.tasks[i].meta.raw.as_deref().unwrap())
+                .unwrap();
+        assert_eq!(meta.get_str("parentuid"), Some("synthetic-internal-parent"));
+        assert_eq!(s.tasks[i].parent.as_deref(), Some(s.tasks[p].uid.as_str()));
+    }
+}
+
+#[test]
+fn capability_move_recovery_and_undo_preserve_remote_edits() {
+    for phase in [
+        "undo-source",
+        "undo-destination",
+        "undo-json-source",
+        "undo-json-destination",
+        "recovery-source",
+        "recovery-destination",
+        "recovery-json-source",
+        "recovery-json-destination",
+        "undo-changed-destination",
+    ] {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(
+                &e.snap(),
+                &Op::Move {
+                    uid: K.into(),
+                    to: "list2".into(),
+                },
+                now(),
+            )
+            .unwrap();
+        let mut entry = e.journal().pop().unwrap();
+        let parent_write = &entry.writes[0];
+        let new_parent = value(
+            &todo_of(parent_write.after.as_ref().unwrap().as_bytes()),
+            "UID",
+        )
+        .unwrap();
+        if phase == "undo-changed-destination" {
+            let path = e.vdir.join(&parent_write.path);
+            let bytes = fs::read_to_string(&path)
+                .unwrap()
+                .replace("SUMMARY:K", "SUMMARY:Synthetic remote edit");
+            fs::write(path, bytes).unwrap();
+        } else {
+            let destination = phase.ends_with("destination");
+            let parent = if destination { &new_parent } else { K };
+            let mut cal = parse(&before[&key(K2)]).unwrap();
+            let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+            todo.prop_mut("UID")
+                .unwrap()
+                .set_value("synthetic-new-member");
+            if phase.contains("json") {
+                todo.remove_props("RELATED-TO");
+            } else {
+                todo.prop_mut("RELATED-TO").unwrap().set_value(parent);
+            }
+            let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+            meta.set_str("parentuid", parent);
+            prop.set_value(&meta.encode());
+            fs::write(
+                e.vdir.join(if destination {
+                    "list2/remote.ics"
+                } else {
+                    "list1/remote.ics"
+                }),
+                twydo_core::ical::serialize(&cal),
+            )
+            .unwrap();
+        }
+        let remote = e.files();
+        if phase.starts_with("recovery") {
+            entry.stage = Stage::Prepared;
+            Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+            let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+            assert_eq!(report.stuck.len(), 1, "{phase}");
+        } else {
+            assert!(store.undo_last(later()).is_err(), "{phase}");
+        }
+        assert_eq!(e.files(), remote, "{phase}");
+    }
+}
+
+#[test]
+fn capability_move_save_checks_post_edit_shape() {
+    let e = Env::new(WriteMode::Verified, FIXTURE);
+    let before = e.files();
+    let mut store = e.store(Matrix::embedded().clone());
+    store
+        .apply(
+            &e.snap(),
+            &Op::Save {
+                uid: P.into(),
+                changes: vec![Change::Summary("Synthetic moved title".into())],
+                to: Some("list2".into()),
+            },
+            now(),
+        )
+        .unwrap();
+    assert_eq!(e.journal().len(), 1);
+    assert!(
+        e.snap()
+            .tasks
+            .iter()
+            .any(|t| t.summary == "Synthetic moved title" && t.collection == "list2")
+    );
+    store.undo_last(later()).unwrap();
+    assert_eq!(e.files(), before);
+    assert!(
+        store
+            .apply(
+                &e.snap(),
+                &Op::Save {
+                    uid: P.into(),
+                    changes: vec![Change::Kind(TaskKind::Task)],
+                    to: Some("list2".into())
+                },
+                now()
+            )
+            .is_err()
+    );
+    assert_eq!(e.files(), before);
+}
+
+#[test]
+fn capability_move_partial_recovery_keeps_original_identity_map() {
+    for cut in [1, 5] {
+        let done = Env::new(WriteMode::Verified, FIXTURE);
+        let mut store = done.store(Matrix::embedded().clone());
+        store
+            .apply(
+                &done.snap(),
+                &Op::Move {
+                    uid: R.into(),
+                    to: "list2".into(),
+                },
+                now(),
+            )
+            .unwrap();
+        let expected = done.files();
+        let mut entry = done.journal().pop().unwrap();
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let _store = e.store(Matrix::embedded().clone());
+        for w in &entry.writes[..cut] {
+            match &w.after {
+                Some(text) => fs::write(e.vdir.join(&w.path), text).unwrap(),
+                None => fs::remove_file(e.vdir.join(&w.path)).unwrap(),
+            }
+        }
+        entry.stage = Stage::Prepared;
+        Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+        let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert!(report.stuck.is_empty(), "{report:?}");
+        assert_eq!(report.resumed, [entry.id]);
+        assert_eq!(e.files(), expected);
+        let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert!(report.resumed.is_empty());
+        assert_eq!(e.files(), expected);
     }
 }

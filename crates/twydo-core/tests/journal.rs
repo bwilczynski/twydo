@@ -21,6 +21,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         synced: None,
         holds: Vec::new(),
         family: None,
+        families: Vec::new(),
         writes,
     }
 }

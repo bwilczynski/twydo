@@ -1518,3 +1518,27 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
 notes = "Direct H7: detached recurring-project history parent and every completed child reopen, including children completed before parent; live original unchanged. Preservation generalization to flat checklist history and unchanged dates/starts/alerts; open/cancelled children held. Parent-driven lifecycle-only operation, not independent history-item authority. No RRULE or active recurrence metadata, unknown/nested/cross-list/disagreeing links or ambiguous identities. Individual history items under open parents remain refused: H3 live-child captures do not establish detached history-child behavior."
+
+# Relocation-only capability. Direct family evidence: Plan 6 H8, phone list1/list2
+# 07-move and Twydo list2 08-move followed by phone return. Standalone moves
+# use the same identity/resource mechanism; scheduling generalization is local
+# exact preservation, not recurrence editing or execution evidence.
+[[operation]]
+case = "standalone-resource"
+op = "move"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+notes = "Plan 6 H8 identity relocation; standalone scheduling variants supported by exact preservation tests."
+
+[[operation]]
+case = "flat-family"
+op = "move"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+notes = "Direct Plan 6 H8 flat-family move/phone return; independently recurring child retains foreign RUID. Other schedules use preservation evidence."

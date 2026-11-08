@@ -1802,3 +1802,37 @@ fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_ident
         );
     }
 }
+
+#[test]
+fn capability_move_rewrites_only_identity_and_stamps() {
+    for (scenario, uid) in [("rule-months-day-1-28", MONTHLY), ("rule-years", YEARLY)] {
+        let input = fixture(scenario, "02-complete", uid);
+        let cal = parse(&input).unwrap();
+        let moved =
+            twydo_core::edit::moved_copy(&cal, "synthetic-moved", None, Utc::now()).unwrap();
+        let before = lines(&cal);
+        let after = lines(&moved);
+        let keep = |l: &Line| {
+            !matches!(
+                l.1.as_str(),
+                "UID" | "DTSTAMP" | "LAST-MODIFIED" | "X-2DOAPP-METADATA"
+            )
+        };
+        assert_eq!(
+            before.into_iter().filter(keep).collect::<Vec<_>>(),
+            after.into_iter().filter(keep).collect::<Vec<_>>()
+        );
+        let original = cal.root.children_named("VTODO").next().unwrap();
+        let output = moved.root.children_named("VTODO").next().unwrap();
+        let mut want = MetaJson::parse(&original.prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+        for key in ["uid", "RUID"] {
+            if want.get_str(key) == Some(uid) {
+                want.set_str(key, "synthetic-moved");
+            }
+        }
+        assert_eq!(
+            output.prop("X-2DOAPP-METADATA").unwrap().value,
+            want.encode()
+        );
+    }
+}

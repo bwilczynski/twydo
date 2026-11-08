@@ -128,10 +128,27 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 
 The [editing-completeness audit and plan](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining operations, imported-shape restrictions and later editing features. The
-table below summarizes individual matrix cases, not every combination: a recurring project
-also needs its own repeat's operation rows, for example, so its monthly/yearly repeat can still
-block a move even though the recurring-project row passes. `tdo op check <uid>` gives the
-effective result for an existing task.
+table below summarizes individual matrix cases, not every combination. Relocation has dedicated
+`standalone-resource` / `move` and `flat-family` / `move` rows, so unchanged schedules do not
+require repeat execution/edit verdicts. Other operations still check their applicable schedule
+contracts. `tdo op check <uid>` reports effective permissions; moving requires a proposed destination.
+
+Relocation changes resource UID, self-referential JSON `uid`/top-level `RUID`, child parent links,
+and modification stamps. It preserves schedules, alarms, completion, ranks, foreign series RUIDs
+and unknown properties. Direct evidence is [Plan 6 H8](reference/phase0/plan6-baseline.md):
+`plan6-list1/07-move`, `plan6-list2/07-move`, and `plan6-twydo-list2/08-move` plus phone return.
+Other schedule combinations and distinct internal JSON parent identities are supported by local
+preservation tests, not additional device observations. An internal parent `uid` differing from
+the standard UID remains unchanged; children's JSON links keep that internal identity while
+standard links follow the new resource UID.
+
+Admission requires unique identities, readable identity metadata when present and recognized flat task/checklist/
+project structure. Individual item moves, nesting, broken or disagreeing links, unknown types,
+unreadable/ambiguous resources and same/absent destination lists remain refused. Queues and
+recovery retain the original identity map; source and destination family membership, bytes and
+UID collisions are checked before writing, including undo. A mixed card save also needs every
+changed field's contract. Older/custom matrices without these capability rows retain legacy
+move behavior. No device round or broad recurrence verdict was added.
 
 The [Plan 8 phone session](reference/phase0/plan8-tui-completeness-session.md#regression-test-map)
 finished its first batch: five logical synthetic cases, eight newly passing operation rows,

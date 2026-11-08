@@ -154,6 +154,7 @@ mod tests {
             synced: None,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
             writes: writes
                 .iter()
                 .map(|(p, a)| Write {

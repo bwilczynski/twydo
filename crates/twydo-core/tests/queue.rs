@@ -22,6 +22,7 @@ fn entry(id: &str) -> Entry {
         synced: None,
         holds: Vec::new(),
         family: None,
+        families: Vec::new(),
         writes: vec![Write {
             path: "work/a.ics".to_string(),
             before: Some("old".to_string()),
@@ -43,6 +44,7 @@ fn item(op: Op, now: DateTime<Utc>) -> Item {
                 entry: entry("x"),
                 holds: vec![("work/a.ics".to_string(), "old".to_string())],
                 family: None,
+                families: Vec::new(),
             },
         },
     }

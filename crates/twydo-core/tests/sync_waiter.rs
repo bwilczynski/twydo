@@ -59,6 +59,7 @@ fn edit(cfg: &Config, id: &str, at: DateTime<Utc>) {
         synced: None,
         holds: Vec::new(),
         family: None,
+        families: Vec::new(),
         writes: vec![Write {
             path: "c1/u1.ics".into(),
             before: None,

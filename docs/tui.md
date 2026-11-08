@@ -78,7 +78,7 @@ These act when the Tasks or Details pane has focus.
 | `}` / `{` | due one week later / earlier |
 | `dd` | delete |
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
-| `m` | move to another list (picker: `j`/`k`, `Enter`, `Esc`) |
+| `m` | move a top-level task or flat family to another list (picker: `j`/`k`, `Enter`, `Esc`); unchanged schedules are preserved |
 | `o` / `O` | new task below / above the selected one ([Adding tasks](#adding-tasks)) |
 | `J` / `K` | move a nested checklist/project item after/before the next/previous visible sibling in the Tasks pane (requires ordering compatibility evidence) |
 | `a` | new item at the end of the selected project or checklist; on a plain task, asks whether to make it one first |
