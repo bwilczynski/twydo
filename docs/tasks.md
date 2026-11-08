@@ -55,6 +55,17 @@ or a checklist). A checklist's items have no dates, repeat or alerts of their ow
   when the checklist already had a date when they were added). When the checklist gets a new
   date, Twydo removes those copies in the same write, as 2Do does.
 
+## Editing titles and notes
+
+Title/notes-only edits use their own compatibility capability on recognized tasks
+and flat checklist/project parents/items, including completed resources and recurring
+families. Dates, recurrence, alarms, lifecycle, identities, links and metadata remain
+unchanged. Scheduling restrictions do not prevent a pure text edit. Blank titles,
+ambiguous identities, unreadable required metadata, broken links and nesting remain
+refused. Mixed saves retain the gates for their other fields. The
+[text-edit audit](reference/phase0/text-edit-capability.md) records representative
+phone evidence and the preservation generalization.
+
 ## Completing, reopening, moving, deleting
 
 On a **task**: `x` (or `Space`) completes it; on a completed task it reopens it. `m` moves it to
@@ -101,8 +112,8 @@ date-only, due anchored, no end/start/alerts/delay. Completing it copies the par
 history, preserves prior item completion times, then reopens live items and removes inherited
 date copies. It still needs its own final tick. Cancelled items and independent item starts or
 times are refused. In this scope you can create the checklist directly, convert an existing
-monthly task, add items, edit parent/item titles and notes, and tick items. Individual item
-deletion follows the general rule above. Date/start/time/interval and other type edits remain refused;
+monthly task, add items and tick items. Title/notes edits use the independent contract above.
+Individual item deletion follows the general rule above. Date/start/time/interval and other type edits remain refused;
 pure monthly/weekly repeat changes are covered separately below.
 
 ## Repeats
@@ -126,7 +137,8 @@ notes, due date/time and start edits at interval 1, without an end. Source and r
 due dates must be on days 1–28; date-only and floating times with the captured automatic
 due alarm are supported, while custom alarms and zoned dates remain refused. A separate
 pure, date-only interval change from monthly interval 1 to 2 is verified through both CLI
-and card. Ordinary weekly or interval-2 from-completion field edits remain unverified.
+and card. Weekly or interval-2 from-completion scheduling edits remain unverified;
+title/notes-only edits use the independent text capability.
 
 **Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can be set,
 removed or changed between those classes. Newly verified daily/yearly transitions are due
@@ -134,8 +146,9 @@ anchored and have no end or weekday selector; they do not enable end/anchor/Nth-
 The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
 can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
 start, alerts or completion anchor; monthly rules require a due day of 28 or less. Monthly
-checklist title/notes and task-to-checklist conversion are covered above. Open top-level plain
-monthly interval-1 checklists also accept a new date-only due on days 1–28, optionally with
+checklist task-to-checklist conversion is covered above; title/notes use the independent
+text capability. Open top-level plain monthly interval-1 checklists also accept a new date-only
+due on days 1–28, optionally with
 title/notes. Both source and resulting dates must be within that range, without starts,
 times, alerts, endings or delay. Plain open/completed items must be undated or carry the
 parent's inherited date; dated items lose those copies while completion state is preserved.
@@ -152,12 +165,12 @@ weekday-selector and family from-completion transitions remain unverified. A pla
 still linked to another series (including reopened history) cannot acquire completion
 recurrence; its identity transition is unverified.
 
-**Three kinds Twydo never writes:** the last day of the month, the last weekday and the first (or
-Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
+**Three repeat kinds Twydo never sets or executes:** the last day of the month, the last
+weekday and the first (or Nth) weekend day. 2Do 3.91 on the iPhone, the last version available for it, misreads them
 (the last day shows as plain monthly, the last weekday as "every workday", the weekend day as
-"every weekend day") and its picker cannot create them. Twydo shows them when it finds them, but
-refuses to write them in every mode, for example `months-last-day repeats are not supported by
-2Do on the iPhone`.
+"every weekend day") and its picker cannot create them. Twydo shows them when it finds them,
+and can preserve them during a title/notes edit. Setting or executing these rules is refused
+in every mode, for example `months-last-day repeats are not supported by 2Do on the iPhone`.
 
 **Completing** supports the previously verified kinds: daily, weekly, set weekdays,
 monthly on any day, the Nth or last weekday, yearly including 29 February, from completion, and

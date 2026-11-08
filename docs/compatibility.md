@@ -164,10 +164,19 @@ batches remain unfinished. A passing row is combined with the shape restrictions
 | Weekly repeat | ✅ | ✅ | ✅ | — | — | ✅ |
 | Repeat from completion | ✅ | Monthly only² | ✅ | — | — | ✅ |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring checklist | Monthly only³ | Text/conversion only³ | Monthly only¹ | — | — | ✅ |
+| Recurring checklist | Monthly only³ | Text; scoped scheduling/conversion below | Monthly only¹ | — | — | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | ✅ |
+
+Title/notes-only edits use the separate `resource-text.edit` capability for recognized
+standalone resources and flat checklist/project parents/items, including completed
+and recurring families. Scheduling restrictions in this table apply to the other
+fields. Text edits preserve schedules, lifecycle and metadata bytewise and need no
+recurrence execution/edit evidence. Ambiguous identities/fields, unreadable required
+metadata, broken links and nesting remain refused. The
+[text-edit audit](reference/phase0/text-edit-capability.md) distinguishes representative
+device observations from preservation generalization and describes durable dependencies.
 
 “—” means not verified yet. Repeat changes use separate rows from ordinary edits. The complete
 column also needs the rule/modifier's execution verdict and the gate's scheduling/family checks.
@@ -187,7 +196,8 @@ The newly enabled operations are:
 | `checklist.repeat` | Set/remove plain date-only monthly/weekly recurrence on an existing checklist |
 | `recurring-checklist.repeat` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
 | `recurring-checklist.create` | ³Direct plain monthly checklist creation and adding items under an open monthly checklist: interval 1, date-only day 1–28, due anchored, no end/start/alert/delay |
-| `recurring-checklist.edit` | ³Title/notes on those open parents/items; convert a top-level open monthly task to a checklist, preserving recurrence. No due/start/time/interval or other type changes |
+| `resource-text.edit` | Title/notes-only edits on recognized standalone tasks and flat checklist/project parents/items, independently of unchanged schedules or lifecycle; exact metadata/relationship preservation |
+| `recurring-checklist.edit` | ³Convert a top-level open monthly task to a checklist, preserving recurrence. Legacy title/notes fallback when the text capability is absent. No due/start/time/interval or other type changes |
 | `recurring-checklist-due.edit` | Preservation generalization: open top-level plain monthly interval-1 JSON checklist, source/result date-only day 1–28, no start/alerts/end/delay; open/completed inherited or undated plain items. May compose with title/notes; cleanup preserves item lifecycle |
 | `checklist-item.delete` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
 | `project-item.delete` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
@@ -229,7 +239,7 @@ Existing repeat completion support remains: daily, weekly, weekday sets, monthly
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
 The [Plan 7 session](reference/phase0/plan7-capture.md) supplies those fixtures. Recurring projects
 that end or repeat from completion remain refused. Moving one item, editing existing
-weekly/interval-2 from-completion tasks, project repeat changes, empty-project-to-checklist
+weekly/interval-2 from-completion scheduling, project repeat changes, empty-project-to-checklist
 conversion and native alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
@@ -264,7 +274,7 @@ The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) records both-di
 phone checks and exact writer comparisons for the two from-completion rows. Retained inactive
 repeat codes after removal were accepted and edited by the phone. The interval edit works
 through the card and CLI; mixed interval/field saves are refused atomically and keep typed
-text. Daily/yearly rules, endings, families, ordinary weekly/interval-2 edits and custom alarms
+text. Daily/yearly rules, endings, families, weekly/interval-2 scheduling edits and custom alarms
 remain outside this evidence. Setting completion recurrence on a plain task with a
 foreign series link is also refused, including reopened history; existing live recurring
 phone tasks retain their opaque series ids. The [task guide](tasks.md) gives the supported
@@ -288,7 +298,7 @@ as documented in [tasks.md](tasks.md). `tdo op add` takes `--kind`, `--parent` a
 `tdo op edit` takes `--repeat`, `--no-repeat` and `--kind`. The TUI card exposes the same gate.
 Known unsafe conversions and the three misread rule classes remain refused.
 
-Three repeat kinds fail on the iPhone and Twydo never writes them in any mode: the last day of
+Three repeat kinds fail on the iPhone and Twydo never sets or executes them in any mode: the last day of
 the month, the last weekday and the Nth weekend day. 2Do 3.91 misreads them and its picker cannot
 create them. Twydo still reads them, and the refusal says `… repeats are not supported by 2Do on
 the iPhone`.

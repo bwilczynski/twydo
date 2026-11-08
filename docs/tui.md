@@ -313,6 +313,12 @@ the rule and ends in `(kept)`, and saving leaves the rule alone unless you type 
 
 ## When a write is refused
 
+Title/notes-only saves use a separate compatibility capability, including on
+completed tasks and recurring checklist/project families. They leave dates,
+recurrence, alarms, lifecycle and metadata intact. Other changed fields retain
+their own gates: a mixed save with a refused field writes nothing and keeps the
+typed card input. See the [text-edit audit](reference/phase0/text-edit-capability.md).
+
 The status line says why, and nothing is written:
 
 - **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone,
