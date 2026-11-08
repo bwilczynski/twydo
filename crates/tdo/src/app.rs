@@ -3,6 +3,7 @@
 
 mod newrow;
 mod recovery;
+mod structure;
 mod sync_activity;
 pub use recovery::{Confirmation, RecoveryPanel};
 pub use sync_activity::SyncActivity;
@@ -102,12 +103,54 @@ pub enum ListPickerAction {
     Forget,
 }
 
-/// A list chooser shared by movement, editing, recovery and retirement.
+/// A destination always carries its collection separately from its parent UID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickerTarget {
+    List(String),
+    Parent { collection: String, uid: String },
+}
+impl PickerTarget {
+    pub fn collection(&self) -> &str {
+        match self {
+            Self::List(id) => id,
+            Self::Parent { collection, .. } => collection,
+        }
+    }
+    pub fn label(&self, snap: &Snapshot) -> String {
+        match self {
+            Self::List(id) => snap
+                .collections
+                .iter()
+                .find(|c| &c.id == id)
+                .and_then(|c| c.display_name.clone())
+                .unwrap_or_else(|| id.clone()),
+            Self::Parent { uid, .. } => format!(
+                "  ↳ {}",
+                snap.find(uid)
+                    .map(|i| snap.tasks[i].summary.as_str())
+                    .unwrap_or(uid)
+            ),
+        }
+    }
+}
+
+/// Destination chooser shared by movement, editing, recovery and retirement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListPicker {
     pub action: ListPickerAction,
-    pub lists: Vec<String>,
+    pub targets: Vec<PickerTarget>,
     pub cursor: usize,
+    pub query: String,
+    pub filtering: bool,
+}
+impl ListPicker {
+    pub fn visible_targets<'a>(&'a self, snap: &Snapshot) -> Vec<&'a PickerTarget> {
+        let q = self.query.to_lowercase();
+        self.targets
+            .iter()
+            .filter(|t| t.label(snap).to_lowercase().contains(&q))
+            .collect()
+    }
 }
 
 pub struct App {
@@ -389,6 +432,12 @@ impl App {
 
     /// Swap in a freshly loaded snapshot, keeping the cursor on the same UID if it survives.
     pub fn reload(&mut self, s: Snapshot) {
+        if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
+            self.confirmation = None;
+            self.picker = None;
+            self.message =
+                Some("relocation cancelled after reload; choose the destination again".into());
+        }
         let was_completed = self
             .selected()
             .is_some_and(|i| self.snapshot.tasks[i].status == Status::Completed);
@@ -705,7 +754,14 @@ impl App {
             return Outcome::Continue;
         }
         // An overlay hides the task list: keys that write or edit must not reach it.
-        if self.overlay_open() && "xtT[]{}duimroOac JK".contains(c) {
+        if self.overlay_open() && "xtT[]{}duimroOac JK<>".contains(c) {
+            return Outcome::Continue;
+        }
+        if matches!(c, '>' | '<') {
+            if pending == Some(c) {
+                return self.structure_key(c == '>');
+            }
+            self.pending = Some(c);
             return Outcome::Continue;
         }
         if let Some(op) = self.task_write(c, pending) {
@@ -1027,22 +1083,53 @@ impl App {
 
     /// The picker over every sidebar list but `current`.
     fn open_list_picker(&mut self, uid: Option<String>, current: &str) {
-        let lists: Vec<String> = self
-            .sidebar_items()
-            .into_iter()
-            .filter_map(|v| match v {
-                View::List(id) if id != current => Some(id),
-                _ => None,
-            })
-            .collect();
-        if lists.is_empty() {
+        let mut targets = Vec::new();
+        let selected = uid.as_deref().and_then(|u| self.snapshot.find(u));
+        let leaf = selected.is_some_and(|i| {
+            self.snapshot.tasks[i].kind == TaskKind::Task && self.snapshot.children(i).is_empty()
+        });
+        for view in self.sidebar_items() {
+            let View::List(id) = view else { continue };
+            if id != current || selected.is_some_and(|i| self.snapshot.parent(i).is_some()) {
+                targets.push(PickerTarget::List(id.clone()));
+            }
+            if leaf {
+                let mut parents: Vec<_> = self
+                    .snapshot
+                    .tasks
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, t)| {
+                        selected != Some(*i)
+                            && t.collection == id
+                            && self.eligible_structure_parent(*i)
+                            && selected.and_then(|i| self.snapshot.parent(i)) != Some(*i)
+                    })
+                    .collect();
+                parents.sort_by(|(_, a), (_, b)| {
+                    a.summary
+                        .to_lowercase()
+                        .cmp(&b.summary.to_lowercase())
+                        .then_with(|| a.uid.cmp(&b.uid))
+                });
+                for (_, t) in parents {
+                    targets.push(PickerTarget::Parent {
+                        collection: id.clone(),
+                        uid: t.uid.clone(),
+                    });
+                }
+            }
+        }
+        if targets.is_empty() {
             self.message = Some("no other list to move to".into());
             return;
         }
         self.picker = Some(ListPicker {
             action: uid.map_or(ListPickerAction::SetList, ListPickerAction::Move),
-            lists,
+            targets,
             cursor: 0,
+            query: String::new(),
+            filtering: false,
         });
     }
 
@@ -1050,15 +1137,26 @@ impl App {
         let Some(p) = self.picker.as_mut() else {
             return Outcome::Continue;
         };
-        let last = p.lists.len().saturating_sub(1);
+        let visible = p.visible_targets(&self.snapshot);
+        let last = visible.len().saturating_sub(1);
         match k.code {
-            KeyCode::Esc => {
-                self.picker = None;
+            KeyCode::Esc => self.picker = None,
+            KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
+            KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
+            KeyCode::Char('j') if !p.filtering => p.cursor = (p.cursor + 1).min(last),
+            KeyCode::Char('k') if !p.filtering => p.cursor = p.cursor.saturating_sub(1),
+            KeyCode::Char('/') if !p.filtering => p.filtering = true,
+            KeyCode::Backspace => {
+                p.query.pop();
+                p.cursor = 0;
             }
-            KeyCode::Char('j') | KeyCode::Down => p.cursor = (p.cursor + 1).min(last),
-            KeyCode::Char('k') | KeyCode::Up => p.cursor = p.cursor.saturating_sub(1),
+            KeyCode::Char(c) if k.modifiers.is_empty() || k.modifiers == KeyModifiers::SHIFT => {
+                p.filtering = true;
+                p.query.push(c);
+                p.cursor = 0;
+            }
             KeyCode::Enter => {
-                let Some(to) = p.lists.get(p.cursor).cloned() else {
+                let Some(target) = visible.get(p.cursor).cloned().cloned() else {
                     return Outcome::Continue;
                 };
                 let action = p.action.clone();
@@ -1066,16 +1164,31 @@ impl App {
                     self.picker = None;
                 }
                 match action {
-                    ListPickerAction::Move(uid) => {
-                        return Outcome::Write(Request::Apply(Op::Move { uid, to }));
-                    }
+                    ListPickerAction::Move(uid) => match target {
+                        PickerTarget::Parent {
+                            collection,
+                            uid: parent,
+                        } => return self.request_reparent(uid, collection, Some(parent)),
+                        PickerTarget::List(to) => {
+                            if self
+                                .snapshot
+                                .find(&uid)
+                                .is_some_and(|i| self.snapshot.tasks[i].parent.is_some())
+                            {
+                                return self.request_reparent(uid, to, None);
+                            }
+                            return Outcome::Write(Request::Apply(Op::Move { uid, to }));
+                        }
+                    },
                     ListPickerAction::SetList => {
                         if let Some(form) = self.form.as_mut() {
-                            form.set_list(to);
+                            form.set_list(target.collection().into());
                         }
                     }
-                    ListPickerAction::Recover(id) => self.confirm_recovery(&id, &to),
-                    ListPickerAction::Forget => self.forget_command(&to),
+                    ListPickerAction::Recover(id) => {
+                        self.confirm_recovery(&id, target.collection())
+                    }
+                    ListPickerAction::Forget => self.forget_command(target.collection()),
                 }
             }
             _ => {}

@@ -87,3 +87,16 @@ preserves history outside the selected family. No new device evidence was claime
 Validation: full offline Rust workspace, 49 Python tests, documentation links, clippy with
 warnings denied, formatting and whitespace checks passed. This increment remains subject
 to the final combined-branch review before publication; no push or production write occurred.
+
+
+## Integrated closeout (2026-11-08)
+
+Implemented and integrated on `feat/completness`; see the
+[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+for root-branch commit IDs, all final validation results, review corrections,
+execution decisions and remaining shipping refusals. The user's later instruction
+superseded the original OpenCode executor constraint. Implementation commits were
+grouped by behavior where shared prerequisites made that clearer; plan 4's due,
+interval candidate and workflow tests share one feature commit. Local synthetic
+candidate coverage does not promote missing interoperability evidence. Final review
+was performed by the author because independent review agents were unavailable.

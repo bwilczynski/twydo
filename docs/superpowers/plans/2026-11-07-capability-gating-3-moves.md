@@ -77,4 +77,17 @@ Use new operation cases `standalone-resource` / `move` and `flat-family` / `move
 - Task 1 RED: `cargo test --offline -p twydo-core --test gate capability_move` refused `gate-weekly` at the unrelated weekly move row. GREEN: gate/edit_fields/store_family targets pass after relocation dispatch. Existing `edit_family` direct capture comparisons prove H8 parent UID and recurring-child foreign RUID changes.
 
 
-Direct execution closeout: feature and durability changes passed full offline Rust workspace, Python49, links, warnings-denied clippy, formatting and whitespace checks. Source and destination guards retain identities and membership through queue/recovery/inverse; raw UID collision checks apply before creation/replay. Shared JSON guard prerequisites are included for standalone branch validity. No device actions or broad verdict promotions. Final combined-branch review remains pending.
+Direct execution closeout: feature and durability changes passed full offline Rust workspace, Python49, links, warnings-denied clippy, formatting and whitespace checks. Source and destination guards retain identities and membership through queue/recovery/inverse; raw UID collision checks apply before creation/replay. Shared JSON guard prerequisites are included for standalone branch validity. No device actions or broad verdict promotions. Final combined-branch author review and validation are recorded in the linked closeout below.
+
+
+## Integrated closeout (2026-11-08)
+
+Implemented and integrated on `feat/completness`; see the
+[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+for root-branch commit IDs, all final validation results, review corrections,
+execution decisions and remaining shipping refusals. The user's later instruction
+superseded the original OpenCode executor constraint. Implementation commits were
+grouped by behavior where shared prerequisites made that clearer; plan 4's due,
+interval candidate and workflow tests share one feature commit. Local synthetic
+candidate coverage does not promote missing interoperability evidence. Final review
+was performed by the author because independent review agents were unavailable.

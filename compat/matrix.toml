@@ -1564,3 +1564,34 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 notes = "Candidate only: monthly interval 1 to 2, unchanged anchor/end/date. Existing monthly/weekly checklist captures do not establish the interval-2 write contract; no new device session authorized."
+
+# Candidate membership changes. Local synthetic tests are not interoperability evidence.
+[[operation]]
+case = "item-to-project"
+op = "reparent"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate only: changed parent links and recreated identity need a bounded device round. See docs/reference/phase0/item-relocation-capability.md."
+
+[[operation]]
+case = "item-to-checklist"
+op = "reparent"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate only: membership identity and simple date cleanup lack direct evidence."
+
+[[operation]]
+case = "item-outdent"
+op = "reparent"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate only: removing both parent links and checklist outdent dates lack direct evidence."

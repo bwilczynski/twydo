@@ -130,3 +130,16 @@ Individual history items under open parents are a separate capability. Enable on
   targets including doc tests, zero ignored), Clippy with warnings denied passed,
   Python 49 tests, links, formatting and whitespace checks all passed again.
 - Workflow commit: `6efd64e` (`test: preserve history reopen dependencies across workflows`).
+
+
+## Integrated closeout (2026-11-08)
+
+Implemented and integrated on `feat/completness`; see the
+[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+for root-branch commit IDs, all final validation results, review corrections,
+execution decisions and remaining shipping refusals. The user's later instruction
+superseded the original OpenCode executor constraint. Implementation commits were
+grouped by behavior where shared prerequisites made that clearer; plan 4's due,
+interval candidate and workflow tests share one feature commit. Local synthetic
+candidate coverage does not promote missing interoperability evidence. Final review
+was performed by the author because independent review agents were unavailable.

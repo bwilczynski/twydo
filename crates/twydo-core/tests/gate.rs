@@ -4560,3 +4560,187 @@ fn capability_move_save_revalidates_permitted_transition_without_legacy_move_row
     };
     assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
 }
+
+#[test]
+fn reparent_candidate_refuses_ambiguous_links_nesting_and_closed_targets() {
+    use common::Env;
+    let e = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let k = "a8dcf93bcaa14211a07481eb87af8f11";
+    let child = "c57dfd30e9574d6ba195117e73dcc6d9";
+    let p = "09c49c2cd76f483498fc2ff3a0f66160";
+    let m = matrix(
+        &[
+            ("item-to-project", "reparent"),
+            ("item-to-checklist", "reparent"),
+            ("item-outdent", "reparent"),
+        ],
+        "pass",
+        "pass",
+        &[],
+    );
+    let make = |uid: &str, parent: Option<&str>, collection: &str| Op::Reparent {
+        uid: uid.into(),
+        parent: parent.map(str::to_owned),
+        collection: collection.into(),
+    };
+    for op in [
+        make(k, Some(p), "list1"),
+        make(child, Some(child), "list1"),
+        make(child, Some(k), "list1"),
+        make(child, Some(p), "list2"),
+    ] {
+        assert!(
+            check(&e.snap(), &m, WriteMode::Verified, &op, today()).is_err(),
+            "{op:?}"
+        );
+    }
+    let op = make(child, Some(p), "list1");
+    assert!(check(&e.snap(), &m, WriteMode::Verified, &op, today()).is_ok());
+    let original = std::fs::read(e.file(child)).unwrap();
+    for malformed in ["json-link", "duplicate-link", "closed"] {
+        let mut cal = parse(&original).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        match malformed {
+            "json-link" => {
+                let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut meta = MetaJson::parse(&prop.value).unwrap();
+                meta.set_str("parentuid", "unrelated");
+                prop.set_value(&meta.encode());
+            }
+            "duplicate-link" => t.props.push(t.prop("RELATED-TO").unwrap().clone()),
+            _ => t.prop_mut("STATUS").unwrap().set_value("COMPLETED"),
+        }
+        std::fs::write(e.file(child), serialize(&cal)).unwrap();
+        assert!(
+            check(&e.snap(), &m, WriteMode::Verified, &op, today()).is_err(),
+            "{malformed}"
+        );
+    }
+}
+
+#[test]
+fn reparent_refuses_hidden_descendant_of_selected_leaf() {
+    let e = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let uid = "c57dfd30e9574d6ba195117e73dcc6d9";
+    let source = std::fs::read(e.file(uid)).unwrap();
+    let mut cal = parse(&source).unwrap();
+    let t = cal.root.children_named_mut("VTODO").next().unwrap();
+    t.prop_mut("UID")
+        .unwrap()
+        .set_value("synthetic-hidden-descendant");
+    t.remove_props("RELATED-TO");
+    let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut meta = MetaJson::parse(&prop.value).unwrap();
+    meta.set_str("parentuid", uid);
+    prop.set_value(&meta.encode());
+    std::fs::write(e.file("synthetic-hidden-descendant"), serialize(&cal)).unwrap();
+    let m = matrix(&[("item-to-project", "reparent")], "pass", "pass", &[]);
+    let op = Op::Reparent {
+        uid: uid.into(),
+        collection: "list1".into(),
+        parent: Some("09c49c2cd76f483498fc2ff3a0f66160".into()),
+    };
+    assert!(check(&e.snap(), &m, WriteMode::Verified, &op, today()).is_err());
+}
+
+#[test]
+fn resource_capabilities_refuse_duplicate_metadata() {
+    for (fixture, uid, op) in [
+        (
+            "plan6-list1/04-reopen-child",
+            "a8dcf93bcaa14211a07481eb87af8f11",
+            "delete",
+        ),
+        (
+            "plan6-list1/04-reopen-child",
+            "a8dcf93bcaa14211a07481eb87af8f11",
+            "move",
+        ),
+        (
+            "plan6-list1/05-complete-parent",
+            "14b5a37a52224e8c959b5002e2275fc9",
+            "reopen",
+        ),
+    ] {
+        let e = common::Env::new(WriteMode::Verified, fixture);
+        let mut cal = parse(&std::fs::read(e.file(uid)).unwrap()).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        t.props.push(t.prop("X-2DOAPP-METADATA").unwrap().clone());
+        std::fs::write(e.file(uid), serialize(&cal)).unwrap();
+        let op = match op {
+            "delete" => Op::Delete { uid: uid.into() },
+            "move" => Op::Move {
+                uid: uid.into(),
+                to: "list2".into(),
+            },
+            _ => Op::Reopen { uid: uid.into() },
+        };
+        assert!(
+            check(
+                &e.snap(),
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &op,
+                today()
+            )
+            .is_err(),
+            "{op:?}"
+        );
+    }
+}
+
+#[test]
+fn history_reopen_refuses_ambiguous_lifecycle_properties() {
+    let uid = "14b5a37a52224e8c959b5002e2275fc9";
+    for name in ["STATUS", "COMPLETED", "PERCENT-COMPLETE"] {
+        let e = common::Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let mut cal = parse(&std::fs::read(e.file(uid)).unwrap()).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        t.props.push(t.prop(name).unwrap().clone());
+        std::fs::write(e.file(uid), serialize(&cal)).unwrap();
+        assert!(
+            check(
+                &e.snap(),
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Reopen { uid: uid.into() },
+                today()
+            )
+            .is_err(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn resource_capabilities_refuse_internal_identity_collisions() {
+    let head = "a8dcf93bcaa14211a07481eb87af8f11";
+    let other = "09c49c2cd76f483498fc2ff3a0f66160";
+    let e = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let mut cal = parse(&std::fs::read(e.file(other)).unwrap()).unwrap();
+    let t = cal.root.children_named_mut("VTODO").next().unwrap();
+    let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut m = MetaJson::parse(&prop.value).unwrap();
+    m.set_str("uid", head);
+    prop.set_value(&m.encode());
+    std::fs::write(e.file(other), serialize(&cal)).unwrap();
+    for op in [
+        Op::Delete { uid: head.into() },
+        Op::Move {
+            uid: head.into(),
+            to: "list2".into(),
+        },
+    ] {
+        assert!(
+            check(
+                &e.snap(),
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &op,
+                today()
+            )
+            .is_err(),
+            "{op:?}"
+        );
+    }
+}

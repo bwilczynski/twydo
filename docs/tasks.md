@@ -338,3 +338,19 @@ An individual detached history item remains refused, including under an open
 history parent: the live-child H3 captures do not prove that separate operation.
 Reopening history does not undo the original recurrence advancement. Use undo for
 that; ended originals retaining RRULE use their separately bounded capability.
+
+## Candidate parent membership
+
+`tdo op reparent <uid> --list <existing-list-id> [--parent <parent-uid>]` explicitly
+attaches one open plain leaf to a top-level project/checklist, or detaches it into
+the given list when `--parent` is omitted. `--wait` uses the normal write queue.
+The operation preserves parents and siblings, appends the new leaf rank, and is
+one undo step. It excludes closed leaves/parents, parent-with-children relocation,
+nesting and same-parent moves. Existing `move` remains a whole top-level/family
+list relocation and does not bypass the single-item gate.
+
+The shipping matrix refuses all three membership cases, including test mode.
+Candidate matrices are used only in isolated synthetic tests. Project membership
+preserves scheduling; checklist inbound and checklist outdent support only simple
+date cleanup. See the [candidate evidence](reference/phase0/item-relocation-capability.md)
+for identity policy, exact exclusions and remaining verification.

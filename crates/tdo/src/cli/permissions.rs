@@ -78,6 +78,7 @@ pub(super) fn probes(
         ("edit repeat", "proposed repeat rule"),
         ("convert", "destination task type"),
         ("move", "destination list"),
+        ("reparent", "destination list and parent/context"),
         ("reorder", "sibling anchor and placement"),
         ("insert", "new task fields, sibling anchor and placement"),
     ] {
@@ -215,6 +216,7 @@ mod tests {
                 "edit repeat",
                 "convert",
                 "move",
+                "reparent",
                 "reorder",
                 "insert",
             ] {

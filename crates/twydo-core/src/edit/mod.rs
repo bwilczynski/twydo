@@ -18,7 +18,9 @@ use crate::repeatinput::RepeatSpec;
 pub mod complete;
 pub mod create;
 pub mod family;
+mod reparent;
 pub mod repeat;
+pub use reparent::reparented_copy;
 
 pub use complete::{
     REOPEN_ENDED, complete_one_time, complete_recurring, interval_refusal, next_due,
@@ -127,6 +129,12 @@ pub enum Op {
     },
     Delete {
         uid: String,
+    },
+    /// Candidate-only explicit membership change; collection is always a list id.
+    Reparent {
+        uid: String,
+        collection: String,
+        parent: Option<String>,
     },
     /// The edit form's save: `changes` to the task, then a move to list `to`, as one journal
     /// entry and one undo step. Either part may be empty (no changes, `to` = `None`).

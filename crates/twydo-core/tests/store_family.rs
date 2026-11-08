@@ -4269,3 +4269,467 @@ fn capability_move_partial_recovery_keeps_original_identity_map() {
         assert_eq!(e.files(), expected);
     }
 }
+
+mod reparent_candidate {
+    use super::*;
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+
+    fn matrix() -> Matrix {
+        let mut text = String::from("matrix_version = 1\n");
+        for case in ["item-to-project", "item-to-checklist", "item-outdent"] {
+            text.push_str(&format!("[[operation]]\ncase = \"{case}\"\nop = \"reparent\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"));
+        }
+        Matrix::from_toml_str(&text).unwrap()
+    }
+    fn op(parent: Option<&str>) -> Op {
+        Op::Reparent {
+            uid: K2.into(),
+            collection: "list1".into(),
+            parent: parent.map(str::to_owned),
+        }
+    }
+    #[test]
+    fn reparent_shipping_requires_dedicated_evidence() {
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            let e = Env::new(mode, FIXTURE);
+            let before = e.files();
+            let mut store = e.store(Matrix::embedded().clone());
+            for parent in [Some(P), None] {
+                let err = store
+                    .apply(&e.snap(), &op(parent), now())
+                    .unwrap_err()
+                    .to_string();
+                assert!(err.contains("reparent"), "{err}");
+                assert_eq!(e.files(), before);
+                assert!(e.journal().is_empty());
+            }
+        }
+    }
+    #[test]
+    fn reparent_store_updates_exact_membership_once() {
+        for parent in [Some(P), None] {
+            let e = Env::new(WriteMode::Verified, FIXTURE);
+            let before = e.files();
+            let mut store = e.store(matrix());
+            store.apply(&e.snap(), &op(parent), now()).unwrap();
+            let after = e.files();
+            let entry = e.journal().pop().unwrap();
+            assert_eq!(entry.kind, "reparent");
+            assert_eq!(entry.writes.len(), 2);
+            assert!(!e.file(K2).exists());
+            for (path, bytes) in &before {
+                if path != &key(K2) {
+                    assert_eq!(&after[path], bytes);
+                }
+            }
+            let snap = e.snap();
+            let t = &snap.tasks[snap.find(&entry.uids[1]).unwrap()];
+            assert_eq!(t.parent.as_deref(), parent);
+            if parent.is_none() {
+                assert!(t.due.is_none());
+            }
+            assert!(entry.families.len() >= 2);
+            store.undo_last(later()).unwrap();
+            assert_eq!(e.files(), before);
+            store.redo_last(later()).unwrap();
+            assert_eq!(e.files(), after);
+        }
+    }
+    #[test]
+    fn reparent_retained_leaf_alias_survives_queue_recovery_and_inverses() {
+        for parent in [Some(P), None] {
+            for collection in ["list1", "list2"] {
+                for queued in [false, true] {
+                    let e = Env::new(WriteMode::Verified, FIXTURE);
+                    relocation_meta(&e, K2, "uid", "synthetic-leaf-internal-identity");
+                    let before = e.files();
+                    let mut store = e.store(matrix());
+                    let operation = Op::Reparent {
+                        uid: K2.into(),
+                        collection: collection.into(),
+                        parent: parent.map(str::to_owned),
+                    };
+                    // A destination parent must live in the selected collection.
+                    if parent.is_some() && collection == "list2" {
+                        continue;
+                    }
+                    if queued {
+                        let lock = VdirLock::exclusive(&e.state).unwrap();
+                        assert!(matches!(
+                            store
+                                .submit(&e.snap(), &operation, "reparent", "op", now())
+                                .unwrap(),
+                            Submitted::Queued(_)
+                        ));
+                        drop(lock);
+                        assert!(matches!(
+                            store.drain(later()).unwrap()[0].outcome,
+                            DrainOutcome::Applied(_)
+                        ));
+                    } else {
+                        store.apply(&e.snap(), &operation, now()).unwrap();
+                    }
+                    let after = e.files();
+                    let mut entry = e.journal().pop().unwrap();
+                    let created = &entry.writes[0];
+                    let cal = parse(created.after.as_ref().unwrap().as_bytes()).unwrap();
+                    let todo = cal.root.children_named("VTODO").next().unwrap();
+                    let meta = twydo_core::model::meta_edit::MetaJson::parse(
+                        &todo.prop("X-2DOAPP-METADATA").unwrap().value,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        meta.get_str("uid"),
+                        Some("synthetic-leaf-internal-identity")
+                    );
+                    // Simulate interruption after destination creation, before source removal.
+                    fs::write(e.file(K2), &before[&key(K2)]).unwrap();
+                    entry.stage = Stage::Prepared;
+                    Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+                    let (_, report) = Store::open_with(&e.cfg, matrix()).unwrap();
+                    assert!(report.stuck.is_empty(), "{report:?}");
+                    assert_eq!(report.resumed.len(), 1);
+                    assert_eq!(e.files(), after);
+                    store.undo_last(later()).unwrap();
+                    assert_eq!(e.files(), before);
+                    store.redo_last(later()).unwrap();
+                    assert_eq!(e.files(), after);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reparent_store_checks_both_families() {
+        for queued in [false, true] {
+            for uid in [K, K3, P, P3, K2] {
+                for removed in [false, true] {
+                    let e = Env::new(WriteMode::Verified, FIXTURE);
+                    let snap = e.snap();
+                    let mut store = e.store(matrix());
+                    let lock = queued.then(|| VdirLock::exclusive(&e.state).unwrap());
+                    if queued {
+                        assert!(matches!(
+                            store
+                                .submit(&snap, &op(Some(P)), "reparent", "op", now())
+                                .unwrap(),
+                            Submitted::Queued(_)
+                        ));
+                    }
+                    if removed {
+                        fs::remove_file(e.file(uid)).unwrap();
+                    } else {
+                        let p = e.file(uid);
+                        fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                    }
+                    let before = e.files();
+                    if queued {
+                        drop(lock);
+                        assert!(matches!(
+                            store.drain(later()).unwrap()[0].outcome,
+                            DrainOutcome::Refused(_)
+                        ));
+                    } else {
+                        assert!(matches!(
+                            store.apply(&snap, &op(Some(P)), now()),
+                            Err(WriteError::Stale(_))
+                        ));
+                    }
+                    assert_eq!(e.files(), before);
+                    assert!(e.journal().is_empty());
+                }
+            }
+        }
+    }
+    #[test]
+    fn reparent_queue_inverse_and_recovery_keep_both_guards() {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let mut store = e.store(matrix());
+        let before = e.files();
+        let lock = VdirLock::exclusive(&e.state).unwrap();
+        assert!(matches!(
+            store
+                .submit(&e.snap(), &op(Some(P)), "reparent", "op", now())
+                .unwrap(),
+            Submitted::Queued(_)
+        ));
+        drop(lock);
+        let drained = store.drain(later()).unwrap();
+        assert!(!matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+        let after = e.files();
+        let mut entry = e.journal().pop().unwrap();
+        for w in &entry.writes {
+            if let Some(b) = &w.before {
+                fs::write(e.vdir.join(&w.path), b).unwrap();
+            }
+        }
+        entry.stage = Stage::Prepared;
+        Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+        let (_, report) = Store::open_with(&e.cfg, matrix()).unwrap();
+        assert!(report.stuck.is_empty(), "{report:?}");
+        assert_eq!(report.resumed.len(), 1);
+        assert_eq!(e.files(), after);
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+        // An unexpected JSON-only member of either parent blocks inverse/recovery.
+        store.redo_last(later()).unwrap();
+        let mut cal = parse(&before[&key(K3)]).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        t.prop_mut("UID")
+            .unwrap()
+            .set_value("synthetic-reparent-newcomer");
+        t.remove_props("RELATED-TO");
+        fs::write(
+            e.file("synthetic-reparent-newcomer"),
+            twydo_core::ical::serialize(&cal),
+        )
+        .unwrap();
+        let remote = e.files();
+        assert!(store.undo_last(later()).is_err());
+        assert_eq!(e.files(), remote);
+    }
+    #[test]
+    fn reparent_guards_reject_cross_list_newcomers() {
+        for parent in [K, P] {
+            for phase in ["direct", "queue", "undo", "recovery"] {
+                let e = Env::new(WriteMode::Verified, FIXTURE);
+                let snap = e.snap();
+                let mut store = e.store(matrix());
+                let lock = (phase == "queue").then(|| VdirLock::exclusive(&e.state).unwrap());
+                if phase == "queue" {
+                    store
+                        .submit(&snap, &op(Some(P)), "reparent", "op", now())
+                        .unwrap();
+                }
+                if matches!(phase, "undo" | "recovery") {
+                    store.apply(&snap, &op(Some(P)), now()).unwrap();
+                }
+                let mut cal = parse(&fs::read(e.file(K3)).unwrap()).unwrap();
+                let t = cal.root.children_named_mut("VTODO").next().unwrap();
+                t.prop_mut("UID")
+                    .unwrap()
+                    .set_value("synthetic-cross-list-newcomer");
+                t.prop_mut("RELATED-TO").unwrap().set_value(parent);
+                let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut m = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+                m.set_str("parentuid", parent);
+                prop.set_value(&m.encode());
+                fs::write(
+                    e.vdir.join("list2/newcomer.ics"),
+                    twydo_core::ical::serialize(&cal),
+                )
+                .unwrap();
+                let before = e.files();
+                match phase {
+                    "direct" => assert!(
+                        store.apply(&snap, &op(Some(P)), now()).is_err(),
+                        "{parent}, {phase}"
+                    ),
+                    "queue" => {
+                        drop(lock);
+                        assert!(matches!(
+                            store.drain(later()).unwrap()[0].outcome,
+                            DrainOutcome::Refused(_)
+                        ));
+                    }
+                    "undo" => assert!(store.undo_last(later()).is_err()),
+                    _ => {
+                        let mut entry = e.journal().pop().unwrap();
+                        entry.stage = Stage::Prepared;
+                        Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+                        let (_, report) = Store::open_with(&e.cfg, matrix()).unwrap();
+                        assert_eq!(report.stuck.len(), 1);
+                    }
+                }
+                assert_eq!(e.files(), before);
+            }
+        }
+    }
+    #[test]
+    fn reparent_candidate_destination_collisions_refuse_without_writes() {
+        for same_path in [true, false] {
+            let e = Env::new(WriteMode::Verified, FIXTURE);
+            let mut store = e.store(matrix());
+            let lock = VdirLock::exclusive(&e.state).unwrap();
+            let Submitted::Queued(item) = store
+                .submit(&e.snap(), &op(Some(P)), "reparent", "op", now())
+                .unwrap()
+            else {
+                panic!("queued")
+            };
+            let create = &item.writes()[0];
+            let path = if same_path {
+                e.vdir.join(&create.path)
+            } else {
+                e.file("synthetic-duplicate-destination")
+            };
+            fs::write(
+                path,
+                if same_path {
+                    "synthetic conflicting bytes"
+                } else {
+                    create.after.as_ref().unwrap()
+                },
+            )
+            .unwrap();
+            let before = e.files();
+            drop(lock);
+            let drained = store.drain(later()).unwrap();
+            assert!(matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+            assert_eq!(e.files(), before);
+            assert!(e.journal().is_empty());
+        }
+    }
+
+    #[test]
+    fn reparent_candidate_retains_foreign_series_and_internal_parent_alias() {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let snap = e.snap();
+        let p = snap.find(P).unwrap();
+        for i in std::iter::once(p).chain(snap.children(p).iter().copied()) {
+            let path = &snap.tasks[i].path;
+            let mut cal = parse(&fs::read(path).unwrap()).unwrap();
+            let t = cal.root.children_named_mut("VTODO").next().unwrap();
+            let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+            let mut m = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+            m.set_str(
+                if i == p { "uid" } else { "parentuid" },
+                "synthetic-internal-parent",
+            );
+            prop.set_value(&m.encode());
+            fs::write(path, twydo_core::ical::serialize(&cal)).unwrap();
+        }
+        let mut cal = parse(&fs::read(e.file(K2)).unwrap()).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        t.insert_prop(
+            twydo_core::ical::Property::new("X-SYNTHETIC-KEEP", Vec::new(), "opaque"),
+            None,
+        );
+        let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut m = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+        m.set_str("RUID", "synthetic-foreign-series");
+        prop.set_value(&m.encode());
+        fs::write(e.file(K2), twydo_core::ical::serialize(&cal)).unwrap();
+        let before = e.files();
+        let snap = e.snap();
+        let max = snap
+            .children(p)
+            .iter()
+            .map(|&n| snap.tasks[n].meta.display_order())
+            .max()
+            .unwrap();
+        let mut store = e.store(matrix());
+        store.apply(&snap, &op(Some(P)), now()).unwrap();
+        let entry = e.journal().pop().unwrap();
+        let cal = parse(entry.writes[0].after.as_ref().unwrap().as_bytes()).unwrap();
+        let t = cal.root.children_named("VTODO").next().unwrap();
+        let meta = twydo_core::model::meta_edit::MetaJson::parse(
+            &t.prop("X-2DOAPP-METADATA").unwrap().value,
+        )
+        .unwrap();
+        assert_eq!(t.prop("RELATED-TO").unwrap().value, P);
+        assert_eq!(meta.get_str("parentuid"), Some("synthetic-internal-parent"));
+        assert_eq!(meta.get_str("RUID"), Some("synthetic-foreign-series"));
+        assert_eq!(meta.get_i64("DisplayOrder"), Some(max + 1));
+        assert_eq!(t.prop("X-SYNTHETIC-KEEP").unwrap().value, "opaque");
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+    }
+}
+
+#[test]
+fn family_guards_reject_new_internal_identity_owners() {
+    for phase in ["direct", "undo", "recovery"] {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let snap = e.snap();
+        let source = fs::read(e.file(K)).unwrap();
+        let mut store = e.store(Matrix::embedded().clone());
+        let op = Op::Delete { uid: K.into() };
+        if phase != "direct" {
+            store.apply(&snap, &op, now()).unwrap();
+        }
+        let mut cal = parse(&source).unwrap();
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        t.prop_mut("UID")
+            .unwrap()
+            .set_value("synthetic-duplicate-internal-owner");
+        fs::write(
+            e.vdir.join("list2/duplicate-owner.ics"),
+            twydo_core::ical::serialize(&cal),
+        )
+        .unwrap();
+        let before = e.files();
+        match phase {
+            "direct" => assert!(store.apply(&snap, &op, now()).is_err()),
+            "undo" => assert!(store.undo_last(later()).is_err()),
+            _ => {
+                let mut entry = e.journal().pop().unwrap();
+                entry.stage = Stage::Prepared;
+                Journal::open(&e.state).unwrap().prepare(&entry).unwrap();
+                let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+                assert_eq!(report.stuck.len(), 1);
+            }
+        }
+        assert_eq!(e.files(), before);
+    }
+}
+
+#[test]
+fn undo_identity_collision_refuses_without_blocking_later_writes() {
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+
+    for queued in [false, true] {
+        let e = Env::new(WriteMode::Verified, FIXTURE);
+        let original = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        let id = store
+            .apply(&e.snap(), &Op::Delete { uid: P.into() }, now())
+            .unwrap();
+        let lock = queued.then(|| VdirLock::exclusive(&e.state).unwrap());
+        if queued {
+            assert!(matches!(
+                store.undo(&id, later()).unwrap(),
+                Submitted::Queued(_)
+            ));
+        }
+        // A remote writer restores a child as a standalone task under another filename.
+        let mut remote = parse(&original[&key(P2)]).unwrap();
+        let todo = remote.root.children_named_mut("VTODO").next().unwrap();
+        todo.remove_props("RELATED-TO");
+        let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+        meta.remove("parentuid");
+        prop.set_value(&meta.encode());
+        fs::write(
+            e.file("synthetic-restored-under-other-name"),
+            twydo_core::ical::serialize(&remote),
+        )
+        .unwrap();
+        let before = e.files();
+        let entries = e.journal().len();
+        if queued {
+            drop(lock);
+            assert!(matches!(
+                store.drain(later()).unwrap()[0].outcome,
+                DrainOutcome::Refused(_)
+            ));
+        } else {
+            assert!(matches!(
+                store.undo_last(later()),
+                Err(WriteError::Stale(_))
+            ));
+        }
+        assert_eq!(e.files(), before);
+        assert_eq!(e.journal().len(), entries);
+        store
+            .apply(
+                &e.snap(),
+                &Op::Edit {
+                    uid: K.into(),
+                    changes: vec![Change::Summary("Synthetic unrelated edit".into())],
+                },
+                later(),
+            )
+            .unwrap();
+    }
+}

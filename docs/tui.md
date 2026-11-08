@@ -78,7 +78,8 @@ These act when the Tasks or Details pane has focus.
 | `}` / `{` | due one week later / earlier |
 | `dd` | delete |
 | `u` / `Ctrl-r` | undo / redo the last write of this session |
-| `m` | move a top-level task or flat family to another list (picker: `j`/`k`, `Enter`, `Esc`); unchanged schedules are preserved |
+| `m` | choose a list or nested project/checklist destination; `j`/`k` or arrows navigate, typing filters (`/` starts a filter with j/k), `Enter` chooses, `Esc` cancels. Top-level list moves preserve schedules; membership changes require dedicated evidence |
+| `>>` / `<<` | indent an open leaf under the nearest preceding eligible parent / outdent into the same list, in the Tasks pane of list views only. Candidate membership operations remain refused by the shipping matrix |
 | `o` / `O` | new task below / above the selected one ([Adding tasks](#adding-tasks)) |
 | `J` / `K` | move a nested checklist/project item after/before the next/previous visible sibling in the Tasks pane (requires ordering compatibility evidence) |
 | `a` | new item at the end of the selected project or checklist; on a plain task, asks whether to make it one first |
@@ -371,3 +372,22 @@ open/cancelled children stay unchanged. It keeps dates and alerts and leaves the
 live recurring series untouched. Individual detached history children remain
 refused, including after their parent has reopened. See
 [detached history reopening](tasks.md#detached-history-reopening) for the exact boundary.
+
+### Candidate parent membership
+
+The destination picker distinguishes list IDs from parent UIDs and excludes the
+selected leaf, its existing parent, nested/closed parents and parents of unknown
+type. It has no new-list creation action. Moving a parent to another list keeps
+the existing whole-family operation. Moving a leaf into a parent, or an item into
+a list, uses the separate relationship operation.
+
+Checklist inbound date loss asks `y` before writing; `n` or Escape cancels and
+keeps selection. A reload cancels that confirmation so a new destination must be
+chosen against current data. Unsupported start/time, recurrence or alarm cleanup
+is refused. Outdenting a checklist item produces an undated plain task.
+
+These controls are implemented for synthetic candidate verification. **Shipping
+membership writes remain refused in both write modes** until the dedicated
+[evidence checklist](reference/phase0/item-relocation-capability.md) is approved
+and completed. A refused write displays the gate reason and leaves task bytes
+unchanged. This does not enable yank/paste or list management.

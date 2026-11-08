@@ -51,6 +51,18 @@ fn validate(snap: &Snapshot, idx: usize) -> Result<(), Blocked> {
     for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
         let task = &snap.tasks[i];
         lookup(snap, &task.uid)?;
+        let cal = snap
+            .source(&task.path)
+            .and_then(|b| crate::ical::parse(b).ok())
+            .ok_or_else(|| Blocked("history source is unreadable".into()))?;
+        if cal.root.children_named("VTODO").any(|todo| {
+            ["STATUS", "COMPLETED", "PERCENT-COMPLETE"]
+                .iter()
+                .any(|name| todo.props_named(name).count() > 1)
+        }) {
+            return blocked("history reopening needs unambiguous lifecycle properties");
+        }
+
         if !known_task_type(task) || json_meta(task).is_none() {
             return blocked(
                 "history reopening needs recognized task types and readable JSON metadata",

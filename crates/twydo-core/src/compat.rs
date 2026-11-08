@@ -204,14 +204,14 @@ mod tests {
             }
         }
         assert_eq!(m.rule.len(), RULE_CLASSES.len() + 3);
-        assert_eq!(m.operation.len(), 123);
+        assert_eq!(m.operation.len(), 126);
         assert_eq!(m.edge_case.len(), 12);
     }
 
     #[test]
     fn embedded_matrix_has_baseline_column() {
         let m = Matrix::embedded();
-        assert_eq!(m.operation.len(), 123);
+        assert_eq!(m.operation.len(), 126);
         // Verified in the Plan 7 session B: baseline and both Twydo round trips.
         let e = m.operation("from-completion", "create").unwrap();
         assert_eq!(e.iphone_baseline, Verdict::Pass);

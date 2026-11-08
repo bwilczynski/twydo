@@ -255,7 +255,12 @@ const HELP: &[(&str, &str, bool)] = &[
     ("u  Ctrl-r", "undo / redo", false),
     ("t  T", "due today / tomorrow", false),
     ("]  [  }  {", "due +1/-1 day, +1/-1 week", false),
-    ("m", "move to another list", false),
+    ("m", "choose a list or parent (type to filter)", false),
+    (
+        ">>  <<",
+        "indent / outdent in list views (evidence gated)",
+        false,
+    ),
     ("r", "card on the Repeat field", false),
     ("a", "add items to a project or checklist", false),
     (

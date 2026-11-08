@@ -65,6 +65,7 @@
 mod checklist_edit;
 mod history_reopen;
 mod relocate;
+mod reparent;
 
 use std::fmt;
 
@@ -119,6 +120,14 @@ pub fn check(
     op: &Op,
     today: NaiveDate,
 ) -> Result<(), Blocked> {
+    if let Op::Reparent {
+        uid,
+        collection,
+        parent,
+    } = op
+    {
+        return reparent::check(snap, m, mode, uid, collection, parent.as_deref());
+    }
     if matches!(op, Op::Reorder { .. } | Op::CreateAt { .. }) {
         return check_order(snap, m, mode, op, today);
     }
@@ -170,7 +179,9 @@ pub fn check(
             known_list(snap, &n.collection)?;
             None
         }
-        Op::Save { .. } | Op::Reorder { .. } | Op::CreateAt { .. } => unreachable!("handled above"),
+        Op::Reparent { .. } | Op::Save { .. } | Op::Reorder { .. } | Op::CreateAt { .. } => {
+            unreachable!("handled above")
+        }
         Op::Edit { uid, .. } | Op::Complete { uid } | Op::Reopen { uid } | Op::Delete { uid } => {
             Some(lookup(snap, uid)?)
         }
@@ -1117,6 +1128,7 @@ fn op_name(op: &Op) -> &'static str {
         Op::Complete { .. } => "complete",
         Op::Reopen { .. } => "reopen",
         Op::Move { .. } => "move",
+        Op::Reparent { .. } => "reparent",
         Op::Delete { .. } => "delete",
         Op::Save { .. } => "save",
     }
