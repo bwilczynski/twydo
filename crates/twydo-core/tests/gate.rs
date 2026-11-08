@@ -4744,3 +4744,48 @@ fn resource_capabilities_refuse_internal_identity_collisions() {
         );
     }
 }
+
+#[test]
+fn reused_gate_facts_are_scoped_to_their_immutable_snapshot() {
+    let env = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let parent = "a8dcf93bcaa14211a07481eb87af8f11";
+    let member = "4a706b9a22b14576af63d06d9dc7db2e";
+    let before = env.snap();
+    let op = Op::Delete { uid: parent.into() };
+    let checker =
+        twydo_core::gate::Checker::new(&before, Matrix::embedded(), WriteMode::Verified, today());
+    assert!(checker.check(&op).is_ok());
+    // A JSON-only reference appears after the original snapshot's facts were built.
+    let child = before.children(before.find(parent).unwrap())[0];
+    let mut cal = parse(before.source(&before.tasks[child].path).unwrap()).unwrap();
+    let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("UID").unwrap().set_value(member);
+    todo.remove_props("RELATED-TO");
+    let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut meta = MetaJson::parse(&prop.value).unwrap();
+    meta.set_str("parentuid", parent);
+    prop.set_value(&meta.encode());
+    std::fs::write(env.file(member), serialize(&cal)).unwrap();
+    let after = env.snap();
+    let reloaded =
+        twydo_core::gate::Checker::new(&after, Matrix::embedded(), WriteMode::Verified, today());
+    assert!(
+        reloaded
+            .check(&op)
+            .unwrap_err()
+            .0
+            .contains("agreeing standard and JSON")
+    );
+    // Reusing the old immutable snapshot does not import another snapshot's facts.
+    assert!(checker.check(&op).is_ok());
+    assert_eq!(
+        reloaded.check(&op),
+        check(
+            &after,
+            Matrix::embedded(),
+            WriteMode::Verified,
+            &op,
+            today()
+        )
+    );
+}

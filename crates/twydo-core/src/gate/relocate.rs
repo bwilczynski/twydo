@@ -15,6 +15,7 @@ pub(super) fn check(
     mode: WriteMode,
     idx: usize,
     to: &str,
+    relationships: &super::relationships::Index,
 ) -> Result<(), Blocked> {
     known_list(snap, to)?;
     let head = &snap.tasks[idx];
@@ -28,7 +29,7 @@ pub(super) fn check(
     if family && declared_kind(head) == TaskKind::Task {
         return blocked(PLAIN_PARENT);
     }
-    super::relationships::check(snap, idx)?;
+    relationships.check(snap, idx)?;
     for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
         let t = &snap.tasks[lookup(snap, &snap.tasks[i].uid)?];
         if !known_task_type(t) {

@@ -42,10 +42,11 @@ pub(super) fn check(
     matrix: &Matrix,
     mode: WriteMode,
     idx: usize,
+    relationships: &super::relationships::Index,
 ) -> Result<(), Blocked> {
     let head = &snap.tasks[idx];
     lookup(snap, &head.uid)?;
-    super::relationships::check(snap, idx)?;
+    relationships.check(snap, idx)?;
     if head.parent.is_some()
         || json_meta(head)
             .and_then(|meta| meta.get_str("parentuid").map(str::to_string))

@@ -8,6 +8,7 @@ pub(super) fn check(
     mode: WriteMode,
     idx: usize,
     changes: &[Change],
+    checker: &Checker<'_>,
 ) -> Option<Result<(), Blocked>> {
     let t = &snap.tasks[idx];
     if t.kind != TaskKind::Checklist || t.rrule.is_none() {
@@ -40,7 +41,7 @@ pub(super) fn check(
             );
         }
         validate_source(snap, idx)?;
-        validate_members(snap, idx)?;
+        validate_members(snap, idx, checker.relationships())?;
         if interval
             && !json_meta(t).is_some_and(|meta| {
                 [
@@ -106,8 +107,12 @@ pub(super) fn check(
     })())
 }
 
-fn validate_members(snap: &Snapshot, parent: usize) -> Result<(), Blocked> {
-    super::relationships::check(snap, parent)?;
+fn validate_members(
+    snap: &Snapshot,
+    parent: usize,
+    relationships: &relationships::Index,
+) -> Result<(), Blocked> {
+    relationships.check(snap, parent)?;
     let head = &snap.tasks[parent];
     let meta = json_meta(head)
         .ok_or_else(|| Blocked("checklist scheduling needs readable JSON".into()))?;

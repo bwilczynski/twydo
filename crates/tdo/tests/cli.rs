@@ -668,3 +668,64 @@ mod sync {
         );
     }
 }
+
+#[test]
+fn check_finishes_permissions_for_a_large_collection() {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    let temp = tempfile::tempdir().unwrap();
+    let vdir = temp.path().join("vdir");
+    let list = vdir.join("synthetic");
+    fs::create_dir_all(&list).unwrap();
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../fixtures/phase0/v1/plan4-list1/02-edit/0a04f22aeb294b719633c978fe1975e5.ics",
+        ))
+        .unwrap();
+    for n in 0..1000 {
+        let uid = format!("{n:032x}");
+        fs::write(
+            list.join(format!("{uid}.ics")),
+            source.replace("0a04f22aeb294b719633c978fe1975e5", &uid),
+        )
+        .unwrap();
+    }
+    let output = temp.path().join("check.txt");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
+        .args(["--vdir", vdir.to_str().unwrap(), "check"])
+        .env("XDG_CONFIG_HOME", temp.path().join("config"))
+        .env("XDG_STATE_HOME", temp.path().join("state"))
+        .stdout(fs::File::create(&output).unwrap())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() > Duration::from_secs(10) {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!(
+                "permission reporting did not finish within 10 seconds:\n{}",
+                fs::read_to_string(&output).unwrap()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success());
+    let report = fs::read_to_string(output).unwrap();
+    assert!(report.contains("tasks: 1000"));
+    assert!(
+        report.contains("delete: allowed=1000 refused=0"),
+        "{report}"
+    );
+    assert!(
+        report.contains("reparent: allowed=0 refused=0 inapplicable=0 needs-input=1000"),
+        "{report}"
+    );
+}
