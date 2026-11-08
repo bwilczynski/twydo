@@ -1,0 +1,7 @@
+scenario = "issue69-lifecycle"
+step = "030-phone-absence"
+device = "iphone"
+action = "User confirmed the disposable list disappeared after the server ignored stale If-Match DELETE. All three resources remain in verified backups/raw export; the isolated sync configuration was sealed. No recovery collection or recreation was attempted. This records a failed safety condition, not permission to enable deletion."
+captured_at = "2026-11-09T17:53:37.382786+00:00"
+base_step = "020-guard-evidence"
+removed_files = ["fa3fa47e19904ec8a1923639afc526bc.ics", "7495a3471e08497d9a08a25eaeeab4e9.ics", "6a17a383b518400c80867b19f37ce307.ics", "displayname", "color"]

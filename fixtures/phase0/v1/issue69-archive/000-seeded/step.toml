@@ -1,0 +1,6 @@
+scenario = "issue69-archive"
+step = "000-seeded"
+device = "twydo"
+action = "Approved create-only seed: one open task due today with no alarm and one completed undated task. Server read-back matches synthetic candidates after LF/CRLF normalization only. Exact collection identity and raw DAV properties remain private."
+captured_at = "2026-11-08T15:49:04.055036+00:00"
+returned_collection_property_count = 14
