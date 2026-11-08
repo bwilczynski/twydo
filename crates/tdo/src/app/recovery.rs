@@ -10,6 +10,12 @@ pub struct RecoveryPanel {
 }
 
 pub enum Confirmation {
+    DeleteList(twydo_core::lists::backup::DeletePreview),
+    Archive {
+        state: twydo_core::lists::ListState,
+        unfinished: usize,
+        unreadable: usize,
+    },
     Forget(Preview),
     Reparent {
         op: Box<Op>,
@@ -24,6 +30,23 @@ pub enum Confirmation {
 impl Confirmation {
     pub fn question(&self) -> String {
         match self {
+            Self::DeleteList(p) => format!(
+                "Delete {:?} ({}) from CalDAV and ALL DEVICES? Backup {} preserves {} remote resource(s) and {} local file(s). This action is currently refused until server-enforced concurrency protection is demonstrated. y attempt · n/Esc cancel",
+                p.name, p.collection, p.backup, p.resources, p.local_files
+            ),
+            Self::Archive {
+                state,
+                unfinished,
+                unreadable,
+            } => format!(
+                "Archive {:?} on this desktop? {unfinished} unfinished task(s){}. Task data stays intact. y confirm · n/Esc cancel",
+                state.name,
+                if *unreadable > 0 {
+                    format!(", {unreadable} unreadable resource(s)")
+                } else {
+                    String::new()
+                }
+            ),
             Self::Reparent { .. } => {
                 "Move into checklist and remove this task’s dates? y confirm · n/Esc cancel".into()
             }
@@ -148,6 +171,15 @@ impl App {
                 let confirmation = self.confirmation.take().expect("confirmation");
                 self.recovery = None;
                 match confirmation {
+                    Confirmation::DeleteList(preview) => {
+                        self.start_list_action(ListAction::Delete(preview))
+                    }
+                    Confirmation::Archive { state, .. } => {
+                        self.start_list_action(ListAction::Archive {
+                            expected: state,
+                            archived: true,
+                        })
+                    }
                     Confirmation::Reparent { op } => Outcome::Write(Request::Apply(*op)),
                     Confirmation::Forget(p) => Outcome::ForgetList(p),
                     Confirmation::Recover { backup, to, .. } => {

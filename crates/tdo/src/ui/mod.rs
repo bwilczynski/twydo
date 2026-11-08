@@ -4,6 +4,7 @@
 mod card;
 mod conflicts;
 mod details;
+mod listcard;
 mod picker;
 mod recovery;
 mod sidebar;
@@ -71,6 +72,12 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if let Some(p) = &app.picker {
         picker::render(f, area, app, p);
+    }
+    if let Some(form) = &app.list_form {
+        listcard::render(f, area, form);
+    }
+    if let Some(panel) = &app.collection_backups {
+        listcard::backups(f, area, panel);
     }
     if app.picker.is_none() {
         recovery::render(f, area, app);
@@ -238,6 +245,12 @@ pub(crate) fn pad(s: &str, width: usize) -> String {
 const HELP: &[(&str, &str, bool)] = &[
     ("j/k  gg/G  Ctrl-d/u", "move (in Details: scroll)", false),
     ("h/l  Tab", "focus pane", false),
+    ("Sidebar o / i / dd", "create / edit / delete list", false),
+    (
+        ":lists",
+        "manage lists, including hidden and archived",
+        false,
+    ),
     ("Enter", "expand/collapse a parent (All, lists)", false),
     (
         "Enter on a leaf, i",
