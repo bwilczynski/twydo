@@ -345,3 +345,13 @@ recognize the old and new paths, so a retained internal JSON identity does not
 conflict with the operation's own source or destination. Destination UID checks
 also detect duplicates under other filenames. The separate membership gate keeps
 unproven encodings disabled in the shipping matrix.
+
+### Permission report snapshots
+
+Aggregate `tdo check` reports reuse one gate checker for the loaded immutable
+snapshot. It indexes resource/internal identity owners, standard/JSON references,
+and raw-source metadata ambiguity once, then validates each family against the
+same admission rules used for writes. It does not rescan and reparse the entire
+collection for every reported task. A reload or post-edit snapshot gets a fresh
+checker; no permission or source facts are cached across snapshot changes.
+Live commit, queue, recovery and inverse file guards are unchanged.

@@ -8,6 +8,7 @@ pub(super) fn check(
     uid: &str,
     collection: &str,
     parent: Option<&str>,
+    relationships: &relationships::Index,
 ) -> Result<(), Blocked> {
     known_list(snap, collection)?;
     let i = lookup(snap, uid)?;
@@ -48,7 +49,7 @@ pub(super) fn check(
         {
             return blocked("reparent needs an open top-level project or checklist");
         }
-        relationships::check(snap, p)?;
+        relationships.check(snap, p)?;
         let aliases = relationships::aliases(head);
         if snap
             .tasks
@@ -76,7 +77,7 @@ pub(super) fn check(
         return blocked("destination parent must be in the destination list");
     }
     if source.is_none() {
-        relationships::check(snap, i)?;
+        relationships.check(snap, i)?;
     }
     let clear_dates = destination
         .is_some_and(|p| declared_kind(&snap.tasks[p]) == TaskKind::Checklist)

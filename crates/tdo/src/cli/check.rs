@@ -9,7 +9,7 @@ use twydo_core::config::WriteMode;
 use twydo_core::model::Status;
 use twydo_core::views::Snapshot;
 
-use super::permissions::{Availability, probes};
+use super::permissions::{Availability, probes_with};
 use super::{CliError, permission_snapshot, recover_at_startup, resolve_config, task_rule_class};
 
 pub fn run(vdir: Option<&Path>, matrix_path: Option<&Path>, verbose: bool) -> Result<(), CliError> {
@@ -96,8 +96,14 @@ fn operation_summary(snap: &Snapshot, matrix: &Matrix, verbose: bool) {
         return;
     }
     let now = Utc::now();
+    let checker = twydo_core::gate::Checker::new(
+        snap,
+        matrix,
+        mode,
+        now.with_timezone(&snap.tz()).date_naive(),
+    );
     let rows: Vec<_> = (0..snap.tasks.len())
-        .map(|i| probes(snap, matrix, mode, i, now))
+        .map(|i| probes_with(&checker, i))
         .collect();
     for (col, probe) in rows[0].iter().enumerate() {
         let mut counts = [0usize; 4];

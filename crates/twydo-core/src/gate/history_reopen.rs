@@ -6,6 +6,7 @@ pub(super) fn check(
     matrix: &Matrix,
     mode: WriteMode,
     idx: usize,
+    checker: &Checker<'_>,
 ) -> Option<Result<(), Blocked>> {
     let task = &snap.tasks[idx];
     if task.status == Status::Completed
@@ -39,15 +40,22 @@ pub(super) fn check(
         TaskKind::Project | TaskKind::Checklist => "history-flat-family",
     };
     matrix.operation(case, "reopen")?;
-    Some(validate(snap, idx).and_then(|()| operation_row(matrix, mode, case, "reopen")))
+    Some(
+        validate(snap, idx, checker.relationships())
+            .and_then(|()| operation_row(matrix, mode, case, "reopen")),
+    )
 }
 
-fn validate(snap: &Snapshot, idx: usize) -> Result<(), Blocked> {
+fn validate(
+    snap: &Snapshot,
+    idx: usize,
+    relationships: &relationships::Index,
+) -> Result<(), Blocked> {
     let head = &snap.tasks[idx];
     if declared_kind(head) == TaskKind::Task && !snap.children(idx).is_empty() {
         return blocked(PLAIN_PARENT);
     }
-    super::relationships::check(snap, idx)?;
+    relationships.check(snap, idx)?;
     for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
         let task = &snap.tasks[i];
         lookup(snap, &task.uid)?;

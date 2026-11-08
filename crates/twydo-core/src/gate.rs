@@ -112,6 +112,42 @@ const PROJECT_END: &str =
 const START_OFFSETS: &str =
     "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
 
+/// Reuse admission facts across many operations on the same immutable snapshot.
+/// The borrow prevents edits while facts are reused; a reloaded/edited snapshot
+/// gets a fresh checker. Store commit/replay guards still check live files.
+pub struct Checker<'a> {
+    snap: &'a Snapshot,
+    matrix: &'a Matrix,
+    mode: WriteMode,
+    today: NaiveDate,
+    relationships: std::sync::OnceLock<relationships::Index>,
+}
+
+impl<'a> Checker<'a> {
+    pub fn new(snap: &'a Snapshot, matrix: &'a Matrix, mode: WriteMode, today: NaiveDate) -> Self {
+        Self {
+            snap,
+            matrix,
+            mode,
+            today,
+            relationships: Default::default(),
+        }
+    }
+
+    pub fn snapshot(&self) -> &Snapshot {
+        self.snap
+    }
+
+    pub fn check(&self, op: &Op) -> Result<(), Blocked> {
+        check_with(self, op)
+    }
+
+    fn relationships(&self) -> &relationships::Index {
+        self.relationships
+            .get_or_init(|| relationships::Index::new(self.snap))
+    }
+}
+
 /// Allow `op` or say why not. `today` is the local date the caller considers current.
 pub fn check(
     snap: &Snapshot,
@@ -120,13 +156,26 @@ pub fn check(
     op: &Op,
     today: NaiveDate,
 ) -> Result<(), Blocked> {
+    Checker::new(snap, m, mode, today).check(op)
+}
+
+fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
+    let (snap, m, mode, today) = (checker.snap, checker.matrix, checker.mode, checker.today);
     if let Op::Reparent {
         uid,
         collection,
         parent,
     } = op
     {
-        return reparent::check(snap, m, mode, uid, collection, parent.as_deref());
+        return reparent::check(
+            snap,
+            m,
+            mode,
+            uid,
+            collection,
+            parent.as_deref(),
+            checker.relationships(),
+        );
     }
     if matches!(op, Op::Reorder { .. } | Op::CreateAt { .. }) {
         return check_order(snap, m, mode, op, today);
@@ -136,32 +185,27 @@ pub fn check(
     if let Op::Save { uid, changes, to } = op {
         if !changes.is_empty() || to.is_none() {
             let changes = changes.clone();
-            check(
-                snap,
-                m,
-                mode,
-                &Op::Edit {
-                    uid: uid.clone(),
-                    changes,
-                },
-                today,
-            )?;
+            checker.check(&Op::Edit {
+                uid: uid.clone(),
+                changes,
+            })?;
         }
         if let Some(to) = to {
-            check(
-                snap,
-                m,
-                mode,
-                &Op::Move {
-                    uid: uid.clone(),
-                    to: to.clone(),
-                },
-                today,
-            )?;
+            checker.check(&Op::Move {
+                uid: uid.clone(),
+                to: to.clone(),
+            })?;
             let idx = lookup(snap, uid)?;
             if m.operation(relocate::case(snap, idx), "move").is_some() {
                 let after = relocate::after_edit(snap, uid, changes, today)?;
-                return relocate::check(&after, m, mode, lookup(&after, uid)?, to);
+                return relocate::check(
+                    &after,
+                    m,
+                    mode,
+                    lookup(&after, uid)?,
+                    to,
+                    &relationships::Index::new(&after),
+                );
             }
             // Legacy/custom matrices retain their original post-edit case checks.
             if let Some(a) = edited_cases(snap, idx, changes)? {
@@ -195,7 +239,7 @@ pub fn check(
     if let (Some(i), Op::Move { to, .. }) = (target, op)
         && m.operation(relocate::case(snap, i), "move").is_some()
     {
-        return relocate::check(snap, m, mode, i, to);
+        return relocate::check(snap, m, mode, i, to, checker.relationships());
     }
 
     // Individual deletion removes a file without editing or executing schedules.
@@ -223,11 +267,11 @@ pub fn check(
         && snap.parent(i).is_none()
         && m.operation(delete::case(snap, i), "delete").is_some()
     {
-        return delete::check(snap, m, mode, i);
+        return delete::check(snap, m, mode, i, checker.relationships());
     }
 
     if let (Some(i), Op::Reopen { .. }) = (target, op)
-        && let Some(result) = history_reopen::check(snap, m, mode, i)
+        && let Some(result) = history_reopen::check(snap, m, mode, i, checker)
     {
         return result;
     }
@@ -303,7 +347,7 @@ pub fn check(
     written_rule(snap, m, target, op)?;
 
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
-        && let Some(result) = checklist_edit::check(snap, m, mode, i, changes)
+        && let Some(result) = checklist_edit::check(snap, m, mode, i, changes, checker)
     {
         result?;
         // Scheduling evidence authorizes only scheduling fields. Run any text
@@ -317,16 +361,10 @@ pub fn check(
         return if text.is_empty() {
             Ok(())
         } else {
-            check(
-                snap,
-                m,
-                mode,
-                &Op::Edit {
-                    uid: snap.tasks[i].uid.clone(),
-                    changes: text,
-                },
-                today,
-            )
+            checker.check(&Op::Edit {
+                uid: snap.tasks[i].uid.clone(),
+                changes: text,
+            })
         };
     }
 

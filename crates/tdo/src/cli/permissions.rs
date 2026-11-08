@@ -26,13 +26,19 @@ pub(super) fn probes(
     idx: usize,
     now: DateTime<Utc>,
 ) -> Vec<Probe> {
+    let today = now.with_timezone(&snap.tz()).date_naive();
+    let checker = twydo_core::gate::Checker::new(snap, matrix, mode, today);
+    probes_with(&checker, idx)
+}
+
+/// Aggregate reports reuse the gate's snapshot facts without maintaining a second policy.
+pub(super) fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<Probe> {
     use twydo_core::edit::{Change, Op};
     use twydo_core::model::Status;
-
+    let snap = checker.snapshot();
     let task = &snap.tasks[idx];
     let uid = task.uid.clone();
-    let today = now.with_timezone(&snap.tz()).date_naive();
-    let check = |op| match twydo_core::gate::check(snap, matrix, mode, &op, today) {
+    let check = |op| match checker.check(&op) {
         Ok(()) => Availability::Allowed,
         Err(b) => Availability::Refused(b.0),
     };
@@ -137,6 +143,12 @@ mod tests {
         }
         for m in [Matrix::embedded(), &baseline] {
             for mode in [WriteMode::Verified, WriteMode::Test] {
+                let checker = twydo_core::gate::Checker::new(
+                    &s,
+                    m,
+                    mode,
+                    now().with_timezone(&s.tz()).date_naive(),
+                );
                 for uid in [
                     "gate-date",
                     "gate-monthly-checklist",
@@ -146,7 +158,7 @@ mod tests {
                 ] {
                     let i = s.tasks.iter().position(|t| t.uid == uid).unwrap();
                     let t = &s.tasks[i];
-                    let got = probes(&s, m, mode, i, now());
+                    let got = probes_with(&checker, i);
                     for (action, op) in [
                         (
                             "edit title",
