@@ -444,7 +444,7 @@ impl Store {
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let mut plan = self.plan(snap, op, now)?;
-        let holds = std::mem::take(&mut plan.holds);
+        let mut holds = std::mem::take(&mut plan.holds);
         let member_parent = match op {
             Op::Create(n) | Op::CreateAt { task: n, .. } => {
                 n.parent.as_deref().and_then(|uid| snap.find(uid))
@@ -457,10 +457,42 @@ impl Store {
         };
         let creating_item =
             matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
-        let durable_holds = matches!(op, Op::Delete { .. } | Op::Reopen { .. })
+        let checklist_schedule = match op {
+            Op::Edit { uid, changes } | Op::Save { uid, changes, .. } => {
+                snap.find(uid)
+                    .is_some_and(|i| snap.tasks[i].kind == crate::model::TaskKind::Checklist)
+                    && changes.iter().any(|c| {
+                        matches!(
+                            c,
+                            Change::Due(_)
+                                | Change::Start(_)
+                                | Change::RepeatInterval(_)
+                                | Change::Repeat(_)
+                        )
+                    })
+            }
+            _ => false,
+        };
+        if checklist_schedule {
+            let uid = match op {
+                Op::Edit { uid, .. } | Op::Save { uid, .. } => uid,
+                _ => unreachable!(),
+            };
+            let i = snap.find(uid).expect("gate checked target");
+            for &c in snap.children(i) {
+                let hold = self.target(snap, &snap.tasks[c].uid)?.hold();
+                if !plan.writes.iter().any(|w| w.path == hold.0)
+                    && !holds.iter().any(|h| h.0 == hold.0)
+                {
+                    holds.push(hold);
+                }
+            }
+        }
+        let durable_holds = checklist_schedule
+            || matches!(op, Op::Delete { .. } | Op::Reopen { .. })
             || member_parent.is_some_and(|p| {
                 creating_item
-                    || matches!(op, Op::Reorder { .. })
+                    || matches!(op, Op::Reorder { .. } | Op::Delete { .. })
                     || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
                         && snap.tasks[p].rrule.is_some())
             });
@@ -488,15 +520,16 @@ impl Store {
             } else {
                 Vec::new()
             },
-            family: if durable_holds
-                && matches!(
-                    op,
-                    Op::Create(_)
-                        | Op::CreateAt { .. }
-                        | Op::Reorder { .. }
-                        | Op::Delete { .. }
-                        | Op::Reopen { .. }
-                ) {
+            family: if checklist_schedule
+                || (durable_holds
+                    && matches!(
+                        op,
+                        Op::Create(_)
+                            | Op::CreateAt { .. }
+                            | Op::Reorder { .. }
+                            | Op::Delete { .. }
+                            | Op::Reopen { .. }
+                    )) {
                 family.clone()
             } else {
                 None

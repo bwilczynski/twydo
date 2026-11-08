@@ -83,9 +83,15 @@ impl Store {
         // dates, which its items follow, and for a change of type, which the gate allows or
         // refuses by the items the task has.
         if let Op::Edit { changes, .. } = op {
-            let dates = changes
-                .iter()
-                .any(|c| matches!(c, Change::Due(_) | Change::Start(_)));
+            let dates = changes.iter().any(|c| {
+                matches!(
+                    c,
+                    Change::Due(_)
+                        | Change::Start(_)
+                        | Change::RepeatInterval(_)
+                        | Change::Repeat(_)
+                )
+            });
             let kind = changes.iter().any(|c| matches!(c, Change::Kind(_)));
             if !kind && (snap.tasks[idx].kind != TaskKind::Checklist || !dates) {
                 return Ok(None);

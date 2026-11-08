@@ -62,6 +62,7 @@
 //! 6. reopening a repeat's history copy needs its dedicated `history-copy` row (older/custom
 //!    matrices may use the monthly/yearly rows), checked as in rule 3 so write mode applies.
 
+mod checklist_edit;
 mod history_reopen;
 mod relocate;
 
@@ -289,6 +290,34 @@ pub fn check(
 
     // Rule 4 first, so a rule 2Do cannot show says so instead of citing a missing row.
     written_rule(snap, m, target, op)?;
+
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && let Some(result) = checklist_edit::check(snap, m, mode, i, changes)
+    {
+        result?;
+        // Scheduling evidence authorizes only scheduling fields. Run any text
+        // subset through the real gate as its own contract, keeping custom
+        // matrices and future text capabilities authoritative.
+        let text: Vec<_> = changes
+            .iter()
+            .filter(|c| matches!(c, Change::Summary(_) | Change::Description(_)))
+            .cloned()
+            .collect();
+        return if text.is_empty() {
+            Ok(())
+        } else {
+            check(
+                snap,
+                m,
+                mode,
+                &Op::Edit {
+                    uid: snap.tasks[i].uid.clone(),
+                    changes: text,
+                },
+                today,
+            )
+        };
+    }
 
     let reshaped = matches!((target, op), (Some(i), Op::Edit { changes, .. }) if reshapes_repeat(snap, i, changes));
 

@@ -1360,11 +1360,11 @@ mod verified_recurrence_tui {
         let task = &a.snapshot.tasks[a.snapshot.find(parent).unwrap()];
         assert_eq!(task.summary, "renamed");
         assert_eq!(task.rrule.as_deref(), Some("FREQ=MONTHLY"));
-        // An uncaptured date edit retains typing and changes no resource.
+        // A day-29 date edit stays outside the scheduling contract and retains typing.
         select(&mut a, parent, false);
         a.handle_key(key('i'));
         a.form.as_mut().unwrap().title = "kept unsaved".into();
-        a.form.as_mut().unwrap().due = "2027-01-11".into();
+        a.form.as_mut().unwrap().due = "2027-01-29".into();
         let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
         let before = fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap();
         let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
@@ -1374,6 +1374,117 @@ mod verified_recurrence_tui {
             fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn checklist_due_capability_date_keys_card_cancel_and_completion() {
+        let e = env("010-first-phone-actions");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, FC, false);
+        let original = item_bytes(&e);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().due = "2026-12-11".into();
+        a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(item_bytes(&e), original);
+        select(&mut a, FC, false);
+        let r = request(a.handle_key(key(']')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find(FC).unwrap()]
+                .due
+                .as_ref()
+                .unwrap()
+                .local_date(a.snapshot.tz())
+                .to_string(),
+            "2026-12-11"
+        );
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), original);
+        select(&mut a, FC, false);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "synthetic scheduled checklist".into();
+        a.form.as_mut().unwrap().notes = "preserved mixed save".into();
+        a.form.as_mut().unwrap().due = "2026-12-11".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        run(&e, &mut a, &mut w, r);
+        select(&mut a, FC, false);
+        a.handle_key(key('x'));
+        let r = request(a.handle_key(key('x')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(
+            a.snapshot.tasks[a.snapshot.find(FC).unwrap()]
+                .due
+                .as_ref()
+                .unwrap()
+                .local_date(a.snapshot.tz())
+                .to_string(),
+            "2027-01-11"
+        );
+    }
+
+    #[test]
+    fn checklist_interval_candidate_refusal_keeps_card_text_and_resources() {
+        let e = env("010-first-phone-actions");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, FC, false);
+        let r = card_repeat(&mut a, "2m");
+        let before = item_bytes(&e);
+        let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(err.message()));
+        assert_eq!(a.form.as_ref().unwrap().repeat, "2m");
+        assert_eq!(item_bytes(&e), before);
+    }
+
+    #[test]
+    fn checklist_schedule_stale_form_keeps_typing_and_item_dates_stay_inherited() {
+        let e = env("010-first-phone-actions");
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        let p = a.snapshot.find(FC).unwrap();
+        let child = a
+            .snapshot
+            .children(p)
+            .iter()
+            .copied()
+            .find(|&i| a.snapshot.tasks[i].status == Status::Open)
+            .unwrap();
+        let child_uid = a.snapshot.tasks[child].uid.clone();
+        select(&mut a, FC, false);
+        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        select(&mut a, &child_uid, false);
+        let before = item_bytes(&e);
+        let r = request(a.handle_key(key(']')));
+        assert!(w.run(a.write_snapshot(), &r, now()).is_err());
+        assert_eq!(item_bytes(&e), before);
+        select(&mut a, FC, false);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "kept unsaved".into();
+        a.form.as_mut().unwrap().due = "2026-12-11".into();
+        let original = fs::read_to_string(e.vdir().join(format!("list1/{child_uid}.ics"))).unwrap();
+        fs::write(
+            e.vdir().join("list1/new-synthetic-child.ics"),
+            original.replace(&child_uid, "new-synthetic-child"),
+        )
+        .unwrap();
+        let before = item_bytes(&e);
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let err = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(err.message()));
+        assert_eq!(a.form.as_ref().unwrap().title, "kept unsaved");
+        assert_eq!(a.form.as_ref().unwrap().due, "2026-12-11");
+        assert_eq!(item_bytes(&e), before);
     }
 
     fn item_bytes(e: &Env) -> std::collections::BTreeMap<String, Vec<u8>> {

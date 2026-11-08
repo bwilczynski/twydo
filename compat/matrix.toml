@@ -1542,3 +1542,25 @@ iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 notes = "Direct Plan 6 H8 flat-family move/phone return; independently recurring child retains foreign RUID. Other schedules use preservation evidence."
+
+# Scheduling-only contracts. Existing broad rows and completion decisions are unchanged.
+[[operation]]
+case = "recurring-checklist-due"
+op = "edit"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date", "fixtures/phase0/v1/plan6-checklist-date-list1/02-phone-date", "fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions"]
+notes = "Preservation generalization of checklist-item-dates: plain due-anchored monthly interval-1 date-only parent, day 1-28, inherited/undated plain items; recurrence and lifecycle unchanged. See docs/reference/phase0/checklist-scheduling-capability.md."
+
+[[operation]]
+case = "recurring-checklist-interval"
+op = "edit"
+iphone_baseline = "unverified"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+notes = "Candidate only: monthly interval 1 to 2, unchanged anchor/end/date. Existing monthly/weekly checklist captures do not establish the interval-2 write contract; no new device session authorized."

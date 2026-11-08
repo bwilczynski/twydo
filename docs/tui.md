@@ -267,8 +267,13 @@ repeat changes, monthly checklist completion/reset, and narrowly scoped until co
 reopening. The [compatibility table](compatibility.md#what-is-verified-today) gives the exact
 shapes. For plain date-only monthly day 1–28 checklists (interval 1, due anchored, no end,
 start, alerts or delay), the new-task card can create a repeating checklist, `cc` converts an
-existing monthly task, `a` adds items, and the edit card saves titles/notes. Date/start/time/
-interval edits and other type changes stay refused. A mixed save containing a refused field
+existing monthly task, `a` adds items, and the edit card saves titles/notes. Date keys and the
+card can also move an open parent's date-only due to day 1–28 when its plain open/completed
+items are undated or carry that parent's date. The source date must also be day 1–28.
+Inherited item-date copies are removed; item completion state is preserved. Cancelled or
+independently dated/recurring items, start/time/interval edits and other type changes stay
+refused. The [scheduling audit](reference/phase0/checklist-scheduling-capability.md) distinguishes
+the enabled due edit from the unverified interval candidate. A mixed save containing a refused field
 retains all typed text.
 
 `dd` on a selected checklist/project item removes only that item, including a completed or
@@ -306,7 +311,7 @@ the rule and ends in `(kept)`, and saving leaves the rule alone unless you type 
 The status line says why, and nothing is written:
 
 - **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone,
-  for example a recurring checklist's due-date edit or a project repeat change. See
+  for example a recurring checklist's interval edit or a project repeat change. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… is not supported by 2Do on the iPhone`**: the repeat is one of the three kinds 2Do 3.91
   misreads (last day, last weekday, Nth weekend day). Twydo never writes them; pick another repeat.

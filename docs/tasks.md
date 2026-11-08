@@ -134,8 +134,16 @@ anchored and have no end or weekday selector; they do not enable end/anchor/Nth-
 The prior monthly/weekly support, including a monthly count end, remains. Existing checklists
 can set, change or remove plain monthly/weekly rules with interval 1, date-only due, no end,
 start, alerts or completion anchor; monthly rules require a due day of 28 or less. Monthly
-checklist title/notes and task-to-checklist conversion are covered above. Other ordinary
-schedule/interval/type edits, other checklist rules and project repeat changes remain refused. Standalone tasks can
+checklist title/notes and task-to-checklist conversion are covered above. Open top-level plain
+monthly interval-1 checklists also accept a new date-only due on days 1–28, optionally with
+title/notes. Both source and resulting dates must be within that range, without starts,
+times, alerts, endings or delay. Plain open/completed items must be undated or carry the
+parent's inherited date; dated items lose those copies while completion state is preserved.
+Cancelled, independently dated or recurring items stay refused. This is a preservation
+generalization of the existing checklist-date evidence; see the
+[scheduling audit](reference/phase0/checklist-scheduling-capability.md). Interval edits remain
+candidate-only and refused with the shipping matrix; other schedule/type edits, other
+checklist rules and project repeat changes remain refused. Standalone tasks can
 make the captured completion-anchored changes: plain or monthly due to monthly completion,
 monthly completion to weekly completion or no repeat, and weekly completion to weekly due.
 These require interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;

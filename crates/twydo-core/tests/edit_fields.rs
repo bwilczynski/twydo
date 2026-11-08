@@ -1804,6 +1804,63 @@ fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_ident
 }
 
 #[test]
+fn checklist_schedule_parent_writes_preserve_lifecycle_and_unknown_fields() {
+    let uid = "61ed74be3ba34212ab7476b698de1263";
+    let bytes = fixture("plan8-tui-a", "010-first-phone-actions", uid);
+    let mut original = parse(&bytes).unwrap();
+    original
+        .root
+        .children_named_mut("VTODO")
+        .next()
+        .unwrap()
+        .insert_prop(
+            twydo_core::ical::Property::new("X-SYNTHETIC-KEEP", Vec::new(), "preserved"),
+            None,
+        );
+    let mut due = original.clone();
+    apply_changes(
+        &mut due,
+        &[Change::Due(Some(Due::Date(date(2026, 12, 11))))],
+        now(),
+    )
+    .unwrap();
+    let retained = |cal: &Calendar, names: &[&str]| {
+        lines(cal)
+            .into_iter()
+            .filter(|l| {
+                !names.contains(&l.1.as_str()) && l.1 != "DTSTAMP" && l.1 != "LAST-MODIFIED"
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        retained(&original, &["DUE", "DTSTART"]),
+        retained(&due, &["DUE", "DTSTART"])
+    );
+    let mut cli = original.clone();
+    apply_changes(&mut cli, &[Change::RepeatInterval(2)], now()).unwrap();
+    let mut card = original.clone();
+    apply_changes(
+        &mut card,
+        &[Change::Repeat(
+            twydo_core::repeatinput::parse("2m", now().date_naive(), &[]).unwrap(),
+        )],
+        now(),
+    )
+    .unwrap();
+    assert_eq!(serialize(&cli), serialize(&card));
+    assert_eq!(
+        retained(&original, &["RRULE", "X-2DOAPP-METADATA"]),
+        retained(&cli, &["RRULE", "X-2DOAPP-METADATA"])
+    );
+    let before =
+        MetaJson::parse(&todo(&original).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    let mut expected = before.clone();
+    expected.set_i64("RecurrenceValue", 2);
+    let actual = MetaJson::parse(&todo(&cli).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn capability_move_rewrites_only_identity_and_stamps() {
     for (scenario, uid) in [("rule-months-day-1-28", MONTHLY), ("rule-years", YEARLY)] {
         let input = fixture(scenario, "02-complete", uid);
