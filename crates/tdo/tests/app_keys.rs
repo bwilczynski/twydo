@@ -2107,7 +2107,7 @@ fn ct_on_an_untyped_parent_writes_nothing() {
 }
 
 #[test]
-fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
+fn list_completion_keeps_its_row_and_reopen_follows_the_task() {
     let mut a = app();
     type_str(&mut a, ":list inbox");
     a.handle_key(code(KeyCode::Enter));
@@ -2116,6 +2116,7 @@ fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
         .position(|t| t == "Call the dentist")
         .unwrap();
     let uid = selected_uid(&a);
+    let row = a.cursor;
     assert_eq!(
         write_op(a.handle_key(key('x'))),
         Op::Complete { uid: uid.clone() }
@@ -2125,12 +2126,18 @@ fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
     t.status = twydo_core::model::Status::Completed;
     t.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
     a.reload(snapshot_of(r));
-    assert_eq!(selected_uid(&a), uid);
-    let rows = a.visible_rows();
-    assert_eq!(
-        a.snapshot.tasks[rows[a.cursor + 1].task].summary,
-        "Buy stamps"
+    assert_eq!(a.cursor, row);
+    assert_ne!(
+        selected_uid(&a),
+        uid,
+        "completion must not follow the task into Done"
     );
+    // Select the completed task explicitly before reopening it.
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].uid == uid)
+        .unwrap();
     assert_eq!(
         write_op(a.handle_key(key('x'))),
         Op::Reopen { uid: uid.clone() }
@@ -2138,6 +2145,113 @@ fn list_completion_and_reopen_keep_selection_as_the_task_changes_section() {
     a.reload(snapshot_of(report()));
     assert_eq!(selected_uid(&a), uid);
     assert_eq!(a.cursor, 1); // Due today, following the overdue task.
+}
+
+#[test]
+fn completing_the_last_open_row_selects_previous_open_work() {
+    let mut r = report();
+    r.tasks
+        .retain(|t| matches!(t.summary.as_str(), "Call the dentist" | "Buy stamps"));
+    let dentist = r
+        .tasks
+        .iter()
+        .find(|t| t.summary == "Call the dentist")
+        .unwrap()
+        .clone();
+    let mut previous = dentist.clone();
+    previous.uid = "previous".into();
+    previous.summary = "Previous task".into();
+    previous.due = Some(twydo_core::ical::value::IcalDateTime::Date(
+        now().date_naive() - chrono::Duration::days(1),
+    ));
+    r.tasks.push(previous);
+    let mut a = App::new(snapshot_of(r.clone()), now());
+    a.view = View::List("inbox".into());
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|row| a.snapshot.tasks[row.task].uid == dentist.uid)
+        .unwrap();
+    write_op(a.handle_key(key('x')));
+    let child = r.tasks.iter_mut().find(|t| t.uid == dentist.uid).unwrap();
+    child.status = twydo_core::model::Status::Completed;
+    child.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+    a.reload(snapshot_of(r));
+    assert_eq!(selected_uid(&a), "previous");
+}
+
+#[test]
+fn completing_an_item_selects_the_next_item_instead_of_done() {
+    for view in [View::All, View::List("bills".into())] {
+        for kind in [TaskKind::Checklist, TaskKind::Project] {
+            for c in ['x', ' '] {
+                let mut r = report();
+                let parent = r.tasks.iter_mut().find(|t| t.uid == "sv-bills-4").unwrap();
+                parent.kind = kind;
+                for child in r
+                    .tasks
+                    .iter_mut()
+                    .filter(|t| t.parent.as_deref() == Some("sv-bills-4"))
+                {
+                    child.due = None;
+                    child.rrule = None;
+                }
+                let mut a = App::new(snapshot_of(r.clone()), now());
+                a.view = view.clone();
+                a.expanded.insert("sv-bills-4".into());
+                a.cursor = a
+                    .visible_rows()
+                    .iter()
+                    .position(|row| a.snapshot.tasks[row.task].uid == "sv-bills-5")
+                    .unwrap();
+                let row = a.cursor;
+                assert_eq!(
+                    a.snapshot.tasks[a.visible_rows()[row + 1].task].uid,
+                    "sv-bills-6"
+                );
+                assert_eq!(
+                    write_op(a.handle_key(key(c))),
+                    Op::Complete {
+                        uid: "sv-bills-5".into()
+                    }
+                );
+                let child = r.tasks.iter_mut().find(|t| t.uid == "sv-bills-5").unwrap();
+                child.status = twydo_core::model::Status::Completed;
+                child.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+                a.reload(snapshot_of(r.clone()));
+                assert_eq!(selected_uid(&a), "sv-bills-6", "{view:?}, {kind:?}, {c}");
+                assert_eq!(a.cursor, row);
+
+                // Later watcher/sync reloads follow the newly selected item as usual.
+                r.tasks.retain(|t| t.uid != "sv-bills-1");
+                a.reload(snapshot_of(r));
+                assert_eq!(selected_uid(&a), "sv-bills-6");
+            }
+        }
+    }
+}
+
+#[test]
+fn refused_item_completion_preserves_selection_after_reordering() {
+    let mut a = app();
+    a.view = View::List("bills".into());
+    a.expanded.insert("sv-bills-4".into());
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|row| a.snapshot.tasks[row.task].uid == "sv-bills-5")
+        .unwrap();
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Complete {
+            uid: "sv-bills-5".into()
+        }
+    );
+    a.write_refused();
+    let mut r = report();
+    r.tasks.retain(|t| t.uid != "sv-bills-1");
+    a.reload(snapshot_of(r));
+    assert_eq!(selected_uid(&a), "sv-bills-5");
 }
 
 #[test]

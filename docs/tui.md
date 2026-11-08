@@ -140,7 +140,10 @@ Sidebar counts describe unfinished work, including future-start tasks; completed
 increase them. The dedicated Done view shows its completed total. A child in a different
 active/future-start/completed section from its parent appears separately with parent context;
 otherwise `Enter` expands or collapses the family's items as before.
-Reopening a completed child expands its ancestors so the reopened task stays selected.
+Completing a task or item keeps the cursor on the same row, selecting the next task or
+item when one follows, rather than following the completed task into Done. At the end of open
+work, it selects the previous open row if one remains; otherwise it clamps to the remaining
+rows. Reopening a completed child expands its ancestors so the reopened task stays selected.
 
 ## Adding tasks
 
