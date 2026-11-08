@@ -575,10 +575,12 @@ mod sync {
                         synced: None,
                         holds: Vec::new(),
                         family: None,
+                        families: Vec::new(),
                         writes: Vec::new(),
                     },
                     holds: Vec::new(),
                     family: None,
+                    families: Vec::new(),
                 },
             },
         };

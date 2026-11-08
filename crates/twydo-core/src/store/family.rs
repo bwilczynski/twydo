@@ -103,6 +103,63 @@ impl Store {
         }))
     }
 
+    /// Persist both source and destination membership for queue, recovery and inverses.
+    pub(super) fn relocation_families(
+        &self,
+        snap: &Snapshot,
+        op: &Op,
+        plan: &Plan,
+        source: Option<&Family>,
+    ) -> Result<Vec<Family>, WriteError> {
+        let uid = match op {
+            Op::Move { uid, .. }
+            | Op::Save {
+                uid, to: Some(_), ..
+            } => uid,
+            _ => return Ok(Vec::new()),
+        };
+        let Some(source) = source else {
+            return Ok(Vec::new());
+        };
+        let first = plan
+            .writes
+            .iter()
+            .find(|w| w.before.is_none() && w.after.is_some())
+            .expect("a move creates its destination first");
+        let cal = ical::parse(first.after.as_ref().unwrap().as_bytes())
+            .map_err(|e| super::io_error(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        let new_uid = cal
+            .root
+            .children_named("VTODO")
+            .next()
+            .unwrap()
+            .prop("UID")
+            .unwrap()
+            .value
+            .clone();
+        let collection = first.path.split('/').next().unwrap().to_string();
+        let loaded = plan
+            .writes
+            .iter()
+            .filter(|w| w.before.is_none())
+            .map(|w| w.path.clone())
+            .collect();
+        let mut parent_aliases =
+            crate::gate::relationships::aliases(&snap.tasks[snap.find(uid).unwrap()]);
+        parent_aliases.remove(uid);
+        parent_aliases.insert(new_uid.clone());
+        let guards = vec![
+            source.clone(),
+            Family {
+                collection,
+                parent_uid: new_uid,
+                parent_aliases,
+                loaded,
+            },
+        ];
+        Ok(guards)
+    }
+
     /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
     /// item of the parent that was not loaded. The caller holds the lock.
     pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
@@ -237,9 +294,18 @@ impl Store {
             &moved_copy(&p.cal, &new_parent, None, now)?,
         )?];
         let children = self.children(snap, idx)?;
+        let json_parent = super::parent_json_uid(snap, &snap.tasks[idx].uid)
+            .filter(|u| u != &snap.tasks[idx].uid)
+            .unwrap_or_else(|| new_parent.clone());
         for c in &children {
             let new = new_uid();
-            let copy = moved_copy(&c.target.cal, &new, Some(&new_parent), now)?;
+            let copy = crate::edit::moved_member_copy(
+                &c.target.cal,
+                &new,
+                &new_parent,
+                &json_parent,
+                now,
+            )?;
             writes.push(create(to, &new, &copy)?);
             uids.push(c.uid.clone());
             uids.push(new);

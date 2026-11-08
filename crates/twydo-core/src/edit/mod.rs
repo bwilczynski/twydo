@@ -249,6 +249,27 @@ pub fn moved_copy(
     Ok(work)
 }
 
+/// A moved member's standard parent follows the new resource identity; a distinct
+/// internal JSON parent identity remains intact with the parent's retained JSON uid.
+pub(crate) fn moved_member_copy(
+    cal: &Calendar,
+    new_uid: &str,
+    parent: &str,
+    json_parent: &str,
+    now: DateTime<Utc>,
+) -> Result<Calendar, EditError> {
+    let mut work = moved_copy(cal, new_uid, Some(parent), now)?;
+    if json_parent != parent {
+        let todo = the_todo(&mut work)?;
+        if let Meta::Json(orig) = meta_of(todo) {
+            let mut meta = orig.clone();
+            meta.set_str("parentuid", json_parent);
+            write_meta(todo, Some(&orig), &meta);
+        }
+    }
+    Ok(work)
+}
+
 /// The resource's single VTODO. Recurrence overrides (several VTODOs or a
 /// `RECURRENCE-ID`) are not supported.
 fn the_todo(cal: &mut Calendar) -> Result<&mut Component, EditError> {

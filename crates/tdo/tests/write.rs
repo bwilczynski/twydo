@@ -1478,3 +1478,82 @@ mod verified_recurrence_tui {
         assert_eq!(item_bytes(&e), before);
     }
 }
+
+#[test]
+fn capability_move_card_save_is_atomic_and_retains_refused_text() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let env = Env::new();
+    let original = fs::read(env.task_file()).unwrap();
+    let tz = chrono_tz::America::New_York;
+    let mut app = App::new(env.snapshot(), now().with_timezone(&tz));
+    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    app.cursor = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
+        .unwrap();
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    app.form.as_mut().unwrap().title = "Synthetic moved title".into();
+    app.form.as_mut().unwrap().list = "list2".into();
+    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected card save");
+    };
+    let (mut w, _) = writer(&env.config());
+    let result = w.run(app.write_snapshot(), &req, now());
+    assert!(result.is_ok(), "{result:?}");
+    assert!(!env.task_file().exists());
+    assert!(
+        env.snapshot()
+            .tasks
+            .iter()
+            .any(|t| t.collection == "list2" && t.summary == "Synthetic moved title")
+    );
+    w.run(&env.snapshot(), &Request::Undo, now()).unwrap();
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+}
+
+#[test]
+fn capability_move_refused_schedule_keeps_card_text() {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use tdo::app::{App, Outcome};
+    let env = Env::new();
+    let original = fs::read(env.task_file()).unwrap();
+    let mut app = App::new(
+        env.snapshot(),
+        now().with_timezone(&chrono_tz::America::New_York),
+    );
+    app.handle_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::NONE));
+    app.cursor = app
+        .visible_rows()
+        .iter()
+        .position(|r| app.snapshot.tasks[r.task].uid == TASK_A)
+        .unwrap();
+    app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    let f = app.form.as_mut().unwrap();
+    f.title = "Synthetic retained title".into();
+    f.list = "list2".into();
+    f.due = "2026-11-10".into();
+    f.repeat = "daily until 2026-12-01".into();
+    let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+    else {
+        panic!("expected proposed save");
+    };
+    let (mut w, _) = writer(&env.config());
+    let result = w.run(app.write_snapshot(), &req, now());
+    assert!(result.is_err(), "{result:?}");
+    app.write_finished(result.map_err(|e| e.message()));
+    let f = app.form.as_ref().unwrap();
+    assert_eq!(f.title, "Synthetic retained title");
+    assert_eq!(f.list, "list2");
+    assert_eq!(f.repeat, "daily until 2026-12-01");
+    assert_eq!(fs::read(env.task_file()).unwrap(), original);
+    assert!(
+        !fs::read_dir(env.vdir().join("list2")).unwrap().any(|p| p
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|e| e == "ics"))
+    );
+}

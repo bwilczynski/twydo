@@ -164,6 +164,7 @@ impl Store {
             writes,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
         };
         b.destination = Some(to.into());
         b.recovery = Some(entry.clone());

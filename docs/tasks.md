@@ -59,7 +59,11 @@ or a checklist). A checklist's items have no dates, repeat or alerts of their ow
 
 On a **task**: `x` (or `Space`) completes it; on a completed task it reopens it. `m` moves it to
 another list, `dd` deletes it, `u` undoes the last write and `Ctrl-r` redoes it. A moved task gets
-a new UID in its new list, as in 2Do.
+a new UID in its new list, as in 2Do. Top-level and flat-family moves preserve schedules,
+completion, alarms, ranks and foreign series links; they do not need recurrence execution/edit
+permission. Parent/child links follow the relocated identities (a distinct internal JSON parent
+identity is retained). Queue, recovery and undo guard both lists against changed/new members
+and UID collisions. See [compatibility](compatibility.md#what-is-verified-today).
 
 On a **checklist or project**, parent completion, reopening, moving and deletion act on
 the family, where those operations are verified:

@@ -385,6 +385,7 @@ fn stuck_journal_entry_becomes_conflict() {
             synced: None,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
             writes: vec![Write {
                 path: "c1/a.ics".into(),
                 before: Some(before),
@@ -456,6 +457,7 @@ fn applied(id: &str, writes: &[(&str, Option<&str>, Option<&str>)]) -> Entry {
         synced: None,
         holds: Vec::new(),
         family: None,
+        families: Vec::new(),
         writes: writes
             .iter()
             .map(|(p, b, a)| Write {
@@ -954,6 +956,7 @@ fn stuck_entry_records_its_unapplied_writes_too() {
             synced: None,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
             writes: vec![
                 Write {
                     path: "c1/a.ics".into(),
@@ -1686,6 +1689,7 @@ fn changed_journal_read_dependency_never_becomes_parent_write_conflict() {
             synced: None,
             holds: vec![("c1/parent.ics".into(), task("parent", "loaded parent"))],
             family: None,
+            families: Vec::new(),
             writes: vec![Write {
                 path: "c1/item.ics".into(),
                 before: Some(item.clone()),

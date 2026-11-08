@@ -443,8 +443,8 @@ impl Store {
     ) -> Result<Prepared, WriteError> {
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
-        let plan = self.plan(snap, op, now)?;
-        let holds = plan.holds;
+        let mut plan = self.plan(snap, op, now)?;
+        let holds = std::mem::take(&mut plan.holds);
         let member_parent = match op {
             Op::Create(n) | Op::CreateAt { task: n, .. } => {
                 n.parent.as_deref().and_then(|uid| snap.find(uid))
@@ -472,6 +472,7 @@ impl Store {
                 .loaded
                 .extend(plan.writes.iter().map(|w| w.path.clone()));
         }
+        let families = self.relocation_families(snap, op, &plan, family.as_ref())?;
         let entry = Entry {
             format: FORMAT,
             id: new_op_id(now),
@@ -500,12 +501,14 @@ impl Store {
             } else {
                 None
             },
+            families: families.clone(),
             writes: plan.writes,
         };
         Ok(Prepared {
             entry,
             holds,
             family,
+            families,
         })
     }
 
@@ -519,13 +522,18 @@ impl Store {
         now: DateTime<Utc>,
     ) -> Result<String, WriteError> {
         self.check_not_stuck()?;
+        journal::check_create_identities(&self.vdir, &p.entry).map_err(|err| match err {
+            ApplyError::Conflict { path } => WriteError::Stale(self.vdir.join(path)),
+            ApplyError::Io(err) => WriteError::Io(err),
+            err => io_error(io::ErrorKind::InvalidInput, err.to_string()),
+        })?;
         for w in &p.entry.writes {
             self.check_holds(&w.path, w.before.as_deref())?;
         }
         for (rel, source) in &p.holds {
             self.check_holds(rel, Some(source))?;
         }
-        if let Some(f) = &p.family {
+        for f in p.family.iter().chain(&p.families) {
             self.check_family(f)?;
         }
         let mut entry = p.entry;
@@ -774,6 +782,7 @@ impl Store {
             synced: None,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
             writes: vec![Write {
                 path: path.to_string(),
                 before: expect.map(str::to_string),
@@ -950,7 +959,7 @@ impl Store {
         for w in &e.writes {
             self.check_holds(&w.path, w.after.as_deref())?;
         }
-        if let Some(family) = &e.family {
+        for family in e.family.iter().chain(&e.families) {
             self.check_family(family)?;
         }
         for (rel, content) in &e.holds {
@@ -978,6 +987,7 @@ impl Store {
             synced: None,
             holds: e.holds,
             family: e.family,
+            families: e.families,
             writes,
         })
     }

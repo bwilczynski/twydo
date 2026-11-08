@@ -46,6 +46,9 @@ pub struct Entry {
     /// Family membership dependency, retained by inverses and checked on recovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family: Option<FamilyGuard>,
+    /// Additional membership dependencies, including both sides of relocation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub families: Vec<FamilyGuard>,
     /// The queued item this entry was drained from, so it is applied at most once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_queue: Option<FromQueue>,
@@ -173,6 +176,7 @@ impl Journal {
             {
                 e.family = None;
             }
+            e.families.retain(|f| f.collection != collection);
             self.store(&e)?;
         }
         Ok(())
@@ -348,13 +352,73 @@ pub(super) fn check_family(vdir: &Path, f: &FamilyGuard) -> Result<(), ApplyErro
     Ok(())
 }
 
+/// A resource create may not duplicate an identity under a different filename.
+/// Check before journaling and again on recovery, including partially applied creates.
+pub(super) fn check_create_identities(vdir: &Path, e: &Entry) -> Result<(), ApplyError> {
+    let creates: Vec<_> = e
+        .writes
+        .iter()
+        .filter(|w| w.before.is_none())
+        .filter_map(|w| {
+            let cal = crate::ical::parse(w.after.as_ref()?.as_bytes()).ok()?;
+            let uid = cal
+                .root
+                .children_named("VTODO")
+                .next()?
+                .prop("UID")?
+                .value
+                .clone();
+            Some((&w.path, uid))
+        })
+        .collect();
+    if creates.is_empty() {
+        return Ok(());
+    }
+    for collection in fs::read_dir(vdir)? {
+        let dir = collection?.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        for file in fs::read_dir(&dir)? {
+            let path = file?.path();
+            if path.extension().is_none_or(|x| x != "ics") {
+                continue;
+            }
+            let rel = format!(
+                "{}/{}",
+                dir.file_name().unwrap().to_string_lossy(),
+                path.file_name().unwrap().to_string_lossy()
+            );
+            let bytes = match fs::read(&path) {
+                Ok(b) => b,
+                Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+                Err(err) => return Err(err.into()),
+            };
+            let Ok(cal) = crate::ical::parse(&bytes) else {
+                continue;
+            };
+            for todo in cal.root.children_named("VTODO") {
+                if todo.props_named("UID").any(|p| {
+                    creates
+                        .iter()
+                        .any(|(target, uid)| **target != rel && *uid == p.value)
+                }) {
+                    return Err(ApplyError::Conflict { path: rel });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Applies the writes of `e` to `vdir`, in order. Per write: if the file
 /// already equals `after` it is skipped; if it equals `before` it becomes
 /// `after` (written atomically, or removed when `after` is `None`); otherwise
 /// the entry fails with `Conflict`. Every write is checked before any is
 /// made, so a conflict leaves the vdir untouched.
 pub fn apply_entry(vdir: &Path, e: &Entry) -> Result<(), ApplyError> {
-    if let Some(family) = &e.family {
+    check_create_identities(vdir, e)?;
+    for family in e.family.iter().chain(&e.families) {
         check_family(vdir, family)?;
     }
     for (rel, content) in &e.holds {

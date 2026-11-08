@@ -478,6 +478,7 @@ fn stuck_journal_blocks_writes() {
         synced: None,
         holds: Vec::new(),
         family: None,
+        families: Vec::new(),
         writes: vec![Write {
             path: format!("list1/{A}.ics"),
             before: Some("neither".into()),

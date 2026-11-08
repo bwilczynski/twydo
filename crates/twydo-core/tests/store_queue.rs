@@ -356,6 +356,7 @@ fn make_stuck(env: &Env) {
             synced: None,
             holds: Vec::new(),
             family: None,
+            families: Vec::new(),
             writes: vec![Write {
                 path: format!("list1/{E}.ics"),
                 before: Some("not what is on disk".to_string()),
@@ -911,5 +912,102 @@ fn individual_item_deletes_queue_and_refuse_changed_family_bytes() {
             }
             assert!(Queue::open(&e.state).unwrap().is_empty().unwrap());
         }
+    }
+}
+
+#[test]
+fn capability_move_queue_reuses_prepared_identities() {
+    let env = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let mut store = env.store(Matrix::embedded().clone());
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let result = store
+        .submit(
+            &env.snap(),
+            &Op::Move {
+                uid: "09c49c2cd76f483498fc2ff3a0f66160".into(),
+                to: "list2".into(),
+            },
+            "move",
+            "op",
+            now(),
+        )
+        .unwrap();
+    let Submitted::Queued(item) = result else {
+        panic!("expected queue");
+    };
+    let writes = item.writes().to_vec();
+    drop(sync);
+    assert!(matches!(
+        store.drain(later()).unwrap()[0].outcome,
+        DrainOutcome::Applied(_)
+    ));
+    assert_eq!(env.journal()[0].writes, writes);
+    assert!(store.drain(later()).unwrap().is_empty());
+    store.undo_last(later()).unwrap();
+    assert!(env.file("09c49c2cd76f483498fc2ff3a0f66160").exists());
+}
+
+#[test]
+fn capability_move_stale_family_and_destination_refuse() {
+    for change in [
+        "destination-path",
+        "destination-uid",
+        "source-edit",
+        "source-remove",
+        "source-join",
+    ] {
+        let env = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+        let mut store = env.store(Matrix::embedded().clone());
+        let sync = VdirLock::exclusive(&env.state).unwrap();
+        let Submitted::Queued(item) = store
+            .submit(
+                &env.snap(),
+                &Op::Move {
+                    uid: "09c49c2cd76f483498fc2ff3a0f66160".into(),
+                    to: "list2".into(),
+                },
+                "move",
+                "op",
+                now(),
+            )
+            .unwrap()
+        else {
+            panic!("expected queue");
+        };
+        let writes = item.writes();
+        match change {
+            "destination-path" => {
+                fs::write(env.vdir.join(&writes[0].path), "synthetic collision").unwrap()
+            }
+            "destination-uid" => fs::write(
+                env.vdir.join("list2/remote-collision.ics"),
+                writes[0].after.as_ref().unwrap(),
+            )
+            .unwrap(),
+            "source-edit" => fs::write(
+                env.file("e668818024cc48f4a404fb9ced368789"),
+                "synthetic remote edit",
+            )
+            .unwrap(),
+            "source-remove" => {
+                fs::remove_file(env.file("e668818024cc48f4a404fb9ced368789")).unwrap()
+            }
+            _ => {
+                let bytes = fs::read_to_string(env.file("e668818024cc48f4a404fb9ced368789"))
+                    .unwrap()
+                    .replace("e668818024cc48f4a404fb9ced368789", "synthetic-new-member");
+                fs::write(env.vdir.join("list1/remote.ics"), bytes).unwrap();
+            }
+        }
+        let before = env.files();
+        drop(sync);
+        assert!(
+            matches!(
+                store.drain(later()).unwrap()[0].outcome,
+                DrainOutcome::Refused(_)
+            ),
+            "{change}"
+        );
+        assert_eq!(env.files(), before, "{change}");
     }
 }

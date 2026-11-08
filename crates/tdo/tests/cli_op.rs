@@ -1194,3 +1194,24 @@ fn history_reopen_reports_match_real_gate_without_task_content() {
     );
     assert!(!out(&report).contains("r1"));
 }
+
+#[test]
+fn capability_move_cli_uses_shipping_matrix_and_requires_destination_probe() {
+    let env = Env::new("verified");
+    let report = env.tdo(&["op", "check", TASK_A]);
+    assert!(report.status.success(), "{}", err(&report));
+    assert!(out(&report).contains("move: needs input: destination list"));
+    // The existing yearly fixture has no broad shipping move verdict. Its
+    // scheduling bytes remain intact under the relocation-specific contract.
+    let yearly = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../twydo-core/tests/data/gate/inbox/gate-yearly.ics");
+    fs::copy(yearly, env.vdir().join("list1/gate-yearly.ics")).unwrap();
+    let relocated = env.tdo(&["op", "move", "gate-yearly", "--to", "list2"]);
+    assert!(relocated.status.success(), "{}", err(&relocated));
+    assert!(!env.vdir().join("list1/gate-yearly.ics").exists());
+    let moved = env.tdo(&["op", "move", TASK_A, "--to", "list2"]);
+    assert!(moved.status.success(), "{}", err(&moved));
+    assert!(!env.vdir().join(format!("list1/{TASK_A}.ics")).exists());
+    let files: Vec<_> = fs::read_dir(env.vdir().join("list2")).unwrap().collect();
+    assert_eq!(files.len(), 2);
+}

@@ -47,12 +47,12 @@ Use new operation cases `standalone-resource` / `move` and `flat-family` / `move
 
 **Interfaces:** `relocate::check(snap: &Snapshot, matrix: &Matrix, mode: WriteMode, idx: usize, to: &str) -> Result<(), Blocked>`, called for `Op::Move` only when its dedicated row exists. Reuse `edit::moved_copy` and `Store::plan_family_move`. Do not depend on deletion-plan helpers or rows.
 
-- [ ] Add `capability_move_rewrites_only_identity_and_stamps`: replay direct capture changes, then synthetic weekly/yearly/checklist neighbors. Compare all properties and metadata except the documented UID/self-link/parent-link/stamp changes. Assert child foreign RUID and all scheduling bytes are retained.
-- [ ] Add `capability_move_flat_family_has_one_identity_map`: parent/children each get one distinct UID; new children link to the new parent; all original files disappear only after destination creates; outside-family and old history files stay byte-identical.
-- [ ] Add `capability_move_gate_is_independent_of_schedule_execution`: safe schedules with unavailable execute/edit rows still move, while absent capability evidence retains legacy behavior. Missing list, same-list no-op, item move, bad links/duplicates, nesting and unknown types remain refused.
-- [ ] Run `cargo test -p twydo-core --test gate capability_move` and `cargo test -p twydo-core --test store_family capability_move`; capture intended failures.
-- [ ] Implement helper/dispatch and narrowly evidenced rows. Audit `Op::Save`: its extra post-edit move-row checks must use the same actual post-edit relocation contract; never leave a legacy weekly/monthly-row check blocking an admitted move or blindly skip a changed shape. If needed build an in-memory post-edit snapshot using existing overlay helpers; do not write speculative edits to disk.
-- [ ] Run `cargo test -p twydo-core --test gate --test edit_fields --test store_family`; commit `feat: gate task and family moves by relocation effects`.
+- [x] Add `capability_move_rewrites_only_identity_and_stamps`: replay direct capture changes, then synthetic weekly/yearly/checklist neighbors. Compare all properties and metadata except the documented UID/self-link/parent-link/stamp changes. Assert child foreign RUID and all scheduling bytes are retained.
+- [x] Add `capability_move_flat_family_has_one_identity_map`: parent/children each get one distinct UID; new children link to the new parent; all original files disappear only after destination creates; outside-family and old history files stay byte-identical.
+- [x] Add `capability_move_gate_is_independent_of_schedule_execution`: safe schedules with unavailable execute/edit rows still move, while absent capability evidence retains legacy behavior. Missing list, same-list no-op, item move, bad links/duplicates, nesting and unknown types remain refused.
+- [x] Run `cargo test -p twydo-core --test gate capability_move` and `cargo test -p twydo-core --test store_family capability_move`; capture intended failures.
+- [x] Implement helper/dispatch and narrowly evidenced rows. Audit `Op::Save`: its extra post-edit move-row checks must use the same actual post-edit relocation contract; never leave a legacy weekly/monthly-row check blocking an admitted move or blindly skip a changed shape. If needed build an in-memory post-edit snapshot using existing overlay helpers; do not write speculative edits to disk.
+- [x] Run `cargo test -p twydo-core --test gate --test edit_fields --test store_family`; commit `feat: gate task and family moves by relocation effects`.
 
 ### Task 2: Prove atomic saves, queue, inverse and recovery behavior
 
@@ -60,12 +60,21 @@ Use new operation cases `standalone-resource` / `move` and `flat-family` / `move
 
 **Interfaces:** existing `Op::Save`, `Store::submit`, queue overlay, journal and list picker. Keep `m` and card List behavior; add no parent picker in this branch.
 
-- [ ] Add `capability_move_save_checks_post_edit_shape`: title plus move is one undoable entry; a disallowed repeat/date/type plus move leaves all sources/destinations unchanged and preserves form text. A permitted type/repeat transition must revalidate the resulting family under the move contract.
-- [ ] Add `capability_move_stale_family_and_destination_refuse`: changed/new/removed family member, stale source or new destination path/UID collision refuses before data loss; inspect `create` preconditions rather than assuming random UID uniqueness replaces collision checks.
-- [ ] Add `capability_move_queue_reuses_prepared_identities` and `capability_move_recovery_and_undo_preserve_remote_edits`: partial creates/removals recover once under the original identity map, undo restores exact sources, and a remotely edited destination or source causes a refusal instead of overwrite. Preserve added/removed-child dependency guards through inverse/recovery.
-- [ ] Add real TUI/CLI move and card-save assertions using the shipping matrix over synthetic fixtures; aggregate permission reporting still requires a proposed destination and never advertises blanket move permission.
-- [ ] Fix only demonstrated writer/dependency gaps, update as-is docs with the exact moved fields and evidence distinction, run shared completion validation and commit `test: verify relocation saves and recovery`.
+- [x] Add `capability_move_save_checks_post_edit_shape`: title plus move is one undoable entry; a disallowed repeat/date/type plus move leaves all sources/destinations unchanged and preserves form text. A permitted type/repeat transition must revalidate the resulting family under the move contract.
+- [x] Add `capability_move_stale_family_and_destination_refuse`: changed/new/removed family member, stale source or new destination path/UID collision refuses before data loss; inspect `create` preconditions rather than assuming random UID uniqueness replaces collision checks.
+- [x] Add `capability_move_queue_reuses_prepared_identities` and `capability_move_recovery_and_undo_preserve_remote_edits`: partial creates/removals recover once under the original identity map, undo restores exact sources, and a remotely edited destination or source causes a refusal instead of overwrite. Preserve added/removed-child dependency guards through inverse/recovery.
+- [x] Add real TUI/CLI move and card-save assertions using the shipping matrix over synthetic fixtures; aggregate permission reporting still requires a proposed destination and never advertises blanket move permission.
+- [x] Fix only demonstrated writer/dependency gaps, update as-is docs with the exact moved fields and evidence distinction, run shared completion validation and commit `test: verify relocation saves and recovery`.
 
 ## Checkpoint
 
-- [ ] Return commit IDs, evidence audit, commands and remaining exclusions for coordinator review. No device/server actions or broad verdict promotion.
+- [x] Return commit IDs, evidence audit, commands and remaining exclusions for coordinator review. No device/server actions or broad verdict promotion.
+
+## Execution ledger
+
+- User superseded OpenCode/DeepSeek execution; this branch implements inline in the approved worktree, no agents or device actions.
+- Pre-flight: Task 2 consumes Task 1's relocation gate; durable move guards need both source and destination families for inverse/recovery safety. Additive serde-defaulted `families` retains the existing `family` field.
+- Task 1 RED: `cargo test --offline -p twydo-core --test gate capability_move` refused `gate-weekly` at the unrelated weekly move row. GREEN: gate/edit_fields/store_family targets pass after relocation dispatch. Existing `edit_family` direct capture comparisons prove H8 parent UID and recurring-child foreign RUID changes.
+
+
+Direct execution closeout: feature and durability changes passed full offline Rust workspace, Python49, links, warnings-denied clippy, formatting and whitespace checks. Source and destination guards retain identities and membership through queue/recovery/inverse; raw UID collision checks apply before creation/replay. Shared JSON guard prerequisites are included for standalone branch validity. No device actions or broad verdict promotions. Final combined-branch review remains pending.
