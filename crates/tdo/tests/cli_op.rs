@@ -1066,6 +1066,40 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
 }
 
 #[test]
+fn checklist_due_capability_cli_preserves_items_and_refuses_interval_candidate() {
+    let env = Env::new("verified");
+    let list = env.vdir().join("list1");
+    fs::remove_dir_all(&list).unwrap();
+    fs::create_dir(&list).unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions");
+    for p in fs::read_dir(src).unwrap().map(|e| e.unwrap().path()) {
+        if p.extension().is_some_and(|x| x == "ics") {
+            fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
+        }
+    }
+    let uid = "61ed74be3ba34212ab7476b698de1263";
+    let output = env.tdo(&["op", "edit", uid, "--due", "2026-12-11"]);
+    assert!(output.status.success(), "{}", err(&output));
+    let bytes = fs::read_to_string(list.join(format!("{uid}.ics"))).unwrap();
+    assert!(bytes.contains("DUE;VALUE=DATE:20261211"));
+    assert!(bytes.contains("RRULE:FREQ=MONTHLY"));
+    for path in fs::read_dir(&list).unwrap().map(|e| e.unwrap().path()) {
+        let text = fs::read_to_string(path).unwrap();
+        if text.contains(&format!("RELATED-TO:{uid}")) {
+            assert!(!text.contains("DUE;"));
+            assert!(!text.contains("DTSTART;"));
+        }
+    }
+    let output = env.tdo(&["op", "edit", uid, "--interval", "2"]);
+    assert!(!output.status.success());
+    assert_eq!(
+        fs::read_to_string(list.join(format!("{uid}.ics"))).unwrap(),
+        bytes
+    );
+}
+
+#[test]
 fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
     let env = Env::new("verified");
     let e_file = env.vdir().join(format!("list1/{TASK_E}.ics"));

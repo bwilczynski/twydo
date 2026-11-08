@@ -506,6 +506,242 @@ fn checklist_date_change_refused_when_item_changed() {
     assert_eq!(env.files(), before);
 }
 
+// Plan 8 FCa: a recurring monthly checklist whose items carry the inherited Dec 10 date
+// (`plan8-tui-a/010-first-phone-actions`). The phone's completion reset in `020` removes the
+// live items' inherited dates; a checklist due edit uses the same cleanup writer.
+const FC: &str = "61ed74be3ba34212ab7476b698de1263";
+
+fn recurring_checklist_env(step: &str) -> (Env, Store) {
+    let env = Env::new(WriteMode::Verified, &format!("plan8-tui-a/{step}"));
+    let store = env.store(Matrix::embedded().clone());
+    (env, store)
+}
+
+fn due(uid: &str, y: i32, m: u32, d: u32) -> Op {
+    Op::Edit {
+        uid: uid.into(),
+        changes: vec![Change::Due(Some(twydo_core::edit::Due::Date(
+            chrono::NaiveDate::from_ymd_opt(y, m, d).unwrap(),
+        )))],
+    }
+}
+
+/// A resource's non-stamp lines with the given date properties removed.
+fn without_dates(bytes: &[u8], names: &[&str]) -> Vec<Line> {
+    sorted(
+        lines(&parse(bytes).unwrap())
+            .into_iter()
+            .filter(|l| !is_stamp(&l.1) && !names.contains(&l.1.as_str()))
+            .collect(),
+    )
+}
+
+#[test]
+fn checklist_due_capability_changes_parent_and_cleans_inherited_items() {
+    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let snap = env.snap();
+    let p = snap.find(FC).unwrap();
+    let children: Vec<String> = snap
+        .children(p)
+        .iter()
+        .map(|&c| snap.tasks[c].uid.clone())
+        .collect();
+    assert_eq!(children.len(), 3);
+
+    // Unknown properties on the parent and an item must survive the scheduling edit.
+    for uid in std::iter::once(FC).chain(children.iter().map(String::as_str)) {
+        let path = env.file(uid);
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("END:VTODO", "X-SYNTHETIC-KEEP:present\r\nEND:VTODO");
+        fs::write(path, text).unwrap();
+    }
+    let snap = env.snap();
+    let before: BTreeMap<String, Vec<u8>> = env.files();
+    let parent_before = fs::read(env.file(FC)).unwrap();
+    let child_before: BTreeMap<String, Vec<u8>> = children
+        .iter()
+        .map(|uid| (uid.clone(), fs::read(env.file(uid)).unwrap()))
+        .collect();
+
+    let id = store.apply(&snap, &due(FC, 2026, 12, 11), now()).unwrap();
+    let entry = env.journal().into_iter().find(|e| e.id == id).unwrap();
+    assert_eq!(entry.writes.len(), 4, "parent and three inherited items");
+    assert_eq!(entry.uids[0], FC);
+    assert!(entry.family.is_some(), "family guard must be durable");
+
+    // The parent keeps every representation except its two date lines.
+    let expected_parent = String::from_utf8(parent_before)
+        .unwrap()
+        .replace("DTSTART;VALUE=DATE:20261210", "DTSTART;VALUE=DATE:20261211")
+        .replace("DUE;VALUE=DATE:20261210", "DUE;VALUE=DATE:20261211");
+    let parent_after = fs::read(env.file(FC)).unwrap();
+    assert_eq!(
+        content(&parent_after),
+        content(expected_parent.as_bytes()),
+        "parent differs only in its date"
+    );
+    let parent = todo_of(&parent_after);
+    assert_eq!(value(&parent, "RRULE").as_deref(), Some("FREQ=MONTHLY"));
+    assert_eq!(value(&parent, "STATUS").as_deref(), Some("NEEDS-ACTION"));
+    assert!(value(&parent, "X-SYNTHETIC-KEEP").is_some());
+
+    // Each item loses exactly its inherited DUE/DTSTART, as the phone's `020` reset does.
+    for uid in &children {
+        let after = fs::read(env.file(uid)).unwrap();
+        assert_eq!(
+            content(&after),
+            without_dates(&child_before[uid], &["DUE", "DTSTART"]),
+            "{uid}: only inherited dates change"
+        );
+        let want = common::recurrence::cal(common::recurrence::ADVANCE, uid);
+        let want_lines = sorted(
+            lines(&want)
+                .into_iter()
+                .filter(|l| !is_stamp(&l.1))
+                .filter(|l| ["DUE", "DTSTART"].contains(&l.1.as_str()))
+                .collect(),
+        );
+        let got_lines = sorted(
+            lines(&parse(&after).unwrap())
+                .into_iter()
+                .filter(|l| !is_stamp(&l.1))
+                .filter(|l| ["DUE", "DTSTART"].contains(&l.1.as_str()))
+                .collect(),
+        );
+        assert_eq!(got_lines, want_lines, "{uid}: matches captured cleanup");
+    }
+
+    // Unrelated resources are byte-identical.
+    let after: BTreeMap<String, Vec<u8>> = env.files();
+    for (path, bytes) in &before {
+        if path != &format!("list1/{FC}.ics")
+            && !children
+                .iter()
+                .any(|uid| path == &format!("list1/{uid}.ics"))
+        {
+            assert_eq!(&after[path], bytes, "{path}");
+        }
+    }
+}
+
+#[test]
+fn checklist_due_capability_handles_empty_and_undated_checklists() {
+    // Empty: only the parent resource is written.
+    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let snap = env.snap();
+    for &c in snap.children(snap.find(FC).unwrap()) {
+        fs::remove_file(&snap.tasks[c].path).unwrap();
+    }
+    let snap = env.snap();
+    assert!(snap.children(snap.find(FC).unwrap()).is_empty());
+    let before = env.files();
+    let id = store.apply(&snap, &due(FC, 2026, 12, 11), now()).unwrap();
+    let entry = env.journal().into_iter().find(|e| e.id == id).unwrap();
+    assert_eq!(entry.writes.len(), 1);
+    let after = env.files();
+    for (path, bytes) in &before {
+        if path == &format!("list1/{FC}.ics") {
+            assert_ne!(&after[path], bytes);
+        } else {
+            assert_eq!(&after[path], bytes, "{path}");
+        }
+    }
+
+    // Undated items: the parent moves and item bytes stay exactly as loaded.
+    let e = Env::new(
+        WriteMode::Verified,
+        "plan8-checklist-b/011-phone-items-and-text",
+    );
+    let mut store = e.store(Matrix::embedded().clone());
+    let initial = e.snap();
+    for &i in initial.children(initial.find(common::recurrence::CHECKLIST_A_UID).unwrap()) {
+        let path = &initial.tasks[i].path;
+        let mut cal = parse(&fs::read(path).unwrap()).unwrap();
+        let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+        todo.props
+            .retain(|p| p.name != "DUE" && p.name != "DTSTART");
+        fs::write(path, twydo_core::ical::serialize(&cal)).unwrap();
+    }
+    let snap = e.snap();
+    let parent = snap.find(common::recurrence::CHECKLIST_A_UID).unwrap();
+    assert!(
+        snap.children(parent)
+            .iter()
+            .all(|&i| snap.tasks[i].due.is_none())
+    );
+    let children: Vec<String> = snap
+        .children(parent)
+        .iter()
+        .map(|&c| snap.tasks[c].uid.clone())
+        .collect();
+    assert!(!children.is_empty());
+    let before = e.files();
+    let id = store
+        .apply(
+            &snap,
+            &due(common::recurrence::CHECKLIST_A_UID, 2026, 12, 11),
+            now(),
+        )
+        .unwrap();
+    let entry = e
+        .journal()
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .unwrap();
+    assert_eq!(entry.writes.len(), 1);
+    for uid in &children {
+        assert_eq!(
+            e.files()[&format!("list1/{uid}.ics")],
+            before[&format!("list1/{uid}.ics")],
+            "{uid}"
+        );
+    }
+}
+
+#[test]
+fn checklist_due_capability_refuses_neighbors_atomically() {
+    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let before = env.files();
+    for (why, op) in [
+        ("day 29", due(FC, 2026, 12, 29)),
+        (
+            "missing due",
+            Op::Edit {
+                uid: FC.into(),
+                changes: vec![Change::Due(None)],
+            },
+        ),
+    ] {
+        let snap = env.snap();
+        assert!(
+            store.apply(&snap, &op, now()).is_err(),
+            "{why}: gate refuses"
+        );
+        assert_eq!(env.files(), before, "{why}: no writes");
+        assert!(env.journal().is_empty(), "{why}: no journal entry");
+    }
+
+    // A child changed after load: the store refuses without touching the parent.
+    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let snap = env.snap();
+    let child = snap.tasks[snap.children(snap.find(FC).unwrap())[0]]
+        .uid
+        .clone();
+    let path = env.file(&child);
+    let original = fs::read_to_string(&path).unwrap();
+    let changed = original.replace("END:VTODO", "X-SYNTHETIC-REMOTE:changed\r\nEND:VTODO");
+    assert_ne!(original, changed);
+    fs::write(&path, changed).unwrap();
+    let before = env.files();
+    match store.apply(&snap, &due(FC, 2026, 12, 11), now()) {
+        Err(WriteError::Stale(p)) => assert_eq!(p, path),
+        other => panic!("expected Stale, got {other:?}"),
+    }
+    assert_eq!(env.files(), before);
+    assert!(env.journal().is_empty());
+}
+
 /// A sync adds an item to K after the snapshot was loaded: a copy of k3 under a new UID.
 fn add_item_behind_snapshot(env: &Env) -> std::path::PathBuf {
     let new = "0000000000000000000000000000beef";
@@ -1749,7 +1985,7 @@ mod monthly_checklist_writes {
             changes: vec![
                 Change::Summary("unsaved".into()),
                 Change::Due(Some(Due::Date(
-                    chrono::NaiveDate::from_ymd_opt(2026, 12, 11).unwrap(),
+                    chrono::NaiveDate::from_ymd_opt(2026, 12, 29).unwrap(),
                 ))),
             ],
             to: None,
@@ -2423,6 +2659,400 @@ fn folded_parent_links_cannot_bypass_item_delete_family_guards() {
             }
         }
         assert_eq!(e.files(), before, "{action}: no partial writes");
+    }
+}
+
+fn join_checklist(env: &Env) {
+    let snap = env.snap();
+    let child = &snap.tasks[snap.children(snap.find(FC).unwrap())[0]];
+    let original = fs::read_to_string(&child.path).unwrap();
+    let joined = original.replace(&child.uid, "synthetic-new-checklist-child");
+    assert_ne!(joined, original);
+    fs::write(env.file("synthetic-new-checklist-child"), joined).unwrap();
+}
+
+#[test]
+fn checklist_schedule_stale_members_refuse_atomically() {
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+    for queued in [false, true] {
+        for mutation in ["new", "changed", "removed"] {
+            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            let snapshot = e.snap();
+            let op = due(FC, 2026, 12, 11);
+            let lock = queued.then(|| VdirLock::exclusive(&e.state).unwrap());
+            if queued {
+                assert!(matches!(
+                    store.submit(&snapshot, &op, "due", "op", now()).unwrap(),
+                    Submitted::Queued(_)
+                ));
+            }
+            let child = &snapshot.tasks[snapshot.children(snapshot.find(FC).unwrap())[0]];
+            match mutation {
+                "new" => join_checklist(&e),
+                "changed" => {
+                    let original = fs::read_to_string(&child.path).unwrap();
+                    let changed = original.replace("END:VTODO", "X-REMOTE:changed\r\nEND:VTODO");
+                    assert_ne!(original, changed);
+                    fs::write(&child.path, changed).unwrap();
+                }
+                _ => fs::remove_file(&child.path).unwrap(),
+            }
+            let before = e.files();
+            if queued {
+                drop(lock);
+                let drained = store.drain(later()).unwrap();
+                assert_eq!(drained.len(), 1);
+                assert!(
+                    matches!(drained[0].outcome, DrainOutcome::Refused(_)),
+                    "{mutation}: {drained:?}"
+                );
+            } else {
+                assert!(
+                    matches!(
+                        store.apply(&snapshot, &op, later()),
+                        Err(WriteError::Stale(_))
+                    ),
+                    "{mutation}"
+                );
+            }
+            assert_eq!(e.files(), before);
+            assert!(e.journal().is_empty());
+        }
+    }
+}
+
+#[test]
+fn checklist_schedule_inverse_and_recovery_keep_dates_consistent() {
+    for interruption in [0, 1, 3] {
+        let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+        let before = e.files();
+        let id = store
+            .apply(&e.snap(), &due(FC, 2026, 12, 11), now())
+            .unwrap();
+        let after = e.files();
+        let journal = Journal::open(&e.state).unwrap();
+        let mut entry = journal.get(&id).unwrap().unwrap();
+        assert!(entry.family.is_some());
+        for w in entry.writes.iter().skip(interruption) {
+            fs::write(e.vdir.join(&w.path), w.before.as_ref().unwrap()).unwrap();
+        }
+        entry.stage = Stage::Prepared;
+        journal.prepare(&entry).unwrap();
+        let (_recovered, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert_eq!(report.resumed, vec![id]);
+        assert!(report.stuck.is_empty());
+        assert_eq!(e.files(), after);
+        let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert!(report.resumed.is_empty());
+        store.undo_last(later()).unwrap();
+        assert_eq!(
+            e.files(),
+            before,
+            "exact dates, completed item and metadata restored"
+        );
+        store.redo_last(later()).unwrap();
+        assert_eq!(e.files(), after);
+    }
+    for action in [
+        "undo",
+        "redo",
+        "recover-before",
+        "recover-partial",
+        "remote-child",
+    ] {
+        let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+        let id = store
+            .apply(&e.snap(), &due(FC, 2026, 12, 11), now())
+            .unwrap();
+        if action == "redo" {
+            store.undo_last(later()).unwrap();
+        }
+        if action.starts_with("recover-") {
+            let journal = Journal::open(&e.state).unwrap();
+            let mut entry = journal.get(&id).unwrap().unwrap();
+            entry.stage = Stage::Prepared;
+            for w in entry
+                .writes
+                .iter()
+                .skip(usize::from(action == "recover-partial"))
+            {
+                fs::write(e.vdir.join(&w.path), w.before.as_ref().unwrap()).unwrap();
+            }
+            journal.prepare(&entry).unwrap();
+        }
+        if action == "remote-child" {
+            let snapshot = e.snap();
+            let child = &snapshot.tasks[snapshot.children(snapshot.find(FC).unwrap())[0]];
+            let original = fs::read_to_string(&child.path).unwrap();
+            fs::write(
+                &child.path,
+                original.replace("END:VTODO", "X-REMOTE:changed\r\nEND:VTODO"),
+            )
+            .unwrap();
+        } else {
+            join_checklist(&e);
+        }
+        let before = e.files();
+        if action.starts_with("recover-") {
+            let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+            assert_eq!(report.stuck.len(), 1, "{action}");
+            assert!(report.resumed.is_empty());
+        } else {
+            let result = if action == "redo" {
+                store.redo_last(later())
+            } else {
+                store.undo_last(later())
+            };
+            assert!(
+                matches!(result, Err(WriteError::Stale(_))),
+                "{action}: {result:?}"
+            );
+        }
+        assert_eq!(e.files(), before, "{action}: atomic refusal");
+    }
+}
+
+#[test]
+fn checklist_interval_capability_cli_and_card_are_equivalent() {
+    use twydo_core::compat::Verdict;
+    let mut outputs = Vec::new();
+    for card in [false, true] {
+        let (e, _) = recurring_checklist_env("010-first-phone-actions");
+        let mut matrix = Matrix::embedded().clone();
+        let row = matrix
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist-interval")
+            .unwrap();
+        row.iphone_baseline = Verdict::Pass;
+        row.twydo_to_iphone = Verdict::Pass;
+        row.iphone_to_twydo = Verdict::Pass;
+        let mut store = e.store(matrix.clone());
+        let changes = if card {
+            vec![Change::Repeat(
+                twydo_core::repeatinput::parse("2m", now().date_naive(), &[]).unwrap(),
+            )]
+        } else {
+            vec![Change::RepeatInterval(2)]
+        };
+        let before = e.files();
+        store
+            .apply(
+                &e.snap(),
+                &Op::Edit {
+                    uid: FC.into(),
+                    changes,
+                },
+                now(),
+            )
+            .unwrap();
+        let entry = e.journal().pop().unwrap();
+        assert_eq!(entry.writes.len(), 1);
+        assert_eq!(entry.holds.len(), 3);
+        assert!(entry.family.is_some());
+        let after = e.files();
+        for (path, bytes) in &before {
+            if path != &key(FC) {
+                assert_eq!(&after[path], bytes);
+            }
+        }
+        let parent = todo_of(&after[&key(FC)]);
+        assert_eq!(
+            value(&parent, "RRULE").as_deref(),
+            Some("FREQ=MONTHLY;INTERVAL=2")
+        );
+        let snapshot = e.snap();
+        assert!(
+            twydo_core::gate::check(
+                &snapshot,
+                &matrix,
+                WriteMode::Verified,
+                &Op::Complete { uid: FC.into() },
+                now().date_naive()
+            )
+            .is_err(),
+            "editing never grants interval-2 execution"
+        );
+        outputs.push(content(&after[&key(FC)]));
+        join_checklist(&e);
+        let before = e.files();
+        assert!(matches!(
+            store.undo_last(later()),
+            Err(WriteError::Stale(_))
+        ));
+        assert_eq!(e.files(), before);
+    }
+    assert_eq!(outputs[0], outputs[1]);
+}
+
+#[test]
+fn checklist_schedule_json_only_members_block_apply_queue_inverse_and_recovery() {
+    use twydo_core::model::meta_edit::MetaJson;
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+    for internal_alias in [false, true] {
+        for action in [
+            "apply",
+            "queue",
+            "undo",
+            "redo",
+            "recover-before",
+            "recover-partial",
+        ] {
+            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            if internal_alias {
+                let snapshot = e.snap();
+                let parent = snapshot.find(FC).unwrap();
+                for &i in std::iter::once(&parent).chain(snapshot.children(parent)) {
+                    let mut cal = parse(&fs::read(&snapshot.tasks[i].path).unwrap()).unwrap();
+                    let prop = cal
+                        .root
+                        .children_named_mut("VTODO")
+                        .next()
+                        .unwrap()
+                        .prop_mut("X-2DOAPP-METADATA")
+                        .unwrap();
+                    let mut meta = MetaJson::parse(&prop.value).unwrap();
+                    meta.set_str(
+                        if i == parent { "uid" } else { "parentuid" },
+                        "synthetic-internal-checklist",
+                    );
+                    prop.set_value(&meta.encode());
+                    fs::write(&snapshot.tasks[i].path, twydo_core::ical::serialize(&cal)).unwrap();
+                }
+            }
+            let snapshot = e.snap();
+            let op = due(FC, 2026, 12, 11);
+            let lock = (action == "queue").then(|| VdirLock::exclusive(&e.state).unwrap());
+            if action == "queue" {
+                assert!(matches!(
+                    store.submit(&snapshot, &op, "due", "op", now()).unwrap(),
+                    Submitted::Queued(_)
+                ));
+            } else if action != "apply" {
+                let id = store.apply(&snapshot, &op, now()).unwrap();
+                if action == "redo" {
+                    store.undo_last(later()).unwrap();
+                }
+                if action.starts_with("recover-") {
+                    let journal = Journal::open(&e.state).unwrap();
+                    let mut entry = journal.get(&id).unwrap().unwrap();
+                    entry.stage = Stage::Prepared;
+                    for w in entry
+                        .writes
+                        .iter()
+                        .skip(usize::from(action == "recover-partial"))
+                    {
+                        fs::write(e.vdir.join(&w.path), w.before.as_ref().unwrap()).unwrap();
+                    }
+                    journal.prepare(&entry).unwrap();
+                }
+            }
+            join_checklist(&e);
+            let path = e.file("synthetic-new-checklist-child");
+            let mut cal = parse(&fs::read(&path).unwrap()).unwrap();
+            cal.root
+                .children_named_mut("VTODO")
+                .next()
+                .unwrap()
+                .props
+                .retain(|p| p.name != "RELATED-TO");
+            fs::write(path, twydo_core::ical::serialize(&cal)).unwrap();
+            let before = e.files();
+            match action {
+                "apply" => assert!(matches!(
+                    store.apply(&snapshot, &op, later()),
+                    Err(WriteError::Stale(_))
+                )),
+                "queue" => {
+                    drop(lock);
+                    let drained = store.drain(later()).unwrap();
+                    assert_eq!(drained.len(), 1);
+                    assert!(matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+                }
+                "undo" => assert!(matches!(
+                    store.undo_last(later()),
+                    Err(WriteError::Stale(_))
+                )),
+                "redo" => assert!(matches!(
+                    store.redo_last(later()),
+                    Err(WriteError::Stale(_))
+                )),
+                _ => {
+                    let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+                    assert_eq!(report.stuck.len(), 1, "{action}, alias={internal_alias}");
+                    assert!(report.resumed.is_empty());
+                }
+            }
+            assert_eq!(
+                e.files(),
+                before,
+                "{action}, alias={internal_alias}: no writes"
+            );
+            // A fresh snapshot cannot turn the inconsistent JSON-only member into
+            // an admissible family merely because it is absent from the index.
+            assert!(
+                twydo_core::gate::check(
+                    &e.snap(),
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn checklist_due_capability_refuses_ambiguous_source_dates_and_alarms() {
+    for parent in [true, false] {
+        for malformed in [
+            "different-start",
+            "duplicate-due",
+            "duplicate-meta",
+            "unreadable-alarm",
+        ] {
+            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            let snapshot = e.snap();
+            let p = snapshot.find(FC).unwrap();
+            let i = if parent { p } else { snapshot.children(p)[0] };
+            let path = &snapshot.tasks[i].path;
+            let original = fs::read(path).unwrap();
+            let changed = if malformed == "duplicate-meta" {
+                let mut cal = parse(&original).unwrap();
+                let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+                todo.props
+                    .push(todo.prop("X-2DOAPP-METADATA").unwrap().clone());
+                twydo_core::ical::serialize(&cal)
+            } else {
+                let text = String::from_utf8(original.clone()).unwrap();
+                match malformed {
+                    "different-start" => {
+                        text.replace("DTSTART;VALUE=DATE:20261210", "DTSTART;VALUE=DATE:20261209")
+                    }
+                    "duplicate-due" => {
+                        text.replace("END:VTODO", "DUE;VALUE=DATE:20261210\r\nEND:VTODO")
+                    }
+                    _ => text.replace(
+                        "END:VTODO",
+                        "BEGIN:VALARM\r\nACTION:AUDIO\r\nEND:VALARM\r\nEND:VTODO",
+                    ),
+                }
+                .into_bytes()
+            };
+            assert_ne!(changed, original);
+            fs::write(path, changed).unwrap();
+            let before = e.files();
+            assert!(
+                store
+                    .apply(&e.snap(), &due(FC, 2026, 12, 11), now())
+                    .is_err(),
+                "parent={parent}, {malformed}"
+            );
+            assert_eq!(e.files(), before);
+            assert!(e.journal().is_empty());
+        }
     }
 }
 

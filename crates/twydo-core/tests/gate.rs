@@ -3156,7 +3156,7 @@ mod recurring_checklist_writes {
             );
         }
         for change in [
-            Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+            Change::Due(Some(Due::Date(date(2026, 12, 29)))),
             Change::Start(Some(date(2026, 12, 9))),
             Change::RepeatInterval(2),
             Change::Kind(TaskKind::Project),
@@ -3299,6 +3299,410 @@ mod recurring_checklist_writes {
                 )
                 .is_err(),
                 "{rule}"
+            );
+        }
+    }
+
+    fn due(uid: &str, y: i32, m: u32, d: u32) -> Op {
+        edit(uid, vec![Change::Due(Some(Due::Date(date(y, m, d))))])
+    }
+
+    fn set_meta_i64(t: &mut twydo_core::model::Task, key: &str, value: i64) {
+        let mut meta = MetaJson::parse(t.meta.raw.as_deref().expect("JSON metadata")).unwrap();
+        meta.set_i64(key, value);
+        t.meta.raw = Some(meta.encode());
+    }
+
+    #[test]
+    fn checklist_due_capability_changes_parent_and_cleans_inherited_items() {
+        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let s = e.snap();
+        let m = Matrix::embedded().clone();
+        let op = due(FC, 2026, 12, 11);
+        assert_eq!(
+            check(&s, &m, WriteMode::Verified, &op, today()),
+            Ok(()),
+            "shipping due row"
+        );
+        // Text fields keep their existing contract and compose with the scheduling contract.
+        let mixed = edit(
+            FC,
+            vec![
+                Change::Summary("FCa renamed".into()),
+                Change::Description(Some("synthetic note".into())),
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+            ],
+        );
+        assert_eq!(check(&s, &m, WriteMode::Verified, &mixed, today()), Ok(()));
+
+        let mut no_text_evidence = m.clone();
+        no_text_evidence
+            .operation
+            .retain(|r| !(r.case == "recurring-checklist" && r.op == "edit"));
+        assert_eq!(
+            check(&s, &no_text_evidence, WriteMode::Verified, &op, today()),
+            Ok(())
+        );
+        assert!(
+            check(&s, &no_text_evidence, WriteMode::Verified, &mixed, today()).is_err(),
+            "mixed text needs its independent contract"
+        );
+
+        // An empty checklist has the same parent contract, without child cleanup.
+        let p = s.find(FC).unwrap();
+        for &c in s.children(p) {
+            std::fs::remove_file(&s.tasks[c].path).unwrap();
+        }
+        let empty = e.snap();
+        assert!(empty.children(empty.find(FC).unwrap()).is_empty());
+        assert_eq!(
+            check(&empty, &m, WriteMode::Verified, &op, today()),
+            Ok(()),
+            "empty checklist"
+        );
+    }
+
+    #[test]
+    fn checklist_due_capability_refuses_negative_neighbors() {
+        use twydo_core::edit::Due;
+        use twydo_core::ical::value::IcalDateTime;
+        use twydo_core::model::{Alarm, Status, Trigger};
+
+        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let base = e.snap();
+        let m = Matrix::embedded().clone();
+        let p = base.find(FC).unwrap();
+        let child = base.children(p)[0];
+        let check_due = |s: &Snapshot, op: &Op, why: &str| {
+            assert!(
+                check(s, &m, WriteMode::Verified, op, today()).is_err(),
+                "{why}"
+            );
+        };
+
+        for d in [29, 31] {
+            check_due(&base, &due(FC, 2026, 12, d), "day > 28");
+        }
+        check_due(&base, &edit(FC, vec![Change::Due(None)]), "missing due");
+        let mut s = base.clone();
+        s.tasks[p].due = Some(IcalDateTime::Floating(
+            date(2026, 12, 10).and_hms_opt(9, 0, 0).unwrap(),
+        ));
+        check_due(&s, &due(FC, 2026, 12, 11), "timed current due");
+        let mut s = base.clone();
+        s.tasks[p].due = Some(IcalDateTime::Zoned {
+            local: date(2026, 12, 10).and_hms_opt(9, 0, 0).unwrap(),
+            tzid: "America/New_York".into(),
+        });
+        check_due(&s, &due(FC, 2026, 12, 11), "zoned current due");
+        let mut s = base.clone();
+        s.tasks[p].start = Some(IcalDateTime::Date(date(2026, 12, 9)));
+        check_due(&s, &due(FC, 2026, 12, 11), "current start");
+        let mut s = base.clone();
+        s.tasks[p].alarms.push(Alarm {
+            trigger: Trigger::Relative {
+                offset: chrono::Duration::zero(),
+                related_end: false,
+            },
+            index: 0,
+        });
+        check_due(&s, &due(FC, 2026, 12, 11), "current alarm");
+        for rule in ["FREQ=MONTHLY;UNTIL=20270110", "FREQ=MONTHLY;COUNT=2"] {
+            let mut s = base.clone();
+            s.tasks[p].rrule = Some(rule.into());
+            check_due(&s, &due(FC, 2026, 12, 11), rule);
+        }
+        let mut s = base.clone();
+        s.tasks[p].from_completion = true;
+        check_due(&s, &due(FC, 2026, 12, 11), "from completion");
+        for (key, value) in [
+            ("StartDayDelay", 1),
+            ("StartDate", 1_800_000_000),
+            ("duetime", 900),
+        ] {
+            let mut s = base.clone();
+            set_meta_i64(&mut s.tasks[p], key, value);
+            check_due(&s, &due(FC, 2026, 12, 11), key);
+        }
+
+        for target in [p, child] {
+            for key in ["StartDayDelay", "StartDate", "duetime"] {
+                let mut malformed = base.clone();
+                let mut meta =
+                    MetaJson::parse(malformed.tasks[target].meta.raw.as_deref().unwrap()).unwrap();
+                meta.set_str(key, "unreadable-scheduling-value");
+                malformed.tasks[target].meta.raw = Some(meta.encode());
+                check_due(&malformed, &due(FC, 2026, 12, 11), key);
+            }
+        }
+        let mut s = base.clone();
+        s.tasks[child].rrule = Some("FREQ=WEEKLY".into());
+        check_due(&s, &due(FC, 2026, 12, 11), "repeating item");
+        let mut s = base.clone();
+        s.tasks[child].kind = TaskKind::Checklist;
+        check_due(&s, &due(FC, 2026, 12, 11), "nested item");
+        let mut s = base.clone();
+        s.tasks[child].meta.unreadable = true;
+        check_due(&s, &due(FC, 2026, 12, 11), "unreadable item metadata");
+        let mut s = base.clone();
+        s.tasks[child].due = Some(IcalDateTime::Date(date(2026, 12, 9)));
+        check_due(&s, &due(FC, 2026, 12, 11), "child-owned due");
+        let mut s = base.clone();
+        s.tasks[child].start = Some(IcalDateTime::Date(date(2026, 12, 9)));
+        check_due(&s, &due(FC, 2026, 12, 11), "child start");
+        let mut s = base.clone();
+        s.tasks[child].status = Status::Cancelled;
+        check_due(&s, &due(FC, 2026, 12, 11), "cancelled item");
+        let mut s = base.clone();
+        s.tasks[child].alarms.push(Alarm {
+            trigger: Trigger::Relative {
+                offset: chrono::Duration::zero(),
+                related_end: false,
+            },
+            index: 0,
+        });
+        check_due(&s, &due(FC, 2026, 12, 11), "child alarm");
+        let mut s = base.clone();
+        let mut meta = MetaJson::parse(s.tasks[child].meta.raw.as_deref().unwrap()).unwrap();
+        meta.set_str("parentuid", "synthetic-other-parent");
+        s.tasks[child].meta.raw = Some(meta.encode());
+        check_due(&s, &due(FC, 2026, 12, 11), "mismatched child link");
+        let mut s = base.clone();
+        s.tasks[p].meta.unreadable = true;
+        check_due(&s, &due(FC, 2026, 12, 11), "unreadable parent metadata");
+
+        for changes in [
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+                Change::Start(Some(date(2026, 12, 9))),
+            ],
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+                Change::RepeatInterval(2),
+            ],
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+                Change::Kind(TaskKind::Project),
+            ],
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+                Change::Repeat(twydo_core::repeatinput::parse("weekly", today(), &[]).unwrap()),
+            ],
+        ] {
+            check_due(
+                &base,
+                &edit(FC, changes.clone()),
+                "unsupported mixed change",
+            );
+        }
+
+        let mut missing = m.clone();
+        missing
+            .operation
+            .retain(|r| !(r.case == "recurring-checklist-due" && r.op == "edit"));
+        assert!(
+            check(
+                &base,
+                &missing,
+                WriteMode::Verified,
+                &due(FC, 2026, 12, 11),
+                today()
+            )
+            .is_err(),
+            "dedicated evidence is required"
+        );
+    }
+
+    #[test]
+    fn checklist_interval_capability_cli_and_card_are_equivalent() {
+        use twydo_core::compat::Verdict;
+
+        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let s = e.snap();
+        let mut candidate = Matrix::embedded().clone();
+        let row = candidate
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist-interval" && r.op == "edit")
+            .expect("dedicated interval row");
+        row.iphone_baseline = Verdict::Pass;
+        row.twydo_to_iphone = Verdict::Pass;
+        row.iphone_to_twydo = Verdict::Pass;
+
+        let cli = edit(FC, vec![Change::RepeatInterval(2)]);
+        let card = edit(
+            FC,
+            vec![Change::Repeat(Some(
+                twydo_core::repeatinput::parse("2m", today(), &[])
+                    .unwrap()
+                    .expect("2m"),
+            ))],
+        );
+        assert_eq!(
+            check(&s, &candidate, WriteMode::Verified, &cli, today()),
+            Ok(()),
+            "CLI interval 2"
+        );
+        assert_eq!(
+            check(&s, &candidate, WriteMode::Verified, &card, today()),
+            Ok(()),
+            "card interval 2"
+        );
+        // The shipping matrix has no interval evidence and refuses both representations.
+        assert!(
+            check(&s, Matrix::embedded(), WriteMode::Verified, &cli, today()).is_err(),
+            "shipping CLI interval"
+        );
+        assert!(
+            check(&s, Matrix::embedded(), WriteMode::Verified, &card, today()).is_err(),
+            "shipping card interval"
+        );
+
+        for changes in [
+            vec![Change::Repeat(Some(
+                twydo_core::repeatinput::parse("monthly 2 times", today(), &[])
+                    .unwrap()
+                    .expect("count"),
+            ))],
+            vec![Change::Repeat(Some(
+                twydo_core::repeatinput::parse("monthly until 2027-01-10", today(), &[])
+                    .unwrap()
+                    .expect("until"),
+            ))],
+            vec![Change::RepeatInterval(3)],
+            vec![
+                Change::Due(Some(Due::Date(date(2026, 12, 11)))),
+                Change::RepeatInterval(2),
+            ],
+        ] {
+            assert!(
+                check(
+                    &s,
+                    &candidate,
+                    WriteMode::Verified,
+                    &edit(FC, changes.clone()),
+                    today()
+                )
+                .is_err(),
+                "unsupported interval neighbor: {changes:?}"
+            );
+        }
+        let mut missing = candidate.clone();
+        missing
+            .operation
+            .retain(|r| !(r.case == "recurring-checklist-interval" && r.op == "edit"));
+        assert!(
+            check(&s, &missing, WriteMode::Verified, &cli, today()).is_err(),
+            "dedicated interval evidence is required"
+        );
+    }
+    #[test]
+    fn checklist_interval_capability_rejects_anchor_end_and_class_changes() {
+        use twydo_core::compat::Verdict;
+        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let s = e.snap();
+        let mut candidate = Matrix::embedded().clone();
+        let row = candidate
+            .operation
+            .iter_mut()
+            .find(|r| r.case == "recurring-checklist-interval")
+            .unwrap();
+        row.iphone_baseline = Verdict::Pass;
+        row.twydo_to_iphone = Verdict::Pass;
+        row.iphone_to_twydo = Verdict::Pass;
+        for text in [
+            "2m after done",
+            "2m 2 times",
+            "2m until 2027-01-10",
+            "mon thu",
+            "2nd tue",
+        ] {
+            let repeat = twydo_core::repeatinput::parse(text, today(), &[]).unwrap();
+            let op = edit(FC, vec![Change::Repeat(repeat)]);
+            assert!(
+                check(&s, &candidate, WriteMode::Verified, &op, today()).is_err(),
+                "{text}"
+            );
+        }
+        // Class changes never use the interval capability. Monthly -> weekly has
+        // its own independently verified legacy contract and remains available.
+        let weekly = edit(
+            FC,
+            vec![Change::Repeat(
+                twydo_core::repeatinput::parse("weekly", today(), &[]).unwrap(),
+            )],
+        );
+        assert_eq!(
+            check(&s, &candidate, WriteMode::Verified, &weekly, today()),
+            Ok(())
+        );
+        assert_eq!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &weekly,
+                today()
+            ),
+            Ok(())
+        );
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            assert!(
+                check(
+                    &s,
+                    Matrix::embedded(),
+                    mode,
+                    &edit(FC, vec![Change::RepeatInterval(2)]),
+                    today()
+                )
+                .is_err()
+            );
+        }
+        for key in [
+            "RecurrenceValue",
+            "RecurrenceType",
+            "RecurrenceFrom",
+            "RecurrenceEndType",
+        ] {
+            let mut malformed = s.clone();
+            let p = malformed.find(FC).unwrap();
+            set_meta_i64(&mut malformed.tasks[p], key, 99);
+            for change in [
+                Change::RepeatInterval(2),
+                Change::Repeat(twydo_core::repeatinput::parse("2m", today(), &[]).unwrap()),
+            ] {
+                assert!(
+                    check(
+                        &malformed,
+                        &candidate,
+                        WriteMode::Verified,
+                        &edit(FC, vec![change]),
+                        today()
+                    )
+                    .is_err(),
+                    "unrecognized source metadata {key}"
+                );
+            }
+        }
+        candidate
+            .rule
+            .iter_mut()
+            .find(|r| r.class == "months-day-1-28")
+            .unwrap()
+            .edit = Verdict::Unverified;
+        for change in [
+            Change::RepeatInterval(2),
+            Change::Repeat(twydo_core::repeatinput::parse("2m", today(), &[]).unwrap()),
+        ] {
+            assert!(
+                check(
+                    &s,
+                    &candidate,
+                    WriteMode::Verified,
+                    &edit(FC, vec![change]),
+                    today()
+                )
+                .is_err()
             );
         }
     }

@@ -188,6 +188,7 @@ The newly enabled operations are:
 | `recurring-checklist.repeat` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
 | `recurring-checklist.create` | ³Direct plain monthly checklist creation and adding items under an open monthly checklist: interval 1, date-only day 1–28, due anchored, no end/start/alert/delay |
 | `recurring-checklist.edit` | ³Title/notes on those open parents/items; convert a top-level open monthly task to a checklist, preserving recurrence. No due/start/time/interval or other type changes |
+| `recurring-checklist-due.edit` | Preservation generalization: open top-level plain monthly interval-1 JSON checklist, source/result date-only day 1–28, no start/alerts/end/delay; open/completed inherited or undated plain items. May compose with title/notes; cleanup preserves item lifecycle |
 | `checklist-item.delete` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
 | `project-item.delete` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
 | `standalone-resource.delete` | Remove one recognized top-level task with unique identity and no parent or children; recognized statuses, schedules, alarms and opaque metadata are deleted with it, never executed or rewritten |
@@ -214,8 +215,13 @@ deletion within scope ³. New items carry inherited parent-date copies; reset re
 live copies. A phone-converted parent's internal identity is retained live, while its history
 parent and copied items receive consistent new identities. Deletion removes exactly one item;
 parent/sibling read dependencies protect apply, undo, redo and recovery against remote changes.
-Weekly/yearly creation/conversion/completion, ordinary due/start/time/interval changes, and
-completed-parent item creation/reopening remain unverified. A mixed card
+The [checklist scheduling audit](reference/phase0/checklist-scheduling-capability.md) enables a
+narrow date-only due edit by preservation generalization of Plan 6's direct checklist-date
+write and subsequent phone edit. It removes inherited item dates while preserving recurrence,
+item lifecycle and unrelated content. The separate `recurring-checklist-interval.edit` row
+remains unverified and refused, including in test mode; interval 1 → 2 is tested only with an
+explicit candidate matrix and does not grant completion. Weekly/yearly creation/conversion/
+completion, other due/start/time edits, and completed-parent item creation/reopening remain unverified. A mixed card
 save that includes a refused field writes nothing and retains its text. Pure previously captured
 monthly/weekly repeat changes remain supported separately.
 
