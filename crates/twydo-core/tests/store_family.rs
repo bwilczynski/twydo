@@ -548,9 +548,20 @@ fn family_op_runs_when_unrelated_files_appear() {
     // A new task in the same list that is not K's item does not block the op.
     let text = fs::read_to_string(env.file(K3))
         .unwrap()
-        .replace(K3, "0000000000000000000000000000cafe")
-        .replace(&format!("RELATED-TO:{K}"), &format!("RELATED-TO:{P}"));
-    fs::write(env.file("0000000000000000000000000000cafe"), text).unwrap();
+        .replace(K3, "0000000000000000000000000000cafe");
+    let mut cal = parse(text.as_bytes()).unwrap();
+    let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+    todo.prop_mut("RELATED-TO").unwrap().set_value(P);
+    // Rewrite parsed metadata too: folding can split its parent UID across raw lines.
+    let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+    let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+    meta.set_str("parentuid", P);
+    prop.set_value(&meta.encode());
+    fs::write(
+        env.file("0000000000000000000000000000cafe"),
+        twydo_core::ical::serialize(&cal),
+    )
+    .unwrap();
     store
         .apply(&snap, &Op::Delete { uid: K.into() }, now())
         .unwrap();
@@ -2412,5 +2423,591 @@ fn folded_parent_links_cannot_bypass_item_delete_family_guards() {
             }
         }
         assert_eq!(e.files(), before, "{action}: no partial writes");
+    }
+}
+
+mod capability_deletion {
+    use super::*;
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+
+    const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
+    const A: &str = "12d762a5639e406c8ec865517882f130";
+    const A_Q: &str = "2cb7991c71624ddda29877c098acad43";
+    const A_Z: &str = "3199749e2ea64f10bdaebc00197768ca";
+    const B: &str = "twydo-p8-c29-b";
+    const B_Q: &str = "96ee97f3cc8c403391c57ec8b8e5d192";
+    const B_Z: &str = "f9ae2ffd776e42919f9696f37dd6e849";
+    const D: &str = "twydo-p8-c29-d";
+    const CA: &str = "twydo-i27-c-a";
+    const CA_Q: &str = "twydo-i27-c-a-q";
+    const CA_X: &str = "twydo-i27-c-a-x";
+    const PA: &str = "twydo-i27-p-a";
+    const PA_X: &str = "twydo-i27-p-a-x";
+
+    fn weekly(env: &Env, uid: &str) {
+        let path = env.file(uid);
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=WEEKLY");
+        fs::write(path, text).unwrap();
+    }
+
+    fn checklist_env() -> Env {
+        Env::new(
+            WriteMode::Verified,
+            "plan8-checklist-b/011-phone-items-and-text",
+        )
+    }
+
+    fn history() -> Env {
+        Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent")
+    }
+
+    #[test]
+    fn capability_delete_removes_only_selected_resource_or_flat_family() {
+        // Standalone weekly resource.
+        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        weekly(&e, E);
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&e.snap(), &Op::Delete { uid: E.into() }, now())
+            .unwrap();
+        let after = e.files();
+        assert!(!after.contains_key(&key(E)));
+        for (path, bytes) in &before {
+            if path != &key(E) {
+                assert_eq!(after[path], *bytes, "{path}");
+            }
+        }
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+        store.redo_last(later()).unwrap();
+        assert_eq!(e.files(), after);
+
+        // Nonempty recurring checklist: only A, q and z disappear.
+        let e = checklist_env();
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&e.snap(), &Op::Delete { uid: A.into() }, now())
+            .unwrap();
+        let after = e.files();
+        for uid in [A, A_Q, A_Z] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+        for uid in [B, B_Q, B_Z, D] {
+            assert_eq!(after[&key(uid)], before[&key(uid)], "{uid}");
+        }
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+        store.redo_last(later()).unwrap();
+        assert_eq!(e.files(), after);
+
+        // Empty recurring checklist.
+        let e = checklist_env();
+        for child in [A_Q, A_Z] {
+            fs::remove_file(e.file(child)).unwrap();
+        }
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&e.snap(), &Op::Delete { uid: A.into() }, now())
+            .unwrap();
+        let after = e.files();
+        assert!(!after.contains_key(&key(A)));
+        for (path, bytes) in &before {
+            if path != &key(A) {
+                assert_eq!(after[path], *bytes, "{path}");
+            }
+        }
+
+        // Completed flat project and checklist families.
+        let e = Env::new(
+            WriteMode::Verified,
+            "issue27-items/020-phone-complete-project",
+        );
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&e.snap(), &Op::Delete { uid: PA.into() }, now())
+            .unwrap();
+        let after = e.files();
+        for uid in [PA, PA_X] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+        for (path, bytes) in &before {
+            if path != &key(PA) && path != &key(PA_X) {
+                assert_eq!(after[path], *bytes, "{path}");
+            }
+        }
+        store
+            .apply(&e.snap(), &Op::Delete { uid: CA.into() }, now())
+            .unwrap();
+        let after = e.files();
+        for uid in [CA, CA_Q, CA_X] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+    }
+
+    #[test]
+    fn capability_delete_preserves_series_history_and_other_resources() {
+        let e = history();
+        let before = e.files();
+        let snap = e.snap();
+        assert!(snap.find(R).is_some(), "live series");
+        for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+            assert!(snap.find(uid).is_some(), "history {uid}");
+        }
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&snap, &Op::Delete { uid: R.into() }, now())
+            .unwrap();
+        let after = e.files();
+        for uid in [R, R1, R2, R3] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+        for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+            assert_eq!(after[&key(uid)], before[&key(uid)], "history {uid}");
+        }
+        for (path, bytes) in &before {
+            if ![R, R1, R2, R3].iter().any(|uid| path == &key(uid)) {
+                assert_eq!(after[path], *bytes, "outside family {path}");
+            }
+        }
+        store.undo_last(later()).unwrap();
+        assert_eq!(e.files(), before);
+    }
+
+    #[test]
+    fn capability_delete_refuses_changed_family_before_commit() {
+        for change in ["parent", "child", "removed", "new", "unrelated"] {
+            let e = checklist_env();
+            let snap = e.snap();
+            let mut store = e.store(Matrix::embedded().clone());
+            match change {
+                "parent" => {
+                    let p = e.file(A);
+                    fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                }
+                "child" => {
+                    let p = e.file(A_Q);
+                    fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                }
+                "removed" => fs::remove_file(e.file(A_Q)).unwrap(),
+                "new" => {
+                    let text = fs::read_to_string(e.file(A_Q))
+                        .unwrap()
+                        .replace(A_Q, "new-synthetic-child");
+                    fs::write(e.file("new-synthetic-child"), text).unwrap();
+                }
+                "unrelated" => {
+                    let p = e.file(D);
+                    fs::write(&p, [fs::read(&p).unwrap(), b"\r\n".to_vec()].concat()).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let before = e.files();
+            let result = store.apply(&snap, &Op::Delete { uid: A.into() }, now());
+            if change == "unrelated" {
+                result.unwrap();
+                assert_eq!(
+                    e.files()[&key(D)],
+                    before[&key(D)],
+                    "unrelated edit is preserved"
+                );
+            } else {
+                assert!(
+                    matches!(result, Err(WriteError::Stale(_))),
+                    "{change}: {result:?}"
+                );
+                assert_eq!(e.files(), before, "{change}");
+                assert!(e.journal().is_empty(), "{change}");
+            }
+        }
+    }
+
+    #[test]
+    fn capability_delete_queue_and_inverse_keep_scope() {
+        // A queued removal re-gates on the current files and refuses a new member.
+        let e = checklist_env();
+        let snap = e.snap();
+        let mut store = e.store(Matrix::embedded().clone());
+        let lock = VdirLock::exclusive(&e.state).unwrap();
+        assert!(matches!(
+            store
+                .submit(&snap, &Op::Delete { uid: A.into() }, "delete", "op", now())
+                .unwrap(),
+            Submitted::Queued(_)
+        ));
+        let text = fs::read_to_string(e.file(A_Q))
+            .unwrap()
+            .replace(A_Q, "new-synthetic-child");
+        fs::write(e.file("new-synthetic-child"), text).unwrap();
+        let before = e.files();
+        drop(lock);
+        let drained = store.drain(later()).unwrap();
+        assert_eq!(drained.len(), 1);
+        assert!(matches!(drained[0].outcome, DrainOutcome::Refused(_)));
+        assert_eq!(e.files(), before);
+
+        // A successful queued removal has the same scope as a direct one.
+        let e = checklist_env();
+        let snap = e.snap();
+        let mut store = e.store(Matrix::embedded().clone());
+        let lock = VdirLock::exclusive(&e.state).unwrap();
+        assert!(matches!(
+            store
+                .submit(&snap, &Op::Delete { uid: A.into() }, "delete", "op", now())
+                .unwrap(),
+            Submitted::Queued(_)
+        ));
+        drop(lock);
+        let drained = store.drain(later()).unwrap();
+        assert_eq!(drained.len(), 1);
+        assert!(
+            !matches!(drained[0].outcome, DrainOutcome::Refused(_)),
+            "{:?}",
+            drained[0].outcome
+        );
+        for uid in [A, A_Q, A_Z] {
+            assert!(!e.file(uid).exists(), "{uid}");
+        }
+        for uid in [B, B_Q, B_Z, D] {
+            assert!(e.file(uid).exists(), "{uid}");
+        }
+
+        // A new member makes undo and redo refuse without writes.
+        for redo in [false, true] {
+            let e = checklist_env();
+            let snap = e.snap();
+            let original = e.files();
+            let mut store = e.store(Matrix::embedded().clone());
+            store
+                .apply(&snap, &Op::Delete { uid: A.into() }, now())
+                .unwrap();
+            if redo {
+                store.undo_last(later()).unwrap();
+            }
+            let text = String::from_utf8(original[&key(A_Z)].clone())
+                .unwrap()
+                .replace(A_Z, "new-synthetic-child");
+            fs::write(e.file("new-synthetic-child"), text).unwrap();
+            let before = e.files();
+            let entries = e.journal().len();
+            let result = if redo {
+                store.redo_last(later())
+            } else {
+                store.undo_last(later())
+            };
+            assert!(
+                matches!(result, Err(WriteError::Stale(_))),
+                "redo={redo}: {result:?}"
+            );
+            assert_eq!(e.files(), before);
+            assert_eq!(e.journal().len(), entries);
+        }
+
+        // A remotely restored member is not overwritten by undo.
+        let e = checklist_env();
+        let snap = e.snap();
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&snap, &Op::Delete { uid: A.into() }, now())
+            .unwrap();
+        let remote = String::from_utf8(before[&key(A)].clone())
+            .unwrap()
+            .replace("SUMMARY:A", "SUMMARY:remote synthetic");
+        fs::write(e.file(A), remote.as_bytes()).unwrap();
+        let with_remote = e.files();
+        assert!(matches!(
+            store.undo_last(later()),
+            Err(WriteError::Stale(_))
+        ));
+        assert_eq!(e.files(), with_remote);
+    }
+
+    #[test]
+    fn capability_delete_recovery_is_idempotent() {
+        for partial in [false, true] {
+            let e = history();
+            let before = e.files();
+            let snap = e.snap();
+            let mut store = e.store(Matrix::embedded().clone());
+            let id = store
+                .apply(&snap, &Op::Delete { uid: R.into() }, now())
+                .unwrap();
+            let after = e.files();
+            let journal = Journal::open(&e.state).unwrap();
+            let mut entry = journal.get(&id).unwrap().unwrap();
+            entry.stage = Stage::Prepared;
+            journal.prepare(&entry).unwrap();
+            if partial {
+                // Put back every removal but the last: recovery finishes the rest.
+                for w in entry.writes.iter().take(entry.writes.len() - 1) {
+                    fs::write(e.vdir.join(&w.path), w.before.as_ref().unwrap()).unwrap();
+                }
+            }
+            let (mut store, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+            assert_eq!(report.resumed, vec![id.clone()], "partial={partial}");
+            assert!(report.stuck.is_empty(), "partial={partial}");
+            assert_eq!(e.files(), after, "partial={partial}");
+            for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+                assert_eq!(e.files()[&key(uid)], before[&key(uid)], "{uid}");
+            }
+            store.undo(&id, later()).unwrap();
+            assert_eq!(e.files(), before, "partial={partial}: undo");
+            let (_, again) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+            assert!(again.resumed.is_empty() && again.stuck.is_empty());
+        }
+
+        // Recovery refuses a member that joined after the whole-family removal.
+        let e = checklist_env();
+        let snap = e.snap();
+        let mut store = e.store(Matrix::embedded().clone());
+        let id = store
+            .apply(&snap, &Op::Delete { uid: A.into() }, now())
+            .unwrap();
+        let journal = Journal::open(&e.state).unwrap();
+        let mut entry = journal.get(&id).unwrap().unwrap();
+        entry.stage = Stage::Prepared;
+        journal.prepare(&entry).unwrap();
+        let child_before = entry
+            .writes
+            .iter()
+            .find(|w| w.path == key(A_Z))
+            .unwrap()
+            .before
+            .clone()
+            .unwrap();
+        let text = child_before.replace(A_Z, "new-synthetic-child");
+        fs::write(e.file("new-synthetic-child"), text).unwrap();
+        let before = e.files();
+        let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+        assert_eq!(report.stuck.len(), 1, "new member");
+        assert!(report.resumed.is_empty());
+        assert_eq!(e.files(), before);
+    }
+}
+
+mod json_family_membership {
+    use super::*;
+    use twydo_core::model::meta_edit::new_task_meta;
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
+
+    const HEAD: &str = "synthetic-family-parent";
+    const ALIAS: &str = "synthetic-internal-parent";
+
+    fn resource(uid: &str, parent: Option<&str>, json_parent: Option<&str>) -> Vec<u8> {
+        let kind = if uid == HEAD { 2 } else { 0 };
+        let meta = new_task_meta(kind, (uid == HEAD).then_some(ALIAS), json_parent);
+        let related = parent
+            .map(|p| format!("RELATED-TO:{p}\r\n"))
+            .unwrap_or_default();
+        format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:Synthetic family\r\nSTATUS:NEEDS-ACTION\r\n{related}X-2DOAPP-METADATA:{}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n", meta.encode()).into_bytes()
+    }
+
+    fn env() -> Env {
+        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        fs::write(e.file(HEAD), resource(HEAD, None, None)).unwrap();
+        fs::write(
+            e.file("synthetic-valid-child"),
+            resource("synthetic-valid-child", Some(HEAD), Some(ALIAS)),
+        )
+        .unwrap();
+        e
+    }
+
+    fn add_ambiguous(e: &Env, standard: Option<&str>) {
+        fs::write(
+            e.file("synthetic-json-only-child"),
+            resource("synthetic-json-only-child", standard, Some(ALIAS)),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn json_only_membership_is_refused_at_admission() {
+        for standard in [None, Some("synthetic-other-parent")] {
+            let e = env();
+            add_ambiguous(&e, standard);
+            let snap = e.snap();
+            let before = e.files();
+            let op = Op::Delete { uid: HEAD.into() };
+            assert!(
+                twydo_core::gate::check(
+                    &snap,
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &op,
+                    now().date_naive()
+                )
+                .is_err(),
+                "JSON reference with standard link {standard:?} was omitted"
+            );
+            assert!(
+                e.store(Matrix::embedded().clone())
+                    .apply(&snap, &op, now())
+                    .is_err()
+            );
+            assert_eq!(e.files(), before);
+        }
+    }
+
+    #[test]
+    fn json_only_newcomers_are_guarded_through_commit_inverse_and_recovery() {
+        for phase in ["commit", "queue", "undo", "redo", "recovery"] {
+            let e = env();
+            let snap = e.snap();
+            let mut store = e.store(Matrix::embedded().clone());
+            let op = Op::Delete { uid: HEAD.into() };
+            match phase {
+                "commit" => {
+                    add_ambiguous(&e, None);
+                    let before = e.files();
+                    assert!(
+                        matches!(store.apply(&snap, &op, now()), Err(WriteError::Stale(_))),
+                        "commit omitted JSON-only newcomer"
+                    );
+                    assert_eq!(e.files(), before);
+                }
+                "queue" => {
+                    let lock = VdirLock::exclusive(&e.state).unwrap();
+                    assert!(matches!(
+                        store.submit(&snap, &op, "delete", "op", now()).unwrap(),
+                        Submitted::Queued(_)
+                    ));
+                    add_ambiguous(&e, None);
+                    let before = e.files();
+                    drop(lock);
+                    let drained = store.drain(later()).unwrap();
+                    assert!(
+                        matches!(drained[0].outcome, DrainOutcome::Refused(_)),
+                        "queued removal omitted JSON-only newcomer"
+                    );
+                    assert_eq!(e.files(), before);
+                }
+                "undo" | "redo" => {
+                    store.apply(&snap, &op, now()).unwrap();
+                    if phase == "redo" {
+                        store.undo_last(later()).unwrap();
+                    }
+                    add_ambiguous(&e, None);
+                    let before = e.files();
+                    let result = if phase == "redo" {
+                        store.redo_last(later())
+                    } else {
+                        store.undo_last(later())
+                    };
+                    assert!(
+                        matches!(result, Err(WriteError::Stale(_))),
+                        "{phase} omitted JSON-only newcomer"
+                    );
+                    assert_eq!(e.files(), before);
+                }
+                "recovery" => {
+                    let id = store.apply(&snap, &op, now()).unwrap();
+                    let journal = Journal::open(&e.state).unwrap();
+                    let mut entry = journal.get(&id).unwrap().unwrap();
+                    entry.stage = Stage::Prepared;
+                    journal.prepare(&entry).unwrap();
+                    add_ambiguous(&e, None);
+                    let before = e.files();
+                    let (_, report) = Store::open_with(&e.cfg, Matrix::embedded().clone()).unwrap();
+                    assert_eq!(report.stuck.len(), 1, "recovery omitted JSON-only newcomer");
+                    assert_eq!(e.files(), before);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn standard_alias_membership_is_refused_at_admission() {
+        let e = env();
+        fs::write(
+            e.file("synthetic-alias-child"),
+            resource("synthetic-alias-child", Some(ALIAS), None),
+        )
+        .unwrap();
+        let snap = e.snap();
+        let op = Op::Delete { uid: HEAD.into() };
+        assert!(
+            twydo_core::gate::check(
+                &snap,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &op,
+                now().date_naive()
+            )
+            .is_err(),
+            "standard link to internal alias was omitted"
+        );
+    }
+
+    #[test]
+    fn standard_alias_newcomers_are_refused_before_commit() {
+        let e = env();
+        let snap = e.snap();
+        let mut store = e.store(Matrix::embedded().clone());
+        fs::write(
+            e.file("synthetic-alias-child"),
+            resource("synthetic-alias-child", Some(ALIAS), None),
+        )
+        .unwrap();
+        let before = e.files();
+        assert!(
+            matches!(
+                store.apply(&snap, &Op::Delete { uid: HEAD.into() }, now()),
+                Err(WriteError::Stale(_))
+            ),
+            "standard link to internal alias bypassed rescan"
+        );
+        assert_eq!(e.files(), before);
+    }
+
+    #[test]
+    fn whole_family_deletion_includes_completed_and_cancelled_members() {
+        for kind in [1, 2] {
+            for status in ["COMPLETED", "CANCELLED"] {
+                let e = env();
+                let mut cal = parse(&fs::read(e.file(HEAD)).unwrap()).unwrap();
+                let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+                todo.prop_mut("STATUS").unwrap().set_value(status);
+                let prop = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+                meta.set_i64("TaskType", kind);
+                prop.set_value(&meta.encode());
+                fs::write(e.file(HEAD), twydo_core::ical::serialize(&cal)).unwrap();
+                let child = "synthetic-valid-child";
+                let child_bytes = String::from_utf8(fs::read(e.file(child)).unwrap())
+                    .unwrap()
+                    .replace(
+                        "STATUS:NEEDS-ACTION",
+                        if status == "COMPLETED" {
+                            "STATUS:CANCELLED"
+                        } else {
+                            "STATUS:COMPLETED"
+                        },
+                    );
+                fs::write(e.file(child), child_bytes).unwrap();
+                let before = e.files();
+                let mut store = e.store(Matrix::embedded().clone());
+                store
+                    .apply(&e.snap(), &Op::Delete { uid: HEAD.into() }, now())
+                    .unwrap();
+                let after = e.files();
+                assert!(!e.file(HEAD).exists() && !e.file(child).exists());
+                for (path, bytes) in &before {
+                    if path != &format!("list1/{HEAD}.ics") && path != &format!("list1/{child}.ics")
+                    {
+                        assert_eq!(after[path], *bytes);
+                    }
+                }
+                store.undo_last(later()).unwrap();
+                assert_eq!(e.files(), before);
+            }
+        }
     }
 }

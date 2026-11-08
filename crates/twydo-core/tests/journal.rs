@@ -529,3 +529,13 @@ fn read_dependencies_block_all_writes_and_older_entries_need_none() {
         Some("new parent")
     );
 }
+
+#[test]
+fn family_guards_without_json_aliases_keep_their_old_encoding() {
+    let old =
+        serde_json::json!({"collection":"list1", "parent_uid":"synthetic-parent", "loaded":[]});
+    let guard: twydo_core::store::journal::FamilyGuard =
+        serde_json::from_value(old.clone()).unwrap();
+    assert!(guard.parent_aliases.is_empty());
+    assert_eq!(serde_json::to_value(guard).unwrap(), old);
+}

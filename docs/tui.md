@@ -280,6 +280,14 @@ restore/redo exact item bytes and identities; a changed parent, sibling or membe
 stale inverses refuse safely. Saves during sync retain the same strict queue preconditions.
 See [item behavior](tasks.md#completing-reopening-moving-deleting) for structural refusals.
 
+`dd` on a selected checklist/project parent removes the whole flat family, including an empty
+parent, a completed or cancelled family, and a recurring parent with independently recurring
+items. Completed families are selectable in Done. The removal is one journaled operation, and one `u`
+restores the parent and items exactly; unrelated resources and history outside the family are untouched.
+Ambiguous or duplicate links, cross-list items, nested families, plain-task parents, unknown
+types and unrecognized rules are refused without writes. Recurrence execution and field-edit
+permissions are not required.
+
 The field takes no day of the month: monthly and yearly repeats follow the due date, so set the
 day in Due. While the field is empty, the text beside it lists examples; otherwise it shows the
 rule in 2Do's words (`→ The second Tue of each month · from due date`). On a task that repeats,

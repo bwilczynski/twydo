@@ -1473,3 +1473,25 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/issue27-items/001-seeded", "fixtures/phase0/v1/issue27-items/010-phone-delete-q", "fixtures/phase0/v1/issue27-items/020-phone-complete-project", "fixtures/phase0/v1/issue27-items/030-phone-delete-last-items", "fixtures/phase0/v1/issue27-items/032-twydo-delete-recurring-project-q", "fixtures/phase0/v1/issue27-items/033-twydo-complete-project", "fixtures/phase0/v1/issue27-items/035-twydo-delete-completed-project-x", "fixtures/phase0/v1/issue27-items/037-twydo-delete-weekly-last-q", "fixtures/phase0/v1/issue27-items/038-twydo-upload", "fixtures/phase0/v1/issue27-items/040-phone-return-notes"]
 notes = "Issue 27 representative session (docs/reference/phase0/issue27-item-deletion.md): remove only the selected item; parent, siblings, schedules, identity and history remain byte-unchanged. Four representative pairs establish ordinary/completed/last item deletion, completed parents, monthly/weekly parents and an independently repeating project child; phone subsequently edits all Twydo-empty parents. Generalized to recognized flat same-list families through exact preservation, queue, stale-family, inverse/recovery and shipping-TUI tests; not separate device proof for every status/rule combination. No recurrence execution or whole-parent deletion authority is inferred."
+
+[[operation]]
+case = "standalone-resource"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan4-list1/06-delete", "fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/gap-list1/07-phone-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete", "fixtures/phase0/v1/gap-list1/08-delete-rest"]
+notes = "Direct phone captures delete standalone monthly/yearly resources; the selected resource is absent and every other file is unchanged. Generalized to a recognized top-level resource with unique identity, no parent and no children, for any captured task status or repeat rule, because removal deletes that one file and does not execute or rewrite schedules. Representative local tests cover weekly removal plus queue, undo/redo, recovery and stale guards; other recognized status/schedule shapes use the same removal contract. Missing proof: no direct device observation for weekly, daily, from-completion, count/until or alarm-bearing standalone deletion; recognized dates, alarms and opaque metadata are preserved by leaving them untouched. No recurrence execution or field-edit verdict is inferred."
+
+[[operation]]
+case = "flat-family"
+op = "delete"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list2/09-delete-rest"]
+notes = "Direct phone captures (Plan 6 H9) delete nonempty plain checklist/project families and a live repeating project while leaving unrelated resources and completed history copies; 09-delete-rest removes the remainder. Generalized to a recognized top-level checklist or project, empty or nonempty, open, completed or cancelled, with flat plain-task children linked unambiguously in the same list, including recurring parents and independently repeating children, because whole-family removal deletes exactly the parent and its linked children and writes nothing else. Local tests cover empty/nonempty recurring checklists, completed families, series history, queue and inverse/recovery. Missing proof: no direct device observation for empty-family deletion or every status/rule combination; recognized dates, alarms, metadata and foreign identities are preserved by deletion-only scope. No recurrence execution or field-edit verdict is inferred."

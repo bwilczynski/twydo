@@ -65,6 +65,9 @@ pub struct FamilyGuard {
     pub collection: String,
     pub parent_uid: String,
     pub loaded: BTreeSet<String>,
+    /// Standard and internal JSON parent identities, retained after parent removal.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub parent_aliases: BTreeSet<String>,
 }
 
 /// One file write. `path` is relative to the vdir (`<collection>/<file>.ics`);
@@ -325,8 +328,16 @@ pub(super) fn check_family(vdir: &Path, f: &FamilyGuard) -> Result<(), ApplyErro
         // this family safely, so it also refuses the operation.
         let joined = match crate::ical::parse(&bytes) {
             Ok(cal) => cal.root.children_named("VTODO").any(|t| {
-                t.props_named("RELATED-TO")
-                    .any(|p| p.value.trim() == f.parent_uid)
+                t.props_named("RELATED-TO").any(|p| {
+                    p.value.trim() == f.parent_uid || f.parent_aliases.contains(p.value.trim())
+                }) || t.props_named("X-2DOAPP-METADATA").any(|p| {
+                    crate::model::meta_edit::MetaJson::parse(&p.value)
+                        .and_then(|m| m.get_str("parentuid").map(str::to_owned))
+                        .is_some_and(|uid| {
+                            !uid.is_empty()
+                                && (uid == f.parent_uid || f.parent_aliases.contains(&uid))
+                        })
+                })
             }),
             Err(_) => true,
         };

@@ -72,7 +72,13 @@ the family, where those operations are verified:
 - **Completing the last item** does not complete the parent.
 - **Reopening** a parent reopens every completed item, whatever its state before.
 - **Moving** a parent moves every item with it; all get new UIDs and the items' links follow.
-- **Deleting** a parent deletes its items. History copies of a repeating task stay.
+- **Deleting** a parent deletes its items, including history linked as its children.
+  History outside that family stays. This covers
+  a recognized top-level checklist or project with flat items, empty or not, open, completed or
+  cancelled, including recurring parents and independently recurring items. Only the selected
+  family is removed; unrelated resources and history outside it stay unchanged, and one `u` restores
+  it. Broken or ambiguous links, nested families, a plain task with subtasks, unknown types and
+  unrecognized rules stay refused.
 - Cancelled items (from other apps) are left as they are by complete and reopen, and go with the
   family on move and delete.
 - Moving one item and reopening an item of a completed parent remain refused.

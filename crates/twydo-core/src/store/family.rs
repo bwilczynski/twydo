@@ -99,6 +99,7 @@ impl Store {
             collection: snap.tasks[idx].collection.clone(),
             parent_uid: snap.tasks[idx].uid.clone(),
             loaded,
+            parent_aliases: crate::gate::relationships::aliases(&snap.tasks[idx]),
         }))
     }
 

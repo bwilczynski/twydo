@@ -107,6 +107,26 @@ fn err(o: &Output) -> String {
     String::from_utf8_lossy(&o.stderr).into_owned()
 }
 
+fn synthetic_task(uid: &str, title: &str, extra: &str) -> String {
+    format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+         UID:{uid}\r\nSUMMARY:{title}\r\n{extra}END:VTODO\r\nEND:VCALENDAR\r\n"
+    )
+}
+
+fn list_files(env: &Env) -> std::collections::BTreeMap<String, Vec<u8>> {
+    fs::read_dir(env.vdir().join("list1"))
+        .unwrap()
+        .map(|e| {
+            let p = e.unwrap().path();
+            (
+                p.file_name().unwrap().to_str().unwrap().to_owned(),
+                fs::read(p).unwrap(),
+            )
+        })
+        .collect()
+}
+
 fn op_id_ok(s: &str) -> bool {
     let b = s.trim().as_bytes();
     b.len() == 25
@@ -1043,4 +1063,74 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
         assert_eq!(fs::read(p).unwrap(), before);
     }
     assert!(marker_stays_absent(&marker), "reporting started sync");
+}
+
+#[test]
+fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
+    let env = Env::new("verified");
+    let e_file = env.vdir().join(format!("list1/{TASK_E}.ics"));
+    let text = fs::read_to_string(&e_file)
+        .unwrap()
+        .replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=WEEKLY");
+    fs::write(&e_file, text).unwrap();
+
+    let o = env.tdo(&["op", "check", TASK_E]);
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(out(&o).contains("delete: allowed"), "{}", out(&o));
+
+    let parent = "synthetic-cap2-parent";
+    let child = "synthetic-cap2-child";
+    fs::write(
+        env.vdir().join(format!("list1/{parent}.ics")),
+        synthetic_task(
+            parent,
+            "Synthetic cap2 parent",
+            "STATUS:NEEDS-ACTION\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n",
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.vdir().join(format!("list1/{child}.ics")),
+        synthetic_task(
+            child,
+            "Synthetic cap2 child",
+            &format!("RELATED-TO:{parent}\r\nSTATUS:NEEDS-ACTION\r\n"),
+        ),
+    )
+    .unwrap();
+
+    let o = env.tdo(&["op", "check", parent]);
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(out(&o).contains("delete: allowed"), "{}", out(&o));
+    let o = env.tdo(&["check"]);
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(out(&o).contains("delete: allowed="), "{}", out(&o));
+    assert!(!out(&o).contains("Synthetic cap2 parent"), "{}", out(&o));
+    assert!(!out(&o).contains("Synthetic cap2 child"), "{}", out(&o));
+    let v = env.tdo(&["check", "--verbose"]);
+    assert!(out(&v).contains("Synthetic cap2 parent"), "{}", out(&v));
+    assert!(out(&v).contains("Synthetic cap2 child"), "{}", out(&v));
+
+    // A plain task with a child remains refused and writes no bytes.
+    let plain = "synthetic-cap2-plain";
+    let plain_child = "synthetic-cap2-plain-child";
+    fs::write(
+        env.vdir().join(format!("list1/{plain}.ics")),
+        synthetic_task(plain, "Synthetic cap2 plain", "STATUS:NEEDS-ACTION\r\n"),
+    )
+    .unwrap();
+    fs::write(
+        env.vdir().join(format!("list1/{plain_child}.ics")),
+        synthetic_task(
+            plain_child,
+            "Synthetic cap2 plain child",
+            &format!("RELATED-TO:{plain}\r\nSTATUS:NEEDS-ACTION\r\n"),
+        ),
+    )
+    .unwrap();
+    let before = list_files(&env);
+    let o = env.tdo(&["op", "delete", plain]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("subtasks of a plain task"), "{}", err(&o));
+    assert_eq!(list_files(&env), before);
 }
