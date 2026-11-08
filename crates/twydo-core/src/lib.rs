@@ -8,6 +8,7 @@ pub mod edit;
 pub mod format;
 pub mod gate;
 pub mod ical;
+pub mod lists;
 pub mod model;
 pub mod repeatinput;
 pub mod retired;
