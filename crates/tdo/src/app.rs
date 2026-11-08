@@ -207,10 +207,10 @@ pub struct App {
     details_uid: Option<String>,
     /// The furthest the Details pane can scroll; the renderer sets it on each draw.
     pub(crate) details_max: Cell<u16>,
-    /// A repeating task being completed. Completing keeps its UID on the next occurrence, so
-    /// the next reload keeps the cursor's row instead of following that UID to its new date.
+    /// A task being completed. Keep the cursor's row on the next reload
+    /// instead of following its UID into Done or to the next occurrence's date.
     /// Cleared by [`App::write_refused`]: after a refused write the task is still open.
-    completing_repeat: Option<String>,
+    completing: Option<String>,
 }
 
 /// Terminal width at which the Details pane becomes visible.
@@ -260,7 +260,7 @@ impl App {
             details_visible: true,
             details_scroll: 0,
             details_uid: None,
-            completing_repeat: None,
+            completing: None,
             details_max: Cell::new(0),
         }
     }
@@ -441,7 +441,7 @@ impl App {
         let was_completed = self
             .selected()
             .is_some_and(|i| self.snapshot.tasks[i].status == Status::Completed);
-        let completing = self.completing_repeat.take();
+        let completing = self.completing.take();
         let uid = self
             .selected_uid()
             .filter(|u| completing.as_ref() != Some(u));
@@ -480,6 +480,18 @@ impl App {
             }
         }
         self.restore(uid);
+        // At the end of unfinished work, prefer the previous open row to entering Done.
+        if completing.is_some()
+            && self
+                .selected()
+                .is_some_and(|i| self.snapshot.tasks[i].status == Status::Completed)
+            && let Some(row) = self
+                .visible_rows()
+                .iter()
+                .rposition(|r| self.snapshot.tasks[r.task].status == Status::Open)
+        {
+            self.cursor = row;
+        }
     }
 
     /// Report a failed reload; the message stays until a reload succeeds or Esc.
@@ -766,7 +778,7 @@ impl App {
         }
         if let Some(op) = self.task_write(c, pending) {
             let req = Request::Apply(op);
-            self.note_repeat_completion(&req);
+            self.note_completion(&req);
             return Outcome::Write(req);
         }
         // Details is a page, not a list: movement keys scroll it.
@@ -1222,18 +1234,10 @@ impl App {
         }
     }
 
-    /// Remember a write that completes a repeating task, for the reload that follows it.
-    fn note_repeat_completion(&mut self, req: &Request) {
-        self.completing_repeat = match req {
-            Request::Apply(Op::Complete { uid })
-                if self
-                    .snapshot
-                    .tasks
-                    .iter()
-                    .any(|t| &t.uid == uid && t.rrule.is_some()) =>
-            {
-                Some(uid.clone())
-            }
+    /// Remember a completion that should leave the cursor in place on reload.
+    fn note_completion(&mut self, req: &Request) {
+        self.completing = match req {
+            Request::Apply(Op::Complete { uid }) => Some(uid.clone()),
             _ => None,
         };
     }
@@ -1241,7 +1245,7 @@ impl App {
     /// The write just made was refused. Call it before the reload that follows, so that
     /// reload keeps the cursor on the selected task, which nothing has changed.
     pub fn write_refused(&mut self) {
-        self.completing_repeat = None;
+        self.completing = None;
     }
 
     /// A write requested by [`Outcome::Write`] ended: show its result.
