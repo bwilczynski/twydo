@@ -1,0 +1,137 @@
+"""Offline adapter/network boundary for Rust tests of the bundled helper process.
+
+Executes the actual embedded source passed to the configured Python command. Only the
+external vdirsyncer objects and DAV transport are replaced; request validation, locks,
+durable phases, XML writers/parsers and all Rust service behavior remain production code.
+"""
+import asyncio
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+import types
+import time
+from urllib.parse import urlsplit
+
+REPO = Path(__file__).resolve().parents[4]
+spec = importlib.util.spec_from_file_location("synthetic_dav", REPO / "tools/tests/test_list_helper.py")
+memory = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(memory)
+STORE = None
+
+
+def load():
+    return json.loads(STORE.read_text()) if STORE.exists() else {"calls": [], "collections": {}, "flags": {}}
+
+
+def save(data):
+    STORE.write_text(json.dumps(data))
+
+
+class Session(memory.MemoryDAV):
+    def __init__(self, **options):
+        self.url = options["url"].rstrip("/") + "/"
+        self.identity = urlsplit(self.url).path.rstrip("/").rsplit("/", 1)[-1]
+        store = load()
+        super().__init__(exists=self.identity in store["collections"],
+                         fail_status=store["flags"].get("fail_status", False),
+                         ignore_write=store["flags"].get("ignore_write", False))
+        if self.exists:
+            self.state = store["collections"][self.identity]
+
+    @classmethod
+    def init_and_remaining_args(cls, **options):
+        return cls(**options), {}
+
+    async def request(self, method, path="", **kwargs):
+        result = await super().request(method, path, **kwargs)
+        store = load()
+        store["calls"].append(method)
+        if self.exists:
+            store["collections"][self.identity] = self.state
+        hang = method == "MKCALENDAR" and store["flags"].pop("hang_after_create_once", False)
+        save(store)
+        if hang:
+            time.sleep(store["flags"].get("hang_seconds", 10))
+        return result
+
+
+class Discovery:
+    def __init__(self, session, options):
+        self.options = options
+
+    async def find_home(self):
+        return "https://example.com/dav/"
+
+
+class Storage:
+    session_class = Session
+    discovery_class = Discovery
+
+    @classmethod
+    async def discover(cls, **options):
+        for identity in load()["collections"]:
+            yield dict(options, collection=identity, url=f"https://example.com/dav/{identity}/")
+
+
+class Connector:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        pass
+
+
+class Config:
+    @classmethod
+    def from_filename_or_environment(cls, path):
+        global STORE
+        settings = json.loads(Path(path).read_text())
+        STORE = Path(path).parent / "server.json"
+        self = cls()
+        self.general = {"status_path": str(Path(path).parent / "cache")}
+        self.storages = {"local": {"type": "filesystem", "path": settings["vdir"], "instance_name": "local"},
+                         "remote": {"type": "caldav", "url": settings.get("remote_url", "https://example.com/dav/"), "instance_name": "remote"}}
+        self.pair = types.SimpleNamespace(name="synthetic", name_a="remote", name_b="local",
+                                          metadata=["displayname", "color"], collections=["from a", "from b"])
+        return self
+
+    def get_pair(self, name):
+        assert name == "synthetic"
+        return self.pair
+
+    def get_storage_args(self, name):
+        return dict(self.storages[name])
+
+
+async def storage_instance_from_config(options, create=True, *, connector):
+    assert create is False, "implicit collection creation is forbidden"
+    return types.SimpleNamespace(session=Session(**options))
+
+
+async def missing(*_args, **_kwargs):
+    raise AssertionError("missing collection policy was not overridden")
+
+
+async def collections_for_pair(status, pair, from_cache=True, *, connector):
+    assert from_cache is False
+    store = load()
+    if store["flags"].pop("fail_refresh_once", False):
+        save(store)
+        raise RuntimeError("synthetic interrupted discovery")
+    Path(status, "synthetic.collections").write_text("verified synthetic discovery")
+    return []
+
+
+api = types.SimpleNamespace(Config=Config, expand_path=os.path.expanduser)
+utils = types.SimpleNamespace(storage_class_from_config=lambda _options: (Storage, {}),
+                              storage_instance_from_config=storage_instance_from_config,
+                              handle_collection_not_found=missing,
+                              prepare_status_path=lambda path: Path(path).mkdir(parents=True, exist_ok=True))
+discovery = types.SimpleNamespace(collections_for_pair=collections_for_pair, handle_collection_not_found=missing)
+aiohttp = types.SimpleNamespace(TCPConnector=Connector)
+namespace = {"__name__": "bundled_helper"}
+exec(sys.argv[-1], namespace)
+namespace["load_adapter"] = lambda: (api, utils, discovery, aiohttp)
+raise SystemExit(namespace["main"]())

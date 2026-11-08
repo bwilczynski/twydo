@@ -270,12 +270,24 @@ impl Queue {
 
     /// Writes `item` durably.
     pub fn push(&self, item: &Item) -> io::Result<()> {
+        let state = self.dir.parent().expect("queue state directory");
+        let _coord = crate::lists::operation::coordinate(state)?;
+        crate::lists::operation::ensure_idle(state)?;
         let bytes = serde_json::to_vec_pretty(item).map_err(io::Error::other)?;
         write_atomic(&self.json(&item.id)?, &bytes)
     }
 
     /// Queued and claimed items, sorted by id. Unreadable files are skipped.
     pub fn list(&self) -> io::Result<Vec<Item>> {
+        self.list_impl(false)
+    }
+
+    /// Collection mutation cannot ignore an unreadable task edit whose target is unknown.
+    pub(crate) fn list_strict(&self) -> io::Result<Vec<Item>> {
+        self.list_impl(true)
+    }
+
+    fn list_impl(&self, strict: bool) -> io::Result<Vec<Item>> {
         let mut out = Vec::new();
         for dent in fs::read_dir(&self.dir)? {
             let dent = dent?;
@@ -285,7 +297,18 @@ impl Queue {
                 continue;
             }
             if let Some(item) = read_json::<Item>(&dent.path()) {
+                if strict && item.format != FORMAT {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "unsupported queued task operation; reconcile it before managing lists",
+                    ));
+                }
                 out.push(item);
+            } else if strict {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unreadable queued task operation; reconcile it before managing lists",
+                ));
             }
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));

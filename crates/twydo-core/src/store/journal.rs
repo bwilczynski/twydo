@@ -516,6 +516,7 @@ pub fn try_recover(vdir: &Path, state_dir: &Path) -> io::Result<Option<RecoveryR
 /// Applied. A conflicting, invalid or unparseable entry is left as it is and
 /// reported as stuck. I/O errors abort recovery.
 pub fn recover_locked(vdir: &Path, journal: &Journal) -> io::Result<RecoveryReport> {
+    crate::lists::operation::ensure_idle(journal.dir.parent().expect("journal state directory"))?;
     crate::retired::resume_locked(vdir, journal.dir.parent().expect("journal state directory"))?;
     let mut report = RecoveryReport::default();
     for (id, parsed) in journal.list_raw()? {
