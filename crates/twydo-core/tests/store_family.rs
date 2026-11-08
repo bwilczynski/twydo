@@ -3011,3 +3011,345 @@ mod json_family_membership {
         }
     }
 }
+
+#[test]
+fn history_family_capability_matches_h7() {
+    let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    // No ordinary family or scheduling operation rows are required by this write set.
+    assert!(
+        twydo_core::gate::check(
+            &env.snap(),
+            &common::matrix(&["history-flat-family"], "pass", &[]),
+            WriteMode::Verified,
+            &Op::Reopen { uid: R_COPY.into() },
+            now().date_naive()
+        )
+        .is_ok()
+    );
+    let mut store = env.store(Matrix::embedded().clone());
+    let before = env.files();
+    store
+        .apply(&env.snap(), &Op::Reopen { uid: R_COPY.into() }, now())
+        .unwrap();
+    let after = env.files();
+    for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+        assert_eq!(status(&after, uid), "NEEDS-ACTION");
+        same_lines(
+            uid,
+            lines(&parse(&after[&key(uid)]).unwrap()),
+            lines(&parse(&fixture(L1, "06-reopen-parent", uid)).unwrap()),
+        );
+    }
+    for (path, bytes) in &before {
+        if ![R_COPY, R1_COPY, R2_COPY, R3_COPY]
+            .iter()
+            .any(|u| key(u) == *path)
+        {
+            assert_eq!(&after[path], bytes, "unrelated resource {path}");
+        }
+    }
+    assert_eq!(env.journal().len(), 1);
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+    store.redo_last(later()).unwrap();
+    assert_eq!(env.files(), after);
+}
+
+#[test]
+fn history_family_capability_refuses_unsafe_relationships() {
+    for shape in [
+        "nested",
+        "cross-list",
+        "unknown",
+        "plain",
+        "duplicate",
+        "disagreeing",
+        "json-only",
+        "active-repeat",
+    ] {
+        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let mut snap = env.snap();
+        let p = snap.find(R_COPY).unwrap();
+        let c = snap.find(R1_COPY).unwrap();
+        match shape {
+            "nested" => snap.tasks[c].kind = twydo_core::model::TaskKind::Project,
+            "cross-list" => snap.tasks[c].collection = "list2".into(),
+            "unknown" => {
+                let mut meta = twydo_core::model::meta_edit::MetaJson::parse(
+                    snap.tasks[c].meta.raw.as_ref().unwrap(),
+                )
+                .unwrap();
+                meta.set_i64("TaskType", 99);
+                snap.tasks[c].meta.raw = Some(meta.encode());
+            }
+            "plain" => {
+                let mut meta = twydo_core::model::meta_edit::MetaJson::parse(
+                    snap.tasks[p].meta.raw.as_ref().unwrap(),
+                )
+                .unwrap();
+                meta.set_i64("TaskType", 0);
+                snap.tasks[p].meta.raw = Some(meta.encode());
+            }
+            "duplicate" => snap.tasks.push(snap.tasks[c].clone()),
+            "active-repeat" => snap.tasks[c].rrule = Some("FREQ=MONTHLY".into()),
+            "json-only" => {
+                let mut task = snap.tasks[c].clone();
+                task.uid = "synthetic-hidden-member".into();
+                task.parent = None;
+                snap.tasks.push(task);
+            }
+            _ => {
+                let mut meta = twydo_core::model::meta_edit::MetaJson::parse(
+                    snap.tasks[c].meta.raw.as_ref().unwrap(),
+                )
+                .unwrap();
+                meta.set_str("parentuid", "synthetic-wrong-parent");
+                snap.tasks[c].meta.raw = Some(meta.encode());
+            }
+        }
+        assert!(
+            twydo_core::gate::check(
+                &snap,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Reopen { uid: R_COPY.into() },
+                now().date_naive()
+            )
+            .is_err(),
+            "{shape}"
+        );
+    }
+}
+
+#[test]
+fn history_item_capability_keeps_parent_policy() {
+    for step in ["05-complete-parent", "06-reopen-parent"] {
+        let env = Env::new(WriteMode::Verified, &format!("plan6-list1/{step}"));
+        let mut snap = env.snap();
+        let child = snap.find(R1_COPY).unwrap();
+        snap.tasks[child].status = twydo_core::model::Status::Completed;
+        assert!(
+            twydo_core::gate::check(
+                &snap,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &Op::Reopen {
+                    uid: R1_COPY.into()
+                },
+                now().date_naive()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn history_reopen_stale_family_and_inverse_refuse() {
+    for action in ["apply", "undo", "redo", "recover"] {
+        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let mut store = env.store(Matrix::embedded().clone());
+        let snap = env.snap();
+        let op = Op::Reopen { uid: R_COPY.into() };
+        if action != "apply" {
+            store.apply(&snap, &op, now()).unwrap();
+        }
+        if action == "redo" {
+            store.undo_last(later()).unwrap();
+        }
+        if action == "recover" {
+            let mut entry = env.journal().remove(0);
+            entry.stage = Stage::Prepared;
+            fs::write(env.file(R_COPY), entry.writes[0].before.as_ref().unwrap()).unwrap();
+            Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
+        }
+        // A new member is a dependency even when all recorded writes still match.
+        let text = String::from_utf8(fixture(L1, "05-complete-parent", R1_COPY))
+            .unwrap()
+            .replace(R1_COPY, "synthetic-new-history-child");
+        fs::write(env.file("synthetic-new-history-child"), text).unwrap();
+        let remote = env.files();
+        match action {
+            "apply" => assert!(store.apply(&snap, &op, now()).is_err()),
+            "undo" => assert!(store.undo_last(later()).is_err()),
+            "redo" => assert!(store.redo_last(later()).is_err()),
+            _ => {
+                drop(store);
+                let (_, report) = Store::open_with(&env.cfg, Matrix::embedded().clone()).unwrap();
+                assert!(!report.stuck.is_empty());
+            }
+        }
+        assert_eq!(env.files(), remote, "{action} must refuse atomically");
+    }
+}
+
+#[test]
+fn history_reopen_queue_and_recovery_are_idempotent() {
+    let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let mut store = env.store(Matrix::embedded().clone());
+    let before = env.files();
+    let lock = twydo_core::store::fsio::VdirLock::exclusive(&env.state).unwrap();
+    let submitted = store
+        .submit(
+            &env.snap(),
+            &Op::Reopen { uid: R_COPY.into() },
+            "reopen history",
+            "op",
+            now(),
+        )
+        .unwrap();
+    assert!(matches!(submitted, twydo_core::store::Submitted::Queued(_)));
+    assert_eq!(env.files(), before);
+    let overlay =
+        twydo_core::store::queue::view(twydo_core::vdir::load(&env.vdir).unwrap(), env.cfg.clone());
+    for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+        assert_eq!(
+            overlay.tasks[overlay.find(uid).unwrap()].status,
+            twydo_core::model::Status::Open
+        );
+    }
+    drop(lock);
+    let drained = store.drain(now()).unwrap();
+    assert_eq!(drained.len(), 1);
+    assert!(matches!(
+        drained[0].outcome,
+        twydo_core::store::DrainOutcome::Applied(_)
+    ));
+    let after = env.files();
+    let mut entry = env.journal().remove(0);
+    let recovering = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    drop(recovering.store(Matrix::embedded().clone()));
+    entry.stage = Stage::Prepared;
+    entry.from_queue = None;
+    Journal::open(&recovering.state)
+        .unwrap()
+        .prepare(&entry)
+        .unwrap();
+    let first = &entry.writes[0];
+    fs::write(
+        recovering.vdir.join(&first.path),
+        first.after.as_ref().unwrap(),
+    )
+    .unwrap();
+    let (mut recovered, report) =
+        Store::open_with(&recovering.cfg, Matrix::embedded().clone()).unwrap();
+    assert!(report.stuck.is_empty());
+    assert_eq!(recovering.files(), after);
+    drop(recovered);
+    let (again, report) = Store::open_with(&recovering.cfg, Matrix::embedded().clone()).unwrap();
+    assert!(report.stuck.is_empty());
+    assert_eq!(recovering.files(), after);
+    recovered = again;
+    recovered.undo(&entry.id, later()).unwrap();
+    assert_eq!(recovering.files(), before);
+}
+
+#[test]
+fn history_family_preserves_open_cancelled_members_and_schedule_variants() {
+    for kind in [1, 2] {
+        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let mut parent = parse(&fs::read(env.file(R_COPY)).unwrap()).unwrap();
+        let component = parent
+            .root
+            .children
+            .iter_mut()
+            .find(|c| c.name == "VTODO")
+            .unwrap();
+        let prop = component
+            .props
+            .iter_mut()
+            .find(|p| p.name == "X-2DOAPP-METADATA")
+            .unwrap();
+        let mut meta = twydo_core::model::meta_edit::MetaJson::parse(&prop.value).unwrap();
+        meta.set_i64("TaskType", kind);
+        prop.value = meta.encode();
+        fs::write(env.file(R_COPY), twydo_core::ical::serialize(&parent)).unwrap();
+        for (uid, status) in [(R1_COPY, "NEEDS-ACTION"), (R2_COPY, "CANCELLED")] {
+            let text = fs::read_to_string(env.file(uid))
+                .unwrap()
+                .replace("STATUS:COMPLETED", &format!("STATUS:{status}"));
+            fs::write(env.file(uid), text).unwrap();
+        }
+        let mut text = fs::read_to_string(env.file(R3_COPY)).unwrap();
+        text = text.replace("END:VTODO", "BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER;VALUE=DATE-TIME:20261208T090000Z\nDESCRIPTION:Synthetic\nEND:VALARM\nEND:VTODO");
+        fs::write(env.file(R3_COPY), text).unwrap();
+        let before = env.files();
+        let mut store = env.store(Matrix::embedded().clone());
+        store
+            .apply(&env.snap(), &Op::Reopen { uid: R_COPY.into() }, now())
+            .unwrap();
+        let after = env.files();
+        for (path, bytes) in before
+            .iter()
+            .filter(|(p, _)| **p != key(R_COPY) && **p != key(R3_COPY))
+        {
+            assert_eq!(&after[path], bytes);
+        }
+        for uid in [R_COPY, R3_COPY] {
+            let held = |bytes: &[u8]| {
+                sorted(
+                    lines(&parse(bytes).unwrap())
+                        .into_iter()
+                        .filter(|l| {
+                            !is_stamp(&l.1)
+                                && !["STATUS", "COMPLETED", "PERCENT-COMPLETE"]
+                                    .contains(&l.1.as_str())
+                        })
+                        .collect(),
+                )
+            };
+            assert_eq!(held(&before[&key(uid)]), held(&after[&key(uid)]));
+        }
+        // Even an unchanged member is a durable dependency of inverse and recovery.
+        let remote = fs::read_to_string(env.file(R1_COPY))
+            .unwrap()
+            .replace("DESCRIPTION:n", "DESCRIPTION:Synthetic remote");
+        fs::write(env.file(R1_COPY), remote).unwrap();
+        let remote_files = env.files();
+        assert!(store.undo_last(later()).is_err());
+        assert_eq!(env.files(), remote_files);
+    }
+}
+
+#[test]
+fn history_reopen_queue_refuses_changed_removed_and_joined_members() {
+    for change in ["changed", "removed", "joined"] {
+        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let mut store = env.store(Matrix::embedded().clone());
+        let lock = twydo_core::store::fsio::VdirLock::exclusive(&env.state).unwrap();
+        store
+            .submit(
+                &env.snap(),
+                &Op::Reopen { uid: R_COPY.into() },
+                "history",
+                "op",
+                now(),
+            )
+            .unwrap();
+        drop(lock);
+        match change {
+            "removed" => fs::remove_file(env.file(R1_COPY)).unwrap(),
+            "changed" => {
+                let text = fs::read_to_string(env.file(R1_COPY))
+                    .unwrap()
+                    .replace("DESCRIPTION:n", "DESCRIPTION:Synthetic remote");
+                fs::write(env.file(R1_COPY), text).unwrap();
+            }
+            _ => {
+                let text = fs::read_to_string(env.file(R1_COPY))
+                    .unwrap()
+                    .replace(R1_COPY, "synthetic-queued-join");
+                fs::write(env.file("synthetic-queued-join"), text).unwrap();
+            }
+        }
+        let remote = env.files();
+        let result = store.drain(later()).unwrap();
+        assert!(
+            matches!(
+                result[0].outcome,
+                twydo_core::store::DrainOutcome::Refused(_)
+            ),
+            "{change}: {result:?}"
+        );
+        assert_eq!(env.files(), remote);
+    }
+}

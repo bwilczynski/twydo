@@ -62,6 +62,8 @@
 //! 6. reopening a repeat's history copy needs its dedicated `history-copy` row (older/custom
 //!    matrices may use the monthly/yearly rows), checked as in rule 3 so write mode applies.
 
+mod history_reopen;
+
 use std::fmt;
 
 use chrono::{Datelike, NaiveDate};
@@ -198,6 +200,12 @@ pub fn check(
         && m.operation(delete::case(snap, i), "delete").is_some()
     {
         return delete::check(snap, m, mode, i);
+    }
+
+    if let (Some(i), Op::Reopen { .. }) = (target, op)
+        && let Some(result) = history_reopen::check(snap, m, mode, i)
+    {
+        return result;
     }
 
     // Rule 1b: family operations.

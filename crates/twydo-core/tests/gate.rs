@@ -2806,7 +2806,7 @@ mod verified_recurrence_shapes {
         }
     }
     #[test]
-    fn weekly_checklist_completion_and_offset_history_remain_refused() {
+    fn weekly_checklist_completion_refused_but_history_preservation_admitted() {
         let e = env("050-remove-repeat-and-refinish");
         let snap = e.snap();
         assert!(
@@ -2845,7 +2845,7 @@ mod verified_recurrence_shapes {
                     },
                     now().date_naive()
                 )
-                .is_err(),
+                .is_ok(),
                 "{shape}"
             );
         }
@@ -2860,8 +2860,8 @@ mod verified_recurrence_shapes {
                 },
                 now().date_naive()
             )
-            .is_err(),
-            "the top-level history row does not enable recurring-family history"
+            .is_ok(),
+            "the dedicated family history row admits H7"
         );
     }
 }
@@ -3973,4 +3973,97 @@ fn individual_delete_refuses_ambiguous_malformed_cross_list_and_nested_families(
             "{uid}"
         );
     }
+}
+
+#[test]
+fn history_task_capability_preserves_schedule_and_series() {
+    let mut s = snap();
+    let i = idx(&s, "gate-history");
+    s.tasks[i].start = Some(twydo_core::ical::value::IcalDateTime::Date(today()));
+    let m = matrix(&[("history-task", "reopen")], "pass", "pass", &[]);
+    assert_eq!(
+        check(
+            &s,
+            &m,
+            WriteMode::Verified,
+            &reopen("gate-history"),
+            today()
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn history_task_capability_refuses_live_cancelled_and_ended_series() {
+    let m = matrix(&[("history-task", "reopen")], "pass", "pass", &[]);
+    for uid in ["gate-done", "gate-monthly", "gate-cancelled-checklist-item"] {
+        assert!(check(&snap(), &m, WriteMode::Verified, &reopen(uid), today()).is_err());
+    }
+    let mut s = snap();
+    let i = idx(&s, "gate-history");
+    s.tasks[i].rrule = Some("FREQ=MONTHLY;COUNT=1".into());
+    assert!(
+        check(
+            &s,
+            &m,
+            WriteMode::Verified,
+            &reopen("gate-history"),
+            today()
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn history_task_capability_refuses_ambiguous_recurrence_metadata() {
+    for field in [
+        "RecurrenceType",
+        "RecurrenceFrom",
+        "RecurrenceValue",
+        "RecurrenceEndType",
+        "RecurrenceEndRepetitions",
+        "RecurrenceEndRepetitionsOrig",
+    ] {
+        let mut s = snap();
+        let i = idx(&s, "gate-history");
+        let mut meta = MetaJson::parse(s.tasks[i].meta.raw.as_ref().unwrap()).unwrap();
+        meta.set_str(field, "synthetic-malformed");
+        s.tasks[i].meta.raw = Some(meta.encode());
+        assert!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &reopen("gate-history"),
+                today()
+            )
+            .is_err(),
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn live_parent_with_foreign_series_identity_does_not_use_history_item_policy() {
+    let env = common::Env::new(WriteMode::Verified, "plan6-list1/06-reopen-parent");
+    let mut s = env.snap();
+    let parent = s.find("14b5a37a52224e8c959b5002e2275fc9").unwrap();
+    let child = "780885dd967342ec8953c6824f1d674b";
+    let i = s.find(child).unwrap();
+    s.tasks[parent].rrule = Some("FREQ=MONTHLY".into());
+    s.tasks[i].status = twydo_core::model::Status::Completed;
+    let m = common::matrix(
+        &[
+            "history-flat-family",
+            "one-time",
+            "recurring-project",
+            "date-only",
+        ],
+        "pass",
+        &[],
+    );
+    assert_eq!(
+        check(&s, &m, WriteMode::Verified, &reopen(child), today()),
+        Ok(())
+    );
 }

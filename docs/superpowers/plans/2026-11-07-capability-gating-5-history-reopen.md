@@ -1,6 +1,6 @@
 # Capability gating 5: history reopening — Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans to implement this plan inline. The user selected OpenCode with DeepSeek; do not start subagents. Track the checklist and return work for independent review.
+> **For agentic workers:** Use superpowers:executing-plans to implement this plan inline. The user subsequently selected direct implementation on the approved isolated branch; no OpenCode or further agents. Track the checklist and return work for independent review.
 
 **Goal:** Reopen proven history shapes by their lifecycle-only write set, keeping standalone, family and individual-child contracts distinct.
 
@@ -49,11 +49,11 @@ Individual history items under open parents are a separate capability. Enable on
 
 **Interfaces:** `history_reopen::check(snap: &Snapshot, matrix: &Matrix, mode: WriteMode, idx: usize) -> Option<Result<(), Blocked>>`. `None` preserves legacy handling when no matching capability exists or the resource is not completed history without RRULE. Add `history-task` / `reopen` independently of the old narrow history row.
 
-- [ ] Add `history_task_capability_preserves_schedule_and_series`: use captured date-only history and synthetic timed/start/relative/absolute-alarm variants; reopen only the selected file and compare the exact permitted lifecycle/stamp deltas. The live original and all unrelated files remain byte-identical; foreign RUID remains unchanged.
-- [ ] Add `history_task_capability_refuses_live_cancelled_and_ended_series`: duplicate/unreadable identities, own RRULE, cancelled status, unknown type and absent/unsupported capability evidence do not enter the path. Existing ended-until behavior and guards remain intact.
-- [ ] Run `cargo test -p twydo-core --test gate history_task_capability` and `cargo test -p twydo-core --test edit_complete history_task_capability`; confirm intended safe admission fails before code changes.
-- [ ] Implement helper/dispatch without bypassing structural validation. Record the evidence/generalization on the dedicated row and in docs; retain the legacy path for old matrices.
-- [ ] Run core gate/edit/store targets, then commit `feat: admit history task reopening by lifecycle effects`.
+- [x] Add `history_task_capability_preserves_schedule_and_series`: use captured date-only history and synthetic timed/start/relative/absolute-alarm variants; reopen only the selected file and compare the exact permitted lifecycle/stamp deltas. The live original and all unrelated files remain byte-identical; foreign RUID remains unchanged.
+- [x] Add `history_task_capability_refuses_live_cancelled_and_ended_series`: duplicate/unreadable identities, own RRULE, cancelled status, unknown type and absent/unsupported capability evidence do not enter the path. Existing ended-until behavior and guards remain intact.
+- [x] Run `cargo test -p twydo-core --test gate history_task_capability` and `cargo test -p twydo-core --test edit_complete history_task_capability`; confirm intended safe admission fails before code changes.
+- [x] Implement helper/dispatch without bypassing structural validation. Record the evidence/generalization on the dedicated row and in docs; retain the legacy path for old matrices.
+- [x] Run core gate/edit/store targets, then commit `feat: admit history task reopening by lifecycle effects`.
 
 ### Task 2: Whole-family history and separately bounded item history
 
@@ -61,21 +61,72 @@ Individual history items under open parents are a separate capability. Enable on
 
 **Interfaces:** dedicated `history-flat-family` / `reopen`, plus `history-item-open-parent` / `reopen` only if evidence is sufficient. Preserve legacy per-family operation safeguards. Parent-driven reopening of children is one family operation, not recursive per-item gate admission.
 
-- [ ] Add `history_family_capability_matches_h7`: parent and every completed child reopen once, including previously completed/history children; open/cancelled members stay unchanged, and the live series plus its live children are untouched. Compare to the actual captured H7 write set.
-- [ ] Add `history_family_capability_refuses_unsafe_relationships`: nested, plain-task parent with children, cross-list/disagreeing links, duplicate identity and unknown member types refuse. A member's unrelated schedule-execution row cannot block a lifecycle-only history operation, but malformed/ambiguous recurrence metadata cannot be guessed.
-- [ ] Add `history_item_capability_keeps_parent_policy`: under an open parent, a proven history-child reopen writes only that child and holds its parent/dependencies; under a completed/cancelled parent, isolated reopen remains refused. If no sufficient direct evidence supports open-parent history items, assert shipping refusal and report it separately.
-- [ ] Run new tests before implementing each path. Add only supported dedicated rows; do not simply delete `is_history_copy` or family guards to let ordinary one-time rows bypass evidence.
-- [ ] Run `cargo test -p twydo-core --test gate --test store --test store_family --test edit_complete`; commit `feat: scope history family reopening explicitly`.
+- [x] Add `history_family_capability_matches_h7`: parent and every completed child reopen once, including previously completed/history children; open/cancelled members stay unchanged, and the live series plus its live children are untouched. Compare to the actual captured H7 write set.
+- [x] Add `history_family_capability_refuses_unsafe_relationships`: nested, plain-task parent with children, cross-list/disagreeing links, duplicate identity and unknown member types refuse. A member's unrelated schedule-execution row cannot block a lifecycle-only history operation, but malformed/ambiguous recurrence metadata cannot be guessed.
+- [x] Add `history_item_capability_keeps_parent_policy`: under an open parent, a proven history-child reopen writes only that child and holds its parent/dependencies; under a completed/cancelled parent, isolated reopen remains refused. If no sufficient direct evidence supports open-parent history items, assert shipping refusal and report it separately.
+- [x] Run new tests before implementing each path. Add only supported dedicated rows; do not simply delete `is_history_copy` or family guards to let ordinary one-time rows bypass evidence.
+- [x] Run `cargo test -p twydo-core --test gate --test store --test store_family --test edit_complete`; commit `feat: scope history family reopening explicitly`.
 
 ### Task 3: Queue/inverse/recovery and UI reporting
 
 **Files:** tests `store_family.rs`, `store_queue.rs`, `journal.rs`, `crates/tdo/tests/write.rs`, `cli.rs`, `cli_op.rs`; store dependency fixes only if required; docs `docs/tasks.md`, `docs/tui.md`, `docs/compatibility.md`, this checkpoint.
 
-- [ ] Add `history_reopen_stale_family_and_inverse_refuse`: newly added/removed/changed members and remotely edited live/history resources are preserved; no stale inverse overwrites them. Verify dependencies needed by the family survive queue/recovery/inverse, rather than only an initial apply.
-- [ ] Add `history_reopen_queue_and_recovery_are_idempotent`: queued overlay matches final reopened resources; interrupt after one family update, recover once and undo to exact originals with no new series or copied identities.
-- [ ] Add real completed-section TUI selection and CLI/aggregate permission assertions; allowed/refused counts agree with the gate, no task content leaks into default reports, and family reopen remains one undo step.
-- [ ] Update docs distinguishing reopening history from undoing a recurrence advancement and from ended live-series reopen. Run shared completion validation; commit `test: cover history reopening workflows and recovery`.
+- [x] Add `history_reopen_stale_family_and_inverse_refuse`: newly added/removed/changed members and remotely edited live/history resources are preserved; no stale inverse overwrites them. Verify dependencies needed by the family survive queue/recovery/inverse, rather than only an initial apply.
+- [x] Add `history_reopen_queue_and_recovery_are_idempotent`: queued overlay matches final reopened resources; interrupt after one family update, recover once and undo to exact originals with no new series or copied identities.
+- [x] Add real completed-section TUI selection and CLI/aggregate permission assertions; allowed/refused counts agree with the gate, no task content leaks into default reports, and family reopen remains one undo step.
+- [x] Update docs distinguishing reopening history from undoing a recurrence advancement and from ended live-series reopen. Run shared completion validation; commit `test: cover history reopening workflows and recovery`.
 
 ## Checkpoint
 
-- [ ] Return exact enabled standalone/family/item paths, unresolved child-policy scope, evidence, commit IDs and validation. No production reopening or phone round.
+- [x] Return exact enabled standalone/family/item paths, unresolved child-policy scope, evidence, commit IDs and validation. No production reopening or phone round.
+
+### Implementation ledger (2026-11-08)
+
+- RED: dedicated standalone capability failed on unrelated one-time row; H7 family
+  failed on old top-level-only restriction. GREEN: lifecycle helper dispatches before
+  schedule/family execution rows and existing writer matches H7 exactly.
+- RED: adding a family member after reopen did not stop undo. GREEN: reopen persists
+  family/held-member dependencies in journal entries, including inverse and recovery.
+- RED: independently reopening a detached history child under an open parent passed
+  ordinary one-time rows (child RUID is empty in H7). GREEN: parent foreign RUID also
+  identifies this refused scope; closed-parent isolation remains refused.
+- RED: malformed recurrence numeric metadata entered the path. GREEN: require captured
+  numeric zero inactive recurrence fields; missing/ambiguous fields refuse.
+- Ruling: open-parent detached history items remain disabled — H3 is live-child
+  evidence, H7 is whole-family evidence — the cost is retaining this individual-action
+  restriction until distinct proof exists.
+- Direct evidence: Plan 4/Plan 8 detached task and H7 project reopen. Preservation
+  generalization: unchanged starts/times/relative/absolute alerts and flat checklists.
+- Local coverage includes exact lifecycle-only deltas, unrelated live-series bytes,
+  H7 earlier-completed children, held open/cancelled children, queue overlay/drain,
+  partial recovery/idempotence, one-step undo/redo, stale family/inverse, actual TUI
+  Done selection and CLI aggregate/per-task counts against the real gate.
+- No production data, account/config changes, NAS/phone, network experiments or device rounds.
+
+- Shared safety dependency: `ee6fe86` supplies relationship validation, JSON-aware
+  durable membership scans, aliases and the corrected unrelated-member fixture.
+  These copied prerequisite files are intentionally excluded from history commits;
+  the coordinating branch integrates the shared safety commit first.
+- Ruling: tasks 1 and 2 share one capability implementation commit — both use the
+  same detached-history classifier and structural boundary — no enabled scope is
+  added without its dedicated row; the cost is a combined feature review.
+- Verification: `cargo test --offline --workspace` (jobs=2, disk-backed worktree
+  target) passed 1,066 Rust tests, zero ignored; Python unittest discovery passed
+  49 tests; link checker, formatting and whitespace checks passed. Final Clippy
+  passed with `--workspace --all-targets -- -D warnings`.
+
+- Capability commit: `5293750` (`feat: scope detached history reopening by lifecycle effects`).
+- Final local scope: `history-task.reopen` and `history-flat-family.reopen` enabled;
+  `history-item-open-parent.reopen` has no enabled row and remains refused. No
+  recurrence execution, ended-series expansion, cancellation reopen, restoration of
+  recurrence or live-series rollback is authorized.
+
+- Final review fix: a foreign RUID also occurs on valid live series. The detached
+  history-child restriction additionally requires the parent to have no RRULE.
+  `live_parent_with_foreign_series_identity_does_not_use_history_item_policy`
+  reproduced the accidental refusal RED, then passed GREEN with this classifier fix.
+
+- Final classifier fix verification: full workspace 1,067 Rust tests passed (46
+  targets including doc tests, zero ignored), Clippy with warnings denied passed,
+  Python 49 tests, links, formatting and whitespace checks all passed again.
+- Workflow commit: `6efd64e` (`test: preserve history reopen dependencies across workflows`).

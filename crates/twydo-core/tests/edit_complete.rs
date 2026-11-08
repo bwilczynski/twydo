@@ -1708,3 +1708,42 @@ fn converted_checklist_history_gets_new_parent_identity_while_live_keeps_its_own
     assert_eq!(json_uid(&live), json_uid(&input));
     assert_eq!(json_uid(&copy).as_deref(), Some(COPY));
 }
+
+#[test]
+fn history_task_capability_preserves_schedule_and_series() {
+    for schedule in [
+        "DUE;VALUE=DATE:20261110\r\n",
+        "DTSTART:20261110T090000\r\nDUE:20261110T100000\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RELATED=END:-PT15M\r\nDESCRIPTION:Synthetic\r\nEND:VALARM\r\n",
+        "DTSTART:20261110T090000Z\r\nDUE:20261110T100000Z\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20261110T090000Z\r\nDESCRIPTION:Synthetic\r\nEND:VALARM\r\n",
+    ] {
+        let input = fixture(L1, "03-complete", E_COPY);
+        let mut cal = parse(&input).unwrap();
+        let component = cal
+            .root
+            .children
+            .iter_mut()
+            .find(|c| c.name == "VTODO")
+            .unwrap();
+        component
+            .props
+            .retain(|p| p.name != "DUE" && p.name != "DTSTART");
+        let input = String::from_utf8(serialize(&cal))
+            .unwrap()
+            .replace("END:VTODO", &format!("{schedule}END:VTODO"));
+        let mut cal = parse(input.as_bytes()).unwrap();
+        let original = lines(&cal);
+        reopen_one_time(&mut cal, now()).unwrap();
+        let preserved = |ls: Vec<Line>| {
+            sorted(
+                ls.into_iter()
+                    .filter(|l| {
+                        !is_stamp(&l.1)
+                            && !["STATUS", "PERCENT-COMPLETE", "COMPLETED"].contains(&l.1.as_str())
+                    })
+                    .collect(),
+            )
+        };
+        assert_eq!(preserved(lines(&cal)), preserved(original));
+        assert_eq!(todo(&cal).prop("STATUS").unwrap().value, "NEEDS-ACTION");
+    }
+}

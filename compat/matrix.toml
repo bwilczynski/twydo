@@ -1495,3 +1495,26 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["fixtures/phase0/v1/plan6-list1/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list2/09-delete-rest"]
 notes = "Direct phone captures (Plan 6 H9) delete nonempty plain checklist/project families and a live repeating project while leaving unrelated resources and completed history copies; 09-delete-rest removes the remainder. Generalized to a recognized top-level checklist or project, empty or nonempty, open, completed or cancelled, with flat plain-task children linked unambiguously in the same list, including recurring parents and independently repeating children, because whole-family removal deletes exactly the parent and its linked children and writes nothing else. Local tests cover empty/nonempty recurring checklists, completed families, series history, queue and inverse/recovery. Missing proof: no direct device observation for empty-family deletion or every status/rule combination; recognized dates, alarms, metadata and foreign identities are preserved by deletion-only scope. No recurrence execution or field-edit verdict is inferred."
+
+# Lifecycle-only detached history capabilities. Broad scheduling rows stay unchanged.
+[[operation]]
+case = "history-task"
+op = "reopen"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+notes = "Direct: captured detached non-recurring history task reopen. Preservation generalization: starts, timed due, relative/absolute alerts and unrelated metadata held exactly; only lifecycle and stamps change. Foreign RUID retained, live series untouched. Completed top-level readable JSON tasks without RRULE or active recurrence metadata only. No cancelled/ended live series or recurrence restoration authority."
+
+[[operation]]
+case = "history-flat-family"
+op = "reopen"
+iphone_baseline = "pass"
+mac_to_iphone = "unverified"
+iphone_to_mac = "unverified"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
+notes = "Direct H7: detached recurring-project history parent and every completed child reopen, including children completed before parent; live original unchanged. Preservation generalization to flat checklist history and unchanged dates/starts/alerts; open/cancelled children held. Parent-driven lifecycle-only operation, not independent history-item authority. No RRULE or active recurrence metadata, unknown/nested/cross-list/disagreeing links or ambiguous identities. Individual history items under open parents remain refused: H3 live-child captures do not establish detached history-child behavior."
