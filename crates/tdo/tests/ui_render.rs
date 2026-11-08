@@ -157,6 +157,64 @@ fn only_overdue_is_red() {
 }
 
 #[test]
+fn completed_titles_stay_crossed_out_across_views_and_focus() {
+    for view in [View::All, View::List("inbox".into()), View::Done] {
+        for focus in [Pane::Tasks, Pane::Sidebar, Pane::Details] {
+            for selected in [false, true] {
+                let mut a = app();
+                a.view = view.clone();
+                a.focus = focus;
+                let done = a
+                    .visible_rows()
+                    .iter()
+                    .position(|r| a.snapshot.tasks[r.task].summary == "Buy stamps")
+                    .unwrap();
+                a.cursor = if selected {
+                    done
+                } else {
+                    let Some(other) = (0..a.visible_rows().len()).find(|&i| i != done) else {
+                        continue;
+                    };
+                    other
+                };
+                let buf = render(&mut a, 120, 60);
+                let (x, y) = find_in_tasks(&buf, "Buy stamps");
+                for col in x..x + "Buy stamps".len() as u16 {
+                    assert!(buf[(col, y)].modifier.contains(Modifier::CROSSED_OUT));
+                }
+                if selected && focus == Pane::Tasks {
+                    assert_eq!(buf[(x, y)].bg, Color::DarkGray);
+                    assert!(!buf[(x, y)].modifier.contains(Modifier::DIM));
+                }
+                if view != View::Done {
+                    let (x, y) = find_in_tasks(&buf, "Call the dentist");
+                    assert!(!buf[(x, y)].modifier.contains(Modifier::CROSSED_OUT));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn completed_parents_and_nested_items_have_crossed_out_titles() {
+    let dir = project_vdir();
+    let mut snap = snapshot_at(dir.path());
+    for task in &mut snap.tasks {
+        task.status = twydo_core::model::Status::Completed;
+        task.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+    }
+    let mut a = App::new(snap, now());
+    a.view = View::All;
+    a.expanded.insert("p".into());
+    let buf = render(&mut a, 160, 40);
+    for title in ["Synthetic project", "Finished child"] {
+        let (x, y) = find_in_tasks(&buf, title);
+        assert!(buf[(x, y)].modifier.contains(Modifier::CROSSED_OUT));
+    }
+    assert!(a.visible_rows().iter().any(|r| r.depth == 1));
+}
+
+#[test]
 fn glyphs_and_counts() {
     let mut a = app();
     a.view = View::All;
