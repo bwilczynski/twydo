@@ -32,6 +32,140 @@ fn later() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 5, 0).unwrap()
 }
 
+#[test]
+fn text_capability_closed_parent_and_item_are_single_undoable_edits() {
+    use common::text_edit as text;
+    for item in [false, true] {
+        let env = text::closed();
+        let mut store = env.store(Matrix::embedded().clone());
+        let snap = env.snap();
+        let p = snap.find(text::PARENT).unwrap();
+        let uid = if item {
+            &snap.tasks[snap.children(p)[0]].uid
+        } else {
+            text::PARENT
+        };
+        let before = env.files();
+        let op = Op::Save {
+            uid: uid.into(),
+            changes: vec![
+                Change::Summary("New title".into()),
+                Change::Description(Some("New notes".into())),
+            ],
+            to: None,
+        };
+        store.apply(&snap, &op, now()).unwrap();
+        let after = env.files();
+        let path = format!("list1/{uid}.ics");
+        assert_ne!(before[&path], after[&path]);
+        text::assert_preserved(&before[&path], &after[&path]);
+        for (p, bytes) in &before {
+            if *p != path {
+                assert_eq!(&after[p], bytes);
+            }
+        }
+        assert_eq!(env.journal().len(), 1);
+        assert_eq!(env.journal()[0].writes.len(), 1);
+        store.undo_last(later()).unwrap();
+        assert_eq!(env.files(), before);
+        store.redo_last(later()).unwrap();
+        assert_eq!(env.files(), after);
+    }
+}
+
+#[test]
+fn text_capability_inverse_and_recovery_hold_family_dependencies() {
+    use common::text_edit as text;
+    for item in [false, true] {
+        for recovery in [false, true] {
+            let env = text::closed();
+            let mut store = env.store(Matrix::embedded().clone());
+            let snap = env.snap();
+            let p = snap.find(text::PARENT).unwrap();
+            let child = snap.tasks[snap.children(p)[0]].uid.clone();
+            let uid = if item { &child } else { text::PARENT };
+            store
+                .apply(
+                    &snap,
+                    &Op::Edit {
+                        uid: uid.into(),
+                        changes: vec![Change::Summary("New title".into())],
+                    },
+                    now(),
+                )
+                .unwrap();
+            let changed = if item { text::PARENT } else { &child };
+            text::mutate(&env, changed, |t| {
+                t.prop_mut("SUMMARY")
+                    .unwrap()
+                    .set_value("Remote family change")
+            });
+            let before = env.files();
+            if recovery {
+                let mut entry = env.journal()[0].clone();
+                // Simulate interruption after the edited file was written but before marking applied.
+                entry.stage = Stage::Prepared;
+                Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
+                drop(store);
+                let (_, report) = Store::open_with(&env.cfg, Matrix::embedded().clone()).unwrap();
+                assert_eq!(report.stuck.len(), 1);
+            } else {
+                assert!(store.undo_last(later()).is_err());
+            }
+            assert_eq!(env.files(), before);
+        }
+    }
+}
+
+#[test]
+fn text_capability_inverse_and_recovery_refuse_new_member_identity_owners() {
+    use common::text_edit as text;
+    for internal in [false, true] {
+        for recovery in [false, true] {
+            let env = text::closed();
+            let s = env.snap();
+            let child = s.tasks[s.children(s.find(text::PARENT).unwrap())[0]]
+                .uid
+                .clone();
+            text::mutate(&env, &child, |todo| {
+                let p = todo.prop_mut("X-2DOAPP-METADATA").unwrap();
+                let mut meta = MetaJson::parse(&p.value).unwrap();
+                meta.set_str("uid", "synthetic-child-alias");
+                p.set_value(&meta.encode());
+            });
+            let mut store = env.store(Matrix::embedded().clone());
+            store
+                .apply(
+                    &env.snap(),
+                    &Op::Edit {
+                        uid: child.clone(),
+                        changes: vec![Change::Summary("Edited".into())],
+                    },
+                    now(),
+                )
+                .unwrap();
+            let alias = if internal {
+                "synthetic-child-alias"
+            } else {
+                &child
+            };
+            fs::write(env.file("new-owner"), format!("BEGIN:VCALENDAR\nBEGIN:VTODO\nUID:{alias}\nSUMMARY:New owner\nEND:VTODO\nEND:VCALENDAR\n")).unwrap();
+            let before = env.files();
+            if recovery {
+                let mut entry = env.journal()[0].clone();
+                entry.stage = Stage::Prepared;
+                Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
+                drop(store);
+                let (_, report) = Store::open_with(&env.cfg, Matrix::embedded().clone()).unwrap();
+                assert_eq!(report.stuck.len(), 1, "internal={internal}");
+            } else {
+                assert!(store.undo_last(later()).is_err(), "internal={internal}");
+            }
+            assert_eq!(env.files(), before);
+        }
+    }
+}
+
 /// Every op on every case has baseline `pass` and the twydo columns `twydo`; the monthly
 /// rule class passes; the undo edge case has `edge`.
 fn matrix(twydo: &str, edge: &str) -> Matrix {

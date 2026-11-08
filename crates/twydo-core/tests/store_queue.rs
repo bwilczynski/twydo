@@ -48,6 +48,73 @@ fn title(uid: &str, text: &str) -> Op {
     }
 }
 
+#[test]
+fn text_capability_queue_preserves_fields_and_refuses_changed_family() {
+    use common::text_edit as text;
+    for changed in ["none", "target", "parent", "sibling", "new-member"] {
+        let env = text::closed();
+        let mut store = env.store(Matrix::embedded().clone());
+        let snap = env.snap();
+        let p = snap.find(text::PARENT).unwrap();
+        let child = snap.tasks[snap.children(p)[0]].uid.clone();
+        let sibling = snap.tasks[snap.children(p)[1]].uid.clone();
+        let before = env.files();
+        let lock = VdirLock::exclusive(&env.state).unwrap();
+        let submitted = store
+            .submit(&snap, &title(&child, "Queued text"), "text", "op", now())
+            .unwrap();
+        assert!(matches!(submitted, Submitted::Queued(_)));
+        assert_eq!(env.files(), before);
+        match changed {
+            "target" | "parent" | "sibling" => {
+                let uid = match changed {
+                    "target" => &child,
+                    "parent" => text::PARENT,
+                    _ => &sibling,
+                };
+                text::mutate(&env, uid, |t| {
+                    t.prop_mut("SUMMARY").unwrap().set_value("Remote text")
+                });
+            }
+            "new-member" => {
+                let source = fs::read_to_string(env.file(&child)).unwrap();
+                fs::write(
+                    env.file("synthetic-new-member"),
+                    source.replace(&format!("UID:{child}"), "UID:synthetic-new-member"),
+                )
+                .unwrap();
+            }
+            _ => {}
+        }
+        let remote = env.files();
+        drop(lock);
+        let drained = store.drain(later()).unwrap();
+        assert_eq!(drained.len(), 1);
+        if changed == "none" {
+            assert!(matches!(drained[0].outcome, DrainOutcome::Applied(_)));
+            let after = env.files();
+            let path = format!("list1/{child}.ics");
+            text::assert_preserved(&before[&path], &after[&path]);
+            assert!(String::from_utf8_lossy(&after[&path]).contains("SUMMARY:Queued text"));
+            for (p, bytes) in &before {
+                if *p != path {
+                    assert_eq!(&after[p], bytes);
+                }
+            }
+            assert!(store.drain(later()).unwrap().is_empty());
+            store.undo_last(later()).unwrap();
+            assert_eq!(env.files(), before);
+        } else {
+            assert!(
+                matches!(drained[0].outcome, DrainOutcome::Refused(_)),
+                "{changed}: {:?}",
+                drained[0].outcome
+            );
+            assert_eq!(env.files(), remote);
+        }
+    }
+}
+
 fn queue(env: &Env) -> Queue {
     Queue::open(&env.state).unwrap()
 }

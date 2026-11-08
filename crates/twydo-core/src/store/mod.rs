@@ -446,6 +446,17 @@ impl Store {
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let mut plan = self.plan(snap, op, now)?;
         let mut holds = std::mem::take(&mut plan.holds);
+        let text_head = self.text_edit_head(snap, op);
+        if let Some(head) = text_head {
+            for i in std::iter::once(head).chain(snap.children(head).iter().copied()) {
+                let hold = self.target(snap, &snap.tasks[i].uid)?.hold();
+                if !plan.writes.iter().any(|w| w.path == hold.0)
+                    && !holds.iter().any(|h| h.0 == hold.0)
+                {
+                    holds.push(hold);
+                }
+            }
+        }
         let member_parent = match op {
             Op::Create(n) | Op::CreateAt { task: n, .. } => {
                 n.parent.as_deref().and_then(|uid| snap.find(uid))
@@ -489,7 +500,8 @@ impl Store {
                 }
             }
         }
-        let durable_holds = checklist_schedule
+        let durable_holds = text_head.is_some()
+            || checklist_schedule
             || matches!(
                 op,
                 Op::Delete { .. } | Op::Reopen { .. } | Op::Reparent { .. }
@@ -527,7 +539,8 @@ impl Store {
             } else {
                 Vec::new()
             },
-            family: if checklist_schedule
+            family: if text_head.is_some()
+                || checklist_schedule
                 || (durable_holds
                     && matches!(
                         op,

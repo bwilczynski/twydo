@@ -1445,6 +1445,47 @@ mod verified_recurrence_tui {
     }
 
     #[test]
+    fn text_capability_closed_checklist_card_saves_text_and_keeps_refused_mixed_input() {
+        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
+        let uid = "twydo-p8-c29-b";
+        let path = e.vdir().join("list1").join(format!("{uid}.ics"));
+        let source = fs::read_to_string(&path).unwrap().replace(
+            "STATUS:NEEDS-ACTION",
+            "STATUS:COMPLETED\nCOMPLETED:20261210T120000Z",
+        );
+        fs::write(&path, source).unwrap();
+        let before = item_bytes(&e);
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, uid, true);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "Edited completed checklist".into();
+        a.form.as_mut().unwrap().notes = "New notes".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        run(&e, &mut a, &mut w, r);
+        let task = &a.snapshot.tasks[a.snapshot.find(uid).unwrap()];
+        assert_eq!(task.summary, "Edited completed checklist");
+        assert_eq!(task.description.as_deref(), Some("New notes"));
+        assert_eq!(task.status, Status::Completed);
+        let undo = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, undo);
+        assert_eq!(item_bytes(&e), before);
+        select(&mut a, uid, true);
+        a.handle_key(key('i'));
+        a.form.as_mut().unwrap().title = "Keep typed title".into();
+        a.form.as_mut().unwrap().due = "2026-12-11".into();
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        let error = w.run(a.write_snapshot(), &r, now()).unwrap_err();
+        a.write_finished(Err(error.message()));
+        assert_eq!(a.form.as_ref().unwrap().title, "Keep typed title");
+        assert_eq!(a.form.as_ref().unwrap().due, "2026-12-11");
+        assert_eq!(item_bytes(&e), before);
+    }
+
+    #[test]
     fn checklist_schedule_stale_form_keeps_typing_and_item_dates_stay_inherited() {
         let e = env("010-first-phone-actions");
         let (mut w, _) = writer(&e.config());

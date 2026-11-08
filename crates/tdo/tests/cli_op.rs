@@ -771,25 +771,28 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     }
     let before = fs::read(&target).unwrap();
     assert!(String::from_utf8_lossy(&before).contains("RRULE:FREQ=MONTHLY;INTERVAL=2"));
-    let o = env.tdo(&["op", "edit", uid, "--notes", "must not save"]);
+    let o = env.tdo(&["op", "edit", uid, "--notes", "text after interval change"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let after = fs::read(&target).unwrap();
+    assert_ne!(after, before);
+    assert!(String::from_utf8_lossy(&after).contains("DESCRIPTION:text after interval change"));
+    let o = env.tdo(&["op", "edit", uid, "--due", "2026-12-12"]);
     assert_eq!(o.status.code(), Some(1));
-    assert!(err(&o).contains("captured"), "{}", err(&o));
-    assert_eq!(fs::read(target).unwrap(), before);
+    assert_eq!(fs::read(&target).unwrap(), after);
     let single = env.tdo(&["op", "check", uid]);
     assert_eq!(single.status.code(), Some(0), "{}", err(&single));
     assert!(
-        out(&single).contains("edit notes: refused:"),
+        out(&single).contains("edit notes: allowed"),
         "{}",
         out(&single)
     );
     let aggregate = env.tdo(&["check"]);
     assert_eq!(aggregate.status.code(), Some(0), "{}", err(&aggregate));
-    let reason = out(&single)
-        .lines()
-        .find_map(|line| line.strip_prefix("edit notes: refused: "))
-        .unwrap()
-        .to_owned();
-    assert!(out(&aggregate).contains(&reason), "{}", out(&aggregate));
+    assert!(
+        out(&aggregate).contains("edit notes: allowed="),
+        "{}",
+        out(&aggregate)
+    );
 }
 
 /// What a running sync does to a writer: holds the vdir lock shared, so a save cannot get the
@@ -1275,4 +1278,64 @@ fn reparent_cli_reports_context_and_shipping_refusal() {
     let undone = e.op(&["undo", &id]);
     assert!(undone.status.success(), "{}", err(&undone));
     assert_eq!(list_files(&e), before);
+}
+
+#[test]
+fn text_capability_reports_and_cli_edit_closed_recurring_checklists() {
+    let env = Env::new("verified");
+    let list = env.vdir().join("list1");
+    fs::remove_dir_all(&list).unwrap();
+    fs::create_dir(&list).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text");
+    for path in fs::read_dir(source).unwrap().map(|e| e.unwrap().path()) {
+        if path.extension().is_some_and(|e| e == "ics") {
+            fs::copy(&path, list.join(path.file_name().unwrap())).unwrap();
+        }
+    }
+    let uid = "twydo-p8-c29-b";
+    let path = list.join(format!("{uid}.ics"));
+    let before = fs::read_to_string(&path).unwrap().replace(
+        "STATUS:NEEDS-ACTION",
+        "STATUS:COMPLETED\nCOMPLETED:20261210T120000Z",
+    );
+    fs::write(&path, &before).unwrap();
+    for report in [env.tdo(&["check"]), env.tdo(&["op", "check", uid])] {
+        assert!(report.status.success(), "{}", err(&report));
+        let output = out(&report);
+        assert!(
+            !output.contains("checklist creation and text editing"),
+            "{output}"
+        );
+        assert!(output.contains("edit title: allowed"), "{output}");
+        assert!(output.contains("edit notes: allowed"), "{output}");
+        assert!(!output.contains(uid), "{output}");
+    }
+    let bad = env.tdo(&["op", "edit", uid, "--title", "   "]);
+    assert!(!bad.status.success());
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+    let edited = env.tdo(&[
+        "op",
+        "edit",
+        uid,
+        "--title",
+        "New title",
+        "--notes",
+        "New notes",
+    ]);
+    assert!(edited.status.success(), "{}", err(&edited));
+    let after = fs::read_to_string(&path).unwrap();
+    assert!(after.contains("SUMMARY:New title"));
+    assert!(after.contains("DESCRIPTION:New notes"));
+    assert!(after.contains("STATUS:COMPLETED"));
+    assert!(after.contains("RRULE:FREQ=MONTHLY"));
+    let held = |raw: &str| {
+        let mut cal = twydo_core::ical::parse(raw.as_bytes()).unwrap();
+        let todo = cal.root.children_named_mut("VTODO").next().unwrap();
+        for prop in ["SUMMARY", "DESCRIPTION", "DTSTAMP", "LAST-MODIFIED"] {
+            todo.remove_props(prop);
+        }
+        twydo_core::ical::serialize(&cal)
+    };
+    assert_eq!(held(&before), held(&after));
 }
