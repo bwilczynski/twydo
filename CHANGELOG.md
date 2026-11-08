@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8](https://github.com/bwilczynski/twydo/compare/v0.1.7...v0.1.8) - 2026-11-08
+
+### Fixed
+
+- *(tui)* strike through completed task titles
+- *(tui)* keep completion cursor out of Done
+
 ## [0.1.7](https://github.com/bwilczynski/twydo/compare/v0.1.6...v0.1.7) - 2026-11-08
 
 ### Added
