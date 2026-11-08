@@ -28,7 +28,8 @@
   shows. List groups come from `[[groups]]` in [config.md](config.md).
 - **Tasks** (middle): the current view under date-group headers. `○` a task, `↺` a repeating
   task with its rule, `[3]` a checklist or project with 3 items. The bar on the left is the
-  list's colour. Overdue rows are red.
+  list's colour. Overdue rows are red. Completed titles are struck through, including
+  selected rows, projects/checklists and their completed items.
 - **Details** (right): the selected task's list, dates, repeat, alerts, warnings, its items (on a
   parent) and notes. It appears when the terminal is at least 110 columns wide.
 - **Status line**: the mode (`NORMAL`, `INSERT`, `COMMAND`), the focused pane, key hints or the

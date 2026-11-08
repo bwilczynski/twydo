@@ -430,7 +430,14 @@ fn row_line(
         ));
     }
     spans.extend([
-        Span::styled(title, text),
+        Span::styled(
+            title,
+            if t.status == Status::Completed {
+                text.add_modifier(Modifier::CROSSED_OUT)
+            } else {
+                text
+            },
+        ),
         Span::styled(marker, theme::muted()),
         Span::styled(suffix, dim()),
         Span::raw(" ".repeat(filler)),
