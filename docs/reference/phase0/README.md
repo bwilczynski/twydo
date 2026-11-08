@@ -325,5 +325,6 @@ conflict store.
 
 ## Later capture logs
 
+- [Issue 69 collection lifecycle](issue69-lifecycle.md): helper creation confirmed on the phone; lock and conditional-deletion guards failed; three resources retained in backup/export.
 - [Plan 8 RF/RA session](plan8-rf-ra-checklist.md): bounded from-completion editing evidence and closeout.
 - [Issue 41 item reordering](issue41-item-reorder.md): shared ranks, phone Manually display and rename preservation for reorders and anchored insertion.

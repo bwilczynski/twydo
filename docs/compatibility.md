@@ -124,6 +124,32 @@ Twydo-originated ordering operations), the rule verdicts and the safety rules, a
 separate test account, and must never point at your real data: an unverified write can produce
 something 2Do on the iPhone reads differently. See [config.md](config.md).
 
+## Collection management capabilities
+
+List creation, name/color editing and whole-list deletion have separate compatibility
+rows (`list-create`, `list-metadata`, `list-delete`). Task-operation verdicts do not
+authorize them. Helper creation/name/color propagation to the phone passed the approved
+lifecycle baseline; reverse creation remains unverified, so verified mode still refuses
+creation. Test mode can exercise unverified creation during a separately
+approved synthetic round; a missing, failed or unsupported row still refuses. Name/color
+editing stays refused in **every write mode** until server-enforced conditional writes
+are implemented and demonstrated. The prototype's preflight read and post-write readback
+cannot prevent a concurrent phone rename/color change from being silently overwritten.
+Successful phone round trips alone cannot enable that capability: the independent
+`list-metadata-atomicity` edge must also pass. The [lifecycle probes](reference/phase0/issue69-lifecycle.md)
+found that the server accepted a tokenless name change while reporting an exclusive lock,
+and accepted a stale-ETag DELETE even though that ETag tracked resource changes.
+The `list-metadata-atomicity` and `list-delete-atomicity` edges record those failures.
+Product collection deletion remains unavailable. These verdicts do not change
+task-operation test-mode rules.
+
+The [archive investigation](reference/phase0/issue69-list-management.md) found no changes
+to task bytes, ETags or the 14 returned collection properties after phone archive/unarchive.
+Twydo therefore retains local archiving and does not claim to share archive state with
+2Do. On the tested phone, restore was under Settings → Privacy → Archived Lists; the
+completed sample required Show all to appear in Done. No creation/edit/deletion verdict
+is inferred from that archive round.
+
 ## What is verified today
 
 The [editing-completeness audit and plan](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)

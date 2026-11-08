@@ -63,6 +63,7 @@ reported. Every minute it moves its clock on, so
 | `h` / `l`, `Tab` | focus the previous / next pane |
 | `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
 | `Enter` in the sidebar | open the view or list |
+| `o` / `i` in the sidebar | create / edit a list |
 | `Enter` on a parent | expand or collapse its items (All and lists) |
 | `/`, then `n` / `N` | search the current view by title; `Enter` keeps the filter, `Esc` clears it |
 | `?` | help; `Esc` closes it |
@@ -101,10 +102,42 @@ On a checklist or project, a write acts on the whole family; see
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | show unreadable files and sync errors; j/k scroll |
+| `:lists` | manage all lists, including hidden and archived lists, or resume a pending list save |
+| `:list-backups` | browse completed raw collection backups |
+| `:export-list-backup <id> <directory>` | export exact raw collection data into a new directory outside the vdir |
 | `:forget-list [list]` | choose a list, confirm it was deleted remotely, preserve its local copy, and refresh the synced list set |
 | `:recover` | browse preserved lists; Enter previews tasks and notes, r chooses a destination |
 | `:recover <backup-id> <destination-list>` | preview and confirm recovery into a named existing list |
 | `:q` | quit |
+
+In the sidebar, `o` opens a new list card and `i` edits the selected ordinary list.
+Use Tab to move between name, color and actions. Color accepts `#RRGGBB`; Left/Right
+cycles the 11 preset colors. **Save to CalDAV** applies immediately, even when automatic
+sync is off. Create/edit remain compatibility-gated until their device checks pass.
+Name/color editing is currently refused in every write mode: its prototype cannot
+protect against a concurrent phone edit. Enabling it requires a demonstrated atomic
+server precondition as well as interoperability checks.
+A refusal retains the card input. Pending saves offer **Check pending save** and
+**Keep server values**; these inspect the recorded target without repeating a write.
+
+**Archive on this desktop** is a separate action: it saves no pending name/color edits
+and works offline. Unfinished or unreadable tasks require confirmation. Use `:lists`
+to unarchive. An archived selected list returns to Today. Other running Twydo windows
+reload the saved list preferences while retaining active card input.
+
+Sidebar `dd`, or the deletion action in a list card, requests a fresh remote inventory
+and a private backup before confirmation. The backup includes server-only resources,
+unparseable content, local files, collection properties and relevant journal/conflict
+evidence. An incomplete or changing inventory is refused. **Actual collection deletion
+is currently unavailable**: server-enforced protection against concurrent remote edits
+has not been demonstrated, including in test mode. No DELETE is sent.
+The approved synthetic server probe ignored both a metadata lock and a stale deletion
+ETag. Its results keep these product actions gated; that probe is separate from the TUI.
+
+Use `:list-backups` and `:export-list-backup` to inspect/export these raw snapshots.
+They are separate from task undo and the existing `:recover` retirement backups.
+Collection restore and acceptance of a vanished pending-create/edit target remain pending
+the lifecycle checkpoint; a backup export preserves every resource in the meantime.
 
 Run `:forget-list` to choose a list by name with j/k or the arrow keys, then Enter.
 The chooser includes hidden, archived, and empty lists. Duplicate names show collection

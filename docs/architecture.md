@@ -132,6 +132,61 @@ batching ages the entry by `queued`, not by the drain time.
 TUI and `tdo op` read their own queued edits; the TUI marks those rows ` (queued)` and counts
 them in `N pending`.
 
+## Collection operation coordination
+
+Collection management has a separate durable fence under `<vdir-state>/lists/`:
+`active` names an operation in `operations/<id>.json`. Its phases are prepared,
+remote-started, remote-confirmed, local-confirmed, complete and uncertain. The record
+retains the exact request and local collection bytes; it contains no credentials.
+An unfinished record blocks task recovery, new task writes, queue insertion/drain and
+ordinary sync until the collection service reconciles it. Existing unrelated queued
+work stays pending. A coordination lock serializes marker publication with queue
+insertion, so a queued write cannot slip behind the collection preflight.
+If a TUI starts while that fence prevents opening its task store, the next task write
+retries initialization after reconciliation clears it. An already healthy writer keeps
+its session undo history.
+
+The bundled collection helper takes the same exclusive run lock and a shared vdir lock itself.
+Those locks survive the TUI's exit while the helper is still running. It validates the
+bound operation and held bytes before its remote phase, and persists the receipt before
+releasing the locks. Readers remain responsive during network requests; Rust local
+finalization takes the exclusive vdir lock. The list card exposes explicit service actions
+without enabling unverified writes in verified mode.
+The helper also enforces its own operation deadline, so it releases its locks even if its
+monitoring TUI has exited. Timeout retains an uncertain/prepared operation for reconciliation;
+it never assumes that killing a request undoes a server mutation.
+
+The create/edit service records the exact remote URL before a mutation and a digest of
+its unexpanded connection configuration. Reconciliation uses that saved URL and rejects
+changed account/storage configuration before fetching credentials. A successful remote
+request is followed by a persisted local metadata before/after plan and then vdirsyncer's
+own discovery-cache refresh, with missing-collection creation disabled. An interrupted
+local metadata write can resume only from its recorded before/after values; held task
+bytes cannot be replaced. Reconciliation does not repeat MKCALENDAR or PROPPATCH. If the
+server's values differ, accepting them requires the explicit Keep server choice.
+The metadata writer remains an unverified prototype: its read/PROPPATCH/read sequence
+has a remote-writer race. The shipping metadata capability stays closed in every mode,
+including test mode, until a server-enforced conditional write is implemented and proven.
+Its independent `list-metadata-atomicity` edge must pass as well as the interoperability
+row; promoting phone verdicts alone cannot admit a known unsafe write.
+Offline protocol/reconciliation tests use a synthetic matrix override; the application
+and proposed device round cannot load that override.
+
+Deletion previews are read-only collection operations. Under the same fence, the helper
+captures all returned Depth-1 resources with strong ETags, conditional GETs, SHA-256
+hashes and a second matching inventory/property read. Rust publishes a private version-1
+backup under `lists/backups/<id>/backup.json` with raw local files and relevant state before
+releasing the fence and showing confirmation. A failed preview can be cancelled safely
+without another network request. Only complete manifests appear in the collection-backup
+browser; raw export checks resource/local hashes and creates a new directory outside the
+vdir. This checkpoint contains no collection DELETE path or collection restore path;
+server-enforced deletion protection must be demonstrated first.
+The approved lifecycle probe demonstrated that a changing calendar-export ETag was
+insufficient: the server ignored a stale `If-Match` on DELETE. Only that disposable
+test collection was removed. All three resources, including the remote-only task, were
+retained in the service backup and verified through its local raw-export API. The
+isolated test sync profile was sealed; this did not enable a product DELETE path.
+
 ## The operation journal
 
 Every write goes through the journal, so a crash at any point leaves the data either untouched

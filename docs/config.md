@@ -60,6 +60,7 @@ and conflict handling are in [sync.md](sync.md).
 | `pair` | string | `"twydo"` | vdirsyncer pair to sync. |
 | `local_storage` | string | `"twydo_local"` | Name of the pair's vdir-side storage in the vdirsyncer config. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
+| `list_python` | string | `"python3"` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. Independent of `command`, which may be a wrapper. The helper uses this pair's existing connection and credential configuration. |
 | `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
@@ -71,6 +72,16 @@ and conflict handling are in [sync.md](sync.md).
 `after_edit` is no longer used: it is accepted and ignored, and `tdo sync` and `tdo status` and
 the TUI warn about it. Edits sync in batches (`batch_size`, `max_wait_secs`); `tdo sync off`
 keeps syncs manual.
+
+The collection adapter accepts a filesystem/CalDAV pair whose local storage matches the
+bound vdir. The vdirsyncer `status_path` must stay outside that vdir, including through
+symlink aliases. Explicit mappings and dynamic `from a`/`from b` layouts are supported
+separately. Mixing three-part aliases with dynamic shortcuts, or multiple logical/local/remote
+bindings, is refused before credentials are fetched. It requires a literal remote `url`;
+dynamic `url.fetch` is unavailable because
+its output could select another account between operation phases. Existing password
+fetching and TLS settings remain in vdirsyncer. This restriction does not change ordinary
+task synchronization.
 
 ## `[lists.<id>]`
 
