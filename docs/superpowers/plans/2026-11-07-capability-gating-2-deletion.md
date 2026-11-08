@@ -47,13 +47,13 @@ New cases: `standalone-resource` / `delete` and `flat-family` / `delete`. A stan
 
 **Interfaces:** child module `delete::check(snap: &Snapshot, matrix: &Matrix, mode: WriteMode, idx: usize) -> Result<(), Blocked>`. The caller dispatches only top-level `Op::Delete` when the matching new capability row exists. Existing item deletion and custom matrices without the row use their existing paths. The helper validates identities and structure before checking its dedicated operation row.
 
-- [ ] Add `capability_delete_removes_only_selected_resource_or_flat_family`: with the shipping matrix, weekly standalone, empty weekly project, empty/nonempty recurring checklist and completed flat families pass deletion; only the selected UID and actual child resources disappear. Derive synthetic neighbors from existing captures.
-- [ ] Add `capability_delete_preserves_series_history_and_other_resources`: live repeating parent and unrelated history copies coexist; deleting the live family leaves history resources and every outside-family byte unchanged. Include date/start/relative/absolute-alarm and count/until metadata as preserved payload, not execution claims.
-- [ ] Add `capability_delete_rejects_unsafe_membership`: duplicate target/child UID, multiple or disagreeing parent links, cross-list child, unknown type, nested family and plain-task parent are refused. Existing individual-item deletion assertions remain passing.
-- [ ] Add `capability_delete_requires_its_own_evidence`: missing/unverified/unsupported new rows and custom matrices retain expected legacy behavior; execution/edit verdicts do not authorize removal. No other operation becomes admitted because of these rows.
-- [ ] Run `cargo test -p twydo-core --test gate capability_delete` and `cargo test -p twydo-core --test store_family capability_delete`; confirm the intended admission tests fail before implementation.
-- [ ] Implement the helper and minimal dispatch. Add the two dedicated rows only after the captured invariant and local preservation tests support them; cite direct captures and generalization separately. Reuse `operation_row` semantics, including test-mode baseline requirements.
-- [ ] Run the focused tests, then `cargo test -p twydo-core --test gate --test store --test store_family`; commit `feat: admit deletion by exact resource scope` with explicit paths.
+- [x] Add `capability_delete_removes_only_selected_resource_or_flat_family`: with the shipping matrix, weekly standalone, empty weekly project, empty/nonempty recurring checklist and completed flat families pass deletion; only the selected UID and actual child resources disappear. Derive synthetic neighbors from existing captures.
+- [x] Add `capability_delete_preserves_series_history_and_other_resources`: live repeating parent and unrelated history copies coexist; deleting the live family leaves history resources and every outside-family byte unchanged. Include date/start/relative/absolute-alarm and count/until metadata as preserved payload, not execution claims.
+- [x] Add `capability_delete_rejects_unsafe_membership`: duplicate target/child UID, multiple or disagreeing parent links, cross-list child, unknown type, nested family and plain-task parent are refused. Existing individual-item deletion assertions remain passing.
+- [x] Add `capability_delete_requires_its_own_evidence`: missing/unverified/unsupported new rows and custom matrices retain expected legacy behavior; execution/edit verdicts do not authorize removal. No other operation becomes admitted because of these rows.
+- [x] Run `cargo test -p twydo-core --test gate capability_delete` and `cargo test -p twydo-core --test store_family capability_delete`; confirm the intended admission tests fail before implementation.
+- [x] Implement the helper and minimal dispatch. Add the two dedicated rows only after the captured invariant and local preservation tests support them; cite direct captures and generalization separately. Reuse `operation_row` semantics, including test-mode baseline requirements.
+- [x] Run the focused tests, then `cargo test -p twydo-core --test gate --test store --test store_family`; commit `feat: admit deletion by exact resource scope` with explicit paths.
 
 ### Task 2: Pin durable dependencies and user-visible behavior
 
@@ -61,14 +61,29 @@ New cases: `standalone-resource` / `delete` and `flat-family` / `delete`. A stan
 
 **Interfaces:** existing `Store::submit`, journal recovery, undo/redo and selected-row `dd`; no new CLI/TUI operation or permission-probe interface.
 
-- [ ] Add `capability_delete_refuses_changed_family_before_commit`: changed/removed/new child, changed parent and unrelated concurrent edit; affected family changes refuse atomically while unrelated edits remain preserved.
-- [ ] Add `capability_delete_queue_and_inverse_keep_scope`: queued removal has strict file/dependency guards; success overlays match committed removals; stale undo/redo does not overwrite a remotely edited/restored member or new family member.
-- [ ] Add `capability_delete_recovery_is_idempotent`: interrupt a multi-file removal after the first removal and after all removals; recovery finishes once, undo restores exact originals, unrelated history remains identical. Reuse existing interruption helpers.
-- [ ] Add CLI/TUI tests selecting the parent (including empty/completed sections): `dd` uses whole-family scope and one undo; `tdo check` and `op check` reflect the gate without titles in default aggregate output. A refused deletion writes no bytes.
-- [ ] Run the affected targets before and after any necessary dependency fix. Update the matching as-is docs with direct evidence, generalized scope and exclusions.
-- [ ] Run shared completion validation, inspect the staged diff for private data and commit `test: cover deletion recovery and user workflows` (include any necessary fix and docs).
+- [x] Add `capability_delete_refuses_changed_family_before_commit`: changed/removed/new child, changed parent and unrelated concurrent edit; affected family changes refuse atomically while unrelated edits remain preserved.
+- [x] Add `capability_delete_queue_and_inverse_keep_scope`: queued removal has strict file/dependency guards; success overlays match committed removals; stale undo/redo does not overwrite a remotely edited/restored member or new family member.
+- [x] Add `capability_delete_recovery_is_idempotent`: interrupt a multi-file removal after the first removal and after all removals; recovery finishes once, undo restores exact originals, unrelated history remains identical. Reuse existing interruption helpers.
+- [x] Add CLI/TUI tests selecting the parent (including empty/completed sections): `dd` uses whole-family scope and one undo; `tdo check` and `op check` reflect the gate without titles in default aggregate output. A refused deletion writes no bytes.
+- [x] Run the affected targets before and after any necessary dependency fix. Update the matching as-is docs with direct evidence, generalized scope and exclusions.
+- [x] Run shared completion validation, inspect the staged diff for private data and commit `test: cover deletion recovery and user workflows` (include any necessary fix and docs).
 
 ## Checkpoint
 
-- [ ] Implementation, evidence notes, validation and self-review complete.
-- [ ] Return commit IDs, tests, remaining refusals and any unresolved proof to the coordinator. Do not push or perform a device round.
+- [x] Implementation, evidence notes, validation and self-review complete.
+- [x] Return commit IDs, tests, remaining refusals and any unresolved proof to the coordinator. Do not push or perform a device round.
+
+
+Direct-execution closeout: the reviewed deletion path additionally rejects JSON-only or
+mismatching family references before admission and when they arrive after the snapshot.
+`FamilyGuard.parent_aliases` retains RFC/internal identities through deletion, queue,
+inverse and recovery; old guard JSON remains readable. Parsed links pointing to an internal
+alias in place of an RFC parent link are refused as ambiguous. The formerly "unrelated"
+fixture was corrected to update both parent representations, including folded metadata.
+Unknown numeric/string task types are refused without losing the reader's supported valid
+integer representations. Whole-family removal includes history linked as children and
+preserves history outside the selected family. No new device evidence was claimed.
+
+Validation: full offline Rust workspace, 49 Python tests, documentation links, clippy with
+warnings denied, formatting and whitespace checks passed. This increment remains subject
+to the final combined-branch review before publication; no push or production write occurred.

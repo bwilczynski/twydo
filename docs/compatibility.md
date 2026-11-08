@@ -143,11 +143,11 @@ batches remain unfinished. A passing row is combined with the shape restrictions
 | One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Monthly repeat (any day, Nth weekday) | ✅ | ✅ | ✅ | — | — | ✅ |
 | Yearly repeat (29 February included) | ✅ | ✅ | ✅ | — | — | ✅ |
-| Daily repeat | ✅ | ✅ | ✅ | — | — | — |
-| Weekly repeat | ✅ | ✅ | ✅ | — | — | — |
-| Repeat from completion | ✅ | Monthly only² | ✅ | — | — | — |
+| Daily repeat | ✅ | ✅ | ✅ | — | — | ✅ |
+| Weekly repeat | ✅ | ✅ | ✅ | — | — | ✅ |
+| Repeat from completion | ✅ | Monthly only² | ✅ | — | — | ✅ |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring checklist | Monthly only³ | Text/conversion only³ | Monthly only¹ | — | — | — |
+| Recurring checklist | Monthly only³ | Text/conversion only³ | Monthly only¹ | — | — | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | ✅ |
@@ -156,7 +156,10 @@ batches remain unfinished. A passing row is combined with the shape restrictions
 column also needs the rule/modifier's execution verdict and the gate's scheduling/family checks.
 
 Parent Delete columns describe whole-family deletion. Selected-item deletion uses the two
-dedicated rows below, independently of the item's ordinary task/repeat operation rows.
+dedicated rows below, independently of the item's ordinary task/repeat operation rows. A
+passing Delete row means exact removal of one top-level resource or flat family; it does not
+grant recurrence execution or field edits. Empty, completed, cancelled and recurring flat
+families are included; nested or ambiguous families remain refused.
 
 The newly enabled operations are:
 
@@ -170,6 +173,8 @@ The newly enabled operations are:
 | `recurring-checklist.edit` | ³Title/notes on those open parents/items; convert a top-level open monthly task to a checklist, preserving recurrence. No due/start/time/interval or other type changes |
 | `checklist-item.delete` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
 | `project-item.delete` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
+| `standalone-resource.delete` | Remove one recognized top-level task with unique identity and no parent or children; recognized statuses, schedules, alarms and opaque metadata are deleted with it, never executed or rewritten |
+| `flat-family.delete` | Remove one recognized top-level checklist/project and its flat plain-task items in the same list, empty or nonempty, including completed/cancelled and recurring families; exact family boundary, no outside-family history changes |
 | `recurring-checklist.complete` | ¹Plain monthly day 1–28, interval 1, date-only, due anchored, no end/start/alert/delay; mixed or all-done items, no cancelled items |
 | `ended-until-daily.reopen` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
 | `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
@@ -215,6 +220,22 @@ statuses, alerts, history and opaque content, with durable family checks through
 undo/redo and recovery. This is operation-level generalization, not a device test of every
 combination. Nested families, ambiguous identities (including multiple UID properties or
 parent links), broken links, unreadable metadata and unrecognized rules stay refused. No recurrence-execution support is inferred from deletion.
+
+Whole-resource deletion is separate from item deletion. Direct captures are Plan 6 H9
+(`plan6-list1/08-delete`, `09-delete-rest`, `plan6-list2/08-delete`, `09-delete-rest`) for
+nonempty checklist/project families, a live repeating project and retained history copies,
+plus the standalone monthly/yearly deletions in the Plan 4 and gap captures. Twydo removes
+exactly the selected top-level resource and, for a checklist/project, its flat plain-task
+items; it does not execute or rewrite dates, repeats, alarms, status or opaque fields.
+Representative local tests and the exact removal contract support recognized weekly, daily
+and from-completion resources and empty, completed or cancelled flat families. Outside-family
+resources and history stay unchanged; history linked as a child is removed with the family.
+Tests cover stale-family refusal, queue, undo/redo and recovery. Missing proof: no direct
+device observation for every rule/status combination, empty-family deletion, or a
+completed/cancelled family. Plain-task parents, nested families, duplicate or disagreeing
+standard/JSON links, cross-list items, unknown types and unrecognized rules stay refused.
+JSON-only or disagreeing parent references are refused, including references added after
+the snapshot or before undo/recovery. The item-delete rows keep their precedence.
 
 The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) records both-direction
 phone checks and exact writer comparisons for the two from-completion rows. Retained inactive

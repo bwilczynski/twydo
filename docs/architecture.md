@@ -221,14 +221,18 @@ target, and the directory is fsynced. Removals unlink and then fsync the directo
   unchanged. They are never written or treated as sync mutations. Older entries
   without this field have no durable read dependencies.
 - `family` (optional): the collection, parent UID and loaded family paths for item
-  creation, ordering or individual item deletion. Under the vdir lock, a rescan rejects
+  creation, ordering or deletion, including whole-family deletion. Under the vdir lock, a rescan rejects
   newly joined members before applying, undoing, redoing or recovering the operation.
   Byte dependencies guard original members; the operation's own created/deleted path
   is included and may be present/absent for idempotent recovery. Item creation records
   sibling byte dependencies because its append position depends on the loaded sibling
   set. The guard is retained by inverse entries and absent from older journal entries.
   Membership is checked on parsed, unfolded calendar links, so folding cannot hide a
-  newly joined item. An unreadable calendar resource outside the recorded member paths
+  newly joined item. New guards also record `parent_aliases`: the RFC UID and internal JSON
+  identity. The scanner checks JSON `parentuid` as well as standard links, so a missing
+  `RELATED-TO` cannot hide a new reference after the parent file is removed. Older guards
+  without aliases still decode and retain their standard UID checks. An unreadable calendar
+  resource outside the recorded member paths
   cannot safely be excluded from the family and makes the operation refuse.
 
 Writes are ordered so that a completed occurrence is created before its live task advances: if

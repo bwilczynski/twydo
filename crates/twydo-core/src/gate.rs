@@ -78,6 +78,9 @@ use crate::model::{MetaFormat, Status, Task, TaskKind, Trigger};
 use crate::repeatinput::RepeatSpec;
 use crate::views::{Snapshot, declared_kind, task_rule_class};
 
+mod delete;
+pub(crate) mod relationships;
+
 /// Why the gate refused an operation. `Display` is the reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Blocked(pub String);
@@ -185,6 +188,16 @@ pub fn check(
         {
             return check_item_delete(snap, m, mode, p, case);
         }
+    }
+
+    // A top-level delete removes one resource or one flat family. Its dedicated rows
+    // authorize removal without recurrence-execution or field-edit verdicts. Older
+    // matrices keep their existing path below.
+    if let (Some(i), Op::Delete { .. }) = (target, op)
+        && snap.parent(i).is_none()
+        && m.operation(delete::case(snap, i), "delete").is_some()
+    {
+        return delete::check(snap, m, mode, i);
     }
 
     // Rule 1b: family operations.
@@ -834,8 +847,20 @@ fn written_rule(
 /// A readable JSON `TaskType` must be 0, 1 or 2 and match the declared kind (0 task,
 /// 1 checklist, 2 project). Without one there is nothing to check.
 fn known_task_type(t: &Task) -> bool {
-    let Some(n) = json_meta(t).and_then(|m| m.get_i64("TaskType")) else {
+    if t.warnings
+        .iter()
+        .any(|w| w.starts_with("unrecognised @tasktype value:"))
+    {
+        return false;
+    }
+    let Some(meta) = json_meta(t) else {
         return true;
+    };
+    if !meta.has("TaskType") {
+        return true;
+    }
+    let Some(n) = meta.get_integer("TaskType") else {
+        return false;
     };
     let kind = match n {
         0 => TaskKind::Task,

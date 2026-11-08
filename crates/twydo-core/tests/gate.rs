@@ -3257,9 +3257,12 @@ mod recurring_checklist_writes {
         let e = env("011d-phone-delete-items");
         let s = e.snap();
         let mut legacy = Matrix::embedded().clone();
-        legacy
-            .operation
-            .retain(|r| !matches!(r.case.as_str(), "checklist-item" | "project-item"));
+        legacy.operation.retain(|r| {
+            !matches!(
+                r.case.as_str(),
+                "checklist-item" | "project-item" | "standalone-resource" | "flat-family"
+            )
+        });
         let m = &legacy;
         let p = s.find(CHECKLIST_A_UID).unwrap();
         let child = s.children(p)[0];
@@ -3429,6 +3432,490 @@ mod individual_item_deletion {
                 ),
                 Ok(()),
                 "{rule}"
+            );
+        }
+    }
+}
+
+mod capability_deletion {
+    use super::*;
+    use std::fs;
+
+    use chrono::{DateTime, TimeZone, Utc};
+
+    use common::Env;
+    use twydo_core::compat::Matrix;
+    use twydo_core::config::WriteMode;
+    use twydo_core::edit::{Change, Op};
+    use twydo_core::gate::{Blocked, check};
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::meta_edit::MetaJson;
+    use twydo_core::model::{Alarm, Trigger};
+    use twydo_core::views::Snapshot;
+
+    const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
+    const R: &str = "8f603cfaa41f4c229b9adcd6223e7393";
+    const R1: &str = "35baad226105494080416dc20825f49c";
+    const R2: &str = "72e9476833d14a77a76c64cafeedfa97";
+    const R3: &str = "a8e8de2d00a24a8596cdd171fc971d4c";
+    const R_COPY: &str = "14b5a37a52224e8c959b5002e2275fc9";
+    const R1_COPY: &str = "780885dd967342ec8953c6824f1d674b";
+    const R2_COPY: &str = "dd8f672c8feb47ccae449f8488918975";
+    const R3_COPY: &str = "7357bbeb391e4c2da619ca0b0b78f919";
+
+    const CHECKLIST_A: &str = "12d762a5639e406c8ec865517882f130";
+    const A_Q: &str = "2cb7991c71624ddda29877c098acad43";
+    const A_Z: &str = "3199749e2ea64f10bdaebc00197768ca";
+    const CHECKLIST_B: &str = "twydo-p8-c29-b";
+    const B_Q: &str = "96ee97f3cc8c403391c57ec8b8e5d192";
+    const B_Z: &str = "f9ae2ffd776e42919f9696f37dd6e849";
+    const D: &str = "twydo-p8-c29-d";
+
+    const CA: &str = "twydo-i27-c-a";
+    const CA_Q: &str = "twydo-i27-c-a-q";
+    const PA: &str = "twydo-i27-p-a";
+    const PLAIN_D: &str = "855a275473c34da9840a6a76c5f18385";
+
+    fn instant() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
+    }
+
+    fn key(uid: &str) -> String {
+        format!("list1/{uid}.ics")
+    }
+
+    fn check_uid(s: &Snapshot, m: &Matrix, uid: &str) -> Result<(), Blocked> {
+        check(
+            s,
+            m,
+            WriteMode::Verified,
+            &Op::Delete { uid: uid.into() },
+            today(),
+        )
+    }
+
+    fn weekly(env: &Env, uid: &str) {
+        let path = env.file(uid);
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=WEEKLY");
+        fs::write(path, text).unwrap();
+    }
+
+    fn set_meta(s: &mut Snapshot, idx: usize, key: &str, value: &str) {
+        let raw = s.tasks[idx]
+            .meta
+            .raw
+            .clone()
+            .expect("fixture has JSON metadata");
+        let mut meta = MetaJson::parse(&raw).expect("fixture has JSON metadata");
+        meta.set_str(key, value);
+        s.tasks[idx].meta.raw = Some(meta.encode());
+    }
+
+    fn set_meta_i64(s: &mut Snapshot, idx: usize, key: &str, value: i64) {
+        let raw = s.tasks[idx]
+            .meta
+            .raw
+            .clone()
+            .expect("fixture has JSON metadata");
+        let mut meta = MetaJson::parse(&raw).expect("fixture has JSON metadata");
+        meta.set_i64(key, value);
+        s.tasks[idx].meta.raw = Some(meta.encode());
+    }
+
+    fn capability_matrix(verdict: &str) -> Matrix {
+        let mut text = String::from("matrix_version = 1\n");
+        for case in ["standalone-resource", "flat-family"] {
+            text.push_str(&format!(
+                "[[operation]]\ncase = \"{case}\"\nop = \"delete\"\n\
+                 iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
+                 iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"{verdict}\"\n\
+                 iphone_to_twydo = \"{verdict}\"\n"
+            ));
+        }
+        // Rule verdicts are deliberately failing: removal must not execute or edit them.
+        text.push_str(
+            "[[rule]]\nclass = \"weeks\"\npreserve = \"fail\"\nexecute = \"fail\"\nedit = \"fail\"\n",
+        );
+        text.push_str(
+            "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"fail\"\nexecute = \"fail\"\nedit = \"fail\"\n",
+        );
+        Matrix::from_toml_str(&text).unwrap()
+    }
+
+    fn baseline_matrix(baseline: &str) -> Matrix {
+        let mut text = String::from("matrix_version = 1\n");
+        for case in ["standalone-resource", "flat-family"] {
+            text.push_str(&format!(
+                "[[operation]]\ncase = \"{case}\"\nop = \"delete\"\n\
+                 iphone_baseline = \"{baseline}\"\nmac_to_iphone = \"unverified\"\n\
+                 iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
+                 iphone_to_twydo = \"pass\"\n"
+            ));
+        }
+        Matrix::from_toml_str(&text).unwrap()
+    }
+
+    #[test]
+    fn capability_delete_removes_only_selected_resource_or_flat_family() {
+        // A standalone weekly resource.
+        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        weekly(&e, E);
+        let s = e.snap();
+        assert_eq!(
+            check_uid(&s, Matrix::embedded(), E),
+            Ok(()),
+            "standalone weekly"
+        );
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&s, &Op::Delete { uid: E.into() }, instant())
+            .unwrap();
+        let after = e.files();
+        assert!(!after.contains_key(&key(E)));
+        for (path, bytes) in before {
+            if path != key(E) {
+                assert_eq!(after[&path], bytes, "{path}");
+            }
+        }
+
+        // An empty weekly project.
+        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        for child in [R1, R2, R3] {
+            fs::remove_file(e.file(child)).unwrap();
+        }
+        weekly(&e, R);
+        let s = e.snap();
+        assert_eq!(
+            check_uid(&s, Matrix::embedded(), R),
+            Ok(()),
+            "empty weekly project"
+        );
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&s, &Op::Delete { uid: R.into() }, instant())
+            .unwrap();
+        let after = e.files();
+        assert!(!after.contains_key(&key(R)));
+        for (path, bytes) in before {
+            if path != key(R) {
+                assert_eq!(after[&path], bytes, "{path}");
+            }
+        }
+
+        // A nonempty recurring checklist: only A, q and z disappear.
+        let e = Env::new(
+            WriteMode::Verified,
+            "plan8-checklist-b/011-phone-items-and-text",
+        );
+        let s = e.snap();
+        assert_eq!(
+            check_uid(&s, Matrix::embedded(), CHECKLIST_A),
+            Ok(()),
+            "nonempty recurring checklist"
+        );
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(
+                &s,
+                &Op::Delete {
+                    uid: CHECKLIST_A.into(),
+                },
+                instant(),
+            )
+            .unwrap();
+        let after = e.files();
+        for uid in [CHECKLIST_A, A_Q, A_Z] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+        for uid in [CHECKLIST_B, B_Q, B_Z, D] {
+            assert_eq!(after[&key(uid)], before[&key(uid)], "{uid}");
+        }
+
+        // The same checklist with no items.
+        let e = Env::new(
+            WriteMode::Verified,
+            "plan8-checklist-b/011-phone-items-and-text",
+        );
+        for child in [A_Q, A_Z] {
+            fs::remove_file(e.file(child)).unwrap();
+        }
+        let s = e.snap();
+        assert_eq!(
+            check_uid(&s, Matrix::embedded(), CHECKLIST_A),
+            Ok(()),
+            "empty recurring checklist"
+        );
+
+        // Completed flat families: a project and a checklist.
+        let e = Env::new(
+            WriteMode::Verified,
+            "issue27-items/020-phone-complete-project",
+        );
+        let s = e.snap();
+        for uid in [PA, CA] {
+            assert_eq!(
+                check_uid(&s, Matrix::embedded(), uid),
+                Ok(()),
+                "completed {uid}"
+            );
+        }
+    }
+
+    #[test]
+    fn capability_delete_preserves_series_history_and_other_resources() {
+        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let s = e.snap();
+        let mut payload = s.clone();
+        let r = payload.find(R).unwrap();
+        payload.tasks[r].rrule = Some("FREQ=MONTHLY;COUNT=3".into());
+        payload.tasks[r].from_completion = true;
+        payload.tasks[r].start = Some(IcalDateTime::Date(date(2026, 12, 1)));
+        payload.tasks[r].alarms.push(Alarm {
+            trigger: Trigger::Relative {
+                offset: chrono::Duration::minutes(-30),
+                related_end: false,
+            },
+            index: 0,
+        });
+        payload.tasks[r].alarms.push(Alarm {
+            trigger: Trigger::Absolute("2026-12-10T08:00:00Z".parse().unwrap()),
+            index: 1,
+        });
+        assert_eq!(
+            check_uid(&payload, Matrix::embedded(), R),
+            Ok(()),
+            "recognized date, start, alarm, count and completion metadata"
+        );
+
+        let before = e.files();
+        let mut store = e.store(Matrix::embedded().clone());
+        store
+            .apply(&s, &Op::Delete { uid: R.into() }, instant())
+            .unwrap();
+        let after = e.files();
+        for uid in [R, R1, R2, R3] {
+            assert!(!after.contains_key(&key(uid)), "{uid}");
+        }
+        for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
+            assert_eq!(after[&key(uid)], before[&key(uid)], "history {uid}");
+        }
+        for (path, bytes) in &before {
+            if !path.starts_with("list1/") || ![R, R1, R2, R3].iter().any(|uid| path == &key(uid)) {
+                assert_eq!(after[path], *bytes, "outside family {path}");
+            }
+        }
+        store.undo_last(instant()).unwrap();
+        assert_eq!(e.files(), before);
+    }
+
+    #[test]
+    fn capability_delete_rejects_unsafe_membership() {
+        let m = Matrix::embedded();
+        let s = snap();
+        for uid in [
+            "gate-broken-child",
+            "gate-nested",
+            "gate-plain-parent",
+            "gate-dup",
+        ] {
+            assert!(s.find(uid).is_some(), "missing negative fixture {uid}");
+            assert!(check_uid(&s, m, uid).is_err(), "{uid}");
+        }
+
+        let e = Env::new(WriteMode::Verified, "issue27-items/001-seeded");
+        let base = e.snap();
+        let parent = base.find(CA).unwrap();
+        let child = base.find(CA_Q).unwrap();
+
+        let mut s = base.clone();
+        s.tasks.push(s.tasks[parent].clone());
+        assert!(check_uid(&s, m, CA).is_err(), "duplicate target UID");
+
+        let mut s = base.clone();
+        s.tasks.push(s.tasks[child].clone());
+        assert!(check_uid(&s, m, CA).is_err(), "duplicate child UID");
+
+        let mut s = base.clone();
+        s.tasks[child].blocked = Some("multiple parent links are not supported".into());
+        assert!(check_uid(&s, m, CA).is_err(), "blocked child link");
+
+        let mut s = base.clone();
+        s.tasks[parent].parent = Some("unresolved-parent".into());
+        assert!(check_uid(&s, m, CA).is_err(), "broken parent");
+
+        let mut s = base.clone();
+        s.tasks[child].collection = "list2".into();
+        assert!(check_uid(&s, m, CA).is_err(), "cross-list child");
+
+        let mut s = base.clone();
+        s.tasks[child].meta.unreadable = true;
+        assert!(check_uid(&s, m, CA).is_err(), "unreadable child metadata");
+
+        let mut s = base.clone();
+        s.tasks[child].rrule = Some("FREQ=HOURLY".into());
+        assert!(check_uid(&s, m, CA).is_err(), "unrecognized child rule");
+
+        let mut s = base.clone();
+        set_meta_i64(&mut s, child, "TaskType", 9);
+        assert!(check_uid(&s, m, CA).is_err(), "unknown child type");
+
+        let e = Env::new(
+            WriteMode::Verified,
+            "plan8-checklist-b/011-phone-items-and-text",
+        );
+        let mut s = e.snap();
+        let b_child = s.find(B_Q).unwrap();
+        set_meta(&mut s, b_child, "parentuid", "disagreeing-parent");
+        assert!(
+            check_uid(&s, m, CHECKLIST_B).is_err(),
+            "disagreeing JSON link"
+        );
+        let mut s = e.snap();
+        let b = s.find(CHECKLIST_B).unwrap();
+        set_meta(&mut s, b, "parentuid", "synthetic-other-parent");
+        assert!(
+            check_uid(&s, m, CHECKLIST_B).is_err(),
+            "JSON-only parent link"
+        );
+        assert!(s.find(D).is_some(), "fixture sanity");
+
+        // Raw duplicate identities and multiple parent links are refused before use.
+        for (target, extra) in [
+            (CA, "UID:another-synthetic-identity"),
+            (CA_Q, "RELATED-TO:twydo-i27-p-a"),
+        ] {
+            let e = Env::new(WriteMode::Verified, "issue27-items/001-seeded");
+            let path = e.file(target);
+            let raw = fs::read_to_string(&path)
+                .unwrap()
+                .replace("END:VTODO", &format!("{extra}\r\nEND:VTODO"));
+            fs::write(path, raw).unwrap();
+            let s = e.snap();
+            assert!(s.find(CA).is_some(), "unsupported resource stays readable");
+            assert!(check_uid(&s, m, CA).is_err(), "{extra}");
+        }
+
+        // Raw malformed TaskType values are refused, not treated as an absent type.
+        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let path = e.file(PLAIN_D);
+        let original = fs::read_to_string(&path).unwrap();
+        assert!(original.contains("%22TaskType%22%3A0"));
+        for value in [
+            "%22TaskType%22%3A9",
+            "%22TaskType%22%3A%229%22",
+            "%22TaskType%22%3Atrue",
+            "%22TaskType%22%3A1.5",
+            "%22TaskType%22%3A%22checklist%22",
+        ] {
+            fs::write(&path, original.replace("%22TaskType%22%3A0", value)).unwrap();
+            let s = e.snap();
+            assert!(
+                s.find(PLAIN_D).is_some(),
+                "malformed resource stays readable"
+            );
+            assert!(check_uid(&s, m, PLAIN_D).is_err(), "{value}");
+        }
+        fs::write(&path, original).unwrap();
+    }
+
+    #[test]
+    fn capability_delete_requires_its_own_evidence() {
+        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        weekly(&e, E);
+        let s = e.snap();
+
+        let empty = Matrix::from_toml_str("matrix_version = 1\n").unwrap();
+        assert!(
+            check_uid(&s, &empty, E).is_err(),
+            "missing row keeps legacy refusal"
+        );
+
+        let m = capability_matrix("pass");
+        assert_eq!(check_uid(&s, &m, E), Ok(()), "own row admits standalone");
+
+        let unverified = capability_matrix("unverified");
+        assert!(
+            check_uid(&s, &unverified, E).is_err(),
+            "unverified row refuses"
+        );
+        assert_eq!(
+            check(
+                &s,
+                &unverified,
+                WriteMode::Test,
+                &Op::Delete { uid: E.into() },
+                today()
+            ),
+            Ok(()),
+            "test mode still needs the baseline"
+        );
+
+        let unsupported = baseline_matrix("unsupported");
+        assert!(
+            check_uid(&s, &unsupported, E).is_err(),
+            "unsupported baseline refuses"
+        );
+
+        // Rule execution/edit verdicts neither authorize nor block resource removal.
+        let e = Env::new(
+            WriteMode::Verified,
+            "plan8-checklist-b/011-phone-items-and-text",
+        );
+        assert_eq!(
+            check_uid(&e.snap(), &m, CHECKLIST_A),
+            Ok(()),
+            "family removal ignores failing rule verdicts"
+        );
+
+        // The matching case's row is required; a different new row does not dispatch.
+        let mut only_standalone = String::from("matrix_version = 1\n");
+        only_standalone.push_str(
+            "[[operation]]\ncase = \"standalone-resource\"\nop = \"delete\"\n\
+             iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
+             iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
+             iphone_to_twydo = \"pass\"\n",
+        );
+        let only_standalone = Matrix::from_toml_str(&only_standalone).unwrap();
+        assert!(
+            check_uid(&e.snap(), &only_standalone, CHECKLIST_A).is_err(),
+            "flat family needs its own row"
+        );
+
+        let mut only_family = String::from("matrix_version = 1\n");
+        only_family.push_str(
+            "[[operation]]\ncase = \"flat-family\"\nop = \"delete\"\n\
+             iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
+             iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
+             iphone_to_twydo = \"pass\"\n",
+        );
+        let only_family = Matrix::from_toml_str(&only_family).unwrap();
+        assert!(
+            check_uid(&s, &only_family, E).is_err(),
+            "standalone needs its own row"
+        );
+
+        // No other operation is admitted by these rows.
+        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let s = e.snap();
+        for op in [
+            Op::Move {
+                uid: R.into(),
+                to: "list2".into(),
+            },
+            Op::Complete { uid: R.into() },
+            Op::Edit {
+                uid: R.into(),
+                changes: vec![Change::Summary("changed".into())],
+            },
+        ] {
+            assert!(
+                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
+                "{op:?}"
             );
         }
     }

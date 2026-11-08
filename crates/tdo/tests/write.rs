@@ -1144,6 +1144,103 @@ mod verified_recurrence_tui {
     }
 
     #[test]
+    fn verified_parent_delete_keys_remove_one_flat_family_and_undo_once() {
+        let parent = "12d762a5639e406c8ec865517882f130";
+        let q = "2cb7991c71624ddda29877c098acad43";
+        let z = "3199749e2ea64f10bdaebc00197768ca";
+        let b = "twydo-p8-c29-b";
+        let b_q = "96ee97f3cc8c403391c57ec8b8e5d192";
+        let b_z = "f9ae2ffd776e42919f9696f37dd6e849";
+        let d = "twydo-p8-c29-d";
+
+        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
+        let original = item_bytes(&e);
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, parent, false);
+        a.handle_key(key('d'));
+        let r = request(a.handle_key(key('d')));
+        assert!(
+            matches!(r, Request::Apply(twydo_core::edit::Op::Delete { ref uid }) if uid == parent),
+            "{r:?}"
+        );
+        run(&e, &mut a, &mut w, r);
+        for uid in [parent, q, z] {
+            assert!(a.snapshot.find(uid).is_none(), "{uid}");
+        }
+        for uid in [b, b_q, b_z, d] {
+            assert!(a.snapshot.find(uid).is_some(), "{uid}");
+        }
+        let after = item_bytes(&e);
+        for uid in [b, b_q, b_z, d] {
+            assert_eq!(
+                after[&format!("{uid}.ics")],
+                original[&format!("{uid}.ics")],
+                "{uid}"
+            );
+        }
+        // One undo restores the whole family and one redo removes it again.
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), original);
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), after);
+
+        // An empty parent has the same one-resource scope.
+        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
+        for uid in [q, z] {
+            fs::remove_file(e.vdir().join(format!("list1/{uid}.ics"))).unwrap();
+        }
+        let empty_original = item_bytes(&e);
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, parent, false);
+        a.handle_key(key('d'));
+        let r = request(a.handle_key(key('d')));
+        run(&e, &mut a, &mut w, r);
+        assert!(a.snapshot.find(parent).is_none());
+        for uid in [b, b_q, b_z, d] {
+            assert!(a.snapshot.find(uid).is_some(), "{uid}");
+        }
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), empty_original);
+
+        // A completed family is selectable in Done and is removed as a family.
+        let e = env_in("issue27-items", "020-phone-complete-project");
+        let pa = "twydo-i27-p-a";
+        let pa_x = "twydo-i27-p-a-x";
+        let ca = "twydo-i27-c-a";
+        let ca_x = "twydo-i27-c-a-x";
+        let completed_original = item_bytes(&e);
+        let (mut w, _) = writer(&e.config());
+        let mut a = App::new(
+            e.snapshot(),
+            now().with_timezone(&chrono_tz::America::New_York),
+        );
+        select(&mut a, pa, true);
+        a.handle_key(key('d'));
+        let r = request(a.handle_key(key('d')));
+        run(&e, &mut a, &mut w, r);
+        for uid in [pa, pa_x] {
+            assert!(a.snapshot.find(uid).is_none(), "{uid}");
+        }
+        for uid in [ca, ca_x] {
+            assert!(a.snapshot.find(uid).is_some(), "{uid}");
+        }
+        let r = request(a.handle_key(key('u')));
+        run(&e, &mut a, &mut w, r);
+        assert_eq!(item_bytes(&e), completed_original);
+    }
+
+    #[test]
     fn verified_checklist_item_delete_keys_undo_and_reset_use_exact_targets() {
         let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
         let (mut w, _) = writer(&e.config());

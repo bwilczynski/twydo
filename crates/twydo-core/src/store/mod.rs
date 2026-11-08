@@ -457,12 +457,13 @@ impl Store {
         };
         let creating_item =
             matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
-        let durable_holds = member_parent.is_some_and(|p| {
-            creating_item
-                || matches!(op, Op::Reorder { .. } | Op::Delete { .. })
-                || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
-                    && snap.tasks[p].rrule.is_some())
-        });
+        let durable_holds = matches!(op, Op::Delete { .. })
+            || member_parent.is_some_and(|p| {
+                creating_item
+                    || matches!(op, Op::Reorder { .. })
+                    || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
+                        && snap.tasks[p].rrule.is_some())
+            });
         let mut family = self.family_of(snap, op)?;
         if creating_item && let Some(family) = family.as_mut() {
             // Recovery may find our own create already on disk. It is a known member,

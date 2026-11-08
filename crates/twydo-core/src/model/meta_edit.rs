@@ -50,6 +50,21 @@ impl MetaJson {
         self.obj.get(key).and_then(Value::as_i64)
     }
 
+    /// Whether `key` is present, even when its value is not an integer.
+    pub fn has(&self, key: &str) -> bool {
+        self.obj.contains_key(key)
+    }
+
+    /// The integer value of `key` as 2Do's metadata reader accepts it: a JSON integer,
+    /// an integral number, or a string that parses as an integer.
+    pub fn get_integer(&self, key: &str) -> Option<i64> {
+        self.obj.get(key).and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_f64().filter(|f| f.fract() == 0.0).map(|f| f as i64))
+                .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        })
+    }
+
     pub fn get_str(&self, key: &str) -> Option<&str> {
         self.obj.get(key).and_then(Value::as_str)
     }
