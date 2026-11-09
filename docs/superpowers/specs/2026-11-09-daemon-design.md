@@ -1,6 +1,7 @@
 # The Twydo daemon: one owner for data, sync and scheduling
 
-Date: 2026-11-09 · Status: draft for review (revised after a second review, 2026-11-09)
+Date: 2026-11-09 · Status: draft for review (revised after a second review, 2026-11-09; the daemon
+owns the configuration, 2026-11-09)
 
 A long-running `tdo daemon` process becomes the only owner of a vdir: it reads and writes the
 task files, runs vdirsyncer, schedules syncs and (later) reminders. The TUI, `tdo op` and the
@@ -114,13 +115,14 @@ my calls with justification.
 | D9 | No direct-file fallback in clients once the migration is done (§12): a single write path. | my call, follows D1 |
 | D10 | The daemon watches the vdir and `config.toml` and treats an outside change (a hand edit, a manual `vdirsyncer sync`) like a change a sync brought in. | my call |
 | D11 | The write queue stays durable on disk but is only touched by the daemon; the waiter, the minute timer and the cross-process lock dance go away. | my call |
+| D13 | The daemon owns the configuration too: only the daemon reads `config.toml`; clients get it in the snapshot. A client finds its daemon at **one default socket per user**; any other setup names its socket explicitly (`--socket` or `TWYDO_SOCKET`, §6.1). `hello` still checks the client meant this daemon's configuration. | user |
 
 ## 5. Architecture
 
 ```
   tdo (TUI)   tdo op / tdo <cmd>   [later: HTTP front end, MCP front end]
       │               │                         │
-      └──── JSON-RPC over $XDG_RUNTIME_DIR/twydo/<vdir-id>.sock ───┘
+      └──── JSON-RPC over $XDG_RUNTIME_DIR/twydo/tdo.sock ──────┘
                               │
                       tdo daemon (one per vdir)
         ┌─────────────┬───────┴────────┬──────────────┬─────────────┐
@@ -159,6 +161,7 @@ my calls with justification.
 |---|---|
 | Journal recovery at startup (`cli::recover_at_startup`) | Daemon, before it starts serving |
 | Reader lock around loads, `queue::view` overlay (`cli/mod.rs`) | Daemon; clients get the overlaid snapshot |
+| Reading `config.toml` (`cli::resolve_config`) and reloading list and group preferences (`term/preferences.rs`) | Daemon (D13, §7.2); the snapshot carries the configuration |
 | vdir file watcher and full reload (`term.rs`) | Daemon watcher (D10) and `data.changed` events |
 | Starting the startup sync, `:sync`, `:forget-list` sync, tracking `syncing` (`term.rs`) | `sync.run`, `lists.forget` methods; `sync.*` events |
 | Sync switch (`cli::sync::set_switch`) | `sync.set_auto` method; the persisted flag stays |
@@ -176,12 +179,21 @@ the live previews of the date and repeat grammars, and computing views.
 
 ### 6.1 Transport and framing
 
-- A Unix socket at `$XDG_RUNTIME_DIR/twydo/<vdir-id>.sock` on Linux, and under the per-user
-  `$TMPDIR` on macOS. `<vdir-id>` is derived from the canonical vdir path (the same identity
-  the state directory uses today). The directory is created `0700`, the socket `0600`. The
+- **One default socket per user** *(D13)*: `$XDG_RUNTIME_DIR/twydo/tdo.sock` on Linux, and
+  under the per-user `$TMPDIR` on macOS. **Any other setup names its socket explicitly**: the
+  `--socket` flag, else the `TWYDO_SOCKET` environment variable, else the default. A test setup
+  sets `TWYDO_SOCKET` next to its `XDG_CONFIG_HOME`. There is no config key for it: the client
+  does not read the configuration. The directory is created `0700`, the socket `0600`. The
   daemon checks the peer's user id (`SO_PEERCRED` / `getpeereid`) and rejects other users.
-  A `--socket` flag and a config key override the path *(my call; the exact key is the
-  builder's)*.
+- **Instance identity**: which configuration a client means, known without reading any file:
+  the config file path (`Config::path()`, from `XDG_CONFIG_HOME` or `HOME`) and the `--vdir`
+  override if one was given, both made absolute. It does not choose the socket; `hello` sends it
+  so that a client which forgot its socket setting (a test command reaching the production
+  daemon) is refused with `wrong_instance` instead of reading or writing the wrong data (§6.3). A
+  client never shuts down or restarts a daemon that refused it this way.
+- Two sockets whose daemons resolve to the same vdir still get one daemon: the single-instance
+  lock is per vdir (§7.1), so the second daemon exits and its client reports "another daemon
+  serves <vdir>".
 - JSON-RPC 2.0, one message per line (UTF-8, `\n`-terminated), in both directions.
   Requests may be pipelined; responses carry the request's `id`. Notifications (no `id`) are
   events.
@@ -206,7 +218,8 @@ the live previews of the date and repeat grammars, and computing views.
 
 ```jsonc
 → {"jsonrpc":"2.0","id":1,"method":"hello",
-   "params":{"client":"tdo-tui","version":"0.4.0","protocol":1,"session":null}}
+   "params":{"client":"tdo-tui","version":"0.4.0","protocol":1,"session":null,
+             "instance":{"config":"/home/user/.config/twydo/config.toml","vdir":null}}}
 ← {"jsonrpc":"2.0","id":1,"result":{
     "daemon":"0.4.0","protocol":1,"epoch":"d-7f3a","session":"tui-5f2c",
     "vdir":"/home/user/.local/share/twydo/vdir"}}
@@ -214,10 +227,11 @@ the live previews of the date and repeat grammars, and computing views.
 
 - `protocol` must match; otherwise the daemon answers with error kind `protocol` and both
   versions, and the client follows §10.3.
-- `vdir` is required: the canonical vdir path the client expects. A daemon serving another
-  vdir refuses with kind `wrong_vdir`, also when the client was pointed at the socket with
-  `--socket` or the config key, so a misdirected client can never write the wrong data
-  *(added after review)*.
+- `instance` is required: the instance identity the client expects (§6.1). A daemon started
+  for another identity refuses with kind `wrong_instance`, also when the client was pointed at
+  the socket with `--socket`, so a misdirected client can never write the wrong data
+  *(added after review; identity instead of vdir path by D13)*. The result's `vdir` is the vdir
+  the daemon resolved from its configuration, for messages.
 - `epoch` identifies this daemon process. A change of epoch after a reconnect tells the
   client that every version number restarted and every session is gone.
 - `session` is the undo/redo session (§6.7). A client that reconnects passes its previous
@@ -262,7 +276,8 @@ the live previews of the date and repeat grammars, and computing views.
   restarts. Clients use it to tell which rows changed between snapshots; `stale` refusals
   report the current one. Writes name the snapshot `revision`, not per-task revs (§6.6).
 - **The snapshot carries what views need**: tasks as the `model::Task` fields minus file
-  paths and raw bytes, collections, the view-relevant configuration, load errors, and the
+  paths and raw bytes, collections, the configuration the daemon loaded (with its warnings;
+  clients have no other copy, D13), load errors, and the
   `pending` marker from the queue overlay. The client builds its `views::Snapshot` from it and
   runs today's view functions. Parent/child resolution happens in `Snapshot::new` as today,
   on the client, so it stays one function. Exact field set and naming are the builder's,
@@ -288,7 +303,7 @@ the live previews of the date and repeat grammars, and computing views.
 
 - **Change events** (D4): `data.changed {revision, cause, uids}` and
   `status.changed {status_rev}`. `cause` is one of `op`, `sync`, `outside`, `list`,
-  `recovery`; `uids` is a hint (to keep the cursor on the right row), never a substitute for
+  `recovery`, `config` (a reloaded `config.toml`, §7.2); `uids` is a hint (to keep the cursor on the right row), never a substitute for
   re-fetching. A client skips a re-fetch only when it already holds the snapshot of that
   revision. A write's answer carries the new revision number but not its contents (a family
   operation can change rows the client never named), so the client re-fetches after its own
@@ -390,7 +405,7 @@ the live previews of the date and repeat grammars, and computing views.
   | `invalid` | malformed params, empty title, bad rule | `EditError` |
   | `unavailable` | the daemon is shutting down or recovering | |
   | `protocol` | protocol generation mismatch | |
-  | `wrong_vdir` | the daemon serves another vdir than the client expects (§6.3) | |
+  | `wrong_instance` | the daemon serves another instance identity than the client expects (§6.3) | |
 
   `data` also carries `uid` and, for `stale`, `current_rev`. Message wording follows today's
   messages so the TUI and `tdo op` print what they print now.
@@ -445,6 +460,9 @@ once generated.
 In order, before accepting any request other than `hello` and `daemon.info` (which answer
 `unavailable` for everything else meanwhile):
 
+0. Read `config.toml` for its instance identity (the same rules as `tdo` uses today: the file,
+   `--vdir` overriding its vdir). A missing or invalid file is a startup error, logged and
+   exited with the ordinary error code; the client that started it reports it (§10.1).
 1. Take the single-instance lock `<vdir-state>/daemon.lock`. If it is held, exit with a
    distinct non-zero code and a message: another daemon serves this vdir (anti-goal: two
    daemons). The service units treat that code as "do not restart" (§10.2).
@@ -475,8 +493,12 @@ In order, before accepting any request other than `hello` and `daemon.info` (whi
   Twydo's vdir lock, so it can write a file between the daemon's check and its commit, and it
   bypasses the conflict-hook bookkeeping and batching. `docs/sync.md` says to use `tdo sync`,
   or to stop the daemon first *(changed after review)*.
-- A changed `config.toml` is reloaded; settings that cannot change at run time (the vdir
-  path, the socket path) are reported in `status` as needing a restart.
+- A changed `config.toml` is reloaded and published as a new snapshot with cause `config`;
+  this replaces the TUI's own preferences watcher, so list and group preferences still apply
+  without a restart. Settings that cannot change at run time (the vdir, the state directory,
+  the write mode and the `[sync]` binding, as the TUI's watcher treats them today) keep their old
+  values and are reported in `status` as needing a restart. An unreadable file keeps the last
+  good configuration and is reported in `status`.
 
 ### 7.3 The write queue (D11)
 
@@ -561,8 +583,15 @@ Every client command connects first. If the socket is missing or refuses:
    the daemon is always the service manager's process and gets restarted if it crashes.
    **Otherwise** it starts `tdo daemon --detach` the way `spawn_background` starts a sync
    today: the same executable, its own process group, stdin and stdout closed, logs to the
-   state directory. A client knows a unit is installed from the marker `tdo daemon install`
-   writes (§10.2) *(my call, after the builder check)*.
+   state directory. The started daemon gets the client's socket path (`--socket`), its
+   environment (so the same `XDG_CONFIG_HOME`) and its `--vdir`. A client knows a unit is
+   installed when the unit file for its socket exists at its known path (§10.2) *(my call, after
+   the builder check; no marker file since D13, because a client cannot find the state directory
+   without reading the configuration)*. A detached daemon logs under the default state root
+   (`$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`, `<socket-id>` a short hash of the socket
+   path) for the same reason. Before starting anything, a client with no config file and no
+   `--vdir` fails at once with today's "no configuration" message (checking that the file exists
+   is not reading it).
 2. It retries the connection with a short backoff for up to about 2 seconds.
 3. If it still cannot connect, the TUI starts anyway with an empty screen and a status-line
    message (`daemon not running: <reason>; retrying`), and keeps retrying in the background;
@@ -583,30 +612,31 @@ reminder" anti-goal. So the unit is the recommended setup (D12), not an extra.
 
 **`tdo daemon install`** *(user, D12)*:
 
-- Writes the unit for the current platform for the selected vdir (`--vdir`, as everywhere):
+- Writes the unit for the current platform for the selected socket and instance (as
+  everywhere: `--socket`/`TWYDO_SOCKET`, the config file and `--vdir`):
   `~/.config/systemd/user/twydo.service` on Linux, `~/Library/LaunchAgents/<label>.plist` on
-  macOS. Unit and label names include the vdir identity when it is not the configured
-  default, so the test and production setups get separate units (§10.4).
+  macOS. Unit and label names include the socket id when the socket is not the default, so the
+  test and production setups get separate units (§10.4).
 - Points the unit at a `tdo` path that follows upgrades (the mise shim or the `PATH` entry,
-  never a versioned install directory; §10.3), and passes `--vdir` explicitly.
+  never a versioned install directory; §10.3), and passes the socket and instance explicitly
+  (`--socket` when not the default, the config location's environment variable when not the
+  default, and `--vdir` when given).
 - Enables and starts it (`systemctl --user daemon-reload`, `enable --now`;
   `launchctl bootstrap gui/<uid>`), stopping a detached on-demand daemon for that vdir first
   (`daemon.shutdown {when_idle:true}`) so the service's daemon takes over cleanly.
-- Writes a marker in the vdir's state directory naming the installed unit, which clients read
-  to start the daemon through the service manager (§10.1).
 - Removes or disables the old `twydo-sync.timer` / `app.twydo.sync.plist` if it finds them,
   saying what it did, since the daemon now does their job.
 - Is idempotent: running it again rewrites the unit (for example after the shim path moved)
   and reports that it was already installed.
 
-`tdo daemon uninstall` disables and removes the unit and the marker; a running service
+`tdo daemon uninstall` disables and removes the unit; a running service
 daemon is stopped. `tdo daemon status` reports whether a unit is installed, whether it is
 enabled, and whether a daemon answers on the socket.
 
-**Warning while no unit is installed** *(user, D12)*: when a client finds no marker for its
-vdir, the TUI shows once per run a status-line message such as `daemon won't start at login;
+**Warning while no unit is installed** *(user, D12)*: when a client finds no unit for its
+socket, the TUI shows once per run a status-line message such as `daemon won't start at login;
 run tdo daemon install`, and `tdo daemon status` says the same. CLI commands stay quiet so
-scripts are not noisy. A config key turns the warning off for someone who deliberately runs
+scripts are not noisy. A config key (which the TUI reads from the snapshot) turns the warning off for someone who deliberately runs
 without a unit (exact name and wording are the builder's).
 
 **The unit itself.** A systemd user service (`twydo.service`, `Restart=always`, with the
@@ -641,9 +671,13 @@ A `mise` upgrade replaces the binary while the old daemon keeps running.
 
 ### 10.4 Several vdirs
 
-One daemon per vdir, addressed by the vdir identity in the socket name. `--vdir` on any
-command selects which daemon to talk to, as it selects the vdir today. The test setup and the
-production setup therefore never share a daemon.
+One daemon per socket, and never more than one per vdir (§7.1). The default socket serves the
+default setup; another setup chooses its socket with `--socket` or `TWYDO_SOCKET` (§6.1) and its
+configuration with `XDG_CONFIG_HOME` and `--vdir`, as today. A command that sets the
+configuration but forgets the socket reaches the default daemon and is refused with
+`wrong_instance`, so the test setup and the production setup never share a daemon by accident.
+Integration tests set `TWYDO_SOCKET` for every `tdo` they run, so a test can never start or
+reach a daemon at the user's default socket.
 
 ## 11. Other front ends
 
@@ -712,12 +746,17 @@ At least:
   generation never shuts down a newer daemon; with a unit installed the client starts the
   daemon through the service manager, and a lock loser exits with the no-restart code.
 - **Install:** `tdo daemon install` writes a unit that names a stable `tdo` path and the vdir,
-  writes the marker, and is idempotent; `uninstall` removes both; the test and production
-  vdirs get separate units; an existing sync timer is reported and disabled; the TUI warns
-  once without a marker and not with one. Unit contents are checked as files; enabling them
+  and is idempotent; `uninstall` removes it; a non-default socket gets its own unit; an existing sync timer is reported and disabled; the TUI warns once without a unit and
+  not with one. Unit contents are checked as files; enabling them
   through `systemctl` / `launchctl` is behind a seam the tests replace.
 - **Outside changes:** a file edited by hand is picked up and published with cause
   `outside`.
+- **Configuration (D13):** a client never opens `config.toml` (its tests run with an unreadable
+  config file and still work through the daemon); a changed list preference reaches the client
+  as a new snapshot with cause `config`; a changed vdir or write mode is reported as needing a
+  restart and not applied; `--socket` wins over `TWYDO_SOCKET`, which wins over the default; a
+  client with another instance on the default socket is refused with `wrong_instance` and does
+  not start, stop or restart that daemon.
 - **Cases from the second review:**
   - every mutating method replays a resent `request_id`, including `op.undo` (a resent undo
     whose answer was lost does not undo a second edit) and list jobs; the replay works after a
@@ -733,7 +772,7 @@ At least:
   - a client re-fetches after its own family write and sees the changed
     rows it did not name;
   - a client with another protocol generation can still call `daemon.info` and
-    `daemon.shutdown`; a client pointed at the wrong vdir's socket gets `wrong_vdir`;
+    `daemon.shutdown`; a client pointed at another instance's socket gets `wrong_instance`;
   - a daemon started while an orphaned vdirsyncer still holds the vdir lock ends it through
     the orphan path and then starts normally.
 - **Scheduling:** the write queue design's batching tests move to the daemon's scheduler
@@ -749,7 +788,7 @@ At least:
 
 `docs/architecture.md` (the daemon, the protocol, the write path), `docs/sync.md` (who syncs,
 the service unit instead of the timer), `docs/install.md` (service setup, upgrades),
-`docs/config.md` (socket and sync-interval keys), `docs/tui.md` (daemon status messages),
+`docs/config.md` (the sync-interval key; who reads the file), `docs/tui.md` (daemon status messages),
 a new `docs/protocol.md` that introduces the schema for people writing their own clients, and
 `AGENTS.md`'s progress note. `python3 tools/check_links.py` must pass.
 
@@ -766,9 +805,9 @@ a new `docs/protocol.md` that introduces the schema for people writing their own
 
 ## 16. Left to the builder
 
-Threads or async and which crates; the exact socket path rules on macOS and the override key;
+Threads or async and which crates; the exact socket path rules on macOS; the socket-id hash;
 message size cap; snapshot field names (generated from the types); how long superseded file
-versions are kept for rebasing; the marker's format; the daemon's
+versions are kept for rebasing; the daemon's
 log format and rotation; whether to offer a systemd socket unit; the periodic sync interval
 key; the shape of `job.progress`; method naming details within §6.8; message wording within
 today's style.
