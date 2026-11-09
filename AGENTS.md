@@ -71,7 +71,15 @@ app replacing 2Do for one user, plan by plan.
    ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md), branch
    `feat/twydo-daemon`). Build it before write-queue plan 3 (rebasing, now inside the
    daemon) and before Plan 2 (the notifier, which lives in the daemon); do not extend the
-   cross-process queue, waiter or sync timer meanwhile. Write the plan first.
+   cross-process queue, waiter or sync timer meanwhile. **Daemon plan 1 is done** on that
+   branch (`docs/superpowers/plans/2026-11-09-daemon-1-core-and-writes.md`): the hidden
+   `tdo daemon` serves snapshots, status, events and task writes over a Unix socket; no
+   client uses it yet. Next: plan 2 (sync jobs and scheduling, conflicts, journal and list
+   jobs inside the daemon), then plan 3 (the TUI and CLI switch to the daemon; the Writer
+   and the batch waiter go away). Spec decision D13: once clients switch, only the daemon
+   reads `config.toml`. The default socket is per user; other setups choose theirs with
+   `--socket` or `TWYDO_SOCKET` (the test setup will need `TWYDO_SOCKET` next to
+   `XDG_CONFIG_HOME` once plan 3 lands).
 
 ## Issue 41 checkpoint
 
