@@ -197,9 +197,8 @@ fn requests_wait_for_recovery_as_unavailable() {
     assert!(err.to_string().contains("starting"), "{err}");
     tx.send(()).unwrap();
     assert!(td.handle().wait_ready(Duration::from_secs(10)));
-    // Not implemented yet (Task 5): no longer "unavailable".
-    let err = c.call::<_, Value>("snapshot.get", empty()).unwrap_err();
-    assert_eq!(code(&err), -32601);
+    let snap: Value = c.call("snapshot.get", empty()).unwrap();
+    assert!(snap["revision"].as_u64().unwrap() >= 1);
 }
 
 #[test]

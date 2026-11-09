@@ -128,6 +128,7 @@ pub struct TestDaemon {
     handle: Option<DaemonHandle>,
     socket: PathBuf,
     instance: Instance,
+    vdir: PathBuf,
     _dir: tempfile::TempDir,
 }
 
@@ -166,8 +167,20 @@ impl TestDaemon {
             handle: Some(handle),
             socket,
             instance,
+            vdir: fx.vdir(),
             _dir: dir,
         }
+    }
+
+    /// Writes `text` at `rel` in the vdir (a change from outside) and reloads as the watcher
+    /// will; returns the revision.
+    pub fn touch_outside(&self, rel: &str, text: &str) -> u64 {
+        let p = self.vdir.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, text).unwrap();
+        self.handle()
+            .reload_for_test(twydo_daemon::protocol::events::Cause::Outside)
+            .unwrap()
     }
 
     pub fn handle(&self) -> &DaemonHandle {
