@@ -3,39 +3,63 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use super::meta::{MetaFormat, Metadata, parse_metadata};
 use crate::ical::value::{IcalDateTime, parse_date_time, parse_duration, unescape_text};
 use crate::ical::{Calendar, Component};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, JsonSchema)]
 pub enum TaskKind {
     Task,
     Project,
     Checklist,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Status {
     Open,
     Completed,
     Cancelled,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum Trigger {
-    Relative { offset: Duration, related_end: bool },
+    Relative {
+        /// Whole seconds on the wire.
+        #[serde(with = "duration_secs")]
+        #[schemars(with = "i64")]
+        offset: Duration,
+        related_end: bool,
+    },
     Absolute(DateTime<Utc>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// `chrono::Duration` as whole seconds.
+mod duration_secs {
+    use chrono::Duration;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_i64(d.num_seconds())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+        Ok(Duration::seconds(i64::deserialize(d)?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Alarm {
     pub trigger: Trigger,
     /// Position among the VTODO's VALARMs.
     pub index: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Task {
     pub uid: String,
     pub collection: String,

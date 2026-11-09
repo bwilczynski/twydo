@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate};
 use chrono_tz::Tz;
+use sha2::{Digest, Sha256};
 
 use crate::config::{Config, ListPrefs, Sort, SortField};
 use crate::ical::value::{IcalDateTime, Resolved};
@@ -34,6 +35,13 @@ pub struct Snapshot {
     sources: HashMap<PathBuf, Vec<u8>>,
     /// UIDs of tasks with a queued edit laid over them.
     pending: HashSet<String>,
+    /// uid -> [`rev_of`] the file's bytes.
+    revs: HashMap<String, String>,
+}
+
+/// A task file's revision: the first 16 lowercase hex digits of the SHA-256 of its bytes.
+pub fn rev_of(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))[..16].to_string()
 }
 
 impl Snapshot {
@@ -80,7 +88,7 @@ impl Snapshot {
                     t.warnings.push(w);
                 }
             }
-            if broken[i] {
+            if broken[i] && !t.warnings.iter().any(|w| w == BROKEN_PARENT) {
                 t.warnings.push(BROKEN_PARENT.to_string());
             }
             // A Task kind here means no recognised `@tasktype` (an unrecognised value counts as missing).
@@ -96,6 +104,15 @@ impl Snapshot {
             }
         }
 
+        let revs = tasks
+            .iter()
+            .filter_map(|t| {
+                report
+                    .sources
+                    .get(&t.path)
+                    .map(|b| (t.uid.clone(), rev_of(b)))
+            })
+            .collect();
         Snapshot {
             tasks,
             collections: report.collections,
@@ -105,7 +122,19 @@ impl Snapshot {
             children,
             sources: report.sources,
             pending: HashSet::new(),
+            revs,
         }
+    }
+
+    /// Replaces the per-task revisions (uid -> rev), e.g. with those a daemon sent.
+    pub fn with_revs(mut self, revs: HashMap<String, String>) -> Snapshot {
+        self.revs = revs;
+        self
+    }
+
+    /// The revision of task `idx`'s file, when known.
+    pub fn rev(&self, idx: usize) -> Option<&str> {
+        self.revs.get(&self.tasks[idx].uid).map(String::as_str)
     }
 
     /// Marks the tasks with these UIDs as having a queued, not yet applied, edit.

@@ -7,12 +7,15 @@
 use std::collections::BTreeMap;
 
 use chrono::DateTime;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 const JSON_OPEN: &str = "<2Do Meta>";
 const JSON_CLOSE: &str = "</2Do Meta>";
 
 /// Which encoding the metadata used.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum MetaFormat {
     #[default]
     Tokens,
@@ -22,7 +25,7 @@ pub enum MetaFormat {
 }
 
 /// Parsed metadata. `tokens` maps key to `Some(value)` or `None` for a bare flag.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Metadata {
     pub raw: Option<String>,
     pub tokens: BTreeMap<String, Option<String>>,
