@@ -1,0 +1,2390 @@
+{
+  "components": {
+    "schemas": {
+      "AckParams": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "ids"
+        ],
+        "type": "object"
+      },
+      "AckResult": {
+        "properties": {
+          "acknowledged": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "acknowledged"
+        ],
+        "type": "object"
+      },
+      "Alarm": {
+        "properties": {
+          "index": {
+            "description": "Position among the VTODO's VALARMs.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/Trigger"
+          }
+        },
+        "required": [
+          "trigger",
+          "index"
+        ],
+        "type": "object"
+      },
+      "BasedOn": {
+        "description": "The snapshot a client planned against.",
+        "properties": {
+          "epoch": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "Cause": {
+        "enum": [
+          "op",
+          "sync",
+          "outside",
+          "list",
+          "recovery",
+          "config"
+        ],
+        "type": "string"
+      },
+      "Change": {
+        "description": "One field change of an existing task.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "Summary"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "`None` clears the notes.",
+            "properties": {
+              "Description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "Description"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "`None` removes the due date.",
+            "properties": {
+              "Due": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Due"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "Due"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "`None` removes the start date.",
+            "properties": {
+              "Start": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "Start"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "RepeatInterval": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "RepeatInterval"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Set the repeat rule, or `None` to remove it. A task without a due date must get one\nfirst (a `Change::Due` earlier in the same list): 2Do makes the due date today.",
+            "properties": {
+              "Repeat": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RepeatSpec"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "Repeat"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Turn the task into a task, checklist or project. A single-resource edit of the task's\nown metadata: whether its items allow it is the gate's call.",
+            "properties": {
+              "Kind": {
+                "$ref": "#/components/schemas/TaskKind"
+              }
+            },
+            "required": [
+              "Kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "CheckParams": {
+        "properties": {
+          "based_on": {
+            "$ref": "#/components/schemas/BasedOn"
+          },
+          "op": {
+            "$ref": "#/components/schemas/Op"
+          }
+        },
+        "required": [
+          "based_on",
+          "op"
+        ],
+        "type": "object"
+      },
+      "CheckResult": {
+        "properties": {
+          "allowed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "allowed"
+        ],
+        "type": "object"
+      },
+      "Config": {
+        "additionalProperties": false,
+        "properties": {
+          "default_list": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            },
+            "type": "array"
+          },
+          "lists": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ListPrefs"
+            },
+            "default": {},
+            "type": "object"
+          },
+          "morning_time": {
+            "default": "09:00",
+            "type": "string"
+          },
+          "state_dir": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncConfig"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "timezone": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vdir": {
+            "type": "string"
+          },
+          "week_start": {
+            "default": "Mon",
+            "type": "string"
+          },
+          "work_days": {
+            "default": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "writes": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Writes"
+              }
+            ],
+            "default": {
+              "mode": "verified"
+            }
+          }
+        },
+        "required": [
+          "vdir"
+        ],
+        "type": "object"
+      },
+      "Created": {
+        "properties": {
+          "rev": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "rev"
+        ],
+        "type": "object"
+      },
+      "DaemonInfo": {
+        "properties": {
+          "epoch": {
+            "type": "string"
+          },
+          "pid": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "protocol": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "uptime_secs": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vdir": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "protocol",
+          "pid",
+          "uptime_secs",
+          "vdir",
+          "epoch"
+        ],
+        "type": "object"
+      },
+      "Due": {
+        "description": "A due date. `Time` is floating local time (`DUE:YYYYMMDDTHHMMSS`, no `TZID`), as 2Do\nwrites it (H8).",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Date": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "Date"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Time": {
+                "format": "partial-date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "Time"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Empty": {
+        "description": "An empty params or result object.",
+        "type": "object"
+      },
+      "End": {
+        "oneOf": [
+          {
+            "enum": [
+              "Never"
+            ],
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Count": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "Count"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Until": {
+                "$ref": "#/components/schemas/IcalDateTime"
+              }
+            },
+            "required": [
+              "Until"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ErrorKind": {
+        "enum": [
+          "blocked",
+          "stale",
+          "stuck",
+          "not_found",
+          "invalid",
+          "unavailable",
+          "protocol",
+          "wrong_instance",
+          "internal"
+        ],
+        "type": "string"
+      },
+      "EventEnvelope": {
+        "description": "Params of the `event` notification.",
+        "oneOf": [
+          {
+            "properties": {
+              "status_rev": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "status.changed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "status_rev"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "cause": {
+                "$ref": "#/components/schemas/Cause"
+              },
+              "revision": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "data.changed",
+                "type": "string"
+              },
+              "uids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "type",
+              "revision",
+              "cause",
+              "uids"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "op_id": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/components/schemas/OpState"
+              },
+              "type": {
+                "const": "op.finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "op_id",
+              "state"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "seq": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "type": "object"
+      },
+      "Freq": {
+        "enum": [
+          "Daily",
+          "Weekly",
+          "Monthly",
+          "Yearly"
+        ],
+        "type": "string"
+      },
+      "Group": {
+        "additionalProperties": false,
+        "properties": {
+          "lists": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Heartbeat": {
+        "description": "Params of the `heartbeat` notification.",
+        "properties": {
+          "seq": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq"
+        ],
+        "type": "object"
+      },
+      "HelloParams": {
+        "properties": {
+          "client": {
+            "type": "string"
+          },
+          "instance": {
+            "$ref": "#/components/schemas/Instance"
+          },
+          "protocol": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "client",
+          "version",
+          "protocol",
+          "instance"
+        ],
+        "type": "object"
+      },
+      "HelloResult": {
+        "properties": {
+          "daemon": {
+            "type": "string"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "protocol": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "vdir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "daemon",
+          "protocol",
+          "epoch",
+          "session",
+          "vdir"
+        ],
+        "type": "object"
+      },
+      "IcalDateTime": {
+        "description": "A DATE / DATE-TIME value as written, before any timezone resolution.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Date": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "Date"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Floating": {
+                "format": "partial-date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "Floating"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Utc": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "Utc"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Zoned": {
+                "properties": {
+                  "local": {
+                    "format": "partial-date-time",
+                    "type": "string"
+                  },
+                  "tzid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "local",
+                  "tzid"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Zoned"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Instance": {
+        "description": "Which configuration and vdir a client means; checked by `hello`.",
+        "properties": {
+          "config": {
+            "type": "string"
+          },
+          "vdir": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "type": "object"
+      },
+      "JournalView": {
+        "properties": {
+          "stuck": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unfinished": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unfinished",
+          "stuck"
+        ],
+        "type": "object"
+      },
+      "ListPrefs": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "type": "boolean"
+          },
+          "hidden": {
+            "default": false,
+            "type": "boolean"
+          },
+          "show_in_all": {
+            "default": true,
+            "type": "boolean"
+          },
+          "show_in_done": {
+            "default": true,
+            "type": "boolean"
+          },
+          "show_in_today": {
+            "default": true,
+            "type": "boolean"
+          },
+          "sort": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Sort"
+              }
+            ],
+            "default": {
+              "descending": false,
+              "field": "due"
+            }
+          }
+        },
+        "type": "object"
+      },
+      "MetaFormat": {
+        "description": "Which encoding the metadata used.",
+        "oneOf": [
+          {
+            "enum": [
+              "tokens"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "json",
+            "description": "`<2Do Meta>` JSON. It is the full field set, so a missing field means \"not set\"\n(for example no `StartDate` = no start date, whatever DTSTART says).",
+            "type": "string"
+          }
+        ]
+      },
+      "Metadata": {
+        "description": "Parsed metadata. `tokens` maps key to `Some(value)` or `None` for a bare flag.",
+        "properties": {
+          "format": {
+            "$ref": "#/components/schemas/MetaFormat"
+          },
+          "raw": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tokens": {
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "unreadable": {
+            "description": "The value looked like `<2Do Meta>` JSON but did not decode; `tokens` is empty.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tokens",
+          "format",
+          "unreadable"
+        ],
+        "type": "object"
+      },
+      "Missed": {
+        "description": "Params of the `missed` notification: events were dropped; refetch from these marks.",
+        "properties": {
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seq": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status_rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "revision",
+          "status_rev"
+        ],
+        "type": "object"
+      },
+      "NewTask": {
+        "description": "A task to create in `collection`.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Due"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "parent": {
+            "description": "iCalendar UID of the checklist or project this task is an item of.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repeat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepeatSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Needs a due date (checked when the task is built)."
+          },
+          "start": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "summary",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "Op": {
+        "description": "A write operation on the task store.",
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Create": {
+                "$ref": "#/components/schemas/NewTask"
+              }
+            },
+            "required": [
+              "Create"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "CreateAt": {
+                "properties": {
+                  "anchor": {
+                    "type": "string"
+                  },
+                  "placement": {
+                    "$ref": "#/components/schemas/Placement"
+                  },
+                  "task": {
+                    "$ref": "#/components/schemas/NewTask"
+                  }
+                },
+                "required": [
+                  "task",
+                  "anchor",
+                  "placement"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "CreateAt"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Reorder": {
+                "properties": {
+                  "anchor": {
+                    "type": "string"
+                  },
+                  "placement": {
+                    "$ref": "#/components/schemas/Placement"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid",
+                  "anchor",
+                  "placement"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Reorder"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Edit": {
+                "properties": {
+                  "changes": {
+                    "items": {
+                      "$ref": "#/components/schemas/Change"
+                    },
+                    "type": "array"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid",
+                  "changes"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Edit"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Complete": {
+                "properties": {
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Complete"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Reopen": {
+                "properties": {
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Reopen"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Move": {
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid",
+                  "to"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Move"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "Delete": {
+                "properties": {
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Delete"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Candidate-only explicit membership change; collection is always a list id.",
+            "properties": {
+              "Reparent": {
+                "properties": {
+                  "collection": {
+                    "type": "string"
+                  },
+                  "parent": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid",
+                  "collection"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Reparent"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "The edit form's save: `changes` to the task, then a move to list `to`, as one journal\nentry and one undo step. Either part may be empty (no changes, `to` = `None`).",
+            "properties": {
+              "Save": {
+                "properties": {
+                  "changes": {
+                    "items": {
+                      "$ref": "#/components/schemas/Change"
+                    },
+                    "type": "array"
+                  },
+                  "to": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "uid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid",
+                  "changes"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "Save"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "OpGetParams": {
+        "properties": {
+          "op_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "OpState": {
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "pending",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "op_id": {
+                "type": "string"
+              },
+              "state": {
+                "const": "applied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "op_id"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/ErrorKind"
+              },
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "const": "refused",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "cancelled",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "op_id": {
+                "type": "string"
+              },
+              "state": {
+                "const": "satisfied",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "op_id"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Placement": {
+        "description": "A write operation on the task store.",
+        "enum": [
+          "Before",
+          "After"
+        ],
+        "type": "string"
+      },
+      "RRule": {
+        "properties": {
+          "by_day": {
+            "items": {
+              "items": [
+                {
+                  "format": "int8",
+                  "maximum": 127,
+                  "minimum": -128,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                {
+                  "enum": [
+                    "Mon",
+                    "Tue",
+                    "Wed",
+                    "Thu",
+                    "Fri",
+                    "Sat",
+                    "Sun"
+                  ],
+                  "type": "string"
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "by_month": {
+            "items": {
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "by_month_day": {
+            "items": {
+              "format": "int8",
+              "maximum": 127,
+              "minimum": -128,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "by_set_pos": {
+            "items": {
+              "format": "int8",
+              "maximum": 127,
+              "minimum": -128,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "end": {
+            "$ref": "#/components/schemas/End"
+          },
+          "freq": {
+            "$ref": "#/components/schemas/Freq"
+          },
+          "interval": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Parts Twydo does not interpret, kept as written (key uppercased).",
+            "items": {
+              "items": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "freq",
+          "interval",
+          "by_day",
+          "by_month_day",
+          "by_month",
+          "by_set_pos",
+          "end",
+          "unknown"
+        ],
+        "type": "object"
+      },
+      "RefusalView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "at"
+        ],
+        "type": "object"
+      },
+      "RepeatSpec": {
+        "description": "A repeat rule plus 2Do's \"from completion\" flag (which is not part of the RRULE).",
+        "properties": {
+          "from_completion": {
+            "type": "boolean"
+          },
+          "rule": {
+            "$ref": "#/components/schemas/RRule"
+          }
+        },
+        "required": [
+          "rule",
+          "from_completion"
+        ],
+        "type": "object"
+      },
+      "ShutdownParams": {
+        "properties": {
+          "when_idle": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "when_idle"
+        ],
+        "type": "object"
+      },
+      "Sort": {
+        "additionalProperties": false,
+        "properties": {
+          "descending": {
+            "default": false,
+            "type": "boolean"
+          },
+          "field": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SortField"
+              }
+            ],
+            "default": "due"
+          }
+        },
+        "type": "object"
+      },
+      "SortField": {
+        "enum": [
+          "due",
+          "start",
+          "creation",
+          "title"
+        ],
+        "type": "string"
+      },
+      "Status": {
+        "enum": [
+          "open",
+          "completed",
+          "cancelled"
+        ],
+        "type": "string"
+      },
+      "StatusView": {
+        "properties": {
+          "conflicts": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "journal": {
+            "$ref": "#/components/schemas/JournalView"
+          },
+          "pending_edits": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refusals": {
+            "items": {
+              "$ref": "#/components/schemas/RefusalView"
+            },
+            "type": "array"
+          },
+          "status_rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status_rev",
+          "pending_edits",
+          "conflicts",
+          "journal",
+          "refusals"
+        ],
+        "type": "object"
+      },
+      "SubmitParams": {
+        "properties": {
+          "based_on": {
+            "$ref": "#/components/schemas/BasedOn"
+          },
+          "op": {
+            "$ref": "#/components/schemas/Op"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id",
+          "based_on",
+          "op"
+        ],
+        "type": "object"
+      },
+      "SubscribeResult": {
+        "properties": {
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "seq": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status_rev": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "revision",
+          "status_rev"
+        ],
+        "type": "object"
+      },
+      "SyncConfig": {
+        "additionalProperties": false,
+        "description": "`[sync]` table. Absent means sync is off.",
+        "properties": {
+          "after_edit": {
+            "default": null,
+            "description": "Retired and ignored; see [`Config::warnings`].",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "batch_size": {
+            "default": 5,
+            "description": "Unsynced edits that make a sync due.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "command": {
+            "default": "vdirsyncer",
+            "description": "vdirsyncer executable.",
+            "type": "string"
+          },
+          "list_python": {
+            "default": "python3",
+            "description": "Python interpreter containing the supported vdirsyncer collection adapter.",
+            "type": "string"
+          },
+          "local_storage": {
+            "default": "twydo_local",
+            "description": "vdirsyncer storage name of the vdir side of the pair.",
+            "type": "string"
+          },
+          "max_backoff_secs": {
+            "default": 1800,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_wait_secs": {
+            "default": 60,
+            "description": "Seconds after the oldest unsynced edit at which a sync is due.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "metasync": {
+            "default": true,
+            "type": "boolean"
+          },
+          "pair": {
+            "default": "twydo",
+            "description": "vdirsyncer pair name.",
+            "type": "string"
+          },
+          "retention_days": {
+            "default": 30,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timeout_secs": {
+            "default": 300,
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vdirsyncer_config": {
+            "default": null,
+            "description": "Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "SyncState": {
+        "enum": [
+          "idle",
+          "running"
+        ],
+        "type": "string"
+      },
+      "SyncView": {
+        "properties": {
+          "auto": {
+            "type": "boolean"
+          },
+          "failures": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "last_attempt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_success": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_attempt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/SyncState"
+          }
+        },
+        "required": [
+          "state",
+          "auto",
+          "failures"
+        ],
+        "type": "object"
+      },
+      "TaskKind": {
+        "enum": [
+          "Task",
+          "Project",
+          "Checklist"
+        ],
+        "type": "string"
+      },
+      "Trigger": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "relative": {
+                "properties": {
+                  "offset": {
+                    "description": "Whole seconds on the wire.",
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "related_end": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "offset",
+                  "related_end"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "relative"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "absolute": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "absolute"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "Undid": {
+        "properties": {
+          "op_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "UndoParams": {
+        "description": "Params of `op.undo` and `op.redo`.",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "WireCollection": {
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "WireError": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Relative to the vdir.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "type": "object"
+      },
+      "WireSnapshot": {
+        "properties": {
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/WireCollection"
+            },
+            "type": "array"
+          },
+          "config": {
+            "$ref": "#/components/schemas/Config"
+          },
+          "config_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/WireError"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/WireTask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "revision",
+          "config",
+          "config_warnings",
+          "collections",
+          "tasks",
+          "errors"
+        ],
+        "type": "object"
+      },
+      "WireTask": {
+        "properties": {
+          "alarms": {
+            "items": {
+              "$ref": "#/components/schemas/Alarm"
+            },
+            "type": "array"
+          },
+          "blocked": {
+            "description": "Reason edits must stay off for this task.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection": {
+            "type": "string"
+          },
+          "completed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IcalDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IcalDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IcalDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "from_completion": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "last_modified": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IcalDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "$ref": "#/components/schemas/Metadata"
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "rev": {
+            "type": "string"
+          },
+          "rrule": {
+            "description": "Raw RRULE value; parsed elsewhere.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IcalDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "uid",
+          "collection",
+          "path",
+          "summary",
+          "status",
+          "kind",
+          "alarms",
+          "meta",
+          "from_completion",
+          "warnings",
+          "rev",
+          "pending"
+        ],
+        "type": "object"
+      },
+      "WriteMode": {
+        "description": "`verified` runs only operations the compatibility matrix passes; `test` also runs\nunverified ones and must only be used against the isolated test account.",
+        "enum": [
+          "verified",
+          "test"
+        ],
+        "type": "string"
+      },
+      "WriteOutcome": {
+        "enum": [
+          "applied",
+          "queued",
+          "satisfied"
+        ],
+        "type": "string"
+      },
+      "WriteResult": {
+        "properties": {
+          "created": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Created"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "op_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/WriteOutcome"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "undid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Undid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "op_id",
+          "revision",
+          "message"
+        ],
+        "type": "object"
+      },
+      "Writes": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WriteMode"
+              }
+            ],
+            "default": "verified"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "tdo",
+    "version": "1"
+  },
+  "methods": [
+    {
+      "name": "hello",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/HelloParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/HelloResult"
+        }
+      },
+      "x-lifecycle": true
+    },
+    {
+      "name": "rpc.discover",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "type": "object"
+        }
+      },
+      "x-lifecycle": true
+    },
+    {
+      "name": "daemon.info",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/DaemonInfo"
+        }
+      },
+      "x-lifecycle": true
+    },
+    {
+      "name": "daemon.shutdown",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ShutdownParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Empty"
+        }
+      },
+      "x-lifecycle": true
+    },
+    {
+      "name": "events.subscribe",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SubscribeResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "events.unsubscribe",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Empty"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "snapshot.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WireSnapshot"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "status.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/StatusView"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "op.submit",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SubmitParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WriteResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "op.undo",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UndoParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WriteResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "op.redo",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UndoParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WriteResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "op.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/OpGetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/OpState"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "op.check",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/CheckParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/CheckResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "refusals.ack",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AckParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/AckResult"
+        }
+      },
+      "x-lifecycle": false
+    }
+  ],
+  "openrpc": "1.3.2",
+  "x-errors": [
+    "blocked",
+    "stale",
+    "stuck",
+    "not_found",
+    "invalid",
+    "unavailable",
+    "protocol",
+    "wrong_instance",
+    "internal"
+  ],
+  "x-events": {
+    "event": {
+      "params": {
+        "$ref": "#/components/schemas/EventEnvelope"
+      }
+    },
+    "heartbeat": {
+      "params": {
+        "$ref": "#/components/schemas/Heartbeat"
+      }
+    },
+    "missed": {
+      "params": {
+        "$ref": "#/components/schemas/Missed"
+      }
+    }
+  },
+  "x-protocol": 1
+}

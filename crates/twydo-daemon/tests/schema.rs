@@ -1,0 +1,278 @@
+use serde_json::{Value, json};
+use twydo_daemon::schema;
+
+fn load(name: &str) -> Value {
+    let path = format!("{}/../../schema/{name}", env!("CARGO_MANIFEST_DIR"));
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn def_mut<'a>(doc: &'a mut Value, name: &str) -> &'a mut Value {
+    doc.pointer_mut(&format!("/components/schemas/{name}"))
+        .unwrap_or_else(|| panic!("no definition {name}"))
+}
+
+#[test]
+fn checked_in_schema_is_current() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/tdo.openrpc.json");
+    let current = serde_json::to_string_pretty(&schema::document()).unwrap() + "\n";
+    if std::env::var_os("TWYDO_BLESS").is_some() {
+        std::fs::write(path, &current).unwrap();
+    }
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        current,
+        "schema/tdo.openrpc.json is stale: run TWYDO_BLESS=1 cargo test -p twydo-daemon --test schema"
+    );
+}
+
+#[test]
+fn document_is_deterministic() {
+    assert_eq!(
+        serde_json::to_string_pretty(&schema::document()).unwrap(),
+        serde_json::to_string_pretty(&schema::document()).unwrap()
+    );
+}
+
+#[test]
+fn no_breaking_change_against_the_released_schema() {
+    let released = load("released.openrpc.json");
+    assert_eq!(
+        schema::breaking_changes(&released, &schema::document()),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn removing_a_result_field_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "WriteResult")["properties"]
+        .as_object_mut()
+        .unwrap()
+        .remove("revision")
+        .unwrap();
+    let lines = schema::breaking_changes(&released, &current);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("revision"), "{lines:?}");
+}
+
+#[test]
+fn a_new_required_param_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "SubmitParams")["required"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("x"));
+    let lines = schema::breaking_changes(&released, &current);
+    assert_eq!(lines, vec!["SubmitParams.x: now required".to_string()]);
+}
+
+#[test]
+fn a_new_optional_param_is_not_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "SubmitParams")["properties"]["x"] = json!({"type": "string"});
+    assert_eq!(
+        schema::breaking_changes(&released, &current),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_lost_error_kind_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    let values = def_mut(&mut current, "ErrorKind")["enum"]
+        .as_array_mut()
+        .unwrap();
+    values.retain(|v| v != "stale");
+    let lines = schema::breaking_changes(&released, &current);
+    assert!(lines.iter().any(|l| l.contains("stale")), "{lines:?}");
+}
+
+#[test]
+fn a_gained_enum_value_is_not_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "ErrorKind")["enum"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!("brand_new"));
+    assert_eq!(
+        schema::breaking_changes(&released, &current),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_removed_method_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    current["methods"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|m| m["name"] != "op.check");
+    let lines = schema::breaking_changes(&released, &current);
+    assert!(lines.iter().any(|l| l.contains("op.check")), "{lines:?}");
+}
+
+#[test]
+fn any_change_to_a_lifecycle_method_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    let m = current["methods"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|m| m["name"] == "daemon.info")
+        .unwrap();
+    m["params"][0]["schema"] =
+        json!({"type": "object", "properties": {"extra": {"type": "string"}}});
+    let lines = schema::breaking_changes(&released, &current);
+    assert!(lines.iter().any(|l| l.contains("daemon.info")), "{lines:?}");
+}
+
+fn breaks(released: &Value, current: &Value) -> Vec<String> {
+    schema::breaking_changes(released, current)
+}
+
+#[test]
+fn a_param_type_change_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "SubmitParams")["properties"]["session"] = json!({"type": "integer"});
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("SubmitParams.session") && l.contains("string")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_param_losing_null_is_a_break() {
+    let released = schema::document();
+    let before = released
+        .pointer("/components/schemas/OpGetParams/properties/op_id")
+        .unwrap();
+    let mut current = released.clone();
+    def_mut(&mut current, "OpGetParams")["properties"]["op_id"] = json!({"type": "string"});
+    assert_ne!(
+        before,
+        &json!({"type": "string"}),
+        "fixture assumption: op_id is nullable"
+    );
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("OpGetParams.op_id") && l.contains("null")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_result_gaining_null_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "WriteResult")["properties"]["message"] =
+        json!({"type": ["string", "null"]});
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("WriteResult.message") && l.contains("null")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_result_losing_null_is_not_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "CheckResult")["properties"]["reason"] = json!({"type": "string"});
+    assert_eq!(breaks(&released, &current), Vec::<String>::new());
+}
+
+#[test]
+fn closing_a_params_object_is_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "SubmitParams")["additionalProperties"] = json!(false);
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("SubmitParams") && l.contains("additional")),
+        "{lines:?}"
+    );
+}
+
+fn to_const_shape(def: &mut Value) {
+    let values = def["enum"].as_array().unwrap().clone();
+    let one_of: Vec<Value> = values
+        .into_iter()
+        .map(|v| json!({"const": v, "type": "string"}))
+        .collect();
+    let o = def.as_object_mut().unwrap();
+    o.remove("enum");
+    o.remove("type");
+    o.insert("oneOf".into(), Value::Array(one_of));
+}
+
+#[test]
+fn a_lost_const_variant_is_a_break() {
+    let mut released = schema::document();
+    to_const_shape(def_mut(&mut released, "ErrorKind"));
+    let mut current = released.clone();
+    def_mut(&mut current, "ErrorKind")["oneOf"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|v| v["const"] != "stale");
+    let lines = breaks(&released, &current);
+    assert!(lines.iter().any(|l| l.contains("stale")), "{lines:?}");
+}
+
+#[test]
+fn enum_to_const_shape_alone_is_not_a_break() {
+    let released = schema::document();
+    let mut current = released.clone();
+    to_const_shape(def_mut(&mut current, "ErrorKind"));
+    assert_eq!(breaks(&released, &current), Vec::<String>::new());
+}
+
+#[test]
+fn swapping_one_of_for_any_of_still_checks_variants() {
+    let released = schema::document();
+    let mut current = released.clone();
+    let def = def_mut(&mut current, "OpState").as_object_mut().unwrap();
+    let mut variants = def.remove("oneOf").expect("OpState is a oneOf");
+    variants.as_array_mut().unwrap().pop();
+    def.insert("anyOf".into(), variants);
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("OpState") && l.contains("removed")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn dropping_all_variants_reports_them() {
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "OpState")
+        .as_object_mut()
+        .unwrap()
+        .remove("oneOf");
+    let lines = breaks(&released, &current);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("OpState") && l.contains("removed")),
+        "{lines:?}"
+    );
+}
