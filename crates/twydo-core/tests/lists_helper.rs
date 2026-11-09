@@ -22,10 +22,58 @@ fn bundled_helper_runs_outside_the_repository_and_validates_protocol() {
 #[cfg(unix)]
 fn executable(root: &std::path::Path, body: &str) -> String {
     use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
     let path = root.join("python-wrapper");
-    fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    fs::write(
+        &path,
+        format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n{body}\n"),
+    )
+    .unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-    path.to_str().unwrap().to_string()
+    // A parallel test's fork can inherit the write descriptor until it execs.
+    // Match the side-effect-free readiness probe used by the sync test fixtures.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match Command::new(&path).arg("__probe").status() {
+            Ok(status) => {
+                assert!(status.success(), "wrapper readiness probe failed");
+                return path.to_str().unwrap().to_string();
+            }
+            Err(error) if error.raw_os_error() == Some(26) && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("cannot execute helper test wrapper: {error}"),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn wrapper_fixture_waits_until_new_scripts_are_executable() {
+    use std::process::Command;
+    use std::time::Duration;
+    let d = tempfile::tempdir().unwrap();
+    let path = d.path().join("python-wrapper");
+    let wrapper = executable(d.path(), "echo wrapper-body");
+    // Model the writable descriptor inherited by another thread's fork. Linux
+    // refuses exec until every copy of that descriptor is closed.
+    let writer = fs::OpenOptions::new().write(true).open(&path).unwrap();
+    let error = Command::new(&wrapper).output().unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(26));
+    let closer = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        drop(writer);
+    });
+    let wrapper = executable(d.path(), "echo wrapper-body");
+    let result = Command::new(wrapper).arg("__probe").output();
+    closer.join().unwrap();
+    let output = result.expect("fixture returned while its script was still busy");
+    assert!(output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "probe must not run the wrapper body"
+    );
 }
 
 #[cfg(unix)]
