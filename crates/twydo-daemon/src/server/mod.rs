@@ -8,6 +8,7 @@ pub mod lane;
 pub mod publish;
 pub mod replay;
 pub mod sessions;
+pub mod watch;
 pub mod writes;
 
 pub use dispatch::{ConnState, dispatch, is_shutdown};
@@ -16,11 +17,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock, RwLockReadGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -41,10 +42,18 @@ pub struct DaemonOptions {
     pub crash_after_commit: bool,
     /// Runs before recovery; tests block here to observe the starting state.
     pub before_recovery: Option<Box<dyn FnOnce() + Send>>,
+    /// Runs in every queue drain before its first pass, holding the lane; tests block here to
+    /// change the files under a queued edit while a write waits for the lane.
+    #[doc(hidden)]
+    pub before_drain_passes: Option<TestHook>,
     /// Runs in every queue drain after its last pass, before publishing; tests block here to
     /// queue a write while the drain hook still holds the lane.
     #[doc(hidden)]
     pub after_drain_passes: Option<TestHook>,
+    /// Runs inside the commit gate of every `op.submit`, before the store is called; tests
+    /// block here to hold a write in flight while the daemon is asked to stop.
+    #[doc(hidden)]
+    pub in_commit: Option<TestHook>,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -60,7 +69,9 @@ impl DaemonOptions {
             session_ttl: Duration::from_secs(600),
             crash_after_commit: false,
             before_recovery: None,
+            before_drain_passes: None,
             after_drain_passes: None,
+            in_commit: None,
         }
     }
 }
@@ -89,7 +100,15 @@ pub struct Shared {
     pub event_buffer: usize,
     pub session_ttl: Duration,
     pub crash_after_commit: bool,
+    pub before_drain_passes: Option<TestHook>,
     pub after_drain_passes: Option<TestHook>,
+    pub in_commit: Option<TestHook>,
+    /// The commit gate: `true` once closed. Every store call that can commit (submit, undo,
+    /// redo, drain) runs under its read side ([`Shared::commit_gate`]); teardown takes the
+    /// write side and closes it before the daemon lock is released, so a write in flight
+    /// finishes first and none commits after (daemon spec §7.5). See the lock order in
+    /// `writes.rs` for where it sits.
+    commits: RwLock<bool>,
     /// The per-vdir state directory (journal, queue, locks).
     pub state_dir: PathBuf,
     /// The compatibility matrix the gate checks against.
@@ -120,6 +139,8 @@ pub struct Shared {
     /// The startup thread; teardown joins it before the lock is released.
     startup: Mutex<Option<JoinHandle<()>>>,
     heartbeat_thread: Mutex<Option<JoinHandle<()>>>,
+    /// The vdir watcher; dropped at teardown.
+    watcher: Mutex<Option<watch::Watcher>>,
 }
 
 impl Shared {
@@ -139,6 +160,18 @@ impl Shared {
 
     pub fn is_stopping(&self) -> bool {
         *self.stop.lock().unwrap()
+    }
+
+    /// Enters the commit gate: hold the guard around a store call that can commit. `None`
+    /// once teardown has closed it (the caller answers `unavailable` or skips its drain).
+    pub fn commit_gate(&self) -> Option<RwLockReadGuard<'_, bool>> {
+        let g = self.commits.read().unwrap_or_else(|e| e.into_inner());
+        (!*g).then_some(g)
+    }
+
+    /// Closes the commit gate, waiting for the store calls inside it to return.
+    fn close_commits(&self) {
+        *self.commits.write().unwrap_or_else(|e| e.into_inner()) = true;
     }
 
     /// Asks the daemon to stop; the accept thread does the teardown.
@@ -211,7 +244,10 @@ impl Daemon {
             event_buffer: opts.event_buffer,
             session_ttl: opts.session_ttl,
             crash_after_commit: opts.crash_after_commit,
+            before_drain_passes: opts.before_drain_passes.take(),
             after_drain_passes: opts.after_drain_passes.take(),
+            in_commit: opts.in_commit.take(),
+            commits: RwLock::new(false),
             state_dir: state.clone(),
             matrix: opts.matrix.clone(),
             lane: lane::Lane::new(),
@@ -234,6 +270,7 @@ impl Daemon {
             wake_w,
             startup: Mutex::new(None),
             heartbeat_thread: Mutex::new(None),
+            watcher: Mutex::new(None),
         });
         *shared.heartbeat_thread.lock().unwrap() =
             Some(shared.bus.start_heartbeat(shared.heartbeat));
@@ -280,21 +317,33 @@ impl Daemon {
 }
 
 /// Takes the socket path: creates its directory (`0700`) if missing, removes a leftover socket
-/// only when nothing answers on it, binds and restricts it to the owner.
+/// only when nothing answers on it (anything else at the path is an error, never deleted),
+/// binds and restricts it to the owner.
+///
+/// A bare relative name (`tdo.sock`) lives in the working directory, which is checked like any
+/// other: it must be private too.
 fn bind_socket(path: &Path) -> Result<UnixListener, StartError> {
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        if dir.exists() {
-            check_private_dir(dir)?;
-        } else {
-            fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(dir)?;
-        }
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    if dir.exists() {
+        check_private_dir(dir)?;
+    } else {
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
     }
-    if path.exists() {
+    if let Ok(md) = fs::symlink_metadata(path) {
         if UnixStream::connect(path).is_ok() {
             return Err(StartError::AlreadyRunning);
+        }
+        if !md.file_type().is_socket() {
+            return Err(StartError::Io(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{} exists and is not a socket", path.display()),
+            )));
         }
         fs::remove_file(path)?;
     }
@@ -378,13 +427,36 @@ fn startup(
         Box::new(|shared| {
             // Items an earlier daemon left queued. No long job runs before ready (the drain
             // hook skips until then), and the lane is taken so no write could interleave.
-            match shared.lane.write() {
-                Ok(_lane) => writes::drain_queue(shared),
+            match shared
+                .lane
+                .write()
+                .map(|_lane| writes::drain_passes(shared))
+            {
+                Ok(drained) => writes::finish_drain(shared, drained),
                 // Not a startup failure: the job's end (or the drain after ready) drains.
                 Err(b) => eprintln!(
                     "tdo daemon: a {:?} job holds the vdir lane at startup; draining later",
                     b.0
                 ),
+            }
+            Ok(())
+        }),
+        Box::new(|shared| {
+            // A watcher that cannot start is not fatal: the daemon serves its own writes
+            // and reloads on request (the TUI does the same today).
+            let weak = Arc::downgrade(shared);
+            match watch::start(&shared.vdir, move || {
+                if let Some(shared) = weak.upgrade() {
+                    outside_change(&shared);
+                }
+            }) {
+                Ok(w) => {
+                    *shared.watcher.lock().unwrap() = Some(w);
+                    // A change between the first reload and the watch is seen by nobody:
+                    // look once more (publishes nothing if the snapshot is unchanged).
+                    outside_change(shared);
+                }
+                Err(e) => eprintln!("tdo daemon: not watching the vdir: {e}"),
             }
             Ok(())
         }),
@@ -405,6 +477,22 @@ fn startup(
     if shared.queue_has_items() {
         shared.request_drain();
     }
+}
+
+/// The watcher's debounced callback: reload, labelled by the long job holding the lane (a
+/// sync's own file changes), else as an outside change. The publisher publishes only when the
+/// snapshot differs, so the daemon's own writes (already published) add nothing.
+fn outside_change(shared: &Shared) {
+    let cause = match shared.lane.current_long() {
+        Some(lane::LongKind::Sync) => Cause::Sync,
+        Some(lane::LongKind::List) => Cause::List,
+        _ => Cause::Outside,
+    };
+    if let Err(e) = shared.publisher.reload(cause, Vec::new()) {
+        eprintln!("tdo daemon: reload after a change failed: {e}");
+        return;
+    }
+    shared.publisher.refresh_status();
 }
 
 fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
@@ -482,6 +570,12 @@ fn teardown(shared: &Shared) {
     shared.close_connections();
     let _ = fs::remove_file(&shared.socket);
     shared.publisher.close();
+    // Stops watching; a callback already running returns at once (the publisher is closed).
+    shared.watcher.lock().unwrap().take();
+    // A write in flight finishes its commit; none starts after this (its store call answers
+    // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
+    // writes the vdir while a thread of this one still could.
+    shared.close_commits();
     if !shared.wait_drainer(REFRESHER_WAIT) {
         eprintln!("tdo daemon: queue drainer still waiting; not joined");
     }
@@ -567,6 +661,11 @@ impl DaemonHandle {
     pub fn shutdown(&self) {
         self.shared.request_stop();
         self.wait_stopped();
+    }
+
+    /// Has teardown finished (here, by `daemon.shutdown` or by a signal)?
+    pub fn is_stopped(&self) -> bool {
+        *self.shared.stopped.lock().unwrap()
     }
 
     /// Blocks until the daemon has stopped (here or by `daemon.shutdown`).
@@ -758,9 +857,12 @@ impl Shared {
                 g.dirty = false;
             }
             // A long job holding the lane drains when it ends (its hooks); nothing to do.
-            if let Ok(_lane) = self.lane.write() {
-                writes::drain_queue(self);
-            }
+            // The lane is let go before the drain is finished: see the lock order in `writes`.
+            let drained = match self.lane.write() {
+                Ok(_lane) => writes::drain_passes(self),
+                Err(_) => continue,
+            };
+            writes::finish_drain(self, drained);
         }
     }
 

@@ -399,3 +399,192 @@ fn an_edit_queued_while_the_drain_runs_is_drained_after_the_job() {
     });
     assert_eq!(queue_len(&fx), 0);
 }
+
+#[test]
+fn an_undo_during_a_background_drain_that_refuses_its_item_does_not_deadlock() {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    let fx = fx();
+    let (entered_tx, entered_rx) = mpsc::channel::<()>();
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    // The background drain waits after its passes, still holding the write lane.
+    let gate = Arc::new(Mutex::new(Some((entered_tx, go_rx))));
+    let td = TestDaemon::start_with(&fx, |o| {
+        let gate = Arc::clone(&gate);
+        o.after_drain_passes = Some(Arc::new(move || {
+            let taken = gate.lock().unwrap().take();
+            if let Some((tx, rx)) = taken {
+                tx.send(()).unwrap();
+                let _ = rx.recv_timeout(BOUND);
+            }
+        }));
+    });
+    let c = td.client();
+    // An outside lock holder: the edit is queued, then made stale before the drain sees it.
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    fx.write("inbox/u1.ics", &todo_ics("u1", "Outside", None));
+    drop(lock);
+    entered_rx
+        .recv_timeout(BOUND)
+        .expect("the background drain never finished its passes");
+    let caller = c.caller();
+    let params = twydo_daemon::protocol::methods::UndoParams {
+        session: c.session().unwrap(),
+        request_id: c.next_request_id(),
+    };
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let r = caller.call::<_, twydo_daemon::protocol::methods::WriteResult>("op.undo", params);
+        let _ = done_tx.send(r);
+    });
+    // Let the undo take its session and wait for the lane, then let the drain go on.
+    std::thread::sleep(Duration::from_millis(200));
+    go_tx.send(()).unwrap();
+    let undone = done_rx
+        .recv_timeout(BOUND)
+        .expect("the undo never returned: the drain and the undo deadlocked");
+    // The refused edit left the undo stack: nothing is left to undo.
+    assert_eq!(kind(&undone.unwrap_err()), ErrorKind::Invalid);
+    // Writes still go through.
+    let w = submit(&c, edit_title("u2", "After")).unwrap();
+    assert_eq!(w.outcome, WriteOutcome::Applied);
+}
+
+#[test]
+fn a_resent_undo_that_withdrew_a_queued_edit_is_answered_after_a_restart() {
+    let fx = fx();
+    let (edit_rid, undo_rid);
+    {
+        let td = TestDaemon::start(&fx);
+        let c = td.client();
+        let job = td.handle().hold_long(LongKind::Test);
+        edit_rid = c.next_request_id();
+        let q = common::submit_at(&c, common::based(&c), &edit_rid, edit_title("u1", "Queued"))
+            .unwrap();
+        assert_eq!(q.outcome, WriteOutcome::Queued);
+        undo_rid = c.next_request_id();
+        let u = common::undo_with(&c, &undo_rid).unwrap();
+        assert_eq!(u.outcome, WriteOutcome::Applied);
+        drop(job);
+    }
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let later = submit(&c, edit_title("u1", "Later")).unwrap();
+    assert_eq!(later.outcome, WriteOutcome::Applied);
+    // Resent from the new session: answered from disk, the later edit stays.
+    let again = common::undo_with(&c, &undo_rid).unwrap();
+    assert_eq!(again.outcome, WriteOutcome::Applied);
+    assert_eq!(again.message, "already undone");
+    assert_eq!(task(&snapshot(&c), "u1").task.summary, "Later");
+    // The withdrawn edit's own request is not run again either.
+    let edit =
+        common::submit_at(&c, common::based(&c), &edit_rid, edit_title("u1", "Queued")).unwrap();
+    assert_eq!(edit.outcome, WriteOutcome::Queued);
+    assert_eq!(op_get(&c, Some(&edit.op_id), None), OpState::Cancelled);
+    assert_eq!(op_get(&c, None, Some(&edit_rid)), OpState::Cancelled);
+    assert_eq!(task(&snapshot(&c), "u1").task.summary, "Later");
+    assert_eq!(queue_len(&fx), 0);
+}
+
+#[test]
+fn a_resent_undo_cut_short_by_a_crash_is_refused_not_rerun() {
+    use twydo_core::store::queue::{Cancellation, FORMAT};
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let job = td.handle().hold_long(LongKind::Test);
+    let q = submit(&c, edit_title("u1", "Queued")).unwrap();
+    assert_eq!(q.outcome, WriteOutcome::Queued);
+    // The record an undo writes before removing the item, left alone by a crash.
+    let queue = Queue::existing(&state_dir(&fx)).unwrap();
+    let item = queue.list().unwrap().remove(0);
+    let rec = Cancellation {
+        format: FORMAT,
+        item: item.clone(),
+        by: Some(RequestRef {
+            session: "s-gone".into(),
+            request_id: "s-gone-1-1".into(),
+        }),
+        at: chrono::Utc::now(),
+    };
+    let dir = state_dir(&fx).join("queue/cancelled");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{}.json", item.id)),
+        serde_json::to_vec(&rec).unwrap(),
+    )
+    .unwrap();
+    let e = common::undo_with(&c, "s-gone-1-1").unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Blocked);
+    // Nothing was undone: the edit is still queued and drains when the job ends.
+    assert_eq!(queue_len(&fx), 1);
+    drop(job);
+    let (_, state) = op_finished(&c, &q.op_id);
+    assert!(matches!(state, OpState::Applied { .. }), "{state:?}");
+}
+
+#[test]
+fn an_undo_names_the_step_it_reverted_when_a_drain_refuses_one_meanwhile() {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    let fx = fx();
+    let (entered_tx, entered_rx) = mpsc::channel::<()>();
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    // Armed below: the background drain then waits before its passes, holding the lane.
+    type Gate = Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>;
+    let gate: Arc<Mutex<Gate>> = Arc::new(Mutex::new(None));
+    let td = TestDaemon::start_with(&fx, |o| {
+        let gate = Arc::clone(&gate);
+        o.before_drain_passes = Some(Arc::new(move || {
+            let taken = gate.lock().unwrap().take();
+            if let Some((tx, rx)) = taken {
+                tx.send(()).unwrap();
+                let _ = rx.recv_timeout(BOUND);
+            }
+        }));
+    });
+    let c = td.client();
+    let first = submit(&c, edit_title("u1", "First")).unwrap();
+    assert_eq!(first.outcome, WriteOutcome::Applied);
+    *gate.lock().unwrap() = Some((entered_tx, go_rx));
+    // An outside lock holder: the second edit is queued; the drainer picks it up.
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    let second = submit(&c, edit_title("u2", "Second")).unwrap();
+    assert_eq!(second.outcome, WriteOutcome::Queued);
+    entered_rx
+        .recv_timeout(BOUND)
+        .expect("the background drain never started");
+    // Made stale before the drain sees it: the drain will refuse it.
+    fx.write("inbox/u2.ics", &todo_ics("u2", "Outside", None));
+    drop(lock);
+    let caller = c.caller();
+    let params = twydo_daemon::protocol::methods::UndoParams {
+        session: c.session().unwrap(),
+        request_id: c.next_request_id(),
+    };
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let r = caller.call::<_, twydo_daemon::protocol::methods::WriteResult>("op.undo", params);
+        let _ = done_tx.send(r);
+    });
+    // Let the undo take its session and wait for the lane, then let the drain refuse.
+    std::thread::sleep(Duration::from_millis(200));
+    go_tx.send(()).unwrap();
+    let undone = done_rx.recv_timeout(BOUND).unwrap().unwrap();
+    // The store skipped the refused edit and reverted the first one; the reply says so.
+    assert_eq!(undone.outcome, WriteOutcome::Applied);
+    let undid = undone.undid.expect("names what it undid");
+    assert_eq!(undid.op_id, Some(first.op_id.clone()));
+    assert!(undone.message.contains("One"), "{}", undone.message);
+    assert_eq!(task(&snapshot(&c), "u1").task.summary, "One");
+    // Redo names it too.
+    let redone = common::redo(&c).unwrap();
+    assert_eq!(
+        redone.undid.expect("names what it redid").op_id,
+        Some(undone.op_id.clone())
+    );
+    assert_eq!(task(&snapshot(&c), "u1").task.summary, "First");
+}

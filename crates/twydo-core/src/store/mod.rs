@@ -969,7 +969,7 @@ impl Store {
             Step::Applied(id) => self.revert_or_queue(id, "tui", label, now)?,
             Step::Queued(item) => {
                 let queue = Queue::open(&self.state)?;
-                if queue.cancel(&item.id)? {
+                if queue.cancel_by(item, self.request.clone(), now)? {
                     return Ok(Some((Submitted::Cancelled, Step::Cancelled(item.clone()))));
                 }
                 // A drainer got there first: the entry it commits names the item. Until that
@@ -984,7 +984,9 @@ impl Store {
             }
             Step::Cancelled(item) => {
                 // The redo is a new request: its item, and the entry drained from it, carry it.
+                // A new id too, so the withdrawn item's record keeps answering for it.
                 let mut item = item.clone();
+                item.id = queue::new_id(now);
                 item.request = self.request.clone();
                 self.settle_queued(item, now, &mut || {})?
             }

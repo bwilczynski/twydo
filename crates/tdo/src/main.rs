@@ -12,6 +12,10 @@ struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     vdir: Option<PathBuf>,
 
+    /// The daemon's socket (default: TWYDO_SOCKET, else the per-user path)
+    #[arg(long, global = true, value_name = "PATH", hide = true)]
+    socket: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -52,6 +56,16 @@ enum Command {
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
+    /// Run the daemon in the foreground (it owns the data; clients talk to it over a socket)
+    #[command(hide = true)]
+    Daemon {
+        /// Compatibility matrix file (test hook)
+        #[arg(long, value_name = "PATH", hide = true)]
+        matrix: Option<PathBuf>,
+        /// Abort after committing a write, before replying (crash tests)
+        #[arg(long, hide = true)]
+        test_crash_after_commit: bool,
+    },
     /// Report data health, recurrence evidence and operation permissions
     Check {
         /// Compatibility matrix file (default: the matrix built into tdo)
@@ -88,6 +102,15 @@ fn main() {
         Command::Op { matrix, command } => {
             std::process::exit(cli::op::run(cli.vdir.as_deref(), matrix.as_ref(), command))
         }
+        Command::Daemon {
+            matrix,
+            test_crash_after_commit,
+        } => std::process::exit(cli::daemon::run(
+            cli.vdir.as_deref(),
+            cli.socket.as_deref(),
+            matrix.as_ref(),
+            test_crash_after_commit,
+        )),
         Command::Conflicts { command } => {
             std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
         }

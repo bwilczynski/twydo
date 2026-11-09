@@ -260,3 +260,67 @@ fn only_published_revisions_are_kept() {
     assert!(p.at(0).is_none());
     assert!(p.at(1).is_some());
 }
+
+/// The next `data.changed` within `limit`.
+fn data_within(c: &Client, limit: Duration) -> Option<(u64, Cause, Vec<String>)> {
+    let deadline = Instant::now() + limit;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(e)) => {
+                if let Event::DataChanged {
+                    revision,
+                    cause,
+                    uids,
+                } = e.event
+                {
+                    return Some((revision, cause, uids));
+                }
+            }
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+}
+
+#[test]
+fn a_hand_edit_is_published_with_cause_outside() {
+    let fx = Fixture::new(&[("inbox", "u1", "Alpha", None)]);
+    let td = TestDaemon::start(&fx);
+    let (c, sub) = subscribed(&td);
+    fx.write("inbox/u1.ics", &todo_ics("u1", "Alpha edited", None));
+    let (rev, cause, uids) = data_within(&c, Duration::from_secs(2)).expect("no data.changed");
+    assert_eq!(rev, sub.revision + 1);
+    assert_eq!(cause, Cause::Outside);
+    assert_eq!(uids, ["u1"]);
+}
+
+#[test]
+fn a_change_during_a_sync_is_labelled_sync() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let (c, _) = subscribed(&td);
+    let _guard = td
+        .handle()
+        .hold_long(twydo_daemon::server::lane::LongKind::Sync);
+    fx.write("inbox/uid-n.ics", &todo_ics("uid-n", "New", None));
+    let (_, cause, uids) = data_within(&c, Duration::from_secs(3)).expect("no data.changed");
+    assert_eq!(cause, Cause::Sync);
+    assert_eq!(uids, ["uid-n"]);
+}
+
+#[test]
+fn own_write_publishes_one_revision() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let w = td.client();
+    let (c, _) = subscribed(&td);
+    let r = common::submit(&w, common::edit_title("uid-a", "Alpha 2")).unwrap();
+    let (rev, cause, _) = data_within(&c, Duration::from_secs(2)).expect("no data.changed");
+    assert_eq!((rev, cause), (r.revision, Cause::Op));
+    // The watcher sees the daemon's own file change after its debounce and publishes nothing.
+    assert!(
+        data_within(&c, Duration::from_secs(1)).is_none(),
+        "a second data.changed for one write"
+    );
+}

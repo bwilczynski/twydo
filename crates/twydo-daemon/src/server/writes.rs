@@ -11,22 +11,31 @@
 //! 2. the session's mutex (serialises the requests of one session);
 //! 3. the lane token ([`Lane::write`](super::lane::Lane::write): waits only for another
 //!    write, never for a long job);
-//! 4. the store's vdir file lock (inside `Store`, released before it returns);
-//! 5. the publisher's `reload_lock`, then its `state`, then the bus.
+//! 4. the commit gate's read side ([`Shared::commit_gate`]), held around the store call only;
+//! 5. the store's vdir file lock (inside `Store`, released before it returns);
+//! 6. the publisher's `reload_lock`, then its `state`, then the bus (after the gate is let go).
 //!
 //! The session table's mutex is held only for lookups, never while waiting.
 //!
 //! A long job takes only the lane. Its drain hook ([`drain_queue`]) runs while the job still
-//! holds the lane and takes, in order: the store's vdir file lock (released before `drain`
-//! returns), then one session mutex at a time (to prune refused steps), then the publisher
+//! holds the lane and takes, in order: the commit gate's read side (around the drain passes
+//! only), the store's vdir file lock (released before `drain` returns), then, with the gate
+//! let go, one session mutex at a time (to prune refused steps), then the publisher
 //! (`reload_lock`, `state`) and the bus. Taking a session mutex while the lane is held long is
 //! safe: a holder of a session mutex never waits for a long job ([`Lane::write`] answers
 //! `LongBusy` at once) and, while queueing, never takes the vdir lock or `reload_lock`
 //! (queued replies hand the publish to the background refresher). The hook never takes the
 //! lane itself.
 //!
-//! The background drainer ([`Shared::request_drain`]) holds nothing when it starts, takes the
-//! lane as a write ([`Lane::write`]) and then drains as the hook does, in the same order.
+//! The background drainer ([`Shared::request_drain`]) and the startup drain hold nothing when
+//! they start, take the lane as a write ([`Lane::write`]) for the drain passes only
+//! ([`drain_passes`]), and prune, publish and report ([`finish_drain`]) after letting it go: a
+//! session holder may be waiting for that write lane, so the session mutexes must not be
+//! taken under it.
+//!
+//! Teardown takes the commit gate's write side holding none of the above, so it waits only
+//! for store calls already inside the gate (each bounded by the store's lock try), and it
+//! closes the gate before the daemon lock is released.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -37,7 +46,7 @@ use twydo_core::edit::Op;
 use twydo_core::edit::describe::{op_title, success_message};
 use twydo_core::gate;
 use twydo_core::store::Store;
-use twydo_core::store::journal::{Journal, RequestRef};
+use twydo_core::store::journal::{Entry, Journal, RequestRef, Stage};
 use twydo_core::store::queue::{Item, Kind, Queue, Queued, refusal_message};
 use twydo_core::store::{DrainOutcome, Drained, Submitted, WriteError};
 use twydo_core::views::Snapshot as CoreSnapshot;
@@ -54,6 +63,21 @@ use crate::protocol::methods::{
 use crate::protocol::rpc::{ErrorData, ErrorKind, REFUSED, RpcError};
 
 const RELOAD: &str = "reload and try again";
+const ABANDONED: &str = "the operation was abandoned; it was not applied";
+const UNDO_CUT_SHORT: &str = "the undo was interrupted; it was not applied";
+
+/// The commit gate is closed: the daemon is stopping and commits nothing more.
+fn stopping() -> RpcError {
+    RpcError::refused(ErrorKind::Unavailable, "the daemon is shutting down")
+}
+
+/// A journal entry still `Prepared`: its writes may be partly on disk.
+fn stuck_entry(id: &str) -> RpcError {
+    RpcError::refused(
+        ErrorKind::Stuck,
+        format!("operation {id} is unfinished; recover or abandon it"),
+    )
+}
 
 fn to_value(r: WriteResult) -> Result<Value, RpcError> {
     serde_json::to_value(r).map_err(|e| RpcError::refused(ErrorKind::Internal, e.to_string()))
@@ -168,21 +192,71 @@ fn durable(shared: &Shared, request_id: &str) -> Option<Result<WriteResult, RpcE
                     refusal_message(&r),
                 )));
             }
+            // The request queued an item an undo withdrew since: it was queued, as answered
+            // then; `op.get` now says cancelled.
+            Ok(Some(Queued::Cancelled(c))) => {
+                return Some(Ok(WriteResult {
+                    outcome: WriteOutcome::Queued,
+                    op_id: c.item.id,
+                    revision,
+                    message: "already queued; since undone".into(),
+                    created: None,
+                    undid: None,
+                }));
+            }
+            Ok(None) => {}
+            Err(e) => return Some(Err(RpcError::refused(ErrorKind::Internal, e.to_string()))),
+        }
+        // The request was an undo that withdrew a queued item.
+        match q.cancelled_by(request_id) {
+            Ok(Some(c)) => return Some(withdrawn(shared, &q, c.item.id, revision)),
             Ok(None) => {}
             Err(e) => return Some(Err(RpcError::refused(ErrorKind::Internal, e.to_string()))),
         }
     }
     match Journal::open(&shared.state_dir).and_then(|j| j.by_request(request_id)) {
-        Ok(Some(e)) => Some(Ok(WriteResult {
-            outcome: WriteOutcome::Applied,
-            op_id: e.id,
-            revision,
-            message: "already applied".into(),
-            created: None,
-            undid: None,
-        })),
+        // Only an applied entry is applied; a stuck one is not (yet), an abandoned one never.
+        Ok(Some(e)) => Some(match e.stage {
+            Stage::Applied => Ok(WriteResult {
+                outcome: WriteOutcome::Applied,
+                op_id: e.id,
+                revision,
+                message: "already applied".into(),
+                created: None,
+                undid: None,
+            }),
+            Stage::Prepared => Err(stuck_entry(&e.id)),
+            Stage::Abandoned => Err(RpcError::refused(ErrorKind::Blocked, ABANDONED)),
+        }),
         Ok(None) => None,
         Err(e) => Some(Err(RpcError::refused(ErrorKind::Internal, e.to_string()))),
+    }
+}
+
+/// The answer to a resent undo that withdrew queued item `item_id`: applied if the item is
+/// gone unapplied, else (a crash cut the undo short, so the item stayed and may have drained)
+/// not applied.
+fn withdrawn(
+    shared: &Shared,
+    q: &Queue,
+    item_id: String,
+    revision: u64,
+) -> Result<WriteResult, RpcError> {
+    let internal = |e: std::io::Error| RpcError::refused(ErrorKind::Internal, e.to_string());
+    let committed = Journal::open(&shared.state_dir)
+        .and_then(|j| j.by_queue_id(&item_id))
+        .map_err(internal)?
+        .is_some();
+    match q.state(&item_id).map_err(internal)? {
+        Some(Queued::Cancelled(_)) if !committed => Ok(WriteResult {
+            outcome: WriteOutcome::Applied,
+            op_id: item_id,
+            revision,
+            message: "already undone".into(),
+            created: None,
+            undid: None,
+        }),
+        _ => Err(RpcError::refused(ErrorKind::Blocked, UNDO_CUT_SHORT)),
     }
 }
 
@@ -286,7 +360,11 @@ fn created_task(shared: &Shared, entry: &str) -> Option<Created> {
 fn crash_point(shared: &Shared) {
     if shared.crash_after_commit {
         // Tests of the replay after a crash: the commit is on disk, the answer never leaves.
-        std::process::abort();
+        // SIGKILL, not abort(): no core dump and no crash report on every test run.
+        // SAFETY: signals our own process; nothing after this runs.
+        unsafe {
+            libc::kill(libc::getpid(), libc::SIGKILL);
+        }
     }
 }
 
@@ -311,9 +389,18 @@ fn run_submit(
     }));
     // A long job holds the vdir: plan and queue at once, without trying the lock.
     s.store.set_vdir_busy(lane.is_err());
-    let r = s.store.submit(&view.snap, &p.op, &label, "daemon", now);
+    let r = match shared.commit_gate() {
+        Some(_gate) => {
+            if let Some(hook) = &shared.in_commit {
+                hook();
+            }
+            Ok(s.store.submit(&view.snap, &p.op, &label, "daemon", now))
+        }
+        None => Err(stopping()),
+    };
     s.store.set_vdir_busy(false);
     s.store.set_request(None);
+    let r = r?;
     let drained = s.store.take_drained();
     let submitted = match r {
         Ok(x) => x,
@@ -402,7 +489,6 @@ fn run_undo(
     redo: bool,
 ) -> Result<WriteResult, RpcError> {
     let mut s = session.lock().unwrap();
-    s.prune_refused(Queue::existing(&shared.state_dir).as_ref());
     let lane = shared.lane.write();
     let now = Utc::now();
     s.store.set_request(Some(RequestRef {
@@ -410,13 +496,17 @@ fn run_undo(
         request_id: p.request_id.clone(),
     }));
     s.store.set_vdir_busy(lane.is_err());
-    let r = if redo {
-        s.store.redo_last(now)
-    } else {
-        s.store.undo_last(now)
+    let r = match shared.commit_gate() {
+        Some(_gate) if redo => Ok(s.store.redo_last(now)),
+        Some(_gate) => Ok(s.store.undo_last(now)),
+        None => Err(stopping()),
     };
     s.store.set_vdir_busy(false);
     s.store.set_request(None);
+    let r = r?;
+    // The store skipped the steps whose queued item was refused, also by a drain that ran
+    // while this call waited for the lane or inside it: drop their titles before moving one.
+    s.prune_refused(Queue::existing(&shared.state_dir).as_ref());
     let drained = s.store.take_drained();
     let submitted = match r {
         Ok(x) => x,
@@ -491,15 +581,27 @@ fn is_queue_id(id: &str) -> bool {
         && digits(pid)
 }
 
+/// What a journal entry says about its operation: applied only once `Applied`.
+fn entry_state(e: Entry) -> Result<OpState, RpcError> {
+    match e.stage {
+        Stage::Applied => Ok(OpState::Applied { op_id: e.id }),
+        Stage::Prepared => Err(stuck_entry(&e.id)),
+        Stage::Abandoned => Ok(OpState::Refused {
+            kind: ErrorKind::Blocked,
+            message: ABANDONED.into(),
+        }),
+    }
+}
+
 /// Where operation `op_id` (a journal entry or queue item id) stands.
 fn state_of(shared: &Shared, op_id: &str) -> Result<OpState, RpcError> {
     let internal = |e: std::io::Error| RpcError::refused(ErrorKind::Internal, e.to_string());
     let journal = Journal::open(&shared.state_dir).map_err(internal)?;
     if let Ok(Some(e)) = journal.get(op_id) {
-        return Ok(OpState::Applied { op_id: e.id });
+        return entry_state(e);
     }
     if let Some(e) = journal.by_queue_id(op_id).map_err(internal)? {
-        return Ok(OpState::Applied { op_id: e.id });
+        return entry_state(e);
     }
     if let Some(q) = Queue::existing(&shared.state_dir)
         && let Ok(Some(found)) = q.state(op_id)
@@ -510,10 +612,11 @@ fn state_of(shared: &Shared, op_id: &str) -> Result<OpState, RpcError> {
                 kind: refused_kind(r.stale),
                 message: refusal_message(&r),
             },
+            Queued::Cancelled(_) => OpState::Cancelled,
         });
     }
     if is_queue_id(op_id) {
-        // Only an undo removes an item without leaving a record.
+        // Only an undo removes an item; its record may have been pruned since.
         return Ok(OpState::Cancelled);
     }
     Err(RpcError::refused(
@@ -606,8 +709,20 @@ const DRAIN_BUSY_TRIES: usize = 4;
 /// the result is published (`Cause::Op`) and the status refreshed, and then each item gets
 /// its `op.finished`, so a client acting on the event already finds both up to date.
 pub fn drain_queue(shared: &Arc<Shared>) {
+    let drained = drain_passes(shared);
+    finish_drain(shared, drained);
+}
+
+/// The part of [`drain_queue`] that needs the vdir: run it under the lane (a long job's, or a
+/// write's), then call [`finish_drain`] with what it returns once the lane is let go, if the
+/// lane was taken as a write. A write holder waits for a session mutex nowhere else, and a
+/// session holder may wait for a write: pruning under a write lane would deadlock.
+pub fn drain_passes(shared: &Arc<Shared>) -> Vec<Drained> {
     if shared.is_stopping() {
-        return;
+        return Vec::new();
+    }
+    if let Some(hook) = &shared.before_drain_passes {
+        hook();
     }
     let empty = Queue::existing(&shared.state_dir)
         .map(|q| q.is_empty())
@@ -615,14 +730,14 @@ pub fn drain_queue(shared: &Arc<Shared>) {
     if matches!(empty, Ok(true)) {
         shared.publisher.set_drain_error(None);
         shared.request_status_refresh();
-        return;
+        return Vec::new();
     }
     let mut store = match Store::without_recovery(&shared.cfg, shared.matrix.clone()) {
         Ok(s) => s,
         Err(e) => {
             shared.publisher.set_drain_error(Some(e.to_string()));
             shared.request_status_refresh();
-            return;
+            return Vec::new();
         }
     };
     let now = Utc::now();
@@ -630,6 +745,10 @@ pub fn drain_queue(shared: &Arc<Shared>) {
     // `None`: keep what the status says (the vdir was busy, nothing was learnt).
     let mut error: Option<Option<String>> = Some(None);
     let mut busy = 0;
+    // Closed: the daemon is stopping; the items wait for the next daemon.
+    let Some(gate) = shared.commit_gate() else {
+        return Vec::new();
+    };
     for _ in 0..DRAIN_PASSES {
         match store.drain(now) {
             Ok(d) if d.is_empty() => break,
@@ -650,12 +769,19 @@ pub fn drain_queue(shared: &Arc<Shared>) {
             }
         }
     }
+    drop(gate);
     if let Some(hook) = &shared.after_drain_passes {
         hook();
     }
     if let Some(e) = error {
         shared.publisher.set_drain_error(e);
     }
+    drained
+}
+
+/// What follows a drain's passes: a refused item's step leaves its session's undo stacks, the
+/// result is published and each item gets its `op.finished`. Takes no lane.
+pub fn finish_drain(shared: &Arc<Shared>, drained: Vec<Drained>) {
     if drained.is_empty() {
         shared.request_status_refresh();
         return;

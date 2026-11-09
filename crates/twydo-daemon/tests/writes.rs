@@ -658,3 +658,149 @@ fn shutdown_is_bounded_and_no_status_refresh_runs_after_it() {
     assert_eq!(publisher.status().unwrap(), status_before);
     assert_eq!(publisher.current().0, revision_before);
 }
+
+#[test]
+fn shutdown_waits_for_a_commit_in_flight_and_refuses_writes_after_it() {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc;
+    use twydo_daemon::server::{Daemon, DaemonOptions, StartError};
+
+    let fx = fx();
+    let (entered_tx, entered_rx) = mpsc::channel::<()>();
+    let (go_tx, go_rx) = mpsc::channel::<()>();
+    let (entered_tx, go_rx) = (Mutex::new(entered_tx), Mutex::new(go_rx));
+    let armed = AtomicBool::new(true);
+    let td = TestDaemon::start_with(&fx, move |o| {
+        o.in_commit = Some(Arc::new(move || {
+            if armed.swap(false, Ordering::SeqCst) {
+                entered_tx.lock().unwrap().send(()).unwrap();
+                // Err: the test failed and dropped the sender; carry on.
+                let _ = go_rx.lock().unwrap().recv();
+            }
+        }));
+    });
+    let (c1, c2) = (td.client(), td.client());
+    let (b1, b2) = (based(&c1), based(&c2));
+    let second_daemon = || {
+        let dir = common::short_socket_dir();
+        let r = Daemon::start(
+            fx.config(),
+            fx.instance(),
+            DaemonOptions::new(dir.path().join("other.sock")),
+        );
+        (r, dir)
+    };
+    std::thread::scope(|scope| {
+        // Owned here, so a failed assertion drops it and the held write is let go.
+        let go_tx = go_tx;
+        let held = scope.spawn(move || submit_at(&c1, b1, "held", create("Held")));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        // Waits for the lane behind the held write, past the stopping check.
+        let late = scope.spawn(move || submit_at(&c2, b2, "late", create("Late")));
+        std::thread::sleep(Duration::from_millis(150));
+        let (tx, rx) = mpsc::channel();
+        let handle = td.handle();
+        scope.spawn(move || {
+            handle.shutdown();
+            let _ = tx.send(());
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(
+            rx.try_recv().is_err(),
+            "shutdown returned with a commit in flight"
+        );
+        assert!(
+            matches!(second_daemon().0, Err(StartError::AlreadyRunning)),
+            "the lock was released with a commit in flight"
+        );
+        go_tx.send(()).unwrap();
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("shutdown never finished");
+        let held = held.join().unwrap().unwrap();
+        assert_eq!(held.outcome, WriteOutcome::Applied);
+        let late = late.join().unwrap().unwrap_err();
+        assert_eq!(kind(&late), ErrorKind::Unavailable, "{late}");
+    });
+    assert_eq!(count_titled(&td, "Held"), 1);
+    assert_eq!(count_titled(&td, "Late"), 0);
+    let (again, _dir) = second_daemon();
+    assert!(again.is_ok(), "the lock was not released");
+}
+
+/// Commits a create under request `id`, stops the daemon, then sets the entry's stage with
+/// `set` (which may also touch the vdir) and starts a fresh daemon.
+fn restart_with_entry(
+    fx: &Fixture,
+    id: &str,
+    set: impl FnOnce(&twydo_core::store::journal::Journal, &str),
+) -> (TestDaemon, String) {
+    use twydo_core::store::bind_vdir_state;
+    use twydo_core::store::journal::Journal;
+    let op_id = {
+        let td = TestDaemon::start(fx);
+        let c = td.client();
+        submit_at(&c, based(&c), id, create("X")).unwrap().op_id
+    };
+    let cfg = fx.config();
+    let journal = Journal::open(&bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()).unwrap();
+    set(&journal, &op_id);
+    (TestDaemon::start(fx), op_id)
+}
+
+fn op_get(
+    c: &twydo_daemon::client::Client,
+    op_id: Option<&str>,
+    request_id: Option<&str>,
+) -> Result<OpState, twydo_daemon::client::ClientError> {
+    c.call(
+        "op.get",
+        OpGetParams {
+            op_id: op_id.map(str::to_string),
+            request_id: request_id.map(str::to_string),
+        },
+    )
+}
+
+#[test]
+fn a_resend_of_a_stuck_entry_is_not_reported_applied() {
+    use twydo_core::store::journal::Stage;
+    let fx = fx();
+    let vdir = fx.vdir();
+    let (td, op_id) = restart_with_entry(&fx, "R", |j, op_id| {
+        // Prepared, and the file it created changed since: recovery cannot finish it.
+        let e = j.get(op_id).unwrap().unwrap();
+        j.set_stage(op_id, Stage::Prepared).unwrap();
+        let created = e.writes.iter().find(|w| w.before.is_none()).unwrap();
+        std::fs::write(vdir.join(&created.path), todo_ics("zz", "Changed", None)).unwrap();
+    });
+    let c = td.client();
+    for _ in 0..2 {
+        let e = submit_at(&c, based(&c), "R", create("X")).unwrap_err();
+        assert_eq!(kind(&e), ErrorKind::Stuck, "{e}");
+    }
+    let e = op_get(&c, None, Some("R")).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Stuck, "{e}");
+    let e = op_get(&c, Some(&op_id), None).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Stuck, "{e}");
+}
+
+#[test]
+fn a_resend_of_an_abandoned_entry_is_refused() {
+    use twydo_core::store::journal::Stage;
+    let fx = fx();
+    let (td, op_id) = restart_with_entry(&fx, "R", |j, op_id| {
+        j.set_stage(op_id, Stage::Abandoned).unwrap();
+    });
+    let c = td.client();
+    let e = submit_at(&c, based(&c), "R", create("X")).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Blocked, "{e}");
+    assert!(e.to_string().contains("abandoned"), "{e}");
+    let refused = OpState::Refused {
+        kind: ErrorKind::Blocked,
+        message: "the operation was abandoned; it was not applied".into(),
+    };
+    assert_eq!(op_get(&c, None, Some("R")).unwrap(), refused);
+    assert_eq!(op_get(&c, Some(&op_id), None).unwrap(), refused);
+    assert_eq!(count_titled(&td, "X"), 1);
+}
