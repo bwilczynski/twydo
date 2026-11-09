@@ -65,12 +65,13 @@ app replacing 2Do for one user, plan by plan.
    [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
    issue #38; write-queue plan 1, batched sync with `tdo sync on|off`, merged (PR #50); plan 2
    (the queue with strict whole-file checks) done
-   (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`); next is plan 3, rebasing
-   (spec §6.4 steps 2-4) behind a `rebase-merge` compat row), or Plan 2
-   (notifier). Write the plan first. Before Plan 2,
-   decide whether `tdo` gets a local server (the notifier's natural home; see §8.1 of the
-   [phone web app design](docs/superpowers/specs/2026-11-05-phone-web-app-design.md), which has
-   no build date).
+   (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`). **Decided 2026-11-09:**
+   `tdo` gets a daemon that owns the data, sync and scheduling; the TUI and CLI become
+   clients over a Unix socket
+   ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md), branch
+   `feat/twydo-daemon`). Build it before write-queue plan 3 (rebasing, now inside the
+   daemon) and before Plan 2 (the notifier, which lives in the daemon); do not extend the
+   cross-process queue, waiter or sync timer meanwhile. Write the plan first.
 
 ## Issue 41 checkpoint
 
