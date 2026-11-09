@@ -183,6 +183,32 @@ pub fn snapshot(path: &Path) -> io::Result<Option<BTreeMap<String, Vec<u8>>>> {
     Ok(Some(files))
 }
 
+/// Only a planned metadata replacement can own one of write_atomic's scratch files.
+/// A crash may leave any prefix, including zero bytes, before the atomic rename.
+fn metadata_temps(operation: &ListOperation, current: &BTreeMap<String, Vec<u8>>) -> Vec<String> {
+    let Some(after) = &operation.local_after else {
+        return vec![];
+    };
+    ["displayname", "color"]
+        .into_iter()
+        .filter_map(|key| {
+            let temp = format!(".{key}.tdo-tmp");
+            let planned = after.get(key)?;
+            let bytes = current.get(&temp)?;
+            let before = operation.local_base.as_ref();
+            (before.and_then(|m| m.get(key)) != Some(planned)
+                && !before.is_some_and(|m| m.contains_key(&temp))
+                && !operation
+                    .holds
+                    .as_ref()
+                    .is_some_and(|m| m.contains_key(&temp))
+                && !after.contains_key(&temp)
+                && planned.starts_with(bytes))
+            .then_some(temp)
+        })
+        .collect()
+}
+
 pub fn validate_local(operation: &ListOperation) -> io::Result<()> {
     let id = operation
         .request
@@ -190,7 +216,7 @@ pub fn validate_local(operation: &ListOperation) -> io::Result<()> {
         .as_deref()
         .filter(|id| plain_id(id))
         .ok_or_else(|| invalid("missing collection identity"))?;
-    let current = snapshot(&operation.vdir.join(id))?;
+    let mut current = snapshot(&operation.vdir.join(id))?;
     if let Some(after) = &operation.local_after {
         if matches!(operation.phase, Phase::LocalConfirmed | Phase::Complete) {
             return if current.as_ref() == Some(after) {
@@ -198,6 +224,11 @@ pub fn validate_local(operation: &ListOperation) -> io::Result<()> {
             } else {
                 Err(invalid("confirmed local collection changed"))
             };
+        }
+        if let Some(files) = &mut current {
+            for temp in metadata_temps(operation, files) {
+                files.remove(&temp);
+            }
         }
         let before = operation.local_base.as_ref();
         let current = current.as_ref();
@@ -379,6 +410,17 @@ pub fn finalize_metadata(cfg: &Config, operation: &mut ListOperation) -> Result<
         return Err(invalid("collection metadata lacks its confirmed remote receipt").into());
     }
     validate_local(operation)?;
+    let collection = operation
+        .request
+        .collection
+        .as_deref()
+        .expect("validated identity");
+    let dir = operation.vdir.join(collection);
+    if let Some(files) = snapshot(&dir)? {
+        for temp in metadata_temps(operation, &files) {
+            remove_durable(&dir.join(temp))?;
+        }
+    }
     let receipt = operation
         .receipt
         .as_ref()
@@ -403,6 +445,14 @@ pub fn finalize_metadata(cfg: &Config, operation: &mut ListOperation) -> Result<
         .ok_or_else(|| invalid("invalid collection identity"))?;
     let dir = operation.vdir.join(id);
     operation.local_base = snapshot(&dir)?;
+    // Never let write_atomic overwrite a pre-existing, unowned scratch file.
+    for key in ["displayname", "color"] {
+        if operation.local_base.as_ref().is_some_and(|base| {
+            base.get(key) != after.get(key) && base.contains_key(&format!(".{key}.tdo-tmp"))
+        }) {
+            return Err(invalid("unowned collection metadata temporary file").into());
+        }
+    }
     operation.local_after = Some(after.clone());
     save(&state, operation)?;
     if !dir.try_exists()? {

@@ -156,6 +156,18 @@ def operation_guard(request):
         if after is not None and mode == "refresh":
             matches = actual == after
         elif after is not None and mode == "reconcile":
+            # The Rust finalizer removes these under its exclusive lock. Here we
+            # only recognize scratch bytes justified by the persisted write plan.
+            actual = dict(actual or {})
+            for key in ("displayname", "color"):
+                temp = f".{key}.tdo-tmp"
+                planned, data = after.get(key), actual.get(temp)
+                if (planned is not None and data is not None
+                        and (before or {}).get(key) != planned
+                        and temp not in (before or {}) and temp not in (record.get("holds") or {})
+                        and temp not in after and len(data) <= len(planned)
+                        and planned[:len(data)] == data):
+                    del actual[temp]
             values = (actual or {}, before or {}, after)
             matches = all(values[0].get(k) in (values[1].get(k), values[2].get(k)) for k in set().union(*values))
         else:

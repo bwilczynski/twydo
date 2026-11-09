@@ -269,11 +269,59 @@ fn metadata_finalization_preserves_tasks_and_is_repeatable_after_partial_writes(
     );
     // An interruption can leave either the old or new metadata file; both are recorded.
     fs::write(cfg.vdir.join("synthetic/displayname"), "Synthetic").unwrap();
+    let temp = cfg.vdir.join("synthetic/.displayname.tdo-tmp");
+    fs::write(&temp, "Af").unwrap();
     operation::finalize_metadata(&cfg, &mut record).unwrap();
+    assert!(!temp.exists());
     assert_eq!(
         fs::read_to_string(cfg.vdir.join("synthetic/displayname")).unwrap(),
         "After"
     );
     fs::write(cfg.vdir.join("synthetic/held.ics"), "remote edit").unwrap();
+    // Refuse changed task bytes before deleting even a recognized scratch file.
+    fs::write(&temp, "Af").unwrap();
     assert!(operation::finalize_metadata(&cfg, &mut record).is_err());
+    assert_eq!(fs::read_to_string(&temp).unwrap(), "Af");
+}
+
+#[test]
+fn metadata_temp_recovery_still_refuses_unexpected_or_changed_bytes() {
+    for (name, bytes) in [
+        (".displayname.tdo-tmp", "unexpected"),
+        (".color.tdo-tmp", "#379417extra"),
+        (".held.ics.tdo-tmp", "held synthetic bytes"),
+        ("held.ics", "changed task"),
+    ] {
+        let (_root, cfg, request) = setup();
+        fs::write(cfg.vdir.join("synthetic/held.ics"), "held synthetic bytes").unwrap();
+        let mut record = operation::prepare(&cfg, request, Utc::now()).unwrap();
+        operation::set_phase(&cfg, &mut record, Phase::RemoteStarted).unwrap();
+        record.receipt = Some(serde_json::json!({"name":"After", "color":"#379417"}));
+        operation::set_phase(&cfg, &mut record, Phase::RemoteConfirmed).unwrap();
+        operation::finalize_metadata(&cfg, &mut record).unwrap();
+        let path = cfg.vdir.join("synthetic").join(name);
+        fs::write(&path, bytes).unwrap();
+        assert!(
+            operation::finalize_metadata(&cfg, &mut record).is_err(),
+            "{name}"
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn metadata_finalization_preserves_preexisting_temporary_files() {
+    let (_root, cfg, request) = setup();
+    let path = cfg.vdir.join("synthetic/.displayname.tdo-tmp");
+    fs::write(&path, "A").unwrap();
+    let mut record = operation::prepare(&cfg, request, Utc::now()).unwrap();
+    operation::set_phase(&cfg, &mut record, Phase::RemoteStarted).unwrap();
+    record.receipt = Some(serde_json::json!({"name":"After", "color":"#379417"}));
+    operation::set_phase(&cfg, &mut record, Phase::RemoteConfirmed).unwrap();
+    assert!(operation::finalize_metadata(&cfg, &mut record).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "A");
+    assert_eq!(
+        fs::read_to_string(cfg.vdir.join("synthetic/displayname")).unwrap(),
+        "Synthetic"
+    );
 }

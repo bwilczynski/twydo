@@ -162,7 +162,13 @@ changed account/storage configuration before fetching credentials. A successful 
 request is followed by a persisted local metadata before/after plan and then vdirsyncer's
 own discovery-cache refresh, with missing-collection creation disabled. An interrupted
 local metadata write can resume only from its recorded before/after values; held task
-bytes cannot be replaced. Reconciliation does not repeat MKCALENDAR or PROPPATCH. If the
+bytes cannot be replaced. Recovery also recognizes `.displayname.tdo-tmp` and
+`.color.tdo-tmp` left before an atomic rename, only when the saved plan proves the file
+was absent before the operation and contains a prefix of the intended replacement.
+The helper validates these bytes without modifying them; local finalization removes
+them under the exclusive vdir lock before retrying. Pre-existing scratch files,
+unrelated files and changed task bytes remain protected.
+Reconciliation does not repeat MKCALENDAR or PROPPATCH. If the
 server's values differ, accepting them requires the explicit Keep server choice.
 The metadata writer remains an unverified prototype: its read/PROPPATCH/read sequence
 has a remote-writer race. The shipping metadata capability stays closed in every mode,
