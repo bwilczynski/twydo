@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 twydo-core = { path = "../twydo-core" }
+libc = "0.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 schemars = { version = "1", features = ["chrono04"] }
 serde = { version = "1.0.229", features = ["derive"] }

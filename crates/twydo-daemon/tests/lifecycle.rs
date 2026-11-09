@@ -1,0 +1,414 @@
+mod common;
+
+use std::ffi::OsString;
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Duration;
+
+use common::*;
+use serde_json::{Value, json};
+use twydo_daemon::client::Client;
+use twydo_daemon::paths;
+use twydo_daemon::protocol::methods::{DaemonInfo, HelloParams, HelloResult, Instance};
+use twydo_daemon::protocol::rpc::{ErrorKind, MAX_LINE};
+use twydo_daemon::server::conn::peer_allowed;
+use twydo_daemon::server::{Daemon, DaemonOptions, StartError};
+
+fn fx() -> Fixture {
+    Fixture::new(&[("inbox", "a", "Alpha", None)])
+}
+
+#[test]
+fn hello_returns_epoch_session_and_vdir() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let (_c, r) = Client::connect(td.socket(), td.hello_params()).unwrap();
+    assert_eq!(r.protocol, 1);
+    assert!(r.session.starts_with("s-"), "{}", r.session);
+    assert_eq!(r.session.len(), 2 + 12);
+    assert!(r.epoch.starts_with("d-"));
+    assert_eq!(r.epoch, td.handle().epoch());
+    assert_eq!(r.vdir, std::fs::canonicalize(fx.vdir()).unwrap());
+}
+
+#[test]
+fn protocol_mismatch_is_refused_with_both_versions() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.raw();
+    let p = HelloParams {
+        protocol: 2,
+        ..td.hello_params()
+    };
+    let err = c.call::<_, HelloResult>("hello", p).unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::Protocol);
+    assert_eq!(err_data(&err).protocol, Some(1));
+    assert!(err_data(&err).daemon.is_some());
+}
+
+#[test]
+fn a_client_for_another_instance_gets_wrong_instance() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let other = tempfile::tempdir().unwrap();
+    let p = HelloParams {
+        instance: Instance {
+            config: other.path().join("config.toml"),
+            vdir: Some(other.path().to_path_buf()),
+        },
+        ..td.hello_params()
+    };
+    let err = td.raw().call::<_, HelloResult>("hello", p).unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::WrongInstance);
+}
+
+#[test]
+fn a_refused_instance_leaves_the_daemon_running() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let p = HelloParams {
+        instance: Instance {
+            config: PathBuf::from("/nowhere/config.toml"),
+            vdir: None,
+        },
+        ..td.hello_params()
+    };
+    assert!(td.raw().call::<_, HelloResult>("hello", p).is_err());
+    let info: DaemonInfo = td.client().call("daemon.info", empty()).unwrap();
+    assert_eq!(info.protocol, 1);
+}
+
+#[test]
+fn socket_flag_wins_over_env_which_wins_over_the_default() {
+    let none = |_: &str| -> Option<OsString> { None };
+    let flag = Path::new("/flag/x.sock");
+    let env = |k: &str| -> Option<OsString> {
+        match k {
+            "TWYDO_SOCKET" => Some("/env/x.sock".into()),
+            "XDG_RUNTIME_DIR" => Some("/run/user/1000".into()),
+            _ => None,
+        }
+    };
+    assert_eq!(paths::socket_path_from(Some(flag), &env, 1000), flag);
+    assert_eq!(
+        paths::socket_path_from(None, &env, 1000),
+        PathBuf::from("/env/x.sock")
+    );
+    if cfg!(target_os = "linux") {
+        let xdg = |k: &str| -> Option<OsString> {
+            (k == "XDG_RUNTIME_DIR").then(|| "/run/user/1000".into())
+        };
+        assert_eq!(
+            paths::socket_path_from(None, &xdg, 1000),
+            PathBuf::from("/run/user/1000/twydo/tdo.sock")
+        );
+        assert_eq!(
+            paths::socket_path_from(None, &none, 1000),
+            PathBuf::from("/tmp/twydo-1000/tdo.sock")
+        );
+    }
+}
+
+#[test]
+fn instance_reads_no_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    std::fs::write(&cfg, "x").unwrap();
+    std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let i = paths::instance_for(&cfg, Some(Path::new("relative/vdir"))).unwrap();
+    assert_eq!(i.config, cfg);
+    assert!(i.vdir.unwrap().is_absolute());
+    // The real entry point needs no file either.
+    assert!(paths::instance(None).unwrap().config.is_absolute());
+}
+
+#[test]
+fn lifecycle_methods_answer_without_hello() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.raw();
+    let info: DaemonInfo = c.call("daemon.info", json!({})).unwrap();
+    assert_eq!(info.protocol, 1);
+    let doc: Value = c.call("rpc.discover", json!({})).unwrap();
+    assert!(doc.get("openrpc").is_some());
+    assert_eq!(
+        kind(&c.call::<_, Value>("snapshot.get", json!({})).unwrap_err()),
+        ErrorKind::Invalid
+    );
+    assert_eq!(
+        code(&c.call::<_, Value>("no.such.method", json!({})).unwrap_err()),
+        -32601
+    );
+}
+
+#[test]
+fn a_second_daemon_on_the_same_vdir_does_not_start() {
+    let fx = fx();
+    let _td = TestDaemon::start(&fx);
+    let dir = short_socket_dir();
+    let opts = DaemonOptions::new(dir.path().join("other.sock"));
+    assert!(matches!(
+        Daemon::start(fx.config(), fx.instance(), opts),
+        Err(StartError::AlreadyRunning)
+    ));
+}
+
+#[test]
+fn a_live_daemon_on_the_socket_blocks_another_vdir() {
+    let a = fx();
+    let td = TestDaemon::start(&a);
+    let b = fx();
+    let opts = DaemonOptions::new(td.socket().to_path_buf());
+    assert!(matches!(
+        Daemon::start(b.config(), b.instance(), opts),
+        Err(StartError::AlreadyRunning)
+    ));
+    // and the first one still answers
+    assert!(td.client().call::<_, Value>("daemon.info", empty()).is_ok());
+}
+
+#[test]
+fn a_stale_socket_file_is_replaced() {
+    let fx = fx();
+    let dir = short_socket_dir();
+    let sock = dir.path().join("tdo.sock");
+    drop(UnixListener::bind(&sock).unwrap());
+    assert!(sock.exists());
+    let h = Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock.clone())).unwrap();
+    assert!(h.wait_ready(Duration::from_secs(10)));
+    assert!(Client::connect_raw(&sock).is_ok());
+}
+
+#[test]
+fn requests_wait_for_recovery_as_unavailable() {
+    let fx = fx();
+    let (tx, rx) = mpsc::channel::<()>();
+    let td = TestDaemon::start_unready(&fx, |o| {
+        o.before_recovery = Some(Box::new(move || {
+            let _ = rx.recv();
+        }));
+    });
+    let c = td.client();
+    let err = c.call::<_, Value>("snapshot.get", empty()).unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::Unavailable);
+    assert!(err.to_string().contains("starting"), "{err}");
+    tx.send(()).unwrap();
+    assert!(td.handle().wait_ready(Duration::from_secs(10)));
+    // Not implemented yet (Task 5): no longer "unavailable".
+    let err = c.call::<_, Value>("snapshot.get", empty()).unwrap_err();
+    assert_eq!(code(&err), -32601);
+}
+
+#[test]
+fn pipelined_requests_answer_by_id() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let mut s = UnixStream::connect(td.socket()).unwrap();
+    let mut batch = String::new();
+    for id in 1..=3 {
+        batch.push_str(&format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"daemon.info\",\"params\":{{}}}}\n"
+        ));
+    }
+    s.write_all(batch.as_bytes()).unwrap();
+    let mut r = BufReader::new(s);
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        assert!(v["result"].is_object(), "{line}");
+        ids.push(v["id"].as_u64().unwrap());
+    }
+    ids.sort();
+    assert_eq!(ids, vec![1, 2, 3]);
+}
+
+#[test]
+fn malformed_input_does_not_hurt_other_clients() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let mut a = UnixStream::connect(td.socket()).unwrap();
+    let mut ar = BufReader::new(a.try_clone().unwrap());
+    a.write_all(b"not json\n").unwrap();
+    let mut line = String::new();
+    ar.read_line(&mut line).unwrap();
+    let v: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(v["error"]["code"], -32700);
+    assert!(v["id"].is_null());
+    // Still open: valid JSON that is not a request.
+    a.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":7}\n").unwrap();
+    line.clear();
+    ar.read_line(&mut line).unwrap();
+    let v: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(v["error"]["code"], -32600);
+    // Invalid UTF-8 is a parse error too.
+    a.write_all(b"\xff\xfe\n").unwrap();
+    line.clear();
+    ar.read_line(&mut line).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&line).unwrap()["error"]["code"],
+        -32700
+    );
+    // An overlong line closes the connection.
+    let mut big = a.try_clone().unwrap();
+    std::thread::spawn(move || {
+        let chunk = vec![b'x'; 1 << 20];
+        for _ in 0..(MAX_LINE >> 20) + 2 {
+            if big.write_all(&chunk).is_err() {
+                break;
+            }
+        }
+    });
+    line.clear();
+    assert_eq!(ar.read_line(&mut line).unwrap_or(0), 0, "closed");
+    let b = td.client();
+    assert!(b.call::<_, DaemonInfo>("daemon.info", empty()).is_ok());
+}
+
+#[test]
+fn shutdown_removes_the_socket_and_releases_the_lock() {
+    let fx = fx();
+    let dir = short_socket_dir();
+    let sock = dir.path().join("tdo.sock");
+    let h = Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock.clone())).unwrap();
+    assert!(h.wait_ready(Duration::from_secs(10)));
+    h.shutdown();
+    assert!(!sock.exists());
+    let h2 = Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock.clone())).unwrap();
+    assert!(h2.wait_ready(Duration::from_secs(10)));
+}
+
+#[test]
+fn daemon_shutdown_replies_then_stops() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let r: Value = c
+        .call("daemon.shutdown", json!({"when_idle": false}))
+        .unwrap();
+    assert_eq!(r, json!({}));
+    td.handle().wait_stopped();
+    assert!(!td.socket().exists());
+    assert!(c.call::<_, Value>("daemon.info", empty()).is_err());
+}
+
+#[test]
+fn peer_check_refuses_other_users() {
+    assert!(peer_allowed(1000, 1000));
+    assert!(!peer_allowed(0, 1000));
+}
+
+#[test]
+fn socket_dir_is_private() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(td.socket().parent().unwrap()), 0o700);
+    assert_eq!(mode(td.socket()), 0o600);
+}
+
+#[test]
+fn one_client_serves_several_threads() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    std::thread::scope(|s| {
+        for _ in 0..8 {
+            let caller = c.caller();
+            s.spawn(move || {
+                for _ in 0..20 {
+                    let i: DaemonInfo = caller.call("daemon.info", empty()).unwrap();
+                    assert_eq!(i.protocol, 1);
+                }
+            });
+        }
+    });
+    assert!(c.next_request_id().starts_with("s-"));
+    assert_ne!(c.next_request_id(), c.next_request_id());
+}
+
+#[test]
+fn pending_calls_fail_when_the_daemon_goes_away() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    td.handle().shutdown();
+    let e = c.call::<_, Value>("daemon.info", empty()).unwrap_err();
+    assert!(
+        matches!(
+            e,
+            twydo_daemon::client::ClientError::Closed | twydo_daemon::client::ClientError::Io(_)
+        ),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn shutdown_returns_even_if_the_socket_file_is_gone() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    std::fs::remove_file(td.socket()).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let td = std::sync::Arc::new(td);
+    let t = std::sync::Arc::clone(&td);
+    std::thread::spawn(move || {
+        t.handle().shutdown();
+        let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(5))
+        .expect("shutdown hung");
+}
+
+#[test]
+fn shutdown_during_recovery_keeps_the_lock_and_never_becomes_ready() {
+    let fx = fx();
+    let (release, hold) = mpsc::channel::<()>();
+    let (entered_tx, entered) = mpsc::channel::<()>();
+    let td = std::sync::Arc::new(TestDaemon::start_unready(&fx, |o| {
+        o.before_recovery = Some(Box::new(move || {
+            let _ = entered_tx.send(());
+            let _ = hold.recv();
+        }));
+    }));
+    // Stop only once recovery has really begun.
+    entered.recv_timeout(Duration::from_secs(5)).unwrap();
+    let t = std::sync::Arc::clone(&td);
+    let stopper = std::thread::spawn(move || t.handle().shutdown());
+    std::thread::sleep(Duration::from_millis(300));
+    let dir = short_socket_dir();
+    let opts = DaemonOptions::new(dir.path().join("o.sock"));
+    let second = Daemon::start(fx.config(), fx.instance(), opts);
+    assert!(
+        matches!(second, Err(StartError::AlreadyRunning)),
+        "{:?}",
+        second.err()
+    );
+    assert!(!stopper.is_finished());
+    release.send(()).unwrap();
+    stopper.join().unwrap();
+    assert!(!td.handle().wait_ready(Duration::from_millis(100)));
+    let opts = DaemonOptions::new(dir.path().join("o.sock"));
+    assert!(Daemon::start(fx.config(), fx.instance(), opts).is_ok());
+}
+
+#[test]
+fn an_existing_socket_dir_must_be_private_and_ours() {
+    let fx = fx();
+    let dir = short_socket_dir();
+    let sock = dir.path().join("tdo.sock");
+    let set = |m| std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(m)).unwrap();
+    set(0o755);
+    match Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock.clone())) {
+        Err(StartError::Io(e)) => {
+            assert!(e.to_string().contains(&dir.path().display().to_string()))
+        }
+        other => panic!("expected Io error, got ok={}", other.is_ok()),
+    }
+    set(0o700);
+    let h = Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock)).unwrap();
+    assert!(h.wait_ready(Duration::from_secs(10)));
+}

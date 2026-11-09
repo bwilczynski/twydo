@@ -2,7 +2,14 @@
 #![allow(dead_code)]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use serde_json::Value;
+use twydo_daemon::client::{Client, ClientError};
+use twydo_daemon::protocol::methods::{HelloParams, Instance};
+use twydo_daemon::protocol::rpc::{ErrorData, ErrorKind};
+use twydo_daemon::server::{Daemon, DaemonHandle, DaemonOptions};
 
 use twydo_core::config::{
     Config, Group, ListPrefs, Sort, SortField, SyncConfig, WriteMode, Writes,
@@ -43,6 +50,14 @@ impl Fixture {
 
     pub fn vdir(&self) -> PathBuf {
         self.tmp.path().join("vdir")
+    }
+
+    /// The instance identity a client of this fixture's daemon presents.
+    pub fn instance(&self) -> Instance {
+        Instance {
+            config: self.tmp.path().join("config.toml"),
+            vdir: Some(self.vdir()),
+        }
     }
 
     pub fn config(&self) -> Config {
@@ -104,4 +119,106 @@ pub fn full_config() -> Config {
         ..SyncConfig::default()
     });
     c
+}
+
+/// A daemon on a socket of its own. Unix socket paths are limited to about 104 bytes, so the
+/// socket lives in a short directory under `/tmp`, not in the (long) fixture tempdir. The
+/// socket's parent directory (`s`) is left to the daemon to create.
+pub struct TestDaemon {
+    handle: Option<DaemonHandle>,
+    socket: PathBuf,
+    instance: Instance,
+    _dir: tempfile::TempDir,
+}
+
+/// The daemon refuses a socket directory that is not private, so this one is made 0700.
+pub fn short_socket_dir() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::Builder::new()
+        .prefix("td")
+        .tempdir_in("/tmp")
+        .unwrap();
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    dir
+}
+
+impl TestDaemon {
+    /// Starts and waits until the daemon is ready.
+    pub fn start(fx: &Fixture) -> TestDaemon {
+        Self::start_with(fx, |_| {})
+    }
+
+    pub fn start_with(fx: &Fixture, f: impl FnOnce(&mut DaemonOptions)) -> TestDaemon {
+        let td = Self::start_unready(fx, f);
+        assert!(td.handle().wait_ready(Duration::from_secs(10)), "not ready");
+        td
+    }
+
+    /// Starts without waiting for startup to finish.
+    pub fn start_unready(fx: &Fixture, f: impl FnOnce(&mut DaemonOptions)) -> TestDaemon {
+        let dir = short_socket_dir();
+        let socket = dir.path().join("s").join("tdo.sock");
+        let mut opts = DaemonOptions::new(socket.clone());
+        f(&mut opts);
+        let instance = fx.instance();
+        let handle = Daemon::start(fx.config(), instance.clone(), opts).expect("start");
+        TestDaemon {
+            handle: Some(handle),
+            socket,
+            instance,
+            _dir: dir,
+        }
+    }
+
+    pub fn handle(&self) -> &DaemonHandle {
+        self.handle.as_ref().unwrap()
+    }
+
+    pub fn socket(&self) -> &Path {
+        &self.socket
+    }
+
+    pub fn hello_params(&self) -> HelloParams {
+        HelloParams {
+            client: "test".into(),
+            version: "0".into(),
+            protocol: twydo_daemon::PROTOCOL,
+            session: None,
+            instance: self.instance.clone(),
+        }
+    }
+
+    /// A client that has said hello.
+    pub fn client(&self) -> Client {
+        Client::connect(&self.socket, self.hello_params())
+            .expect("hello")
+            .0
+    }
+
+    /// A client that has not said hello.
+    pub fn raw(&self) -> Client {
+        Client::connect_raw(&self.socket).expect("connect")
+    }
+}
+
+pub fn kind(e: &ClientError) -> ErrorKind {
+    err_data(e).kind
+}
+
+pub fn err_data(e: &ClientError) -> ErrorData {
+    match e {
+        ClientError::Rpc(r) => r.data.clone().expect("error data"),
+        other => panic!("not an rpc error: {other:?}"),
+    }
+}
+
+pub fn code(e: &ClientError) -> i64 {
+    match e {
+        ClientError::Rpc(r) => r.code,
+        other => panic!("not an rpc error: {other:?}"),
+    }
+}
+
+pub fn empty() -> Value {
+    serde_json::json!({})
 }
