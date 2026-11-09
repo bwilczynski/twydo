@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
-use super::journal::{Entry, FamilyGuard, Journal, Write};
+use super::journal::{Entry, FamilyGuard, Journal, RequestRef, Write};
 use super::{Drained, Store, WriteError, existing_vdir_state};
 use crate::config::Config;
 use crate::edit::Op;
@@ -78,8 +78,23 @@ pub struct Item {
     pub created: DateTime<Utc>,
     pub origin: Origin,
     pub label: String,
+    /// The client request that queued this item; its drained entry carries it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestRef>,
     #[serde(flatten)]
     pub kind: Kind,
+}
+
+/// Where a queued item stands, as found by id or request.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+pub enum Queued {
+    /// Waiting for the next lock holder.
+    Pending(Item),
+    /// A drainer took it and has not finished.
+    Claimed(Item),
+    /// A drain refused it.
+    Refused(Refusal),
 }
 
 impl Item {
@@ -354,6 +369,72 @@ impl Queue {
         remove_durable(&self.claimed(id)?)
     }
 
+    /// Where item `id` stands: pending, claimed or refused (checked in that order), else
+    /// `None` (never queued, or committed and gone).
+    pub fn state(&self, id: &str) -> io::Result<Option<Queued>> {
+        if let Some(i) = read_json::<Item>(&self.json(id)?) {
+            return Ok(Some(Queued::Pending(i)));
+        }
+        if let Some(i) = read_json::<Item>(&self.claimed(id)?) {
+            return Ok(Some(Queued::Claimed(i)));
+        }
+        valid_id(id)?;
+        Ok(read_json::<Refusal>(&self.refused().join(format!("{id}.json"))).map(Queued::Refused))
+    }
+
+    /// The item queued by client request `request_id`, wherever it stands now. Request ids
+    /// are unique by the daemon's contract; the first match is returned.
+    pub fn by_request(&self, request_id: &str) -> io::Result<Option<Queued>> {
+        let mut names = Vec::new();
+        for dent in fs::read_dir(&self.dir)? {
+            if let Some(name) = dent?.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+        self.scan_request(&names, request_id)
+    }
+
+    /// [`Queue::by_request`] over the listed file `names`. A listed pending file a drainer
+    /// claimed before it was read is looked up again by id, so a live item is never missed.
+    fn scan_request(&self, names: &[String], request_id: &str) -> io::Result<Option<Queued>> {
+        let is = |r: &Option<RequestRef>| r.as_ref().is_some_and(|r| r.request_id == request_id);
+        for name in names {
+            let pending = name.ends_with(".json");
+            if name.starts_with('.') || !(pending || name.ends_with(".claim")) {
+                continue;
+            }
+            let path = self.dir.join(name);
+            match read_json::<Item>(&path) {
+                Some(item) if is(&item.request) => {
+                    return Ok(Some(if pending {
+                        Queued::Pending(item)
+                    } else {
+                        Queued::Claimed(item)
+                    }));
+                }
+                Some(_) => {}
+                None if pending && !path.exists() => {
+                    let id = name.trim_end_matches(".json");
+                    let found = self.state(id)?;
+                    let hit = match &found {
+                        Some(Queued::Pending(i) | Queued::Claimed(i)) => is(&i.request),
+                        Some(Queued::Refused(r)) => is(&r.item.request),
+                        None => false,
+                    };
+                    if hit {
+                        return Ok(found);
+                    }
+                }
+                None => {}
+            }
+        }
+        Ok(self
+            .refusals()?
+            .into_iter()
+            .find(|r| is(&r.item.request))
+            .map(Queued::Refused))
+    }
+
     /// Whether a refusal of item `id` is recorded.
     pub fn is_refused(&self, id: &str) -> io::Result<bool> {
         valid_id(id)?;
@@ -431,5 +512,42 @@ impl Queue {
             }
         }
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn a_pending_file_claimed_after_listing_is_still_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let q = Queue::open(tmp.path()).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap();
+        let item = Item {
+            format: FORMAT,
+            id: new_id(now),
+            created: now,
+            origin: origin("op"),
+            label: "x".into(),
+            request: Some(RequestRef {
+                session: "s".into(),
+                request_id: "r".into(),
+            }),
+            kind: Kind::Revert {
+                entry: "e".into(),
+                writes: Vec::new(),
+            },
+        };
+        q.push(&item).unwrap();
+        // The listing saw `<id>.json`; a drainer claims it before the read.
+        let listed = vec![format!("{}.json", item.id)];
+        assert!(q.claim(&item.id).unwrap());
+        assert!(matches!(
+            q.scan_request(&listed, "r").unwrap(),
+            Some(Queued::Claimed(i)) if i.id == item.id
+        ));
+        assert!(q.scan_request(&listed, "other").unwrap().is_none());
     }
 }

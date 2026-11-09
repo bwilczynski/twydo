@@ -151,6 +151,7 @@ mod tests {
             stage: Stage::Applied,
             inverse_of: None,
             from_queue: None,
+            request: None,
             synced: None,
             holds: Vec::new(),
             family: None,

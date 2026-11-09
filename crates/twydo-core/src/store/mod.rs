@@ -32,8 +32,8 @@ use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
 use fsio::VdirLock;
 use journal::{
-    ApplyError, Entry, FORMAT, FromQueue, Journal, Stage, Write, apply_entry, new_op_id,
-    recover_locked, try_recover,
+    ApplyError, Entry, FORMAT, FromQueue, Journal, RequestRef, Stage, Write, apply_entry,
+    new_op_id, recover_locked, try_recover,
 };
 use queue::{Item, Kind, Prepared, Queue};
 
@@ -182,6 +182,14 @@ pub struct Store {
     undone: Vec<Step>,
     /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
     lock_wait: Option<Duration>,
+    /// Stamped on every entry and queue item this store creates.
+    request: Option<RequestRef>,
+    /// Plan and queue at once, never trying the vdir lock (a sync is known to be running).
+    vdir_busy: bool,
+    /// Items this store's drains dealt with, until [`Store::take_drained`]; collected only
+    /// while [`Store::set_collect_drained`] is on.
+    drained: Vec<Drained>,
+    collect_drained: bool,
 }
 
 /// What [`Store::submit`] did with a write.
@@ -359,6 +367,10 @@ impl Store {
             done: Vec::new(),
             undone: Vec::new(),
             lock_wait: None,
+            request: None,
+            vdir_busy: false,
+            drained: Vec::new(),
+            collect_drained: false,
         };
         Ok((store, report))
     }
@@ -366,6 +378,12 @@ impl Store {
     /// A store for a caller that already holds the vdir lock and drains the queue (the sync
     /// runner): no recovery, the embedded matrix.
     pub(crate) fn for_drain(cfg: &Config) -> Result<Store, WriteError> {
+        Store::without_recovery(cfg, Matrix::embedded().clone())
+    }
+
+    /// A store that skips recovery (the caller holds the vdir lock, or recovers itself), with
+    /// `matrix`.
+    pub fn without_recovery(cfg: &Config, matrix: Matrix) -> Result<Store, WriteError> {
         let vdir = cfg.vdir.clone();
         let state = bind_vdir_state(&cfg.state_dir(), &vdir)?;
         let journal = Journal::open(&state)?;
@@ -374,12 +392,42 @@ impl Store {
             state,
             cfg: cfg.clone(),
             mode: cfg.writes.mode,
-            matrix: Matrix::embedded().clone(),
+            matrix,
             journal,
             done: Vec::new(),
             undone: Vec::new(),
             lock_wait: None,
+            request: None,
+            vdir_busy: false,
+            drained: Vec::new(),
+            collect_drained: false,
         })
+    }
+
+    /// Every entry or queue item this store creates until the next call carries `r`.
+    pub fn set_request(&mut self, r: Option<RequestRef>) {
+        self.request = r;
+    }
+
+    /// While `busy`, `submit`, `undo`, `undo_last` and `redo_last` never try the vdir lock:
+    /// they gate, plan and queue at once.
+    pub fn set_vdir_busy(&mut self, busy: bool) {
+        self.vdir_busy = busy;
+    }
+
+    /// Collect the items this store's drains deal with, for [`Store::take_drained`]. Off by
+    /// default: a long-lived store that never takes them (the TUI's) keeps nothing.
+    pub fn set_collect_drained(&mut self, on: bool) {
+        self.collect_drained = on;
+        if !on {
+            self.drained.clear();
+        }
+    }
+
+    /// The items this store's drains dealt with since the last call, oldest first (only
+    /// while [`Store::set_collect_drained`] is on; empty otherwise).
+    pub fn take_drained(&mut self) -> Vec<Drained> {
+        std::mem::take(&mut self.drained)
     }
 
     /// How long a write waits for the vdir lock. `None` (the default) blocks until it is free
@@ -534,6 +582,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: None,
             from_queue: None,
+            request: self.request.clone(),
             synced: None,
             holds: if durable_holds {
                 holds.clone()
@@ -619,7 +668,9 @@ impl Store {
         after_push: &mut dyn FnMut(),
     ) -> Result<Submitted, WriteError> {
         let prepared = self.prepare(view, op, now)?;
-        if let Some(lock) = self.try_lock_for(TRY_LOCK)? {
+        if !self.vdir_busy
+            && let Some(lock) = self.try_lock_for(TRY_LOCK)?
+        {
             self.drain_locked(&lock, now)?;
             let id = self.commit_locked(prepared, None, now)?;
             self.done.push(Step::Applied(id.clone()));
@@ -632,6 +683,7 @@ impl Store {
             created: now,
             origin: queue::origin(tool),
             label: label.to_string(),
+            request: self.request.clone(),
             kind: Kind::Op {
                 op: op.clone(),
                 prepared,
@@ -666,6 +718,9 @@ impl Store {
         after_push();
         // The holder may have released the lock after our try and before the push, and its
         // drain would not have seen the item: look once more.
+        if self.vdir_busy {
+            return Ok(Submitted::Queued(item));
+        }
         let Some(lock) = VdirLock::try_exclusive(&self.state)? else {
             return Ok(Submitted::Queued(item));
         };
@@ -674,6 +729,9 @@ impl Store {
         let Ok(steps) = self.drain_steps(&lock, now) else {
             return Ok(Submitted::Queued(item));
         };
+        if self.collect_drained {
+            self.drained.extend(steps.iter().map(|s| s.drained.clone()));
+        }
         for step in steps {
             if step.drained.item.id != item.id {
                 continue;
@@ -704,11 +762,15 @@ impl Store {
         held: &VdirLock,
         now: DateTime<Utc>,
     ) -> Result<Vec<Drained>, WriteError> {
-        Ok(self
+        let drained: Vec<Drained> = self
             .drain_steps(held, now)?
             .into_iter()
             .map(|s| s.drained)
-            .collect())
+            .collect();
+        if self.collect_drained {
+            self.drained.extend(drained.iter().cloned());
+        }
+        Ok(drained)
     }
 
     /// Drains the queue under the held lock (spec §6.3): per item, in id order, skip what a
@@ -759,13 +821,17 @@ impl Store {
             };
             let result = match &item.kind {
                 Kind::Op { op, prepared } => {
+                    let mut prepared = prepared.clone();
+                    prepared.entry.request = item.request.clone();
                     let snap = Snapshot::new(report.clone(), self.cfg.clone());
                     let today = item.created.with_timezone(&snap.tz()).date_naive();
                     gate::check(&snap, &self.matrix, self.mode, op, today)
                         .map_err(WriteError::Blocked)
-                        .and_then(|()| self.commit_locked(prepared.clone(), Some(from_queue), now))
+                        .and_then(|()| self.commit_locked(prepared, Some(from_queue), now))
                 }
-                Kind::Revert { entry, .. } => self.revert_locked(entry, Some(from_queue), now),
+                Kind::Revert { entry, .. } => {
+                    self.revert_locked(entry, Some(from_queue), item.request.clone(), now)
+                }
             };
             match result {
                 Ok(id) => {
@@ -829,6 +895,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: None,
             from_queue: None,
+            request: self.request.clone(),
             synced: None,
             holds: Vec::new(),
             family: None,
@@ -915,7 +982,12 @@ impl Store {
                 };
                 self.revert_or_queue(&entry.id, "tui", label, now)?
             }
-            Step::Cancelled(item) => self.settle_queued(item.clone(), now, &mut || {})?,
+            Step::Cancelled(item) => {
+                // The redo is a new request: its item, and the entry drained from it, carry it.
+                let mut item = item.clone();
+                item.request = self.request.clone();
+                self.settle_queued(item, now, &mut || {})?
+            }
         };
         let new = match &done {
             Submitted::Applied(id) => Step::Applied(id.clone()),
@@ -934,9 +1006,14 @@ impl Store {
         label: &str,
         now: DateTime<Utc>,
     ) -> Result<Submitted, WriteError> {
-        if let Some(lock) = self.try_lock_for(TRY_LOCK)? {
+        if !self.vdir_busy
+            && let Some(lock) = self.try_lock_for(TRY_LOCK)?
+        {
             self.drain_locked(&lock, now)?;
-            return Ok(Submitted::Applied(self.revert_locked(id, None, now)?));
+            let request = self.request.clone();
+            return Ok(Submitted::Applied(
+                self.revert_locked(id, None, request, now)?,
+            ));
         }
         let e = self.journal.get(id)?.ok_or_else(|| no_entry(id))?;
         let writes = e
@@ -955,6 +1032,7 @@ impl Store {
             created: now,
             origin: queue::origin(tool),
             label: label.to_string(),
+            request: self.request.clone(),
             kind: Kind::Revert {
                 entry: id.to_string(),
                 writes,
@@ -984,6 +1062,7 @@ impl Store {
         &self,
         id: &str,
         from_queue: Option<FromQueue>,
+        request: Option<RequestRef>,
         now: DateTime<Utc>,
     ) -> Result<String, WriteError> {
         self.check_not_stuck()?;
@@ -1034,6 +1113,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: Some(id.to_string()),
             from_queue,
+            request,
             synced: None,
             holds: e.holds,
             family: e.family,

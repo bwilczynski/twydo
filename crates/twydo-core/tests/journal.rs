@@ -18,6 +18,7 @@ fn entry(id: &str, writes: Vec<Write>) -> Entry {
         stage: Stage::Prepared,
         inverse_of: None,
         from_queue: None,
+        request: None,
         synced: None,
         holds: Vec::new(),
         family: None,

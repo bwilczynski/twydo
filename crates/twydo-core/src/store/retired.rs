@@ -160,6 +160,7 @@ impl Store {
             stage: Stage::Prepared,
             inverse_of: None,
             from_queue: None,
+            request: self.request.clone(),
             synced: None,
             writes,
             holds: Vec::new(),
