@@ -360,6 +360,60 @@ fn timeout_after_remote_creation_is_reconciled_without_another_create() {
 
 #[cfg(unix)]
 #[test]
+fn interrupted_metadata_temps_reconcile_without_recreating_the_collection() {
+    use twydo_core::lists::operation::{self, Phase};
+    for (key, partial) in [
+        ("displayname", ""),
+        ("displayname", "Synt"),
+        ("color", "#3289D2"),
+    ] {
+        let (d, cfg) = offline();
+        flag(d.path(), "fail_refresh_once");
+        let mut service = ListService::open(&cfg, None).unwrap();
+        assert!(service.execute(create()).is_err());
+        let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+        let mut record = operation::active(&cfg).unwrap().unwrap();
+        record.phase = Phase::RemoteConfirmed;
+        operation::save(&state, &record).unwrap();
+        let dir = cfg.vdir.join("new-id");
+        fs::remove_file(dir.join(key)).unwrap();
+        if key == "displayname" {
+            // displayname is written first; color does not exist at this crash point.
+            fs::remove_file(dir.join("color")).unwrap();
+        }
+        // A similar filename alone is insufficient; invalid scratch bytes must
+        // still be refused by the real helper before it reads the remote target.
+        let temp = dir.join(format!(".{key}.tdo-tmp"));
+        fs::write(&temp, "unrelated bytes").unwrap();
+        let server_before = fs::read(d.path().join("server.json")).unwrap();
+        assert!(service.reconcile(&record.id).is_err());
+        assert_eq!(
+            fs::read(d.path().join("server.json")).unwrap(),
+            server_before
+        );
+        assert_eq!(fs::read_to_string(&temp).unwrap(), "unrelated bytes");
+        fs::write(dir.join(format!(".{key}.tdo-tmp")), partial).unwrap();
+        service.reconcile(&record.id).unwrap();
+        assert!(operation::active(&cfg).unwrap().is_none());
+        assert_eq!(service.state("new-id").unwrap().name, "Synthetic list");
+        assert_eq!(service.state("new-id").unwrap().color, Some((50, 137, 210)));
+        assert!(!dir.join(format!(".{key}.tdo-tmp")).exists());
+        let server: serde_json::Value =
+            serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
+        assert_eq!(
+            server["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|v| **v == "MKCALENDAR")
+                .count(),
+            1
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
 fn helper_has_its_own_deadline_when_its_monitoring_parent_exits() {
     use std::process::Command;
     use std::time::{Duration, Instant};
