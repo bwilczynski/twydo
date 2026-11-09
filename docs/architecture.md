@@ -20,6 +20,18 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
 - **2Do on the iPhone** syncs with the same server. Twydo writes every change the way 2Do itself
   writes it, so the phone reads Twydo's changes as its own ([compatibility.md](compatibility.md)).
 
+**In progress: the daemon.** A daemon that owns the vdir, sync and scheduling is being built
+([design](superpowers/specs/2026-11-09-daemon-design.md)). `tdo` does not use it yet. This page
+will describe it fully when the TUI and CLI switch over.
+
+Its protocol is described by `schema/tdo.openrpc.json`, generated from the Rust types; a test
+compares it with `schema/released.openrpc.json` and fails on a change that would break a
+released client. The protocol's own enums that clients receive (outcomes, operation states,
+error kinds, events) are open (`"x-open": true`): a client reads a value it does not know as
+`Unknown` and acts conservatively (refetches, or shows the message as is), so a newer daemon
+may add values. Every other change a client could not read needs a new protocol generation
+([design §6.2](superpowers/specs/2026-11-09-daemon-design.md#62-schema-and-versioning)).
+
 Twydo keeps its own state (the operation journal, sync status, conflicts) outside the vdir, under
 `state_dir` ([config.md](config.md)). Task data stays iCalendar; nothing in the state directory
 is an alternative active task database. Recovery backups deliberately retain task copies.
@@ -114,6 +126,10 @@ refused, so `Store::submit` never reports "busy". The queue lives under `<vdir-s
 - `<id>.claim`: an item being applied. A drainer renames `<id>.json` to `<id>.claim` before it
   commits; undoing a queued edit removes `<id>.json` instead. Whichever filesystem call wins
   decides, and the loser backs off, so no lock is needed to cancel.
+- `cancelled/<id>.json`: an item an undo withdrew, with the undo's request. It is written
+  before `<id>.json` is removed (and removed again if a drainer claimed the item first), so
+  the daemon can answer a resent undo after a restart. While `<id>.json` still exists the item
+  counts as queued, whatever the record says.
 - `refused/<id>.json`: why an item was refused (with `shown`, whether the user was told),
   pruned after `retention_days`.
 

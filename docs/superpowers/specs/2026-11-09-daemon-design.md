@@ -183,8 +183,11 @@ the live previews of the date and repeat grammars, and computing views.
   under the per-user `$TMPDIR` on macOS. **Any other setup names its socket explicitly**: the
   `--socket` flag, else the `TWYDO_SOCKET` environment variable, else the default. A test setup
   sets `TWYDO_SOCKET` next to its `XDG_CONFIG_HOME`. There is no config key for it: the client
-  does not read the configuration. The directory is created `0700`, the socket `0600`. The
-  daemon checks the peer's user id (`SO_PEERCRED` / `getpeereid`) and rejects other users.
+  does not read the configuration. The directory is created `0700`, the socket `0600`; an
+  existing directory must already be ours and `0700`, and a bare relative name (`tdo.sock`)
+  lives in the working directory, which is checked the same way. The daemon checks the peer's
+  user id (`SO_PEERCRED` / `getpeereid`) and rejects other users; the client checks the
+  daemon's the same way and refuses to talk to another user's.
 - **Instance identity**: which configuration a client means, known without reading any file:
   the config file path (`Config::path()`, from `XDG_CONFIG_HOME` or `HOME`) and the `--vdir`
   override if one was given, both made absolute. It does not choose the socket; `hello` sends it
@@ -208,8 +211,21 @@ the live previews of the date and repeat grammars, and computing views.
   example with `schemars`); a test fails when the checked-in file is stale.
 - `schema/released.openrpc.json` holds the last released API. A test rejects changes that
   would break an existing client: removed methods, events or fields, new required inputs,
-  narrowed inputs, changed error kinds. The release pipeline copies the current schema over
-  it (release-plz already runs on release PRs; the step is the builder's to place).
+  narrowed inputs, changed error kinds, and new values or variants in what clients receive
+  (results and events) unless the enum is open (below) in the released schema: opening an
+  enum and adding to it in one change is still a break. Params may gain values. The release
+  pipeline copies the current schema over it (release-plz already runs on release PRs; the
+  step is the builder's to place).
+- **Unknown values.** The protocol's own enums that clients receive are **open**, marked
+  `"x-open": true` in the schema: `WriteOutcome`, `OpState`, `SyncState`, `ErrorKind`, the
+  event `type` and `Cause`. A client reads a value it does not know as `Unknown` instead of
+  failing to decode the message, and treats it conservatively: an unknown outcome or state
+  as "not known to be applied" (ask `op.get` again later or reload), an unknown error kind
+  as a refusal to show as is, an unknown event as a reason to refetch, an unknown cause as
+  `outside`. So a newer daemon may add such values without a new protocol generation. The
+  daemon never sends `unknown` itself, and the schema does not list it. Enums that are not
+  open (the task and configuration types inside the snapshot) gain values only with a new
+  generation.
 - `rpc.discover` on a running daemon and `tdo daemon schema` print the same document.
 - A real break needs a new **protocol generation** (an integer, starting at 1), chosen on
   purpose.
@@ -382,7 +398,8 @@ the live previews of the date and repeat grammars, and computing views.
   and every `lists.*` job *(widened after review)*. It is chosen by the client and globally
   unique (session id plus a counter, the session id itself being random). The daemon records
   it, with the session, in what the call produces: the journal entry, the queue item, the
-  refused-items record, the conflict resolution or the job record (goal 7).
+  refused-items record, the cancellation record (an undo that withdrew a queued item, §6.7),
+  the conflict resolution or the job record (goal 7).
 - **Replay comes first.** The daemon looks the `request_id` up **before** it checks the
   session, the epoch or `based_on`. A known `request_id` returns the original outcome without
   doing anything again, also after a daemon restart (when the session and epoch are gone), for
@@ -425,6 +442,13 @@ the live previews of the date and repeat grammars, and computing views.
 - The rules are today's, including the write queue design §6.7: undo of a still-queued item
   removes it; undo of an applied entry while a sync runs is queued as a `revert`; refusals as
   today ("undo after a remote edit uses conflict handling").
+- **Withdrawing a queued item leaves a record.** Before it removes the item, the undo writes
+  `queue/cancelled/<id>.json` with the item and the undo's request. After a restart, the
+  resent undo is answered from it ("already undone") instead of undoing the new session's
+  last edit, and the withdrawn edit's own request answers `queued`, with `op.get` saying
+  `cancelled`. If a crash cuts the undo short (the record is written, the item is still
+  there), the resent undo is refused as not applied and the item drains as usual. A redo of
+  a withdrawn item queues it again under a new id.
 - **Reverting by id is separate.** `journal.revert {op_id}` keeps today's `tdo op undo <id>`:
   an explicit command naming a journal entry, from any session, with today's rules. It does
   not touch any session's stacks. D7 is about `u` and `Ctrl-r`, which never reach another
