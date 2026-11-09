@@ -294,7 +294,12 @@ fn redo_after_a_cancelled_step_carries_the_redo_request() {
         Submitted::Cancelled
     ));
     let queue = Queue::open(&env.state).unwrap();
-    assert!(queue.by_request("r1").unwrap().is_none());
+    // The withdrawn item stays on record for its request, and for the undo's.
+    assert!(matches!(
+        queue.by_request("r1").unwrap(),
+        Some(Queued::Cancelled(_))
+    ));
+    assert!(queue.cancelled_by("r2").unwrap().is_some());
     store.set_request(Some(req("r3")));
     let Submitted::Queued(item) = store.redo_last(now()).unwrap() else {
         panic!("queued")
@@ -304,7 +309,10 @@ fn redo_after_a_cancelled_step_carries_the_redo_request() {
         queue.by_request("r3").unwrap(),
         Some(Queued::Pending(_))
     ));
-    assert!(queue.by_request("r1").unwrap().is_none());
+    assert!(matches!(
+        queue.by_request("r1").unwrap(),
+        Some(Queued::Cancelled(_))
+    ));
     store.set_vdir_busy(false);
     let drained = store.drain(later()).unwrap();
     let DrainOutcome::Applied(id) = &drained[0].outcome else {

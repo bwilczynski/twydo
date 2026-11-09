@@ -85,6 +85,19 @@ impl Client {
     /// Connects without saying hello (for lifecycle calls and tests).
     pub fn connect_raw(socket: &Path) -> Result<Client, ClientError> {
         let stream = UnixStream::connect(socket)?;
+        // A daemon of another user (a socket swapped in a shared directory) is never talked to.
+        let peer = crate::server::conn::peer_uid(&stream)?;
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let own = unsafe { libc::geteuid() };
+        if !crate::server::conn::peer_allowed(peer, own) {
+            return Err(ClientError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!(
+                    "{} is served by uid {peer}, not by you; refusing to connect",
+                    socket.display()
+                ),
+            )));
+        }
         let reader = stream.try_clone()?;
         let inner = Arc::new(Inner {
             writer: Mutex::new(stream.try_clone()?),

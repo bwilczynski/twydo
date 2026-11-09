@@ -1728,12 +1728,15 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "libc",
  "notify",
  "ratatui",
  "serde_json",
+ "signal-hook",
  "tempfile",
  "thiserror 2.0.21",
  "twydo-core",
+ "twydo-daemon",
  "unicode-width",
 ]
 
@@ -1964,6 +1967,7 @@ version = "0.1.8"
 dependencies = [
  "chrono",
  "libc",
+ "notify",
  "schemars",
  "serde",
  "serde_json",

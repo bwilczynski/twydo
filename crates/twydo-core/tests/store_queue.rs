@@ -787,11 +787,13 @@ fn redo_requeues_it() {
     };
     store.undo_last(later()).unwrap();
     assert!(queue(&env).is_empty().unwrap());
-    // The sync still runs: the redo puts the same item back.
+    // The sync still runs: the redo puts the same edit back, under a new id (the withdrawn
+    // item's cancellation record keeps answering for the old one).
     let Submitted::Queued(again) = store.redo_last(later()).unwrap() else {
         panic!("should queue");
     };
-    assert_eq!(again.id, item.id);
+    assert_ne!(again.id, item.id);
+    assert_eq!(again.kind, item.kind);
     assert_eq!(queue(&env).len().unwrap(), 1);
     let snap = view(&env);
     assert!(snap.is_pending(idx(&snap, A)));
@@ -800,7 +802,7 @@ fn redo_requeues_it() {
     assert!(read(&env, A).contains("SUMMARY:renamed"));
     let journal = env.journal();
     assert_eq!(journal.len(), 1);
-    assert_eq!(journal[0].from_queue.as_ref().unwrap().id, item.id);
+    assert_eq!(journal[0].from_queue.as_ref().unwrap().id, again.id);
 }
 
 #[test]

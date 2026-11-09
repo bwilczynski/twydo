@@ -411,3 +411,19 @@ fn an_existing_socket_dir_must_be_private_and_ours() {
     let h = Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(sock)).unwrap();
     assert!(h.wait_ready(Duration::from_secs(10)));
 }
+
+#[test]
+fn a_regular_file_at_the_socket_path_is_never_deleted() {
+    let fx = fx();
+    let dir = short_socket_dir();
+    let path = dir.path().join("tdo.sock");
+    std::fs::write(&path, "not a socket").unwrap();
+    match Daemon::start(fx.config(), fx.instance(), DaemonOptions::new(path.clone())) {
+        Err(StartError::Io(e)) => {
+            assert!(e.to_string().contains(&path.display().to_string()), "{e}")
+        }
+        Err(e) => panic!("wrong error: {e}"),
+        Ok(_) => panic!("started over a regular file"),
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "not a socket");
+}

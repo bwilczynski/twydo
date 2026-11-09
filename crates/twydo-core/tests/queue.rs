@@ -233,3 +233,78 @@ fn refusal_message_names_the_task_and_the_reason() {
         q.mark_shown(&i.id).unwrap();
     }
 }
+
+fn req(id: &str) -> twydo_core::store::journal::RequestRef {
+    twydo_core::store::journal::RequestRef {
+        session: "s".to_string(),
+        request_id: id.to_string(),
+    }
+}
+
+#[test]
+fn a_cancel_is_recorded_for_both_requests_and_pruned_with_refusals() {
+    use twydo_core::store::queue::Queued;
+    let dir = tempfile::tempdir().unwrap();
+    let q = Queue::open(dir.path()).unwrap();
+    let mut i = simple(t0());
+    i.request = Some(req("edit-1"));
+    q.push(&i).unwrap();
+    assert!(q.cancel_by(&i, Some(req("undo-1")), t0()).unwrap());
+    assert!(q.list().unwrap().is_empty());
+    assert!(matches!(
+        q.state(&i.id).unwrap(),
+        Some(Queued::Cancelled(_))
+    ));
+    assert!(matches!(
+        q.by_request("edit-1").unwrap(),
+        Some(Queued::Cancelled(c)) if c.item.id == i.id
+    ));
+    let c = q.cancelled_by("undo-1").unwrap().unwrap();
+    assert_eq!(c.item.id, i.id);
+    assert!(q.cancelled_by("other").unwrap().is_none());
+    assert_eq!(q.prune(t0() + Duration::days(1)).unwrap(), 1);
+    assert!(q.cancelled_by("undo-1").unwrap().is_none());
+    assert!(q.state(&i.id).unwrap().is_none());
+}
+
+#[test]
+fn a_cancel_that_loses_to_a_claim_leaves_no_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let q = Queue::open(dir.path()).unwrap();
+    let i = simple(t0());
+    q.push(&i).unwrap();
+    assert!(q.claim(&i.id).unwrap());
+    assert!(!q.cancel_by(&i, Some(req("undo-1")), t0()).unwrap());
+    assert!(q.cancelled_by("undo-1").unwrap().is_none());
+}
+
+#[test]
+fn a_cancel_cut_short_leaves_the_item_pending() {
+    use twydo_core::store::queue::{Cancellation, Queued};
+    let dir = tempfile::tempdir().unwrap();
+    let q = Queue::open(dir.path()).unwrap();
+    let mut i = simple(t0());
+    i.request = Some(req("edit-1"));
+    q.push(&i).unwrap();
+    // A crash after the record was written and before the item was removed.
+    let rec = Cancellation {
+        format: FORMAT,
+        item: i.clone(),
+        by: Some(req("undo-1")),
+        at: t0(),
+    };
+    let cancelled = dir.path().join("queue/cancelled");
+    std::fs::create_dir_all(&cancelled).unwrap();
+    std::fs::write(
+        cancelled.join(format!("{}.json", i.id)),
+        serde_json::to_vec(&rec).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(q.state(&i.id).unwrap(), Some(Queued::Pending(_))));
+    assert!(matches!(
+        q.by_request("edit-1").unwrap(),
+        Some(Queued::Pending(_))
+    ));
+    assert_eq!(q.list().unwrap().len(), 1);
+    assert!(q.cancelled_by("undo-1").unwrap().is_some());
+}

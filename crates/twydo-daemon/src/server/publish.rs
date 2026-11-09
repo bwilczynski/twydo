@@ -146,6 +146,12 @@ impl Publisher {
         }
         let revision = cur.revision + 1;
         wire.revision = revision;
+        // Without a hint (the watcher, recovery), the uids are the tasks whose file changed.
+        let uids = if uids.is_empty() {
+            changed_uids(&cur.wire, &wire)
+        } else {
+            uids
+        };
         s.published_once = true;
         s.ring.push_back(Arc::new(Snapshot {
             revision,
@@ -284,4 +290,26 @@ impl Publisher {
             status_rev: s.status.as_ref().map_or(0, |v| v.status_rev),
         }
     }
+}
+
+/// Uids whose task was added, removed or changed (by `rev` or `pending`) between two
+/// snapshots, sorted.
+fn changed_uids(old: &WireSnapshot, new: &WireSnapshot) -> Vec<String> {
+    use std::collections::BTreeMap;
+    let key = |s: &WireSnapshot| -> BTreeMap<String, (String, bool)> {
+        s.tasks
+            .iter()
+            .map(|t| (t.task.uid.clone(), (t.rev.clone(), t.pending)))
+            .collect()
+    };
+    let (a, b) = (key(old), key(new));
+    let mut out: Vec<String> = a
+        .iter()
+        .filter(|(u, v)| b.get(*u) != Some(v))
+        .map(|(u, _)| u.clone())
+        .collect();
+    out.extend(b.keys().filter(|u| !a.contains_key(*u)).cloned());
+    out.sort();
+    out.dedup();
+    out
 }

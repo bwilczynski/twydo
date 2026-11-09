@@ -95,6 +95,8 @@ pub enum Queued {
     Claimed(Item),
     /// A drain refused it.
     Refused(Refusal),
+    /// An undo withdrew it before any drain took it.
+    Cancelled(Cancellation),
 }
 
 impl Item {
@@ -118,6 +120,17 @@ pub struct Refusal {
     /// The refusal was [`WriteError::Stale`]: a file changed under the queued edit.
     #[serde(default)]
     pub stale: bool,
+}
+
+/// A queued item an undo withdrew, kept so a resent request (the one that queued the item,
+/// or the undo that withdrew it) is answered from disk after a restart.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cancellation {
+    pub format: u32,
+    pub item: Item,
+    /// The request that withdrew the item, if a client named one.
+    pub by: Option<RequestRef>,
+    pub at: DateTime<Utc>,
 }
 
 /// The line that tells the user a queued edit was not saved.
@@ -283,6 +296,10 @@ impl Queue {
         self.dir.join("refused")
     }
 
+    fn cancelled(&self) -> PathBuf {
+        self.dir.join("cancelled")
+    }
+
     /// Writes `item` durably.
     pub fn push(&self, item: &Item) -> io::Result<()> {
         let state = self.dir.parent().expect("queue state directory");
@@ -364,13 +381,85 @@ impl Queue {
         }
     }
 
+    /// Withdraws unclaimed `item` on behalf of request `by`, recording the withdrawal first
+    /// (`cancelled/<id>.json`) so it outlives a restart. `false` if the item is gone or
+    /// already claimed; the record is then removed again.
+    ///
+    /// A crash between the record and the removal leaves both: the item still drains, and
+    /// [`Queue::state`] reports it pending, so the record alone never means "cancelled".
+    pub fn cancel_by(
+        &self,
+        item: &Item,
+        by: Option<RequestRef>,
+        at: DateTime<Utc>,
+    ) -> io::Result<bool> {
+        let pending = self.json(&item.id)?;
+        if !pending.exists() {
+            return Ok(false);
+        }
+        let record = self.cancelled().join(format!("{}.json", item.id));
+        if !self.cancelled().is_dir() {
+            fs::create_dir_all(self.cancelled())?;
+            sync_dir(&self.dir)?;
+        }
+        let c = Cancellation {
+            format: FORMAT,
+            item: item.clone(),
+            by,
+            at,
+        };
+        let bytes = serde_json::to_vec_pretty(&c).map_err(io::Error::other)?;
+        write_atomic(&record, &bytes)?;
+        if self.cancel(&item.id)? {
+            return Ok(true);
+        }
+        remove_durable(&record)?;
+        Ok(false)
+    }
+
+    /// The recorded withdrawal of item `id` ([`Queue::state`] checks the item is gone first).
+    fn cancellation(&self, id: &str) -> Option<Cancellation> {
+        read_json::<Cancellation>(&self.cancelled().join(format!("{id}.json")))
+    }
+
+    fn cancellations(&self) -> io::Result<Vec<Cancellation>> {
+        let mut out = Vec::new();
+        let dir = match fs::read_dir(self.cancelled()) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(out),
+            Err(e) => return Err(e),
+        };
+        for dent in dir {
+            let dent = dent?;
+            let name = dent.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.starts_with('.') || !name.ends_with(".json") {
+                continue;
+            }
+            if let Some(c) = read_json::<Cancellation>(&dent.path()) {
+                out.push(c);
+            }
+        }
+        out.sort_by(|a, b| a.item.id.cmp(&b.item.id));
+        Ok(out)
+    }
+
+    /// The withdrawal recorded for undo request `request_id`, wherever its item stands now
+    /// (check [`Queue::state`] of the item: only `Cancelled` means the undo took effect).
+    pub fn cancelled_by(&self, request_id: &str) -> io::Result<Option<Cancellation>> {
+        Ok(self
+            .cancellations()?
+            .into_iter()
+            .find(|c| c.by.as_ref().is_some_and(|r| r.request_id == request_id)))
+    }
+
     /// Removes a claimed item once it is committed or dealt with.
     pub fn done(&self, id: &str) -> io::Result<()> {
         remove_durable(&self.claimed(id)?)
     }
 
-    /// Where item `id` stands: pending, claimed or refused (checked in that order), else
-    /// `None` (never queued, or committed and gone).
+    /// Where item `id` stands: pending, claimed, refused or cancelled (checked in that
+    /// order), else `None` (never queued, or committed and gone).
     pub fn state(&self, id: &str) -> io::Result<Option<Queued>> {
         if let Some(i) = read_json::<Item>(&self.json(id)?) {
             return Ok(Some(Queued::Pending(i)));
@@ -379,7 +468,10 @@ impl Queue {
             return Ok(Some(Queued::Claimed(i)));
         }
         valid_id(id)?;
-        Ok(read_json::<Refusal>(&self.refused().join(format!("{id}.json"))).map(Queued::Refused))
+        if let Some(r) = read_json::<Refusal>(&self.refused().join(format!("{id}.json"))) {
+            return Ok(Some(Queued::Refused(r)));
+        }
+        Ok(self.cancellation(id).map(Queued::Cancelled))
     }
 
     /// The item queued by client request `request_id`, wherever it stands now. Request ids
@@ -419,6 +511,7 @@ impl Queue {
                     let hit = match &found {
                         Some(Queued::Pending(i) | Queued::Claimed(i)) => is(&i.request),
                         Some(Queued::Refused(r)) => is(&r.item.request),
+                        Some(Queued::Cancelled(c)) => is(&c.item.request),
                         None => false,
                     };
                     if hit {
@@ -428,11 +521,15 @@ impl Queue {
                 None => {}
             }
         }
+        if let Some(r) = self.refusals()?.into_iter().find(|r| is(&r.item.request)) {
+            return Ok(Some(Queued::Refused(r)));
+        }
+        // A record whose item is still listed is a cancel cut short: the item was found above.
         Ok(self
-            .refusals()?
+            .cancellations()?
             .into_iter()
-            .find(|r| is(&r.item.request))
-            .map(Queued::Refused))
+            .find(|c| is(&c.item.request))
+            .map(Queued::Cancelled))
     }
 
     /// Whether a refusal of item `id` is recorded.
@@ -502,12 +599,18 @@ impl Queue {
         write_atomic(&path, &bytes)
     }
 
-    /// Removes refusals recorded before `before`; returns how many.
+    /// Removes refusals and cancellations recorded before `before`; returns how many.
     pub fn prune(&self, before: DateTime<Utc>) -> io::Result<usize> {
         let mut n = 0;
         for r in self.refusals()? {
             if r.at < before {
                 remove_durable(&self.refused().join(format!("{}.json", r.item.id)))?;
+                n += 1;
+            }
+        }
+        for c in self.cancellations()? {
+            if c.at < before {
+                remove_durable(&self.cancelled().join(format!("{}.json", c.item.id)))?;
                 n += 1;
             }
         }

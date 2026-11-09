@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod conflicts;
+pub mod daemon;
 pub mod export;
 pub mod op;
 mod permissions;

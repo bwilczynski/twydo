@@ -18,6 +18,7 @@ serde_json = { version = "1.0.154", features = ["preserve_order"] }
 sha2 = "0.10.9"
 thiserror = "2.0.21"
 uuid = { version = "1.29.0", features = ["v4"] }
+notify = "8.2.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
