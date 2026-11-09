@@ -82,6 +82,11 @@ impl Fixture {
         fs::write(p, text).unwrap();
     }
 
+    /// The text at `rel` (relative to the vdir).
+    pub fn read(&self, rel: &str) -> String {
+        fs::read_to_string(self.vdir().join(rel)).unwrap()
+    }
+
     pub fn remove(&self, rel: &str) {
         fs::remove_file(self.vdir().join(rel)).unwrap();
     }

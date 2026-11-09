@@ -163,6 +163,11 @@ pub struct StatusView {
     pub conflicts: usize,
     pub journal: JournalView,
     pub refusals: Vec<RefusalView>,
+    /// Why the last drain of the write queue stopped with items left (a stuck journal, an
+    /// I/O error); retried when the next long job ends. `None` when the last drain finished
+    /// or only found the vdir held by another process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drain_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -39,6 +39,14 @@ fn queue_edit(fx: &Fixture, uid: &str, text: &str) -> twydo_core::store::queue::
     }
 }
 
+/// An outside sync's shared hold on the vdir: the daemon's startup drain finds it busy and
+/// leaves queued items in place.
+fn outside_sync(fx: &Fixture) -> VdirLock {
+    let cfg = fx.config();
+    let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    VdirLock::shared(&state).unwrap()
+}
+
 #[test]
 fn snapshot_has_tasks_collections_and_load_errors() {
     let fx = fx();
@@ -61,6 +69,7 @@ fn snapshot_has_tasks_collections_and_load_errors() {
 fn snapshot_marks_queued_rows_pending() {
     let fx = fx();
     queue_edit(&fx, "uid-a", "Alpha queued");
+    let _sync = outside_sync(&fx);
     let td = TestDaemon::start(&fx);
     let snap: WireSnapshot = td.client().call("snapshot.get", empty()).unwrap();
     let a = snap.tasks.iter().find(|t| t.task.uid == "uid-a").unwrap();
@@ -96,6 +105,7 @@ fn status_reports_pending_edits_and_unacknowledged_refusals() {
 fn status_counts_queued_edits() {
     let fx = fx();
     queue_edit(&fx, "uid-a", "Alpha queued");
+    let _sync = outside_sync(&fx);
     let td = TestDaemon::start(&fx);
     let st: StatusView = td.client().call("status.get", empty()).unwrap();
     assert_eq!(st.pending_edits, 1);

@@ -1481,6 +1481,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "drain_error": {
+            "description": "Why the last drain of the write queue stopped with items left (a stuck journal, an\nI/O error); retried when the next long job ends. `None` when the last drain finished\nor only found the vdir held by another process.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "journal": {
             "$ref": "#/components/schemas/JournalView"
           },

@@ -1,5 +1,6 @@
 //! Task writes (daemon spec §6.6, §6.7): `op.submit`, `op.undo`, `op.redo`, `op.get` and
-//! `op.check`, the replay of resent requests and the mapping of store errors to refusals.
+//! `op.check`, the replay of resent requests and the mapping of store errors to refusals; the
+//! write queue's drain after a long job and at startup (§7.3) and `refusals.ack` (§6.5).
 //!
 //! # Lock order
 //!
@@ -13,8 +14,19 @@
 //! 4. the store's vdir file lock (inside `Store`, released before it returns);
 //! 5. the publisher's `reload_lock`, then its `state`, then the bus.
 //!
-//! The session table's mutex is held only for lookups, never while waiting. A long job takes
-//! only the lane; its drain hook (Task 8) must not take a session mutex or the lane.
+//! The session table's mutex is held only for lookups, never while waiting.
+//!
+//! A long job takes only the lane. Its drain hook ([`drain_queue`]) runs while the job still
+//! holds the lane and takes, in order: the store's vdir file lock (released before `drain`
+//! returns), then one session mutex at a time (to prune refused steps), then the publisher
+//! (`reload_lock`, `state`) and the bus. Taking a session mutex while the lane is held long is
+//! safe: a holder of a session mutex never waits for a long job ([`Lane::write`] answers
+//! `LongBusy` at once) and, while queueing, never takes the vdir lock or `reload_lock`
+//! (queued replies hand the publish to the background refresher). The hook never takes the
+//! lane itself.
+//!
+//! The background drainer ([`Shared::request_drain`]) holds nothing when it starts, takes the
+//! lane as a write ([`Lane::write`]) and then drains as the hook does, in the same order.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -24,8 +36,9 @@ use serde_json::Value;
 use twydo_core::edit::Op;
 use twydo_core::edit::describe::{op_title, success_message};
 use twydo_core::gate;
+use twydo_core::store::Store;
 use twydo_core::store::journal::{Journal, RequestRef};
-use twydo_core::store::queue::{Queue, Queued, refusal_message};
+use twydo_core::store::queue::{Item, Kind, Queue, Queued, refusal_message};
 use twydo_core::store::{DrainOutcome, Drained, Submitted, WriteError};
 use twydo_core::views::Snapshot as CoreSnapshot;
 
@@ -35,8 +48,8 @@ use super::replay::Begin;
 use super::sessions::{QUEUED, Session, queued_note, step};
 use crate::protocol::events::{Cause, Event};
 use crate::protocol::methods::{
-    BasedOn, CheckParams, CheckResult, Created, OpGetParams, OpState, SubmitParams, Undid,
-    UndoParams, WriteOutcome, WriteResult,
+    AckParams, AckResult, BasedOn, CheckParams, CheckResult, Created, OpGetParams, OpState,
+    SubmitParams, Undid, UndoParams, WriteOutcome, WriteResult,
 };
 use crate::protocol::rpc::{ErrorData, ErrorKind, REFUSED, RpcError};
 
@@ -213,13 +226,14 @@ fn finish_drained(shared: &Shared, drained: Vec<Drained>) {
     }
 }
 
-/// Publishes what a commit changed (`entry` and any entries drained before it) and refreshes
-/// the status. Returns the revision after the reload. Never fails: the commit is done, so a
-/// failed reload only delays the publish until the next one.
+/// Publishes what a commit changed (`entry`, if any, and any entries drained before it) and
+/// refreshes the status. Returns the revision after the reload. Never fails: the commit is
+/// done, so a failed reload only delays the publish until the next one.
 ///
 /// Accepted for now: if an outside process takes the vdir lock between our commit and this
-/// reload, the reload (and so the applied reply) waits for it to be released.
-fn publish_applied(shared: &Shared, entry: &str, drained: &[Drained]) -> u64 {
+/// reload, the reload (and so the applied reply, or the release of the lane after a drain)
+/// waits for it to be released.
+fn publish_applied(shared: &Shared, entry: Option<&str>, drained: &[Drained]) -> u64 {
     let mut uids = Vec::new();
     if let Ok(j) = Journal::open(&shared.state_dir) {
         let ids = drained
@@ -228,7 +242,7 @@ fn publish_applied(shared: &Shared, entry: &str, drained: &[Drained]) -> u64 {
                 DrainOutcome::Applied(id) => Some(id.as_str()),
                 _ => None,
             })
-            .chain(std::iter::once(entry));
+            .chain(entry);
         for id in ids {
             if let Ok(Some(e)) = j.get(id) {
                 for u in e.uids {
@@ -317,7 +331,7 @@ fn run_submit(
     let result = match &submitted {
         Submitted::Applied(id) => {
             crash_point(shared);
-            let revision = publish_applied(shared, id, &drained);
+            let revision = publish_applied(shared, Some(id), &drained);
             let created = match &p.op {
                 Op::Create(_) | Op::CreateAt { .. } => created_task(shared, id),
                 _ => None,
@@ -331,7 +345,7 @@ fn run_submit(
                 undid: None,
             }
         }
-        Submitted::Queued(item) => queued(shared, item.id.clone(), message, None),
+        Submitted::Queued(item) => queued(shared, item, message, None),
         Submitted::Cancelled => unreachable!("a submit never cancels"),
     };
     drop(lane);
@@ -340,19 +354,32 @@ fn run_submit(
     Ok(result)
 }
 
-fn queued(
-    shared: &Arc<Shared>,
-    op_id: String,
-    message: String,
-    undid: Option<Undid>,
-) -> WriteResult {
-    // The overlay of the queued item is published by the drain machinery (Task 8). The status
-    // is refreshed in the background: a queued reply never waits on `reload_lock`, which a
-    // reload blocked on the vdir lock (a sync) may hold for minutes.
-    shared.request_status_refresh();
+/// The rows a queued item changes, for the `data.changed` hint of its overlay.
+fn item_uids(shared: &Shared, item: &Item) -> Vec<String> {
+    match &item.kind {
+        Kind::Op { prepared, .. } => prepared.entry.uids.clone(),
+        Kind::Revert { entry, .. } => Journal::open(&shared.state_dir)
+            .ok()
+            .and_then(|j| j.get(entry).ok().flatten())
+            .map(|e| e.uids)
+            .unwrap_or_default(),
+    }
+}
+
+fn queued(shared: &Arc<Shared>, item: &Item, message: String, undid: Option<Undid>) -> WriteResult {
+    // The overlay (the row pending) and the status are published in the background: a queued
+    // reply never waits on `reload_lock` or the vdir lock, which a reload blocked behind an
+    // outside lock holder may hold for minutes. The reply carries the revision before it.
+    shared.request_overlay_publish(item_uids(shared, item));
+    // The long job ended between our `LongBusy` and the push, after its drain's last pass:
+    // nothing else would drain the item. (If it is still running, its release hook sees the
+    // item, which is on disk by now.)
+    if shared.lane.current_long().is_none() {
+        shared.request_drain();
+    }
     WriteResult {
         outcome: WriteOutcome::Queued,
-        op_id,
+        op_id: item.id.clone(),
         revision: shared.publisher.current().0,
         message,
         created: None,
@@ -413,7 +440,7 @@ fn run_undo(
     let result = match &submitted {
         Submitted::Applied(id) => {
             crash_point(shared);
-            let revision = publish_applied(shared, id, &drained);
+            let revision = publish_applied(shared, Some(id), &drained);
             WriteResult {
                 outcome: WriteOutcome::Applied,
                 op_id: id.clone(),
@@ -423,12 +450,12 @@ fn run_undo(
                 undid,
             }
         }
-        Submitted::Queued(item) => queued(shared, item.id.clone(), message, undid),
+        Submitted::Queued(item) => queued(shared, item, message, undid),
         Submitted::Cancelled => {
             // The undo removed a still-queued item: nothing reached the vdir. As for a queued
-            // reply, the status refresh must not hold up the answer.
+            // reply, publishing the overlay without it must not hold up the answer.
             let op_id = moved.and_then(|t| t.queued).unwrap_or_default();
-            shared.request_status_refresh();
+            shared.request_overlay_publish(Vec::new());
             WriteResult {
                 outcome: WriteOutcome::Applied,
                 op_id,
@@ -556,6 +583,150 @@ pub fn check(shared: &Arc<Shared>, p: CheckParams) -> Result<Value, RpcError> {
         reason: verdict.err().map(|b| b.to_string()),
     };
     serde_json::to_value(r).map_err(|e| RpcError::refused(ErrorKind::Internal, e.to_string()))
+}
+
+/// At most this many drain passes per release. A pass that drained something is followed by
+/// another, so an error that stopped it partway (and was swallowed because it had progress)
+/// is seen; each pass takes at least one item off the queue.
+const DRAIN_PASSES: usize = 64;
+
+/// How many times a drain that finds the vdir lock held tries again (each try waits up to
+/// the store's 250 ms) before leaving the items for the next release. The holder may be one
+/// of our own reloads (a shared lock held for the length of a vdir load), not only another
+/// process.
+const DRAIN_BUSY_TRIES: usize = 4;
+
+/// Drains the write queue (daemon spec §7.3): when a long job releases the lane (the lane's
+/// drain hook) and once at startup. The caller holds the lane, so no write slips in between.
+///
+/// A store without recovery drains in id order. Another process holding the vdir lock
+/// ([`WriteError::Busy`]) is not an error: the items wait for the next drain. An error that
+/// leaves items (a stuck journal, I/O) is reported in the status and retried at the next
+/// release. For what was drained: a refused item's step leaves its session's undo stacks,
+/// the result is published (`Cause::Op`) and the status refreshed, and then each item gets
+/// its `op.finished`, so a client acting on the event already finds both up to date.
+pub fn drain_queue(shared: &Arc<Shared>) {
+    if shared.is_stopping() {
+        return;
+    }
+    let empty = Queue::existing(&shared.state_dir)
+        .map(|q| q.is_empty())
+        .unwrap_or(Ok(true));
+    if matches!(empty, Ok(true)) {
+        shared.publisher.set_drain_error(None);
+        shared.request_status_refresh();
+        return;
+    }
+    let mut store = match Store::without_recovery(&shared.cfg, shared.matrix.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            shared.publisher.set_drain_error(Some(e.to_string()));
+            shared.request_status_refresh();
+            return;
+        }
+    };
+    let now = Utc::now();
+    let mut drained = Vec::new();
+    // `None`: keep what the status says (the vdir was busy, nothing was learnt).
+    let mut error: Option<Option<String>> = Some(None);
+    let mut busy = 0;
+    for _ in 0..DRAIN_PASSES {
+        match store.drain(now) {
+            Ok(d) if d.is_empty() => break,
+            Ok(d) => drained.extend(d),
+            Err(WriteError::Busy) if drained.is_empty() && busy + 1 < DRAIN_BUSY_TRIES => {
+                busy += 1;
+            }
+            Err(WriteError::Busy) => {
+                if drained.is_empty() {
+                    error = None;
+                }
+                break;
+            }
+            Err(e) => {
+                eprintln!("tdo daemon: draining the write queue stopped: {e}");
+                error = Some(Some(e.to_string()));
+                break;
+            }
+        }
+    }
+    if let Some(hook) = &shared.after_drain_passes {
+        hook();
+    }
+    if let Some(e) = error {
+        shared.publisher.set_drain_error(e);
+    }
+    if drained.is_empty() {
+        shared.request_status_refresh();
+        return;
+    }
+    prune_refused_steps(shared, &drained);
+    publish_applied(shared, None, &drained);
+    finish_drained(shared, drained);
+}
+
+/// Drops the undo and redo steps of the sessions whose queued items were refused: the store
+/// skips them, so the titles must go too.
+fn prune_refused_steps(shared: &Shared, drained: &[Drained]) {
+    let mut sessions: Vec<&str> = Vec::new();
+    for d in drained {
+        if let (DrainOutcome::Refused(_), Some(r)) = (&d.outcome, &d.item.request)
+            && !sessions.contains(&r.session.as_str())
+        {
+            sessions.push(&r.session);
+        }
+    }
+    if sessions.is_empty() {
+        return;
+    }
+    let queue = Queue::existing(&shared.state_dir);
+    for id in sessions {
+        if let Some(s) = shared.sessions.get(id) {
+            s.lock().unwrap().prune_refused(queue.as_ref());
+        }
+    }
+}
+
+/// `refusals.ack`: marks the named refusals shown, so they leave `status.refusals`. Replayed
+/// from the in-memory log only: the refusal record itself is the durable state. Unknown ids
+/// (and ids already acknowledged) are ignored; `acknowledged` counts the ones marked now.
+pub fn ack(shared: &Arc<Shared>, p: AckParams) -> Result<Value, RpcError> {
+    require_request_id(&p.request_id)?;
+    let ticket = match shared.requests.begin(&p.request_id) {
+        Begin::Done(r) => return r,
+        Begin::New(t) => t,
+    };
+    ticket.finish(run_ack(shared, &p.ids))
+}
+
+fn run_ack(shared: &Arc<Shared>, ids: &[String]) -> Result<Value, RpcError> {
+    let mut acknowledged = 0;
+    let mut failed = None;
+    if let Some(q) = Queue::existing(&shared.state_dir) {
+        for id in ids {
+            let Ok(Some(Queued::Refused(r))) = q.state(id) else {
+                continue;
+            };
+            if r.shown {
+                continue;
+            }
+            match q.mark_shown(id) {
+                Ok(()) => acknowledged += 1,
+                Err(e) => {
+                    failed = Some(e);
+                    break;
+                }
+            }
+        }
+    }
+    if acknowledged > 0 {
+        shared.request_status_refresh();
+    }
+    if let Some(e) = failed {
+        return Err(RpcError::refused(ErrorKind::Internal, e.to_string()));
+    }
+    serde_json::to_value(AckResult { acknowledged })
+        .map_err(|e| RpcError::refused(ErrorKind::Internal, e.to_string()))
 }
 
 #[cfg(test)]

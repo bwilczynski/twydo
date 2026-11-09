@@ -40,6 +40,8 @@ struct State {
     published_once: bool,
     status: Option<StatusView>,
     stuck: Vec<String>,
+    /// Why the last queue drain stopped with items left; see [`StatusView::drain_error`].
+    drain_error: Option<String>,
 }
 
 pub struct Publisher {
@@ -75,6 +77,7 @@ impl Publisher {
                 published_once: false,
                 status: None,
                 stuck: Vec::new(),
+                drain_error: None,
             }),
         }
     }
@@ -91,6 +94,12 @@ impl Publisher {
     /// Ids of the journal entries recovery left stuck.
     pub fn set_stuck(&self, ids: Vec<String>) {
         self.state.lock().unwrap().stuck = ids;
+    }
+
+    /// Records the outcome of a queue drain for the status (`None`: nothing left behind).
+    /// Takes effect at the next [`Publisher::refresh_status`].
+    pub fn set_drain_error(&self, e: Option<String>) {
+        self.state.lock().unwrap().drain_error = e;
     }
 
     /// The newest published revision.
@@ -167,14 +176,15 @@ impl Publisher {
                 .as_ref()
                 .map_or(0, |v| v.status_rev);
         }
-        let (stuck, old_rev) = {
+        let (stuck, drain_error, old_rev) = {
             let s = self.state.lock().unwrap();
             (
                 s.stuck.clone(),
+                s.drain_error.clone(),
                 s.status.as_ref().map_or(0, |v| v.status_rev),
             )
         };
-        let mut next = match self.build_status(&stuck, old_rev) {
+        let mut next = match self.build_status(&stuck, drain_error, old_rev) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("tdo daemon: status unavailable: {e}");
@@ -195,7 +205,12 @@ impl Publisher {
         rev
     }
 
-    fn build_status(&self, stuck: &[String], status_rev: u64) -> io::Result<StatusView> {
+    fn build_status(
+        &self,
+        stuck: &[String],
+        drain_error: Option<String>,
+        status_rev: u64,
+    ) -> io::Result<StatusView> {
         let summary = sync::summary(&self.cfg)?;
         let queue = Queue::existing(&self.state_dir);
         let refusals = match &queue {
@@ -205,9 +220,8 @@ impl Publisher {
                 .map(|r| RefusalView {
                     id: r.item.id.clone(),
                     message: refusal_message(&r),
-                    // Queue items carry no request yet (Task 6); Task 8 fills both.
-                    session: None,
-                    request_id: None,
+                    session: r.item.request.as_ref().map(|q| q.session.clone()),
+                    request_id: r.item.request.as_ref().map(|q| q.request_id.clone()),
                     at: r.at,
                 })
                 .collect(),
@@ -251,6 +265,7 @@ impl Publisher {
                 stuck: stuck.to_vec(),
             },
             refusals,
+            drain_error,
         })
     }
 

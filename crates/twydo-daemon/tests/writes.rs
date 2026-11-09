@@ -550,23 +550,25 @@ fn a_queued_reply_does_not_wait_for_a_reload_blocked_by_the_vdir_lock() {
         let reload_was_blocked = !reload.is_finished();
         drop(vdir_lock);
         reload.join().unwrap();
-        drop(long);
         let r = got.expect("the queued reply waited on the reload").unwrap();
         assert_eq!(r.outcome, WriteOutcome::Queued);
         assert!(reload_was_blocked, "the reload was not blocked");
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        let st: StatusView = c.call("status.get", empty()).unwrap();
-        if st.pending_edits == 1 {
-            break;
+        // Still inside the long job: the end of the job drains the edit.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let st: StatusView = c.call("status.get", empty()).unwrap();
+            if st.pending_edits == 1 {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "status never showed the queued edit: {st:?}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
         }
-        assert!(
-            Instant::now() < deadline,
-            "status never showed the queued edit: {st:?}"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
+        drop(long);
+    });
+    assert_eq!(count_titled(&td, "One queued"), 1);
 }
 
 #[test]

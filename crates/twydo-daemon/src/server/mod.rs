@@ -41,7 +41,14 @@ pub struct DaemonOptions {
     pub crash_after_commit: bool,
     /// Runs before recovery; tests block here to observe the starting state.
     pub before_recovery: Option<Box<dyn FnOnce() + Send>>,
+    /// Runs in every queue drain after its last pass, before publishing; tests block here to
+    /// queue a write while the drain hook still holds the lane.
+    #[doc(hidden)]
+    pub after_drain_passes: Option<TestHook>,
 }
+
+/// A test hook shared with the daemon's threads.
+pub type TestHook = Arc<dyn Fn() + Send + Sync>;
 
 impl DaemonOptions {
     pub fn new(socket: PathBuf) -> DaemonOptions {
@@ -53,6 +60,7 @@ impl DaemonOptions {
             session_ttl: Duration::from_secs(600),
             crash_after_commit: false,
             before_recovery: None,
+            after_drain_passes: None,
         }
     }
 }
@@ -81,17 +89,21 @@ pub struct Shared {
     pub event_buffer: usize,
     pub session_ttl: Duration,
     pub crash_after_commit: bool,
+    pub after_drain_passes: Option<TestHook>,
     /// The per-vdir state directory (journal, queue, locks).
     pub state_dir: PathBuf,
     /// The compatibility matrix the gate checks against.
     pub matrix: Matrix,
-    /// The vdir lane token. Task 8 sets its drain hook (`Lane::set_drain_hook`).
+    /// The vdir lane token; its drain hook is [`writes::drain_queue`].
     pub lane: lane::Lane,
     pub sessions: sessions::Sessions,
     pub requests: replay::RequestLog,
     /// The background status refresher; see [`Shared::request_status_refresh`].
     status_refresh: Mutex<Refresher>,
     status_refresh_cv: Condvar,
+    /// The background drainer; see [`Shared::request_drain`].
+    drainer: Mutex<Drainer>,
+    drainer_cv: Condvar,
     ready: Mutex<bool>,
     ready_cv: Condvar,
     startup_error: Mutex<Option<String>>,
@@ -199,6 +211,7 @@ impl Daemon {
             event_buffer: opts.event_buffer,
             session_ttl: opts.session_ttl,
             crash_after_commit: opts.crash_after_commit,
+            after_drain_passes: opts.after_drain_passes.take(),
             state_dir: state.clone(),
             matrix: opts.matrix.clone(),
             lane: lane::Lane::new(),
@@ -206,6 +219,8 @@ impl Daemon {
             requests: replay::RequestLog::new(),
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
+            drainer: Mutex::new(Drainer::default()),
+            drainer_cv: Condvar::new(),
             ready: Mutex::new(false),
             ready_cv: Condvar::new(),
             startup_error: Mutex::new(None),
@@ -222,6 +237,29 @@ impl Daemon {
         });
         *shared.heartbeat_thread.lock().unwrap() =
             Some(shared.bus.start_heartbeat(shared.heartbeat));
+        {
+            // A weak reference: the hook lives inside `shared` (in its lane). A long guard
+            // borrows the lane, so `shared` outlives every run of the hook.
+            let weak = Arc::downgrade(&shared);
+            shared.lane.set_drain_hook(Box::new(move || {
+                if let Some(shared) = weak.upgrade()
+                    && shared.is_ready()
+                {
+                    writes::drain_queue(&shared);
+                }
+            }));
+            // A write that found the job still draining was queued after the drain's last
+            // pass: drain again once the lane is free (on the drainer thread).
+            let weak = Arc::downgrade(&shared);
+            shared.lane.set_release_hook(Box::new(move || {
+                if let Some(shared) = weak.upgrade()
+                    && shared.is_ready()
+                    && shared.queue_has_items()
+                {
+                    shared.request_drain();
+                }
+            }));
+        }
 
         {
             let for_thread = Arc::clone(&shared);
@@ -303,8 +341,8 @@ fn wake_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
 }
 
 /// The startup sequence behind the already-accepting socket (daemon spec §7.1). Later tasks
-/// add their steps here, in this order: publish the first snapshot (Task 5), drain the queue
-/// (Task 8), start the watcher (Task 9). Ready is set last.
+/// add their steps here, in this order: publish the first snapshot, drain the queue, start
+/// the watcher (Task 9). Ready is set last.
 fn startup(
     shared: &Arc<Shared>,
     matrix: Matrix,
@@ -337,6 +375,19 @@ fn startup(
             shared.publisher.refresh_status();
             Ok(())
         }),
+        Box::new(|shared| {
+            // Items an earlier daemon left queued. No long job runs before ready (the drain
+            // hook skips until then), and the lane is taken so no write could interleave.
+            match shared.lane.write() {
+                Ok(_lane) => writes::drain_queue(shared),
+                // Not a startup failure: the job's end (or the drain after ready) drains.
+                Err(b) => eprintln!(
+                    "tdo daemon: a {:?} job holds the vdir lane at startup; draining later",
+                    b.0
+                ),
+            }
+            Ok(())
+        }),
     ];
     for step in steps {
         if shared.is_stopping() {
@@ -349,6 +400,11 @@ fn startup(
         }
     }
     shared.set_ready();
+    // A long job that ended before ready skipped its drain (and the startup drain may have
+    // found the lane held): catch up now.
+    if shared.queue_has_items() {
+        shared.request_drain();
+    }
 }
 
 fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
@@ -408,6 +464,17 @@ const REFRESHER_WAIT: Duration = Duration::from_secs(1);
 struct Refresher {
     running: bool,
     dirty: bool,
+    /// The next run reloads the vdir (`Cause::Op`) before refreshing the status, publishing
+    /// the queue overlay; `uids` are the hint for its `data.changed`.
+    reload: bool,
+    uids: Vec<String>,
+    handle: Option<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+struct Drainer {
+    running: bool,
+    dirty: bool,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -415,6 +482,9 @@ fn teardown(shared: &Shared) {
     shared.close_connections();
     let _ = fs::remove_file(&shared.socket);
     shared.publisher.close();
+    if !shared.wait_drainer(REFRESHER_WAIT) {
+        eprintln!("tdo daemon: queue drainer still waiting; not joined");
+    }
     if !shared.wait_refresher(REFRESHER_WAIT) {
         eprintln!("tdo daemon: status refresher still waiting for the vdir lock; not joined");
     }
@@ -462,6 +532,12 @@ impl DaemonHandle {
             .wait_timeout_while(g, limit, |r| r.running)
             .unwrap();
         !g.running
+    }
+
+    /// Holds the vdir lane for a long job of `kind` (a sync or a list job in plan 2; tests use
+    /// [`lane::LongKind::Test`]). Writes meanwhile are queued; dropping the guard drains them.
+    pub fn hold_long(&self, kind: lane::LongKind) -> lane::LongGuard<'_> {
+        self.shared.lane.long(kind)
     }
 
     #[doc(hidden)]
@@ -524,11 +600,31 @@ impl Shared {
     /// the publisher's `reload_lock` (a reload may hold it while a sync holds the vdir). Does
     /// nothing once the daemon is stopping; teardown waits for the refresher (bounded).
     pub fn request_status_refresh(self: &Arc<Self>) {
+        self.request_refresh(None);
+    }
+
+    /// Like [`Shared::request_status_refresh`], but the run first reloads the vdir with
+    /// `Cause::Op`, so the queue overlay (a queued row pending, or a cancelled one gone) is
+    /// published without the caller waiting on `reload_lock` or the vdir lock. `uids` name the
+    /// rows for the `data.changed` hint.
+    pub fn request_overlay_publish(self: &Arc<Self>, uids: Vec<String>) {
+        self.request_refresh(Some(uids));
+    }
+
+    fn request_refresh(self: &Arc<Self>, reload: Option<Vec<String>>) {
         let mut g = self.status_refresh.lock().unwrap();
         if self.is_stopping() {
             return;
         }
         g.dirty = true;
+        if let Some(uids) = reload {
+            g.reload = true;
+            for u in uids {
+                if !g.uids.contains(&u) {
+                    g.uids.push(u);
+                }
+            }
+        }
         if g.running {
             return;
         }
@@ -564,7 +660,7 @@ impl Shared {
             armed: true,
         };
         loop {
-            {
+            let reload = {
                 let mut g = self.status_refresh.lock().unwrap();
                 if !g.dirty || self.is_stopping() {
                     g.running = false;
@@ -573,6 +669,12 @@ impl Shared {
                     return;
                 }
                 g.dirty = false;
+                std::mem::take(&mut g.reload).then(|| std::mem::take(&mut g.uids))
+            };
+            if let Some(uids) = reload
+                && let Err(e) = self.publisher.reload(Cause::Op, uids)
+            {
+                eprintln!("tdo daemon: publishing the queue overlay failed: {e}");
             }
             self.publisher.refresh_status();
         }
@@ -583,6 +685,90 @@ impl Shared {
         let g = self.status_refresh.lock().unwrap();
         let (mut g, _) = self
             .status_refresh_cv
+            .wait_timeout_while(g, limit, |r| r.running)
+            .unwrap();
+        if g.running {
+            return false;
+        }
+        let h = g.handle.take();
+        drop(g);
+        if let Some(h) = h {
+            let _ = h.join();
+        }
+        true
+    }
+
+    /// Does the write queue hold items (pending or claimed)? `false` when unreadable.
+    pub fn queue_has_items(&self) -> bool {
+        twydo_core::store::queue::Queue::existing(&self.state_dir)
+            .is_some_and(|q| matches!(q.is_empty(), Ok(false)))
+    }
+
+    /// Drains the write queue on a background thread under a write token: for items queued
+    /// after a long job's drain hook made its last pass (the lane's release hook, or the
+    /// queued reply that finds no long job any more). Requests made while it runs are
+    /// coalesced into one more run; nothing here requests a drain again, so it cannot loop.
+    /// Does nothing once the daemon is stopping; teardown waits for it (bounded).
+    pub fn request_drain(self: &Arc<Self>) {
+        let mut g = self.drainer.lock().unwrap();
+        if self.is_stopping() {
+            return;
+        }
+        g.dirty = true;
+        if g.running {
+            return;
+        }
+        g.running = true;
+        let shared = Arc::clone(self);
+        g.handle = Some(std::thread::spawn(move || shared.run_drainer()));
+    }
+
+    fn run_drainer(self: &Arc<Self>) {
+        /// Clears `running` if a drain panics, so later requests start a new drainer.
+        struct Running<'a> {
+            shared: &'a Shared,
+            armed: bool,
+        }
+        impl Drop for Running<'_> {
+            fn drop(&mut self) {
+                if self.armed {
+                    let mut g = self
+                        .shared
+                        .drainer
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    g.running = false;
+                    self.shared.drainer_cv.notify_all();
+                }
+            }
+        }
+        let mut guard = Running {
+            shared: self,
+            armed: true,
+        };
+        loop {
+            {
+                let mut g = self.drainer.lock().unwrap();
+                if !g.dirty || self.is_stopping() {
+                    g.running = false;
+                    guard.armed = false;
+                    self.drainer_cv.notify_all();
+                    return;
+                }
+                g.dirty = false;
+            }
+            // A long job holding the lane drains when it ends (its hooks); nothing to do.
+            if let Ok(_lane) = self.lane.write() {
+                writes::drain_queue(self);
+            }
+        }
+    }
+
+    /// Waits up to `limit` for the drainer to finish; true if it has (or none ran).
+    fn wait_drainer(&self, limit: Duration) -> bool {
+        let g = self.drainer.lock().unwrap();
+        let (mut g, _) = self
+            .drainer_cv
             .wait_timeout_while(g, limit, |r| r.running)
             .unwrap();
         if g.running {

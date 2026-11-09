@@ -24,15 +24,18 @@ enum Holder {
     Long(LongKind),
 }
 
-/// Runs when a long job releases the lane, before the token is freed (Task 8 drains the queue
-/// here). It must not take a session lock or the lane (see the lock order in `writes.rs`).
+/// Runs when a long job releases the lane, before the token is freed: the daemon drains the
+/// write queue here (`writes::drain_queue`). It must not take the lane; see the lock order in
+/// `writes.rs` for what it may take.
 pub type DrainHook = Box<dyn Fn() + Send + Sync>;
 
 pub struct Lane {
     holder: Mutex<Holder>,
     cv: Condvar,
-    /// Empty in plan 1 task 7; Task 8 sets it with [`Lane::set_drain_hook`].
+    /// Set once by the daemon with [`Lane::set_drain_hook`]; empty in unit tests.
     drain_hook: Mutex<Option<DrainHook>>,
+    /// Runs after a long job has freed the lane; see [`Lane::set_release_hook`].
+    release_hook: Mutex<Option<DrainHook>>,
 }
 
 impl Default for Lane {
@@ -47,7 +50,15 @@ impl Lane {
             holder: Mutex::new(Holder::Free),
             cv: Condvar::new(),
             drain_hook: Mutex::new(None),
+            release_hook: Mutex::new(None),
         }
+    }
+
+    /// Sets what runs right after a long job has freed the lane. The daemon uses it to catch
+    /// writes queued while the drain hook was running (after its last pass): it starts a
+    /// background drain under a write token. It may take the lane only on another thread.
+    pub fn set_release_hook(&self, hook: DrainHook) {
+        *self.release_hook.lock().unwrap() = Some(hook);
     }
 
     /// Sets what runs when a long job ends (before the lane is free again).
@@ -119,6 +130,9 @@ impl Drop for LongGuard<'_> {
             hook();
         }
         self.lane.release();
+        if let Some(hook) = self.lane.release_hook.lock().unwrap().as_ref() {
+            hook();
+        }
     }
 }
 
@@ -138,6 +152,20 @@ mod tests {
         drop(g);
         assert_eq!(lane.current_long(), None);
         assert!(lane.write().is_ok());
+    }
+
+    #[test]
+    fn the_release_hook_runs_once_the_lane_is_free() {
+        let lane = Arc::new(Lane::new());
+        let free = Arc::new(AtomicBool::new(false));
+        {
+            let (l2, free) = (Arc::clone(&lane), Arc::clone(&free));
+            lane.set_release_hook(Box::new(move || {
+                free.store(l2.current_long().is_none(), Ordering::SeqCst)
+            }));
+        }
+        drop(lane.long(LongKind::Test));
+        assert!(free.load(Ordering::SeqCst));
     }
 
     #[test]
