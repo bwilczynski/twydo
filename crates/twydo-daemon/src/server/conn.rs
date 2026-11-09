@@ -76,7 +76,7 @@ fn err_response(id: Value, code: i64, message: &str) -> Response {
     )
 }
 
-pub fn serve(shared: &Arc<Shared>, stream: UnixStream) {
+pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
     let Ok(write_half) = stream.try_clone() else {
         return;
     };
@@ -91,7 +91,7 @@ pub fn serve(shared: &Arc<Shared>, stream: UnixStream) {
         let _ = w.shutdown(Shutdown::Both);
     });
 
-    let state = Arc::new(ConnState::default());
+    let state = Arc::new(ConnState::new(id, tx.clone()));
     let mut reader = BufReader::new(stream);
     loop {
         let line = match read_line(&mut reader) {
@@ -161,6 +161,9 @@ pub fn serve(shared: &Arc<Shared>, stream: UnixStream) {
             std::thread::spawn(run);
         }
     }
+    // The bus and the state hold senders too: release them so the writer can finish.
+    shared.bus.unsubscribe(id);
+    drop(state);
     drop(tx);
     let _ = writer.join();
 }

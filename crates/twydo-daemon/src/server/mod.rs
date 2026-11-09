@@ -1,7 +1,12 @@
 //! The daemon: a private Unix socket, a single-instance lock, lifecycle methods and the
 //! dispatch table that later tasks extend.
 
+pub mod bus;
 pub mod conn;
+pub mod dispatch;
+pub mod publish;
+
+pub use dispatch::{ConnState, dispatch, is_shutdown};
 
 use std::collections::HashMap;
 use std::fs;
@@ -15,17 +20,13 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::store::{Store, bind_vdir_state};
 
-use crate::PROTOCOL;
 use crate::paths::DaemonLock;
-use crate::protocol::methods::{DaemonInfo, HelloParams, HelloResult, Instance, ShutdownParams};
-use crate::protocol::rpc::{ErrorData, ErrorKind, INVALID_PARAMS, METHOD_NOT_FOUND, RpcError};
-use crate::schema;
+use crate::protocol::events::Cause;
+use crate::protocol::methods::Instance;
 
 pub struct DaemonOptions {
     pub socket: PathBuf,
@@ -64,6 +65,8 @@ pub enum StartError {
 /// sessions, replay log).
 pub struct Shared {
     pub cfg: Config,
+    pub bus: Arc<bus::EventBus>,
+    pub publisher: publish::Publisher,
     pub instance: Instance,
     /// The canonical vdir.
     pub vdir: PathBuf,
@@ -89,6 +92,7 @@ pub struct Shared {
     wake_w: OwnedFd,
     /// The startup thread; teardown joins it before the lock is released.
     startup: Mutex<Option<JoinHandle<()>>>,
+    heartbeat_thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Shared {
@@ -164,8 +168,12 @@ impl Daemon {
         let listener = bind_socket(&opts.socket)?;
         listener.set_nonblocking(true)?;
         let (wake_r, wake_w) = wake_pipe()?;
+        let bus = bus::EventBus::new();
+        let publisher = publish::Publisher::new(cfg.clone(), state.clone(), Arc::clone(&bus));
         let shared = Arc::new(Shared {
             cfg,
+            bus,
+            publisher,
             instance,
             vdir,
             epoch: format!("d-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
@@ -187,7 +195,10 @@ impl Daemon {
             lock: Mutex::new(Some(lock)),
             wake_w,
             startup: Mutex::new(None),
+            heartbeat_thread: Mutex::new(None),
         });
+        *shared.heartbeat_thread.lock().unwrap() =
+            Some(shared.bus.start_heartbeat(shared.heartbeat));
 
         {
             let for_thread = Arc::clone(&shared);
@@ -287,10 +298,21 @@ fn startup(
             Ok(())
         }),
         Box::new(move |shared| {
-            // The recovery store is dropped; Task 5 keeps what it needs.
-            Store::open_with(&shared.cfg, matrix)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+            // The recovery store is dropped; only the stuck ids are kept, for the status.
+            let (_store, report) =
+                Store::open_with(&shared.cfg, matrix).map_err(|e| e.to_string())?;
+            shared
+                .publisher
+                .set_stuck(report.stuck.into_iter().map(|(id, _)| id).collect());
+            Ok(())
+        }),
+        Box::new(|shared| {
+            shared
+                .publisher
+                .reload(Cause::Recovery, Vec::new())
+                .map_err(|e| e.to_string())?;
+            shared.publisher.refresh_status();
+            Ok(())
         }),
     ];
     for step in steps {
@@ -346,7 +368,7 @@ fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
         };
         let shared = Arc::clone(&shared);
         std::thread::spawn(move || {
-            conn::serve(&shared, stream);
+            conn::serve(&shared, id, stream);
             shared.unregister(id);
         });
     }
@@ -361,6 +383,10 @@ fn teardown(shared: &Shared) {
     if let Some(h) = shared.startup.lock().unwrap().take() {
         let _ = h.join();
     }
+    shared.bus.stop();
+    if let Some(h) = shared.heartbeat_thread.lock().unwrap().take() {
+        let _ = h.join();
+    }
     shared.lock.lock().unwrap().take();
     *shared.stopped.lock().unwrap() = true;
     shared.stopped_cv.notify_all();
@@ -373,6 +399,25 @@ impl DaemonHandle {
 
     pub fn socket(&self) -> &Path {
         &self.shared.socket
+    }
+
+    /// Reloads the vdir as if the watcher had seen `cause` (until the watcher exists), then
+    /// refreshes the status.
+    #[doc(hidden)]
+    pub fn reload_for_test(&self, cause: Cause) -> io::Result<u64> {
+        self.reload_for_test_with(cause, Vec::new())
+    }
+
+    #[doc(hidden)]
+    pub fn publisher_for_test(&self) -> &publish::Publisher {
+        &self.shared.publisher
+    }
+
+    #[doc(hidden)]
+    pub fn reload_for_test_with(&self, cause: Cause, uids: Vec<String>) -> io::Result<u64> {
+        let rev = self.shared.publisher.reload(cause, uids)?;
+        self.shared.publisher.refresh_status();
+        Ok(rev)
     }
 
     /// Waits until startup has finished; false on timeout.
@@ -415,142 +460,6 @@ impl Drop for DaemonHandle {
     fn drop(&mut self) {
         self.shutdown();
     }
-}
-
-fn invalid_params(e: impl std::fmt::Display) -> RpcError {
-    RpcError {
-        code: INVALID_PARAMS,
-        message: format!("invalid params: {e}"),
-        data: Some(ErrorData::new(ErrorKind::Invalid)),
-    }
-}
-
-fn parse<P: DeserializeOwned>(params: Option<Value>) -> Result<P, RpcError> {
-    serde_json::from_value(params.unwrap_or_else(|| json!({}))).map_err(invalid_params)
-}
-
-fn to_result<R: serde::Serialize>(r: R) -> Result<Value, RpcError> {
-    serde_json::to_value(r).map_err(|e| RpcError::refused(ErrorKind::Internal, e.to_string()))
-}
-
-/// Per-connection state the dispatch needs.
-#[derive(Default)]
-pub struct ConnState {
-    pub session: Mutex<Option<String>>,
-}
-
-/// Is `method` answered without a successful hello?
-fn is_lifecycle(method: &str) -> Option<bool> {
-    schema::METHODS
-        .iter()
-        .find(|m| m.name == method)
-        .map(|m| m.lifecycle)
-}
-
-/// Runs one request. Methods the later tasks implement get an arm in the final `match`.
-pub fn dispatch(
-    shared: &Arc<Shared>,
-    conn: &ConnState,
-    method: &str,
-    params: Option<Value>,
-) -> Result<Value, RpcError> {
-    let Some(lifecycle) = is_lifecycle(method) else {
-        return Err(RpcError {
-            code: METHOD_NOT_FOUND,
-            message: format!("method not found: {method}"),
-            data: None,
-        });
-    };
-    if lifecycle {
-        return match method {
-            "hello" => hello(shared, conn, parse(params)?),
-            "rpc.discover" => Ok(schema::document()),
-            "daemon.info" => to_result(DaemonInfo {
-                version: env!("CARGO_PKG_VERSION").into(),
-                protocol: PROTOCOL,
-                pid: std::process::id(),
-                uptime_secs: shared.started.elapsed().as_secs(),
-                vdir: shared.vdir.clone(),
-                epoch: shared.epoch.clone(),
-            }),
-            "daemon.shutdown" => {
-                // Nothing long runs yet, so `when_idle` changes nothing. The reply is queued
-                // by the caller before stopping: see `conn::serve`.
-                let _: ShutdownParams = parse(params)?;
-                Ok(json!({}))
-            }
-            _ => unreachable!("lifecycle table and dispatch disagree"),
-        };
-    }
-    if conn.session.lock().unwrap().is_none() {
-        return Err(RpcError::refused(ErrorKind::Invalid, "say hello first"));
-    }
-    if shared.is_stopping() {
-        return Err(RpcError::refused(
-            ErrorKind::Unavailable,
-            "the daemon is shutting down",
-        ));
-    }
-    if let Some(e) = shared.startup_error.lock().unwrap().as_ref() {
-        return Err(RpcError::refused(
-            ErrorKind::Internal,
-            format!("the daemon failed to start: {e}"),
-        ));
-    }
-    if !shared.is_ready() {
-        return Err(RpcError::refused(
-            ErrorKind::Unavailable,
-            "the daemon is starting",
-        ));
-    }
-    // Later tasks add a `match method` here: events.*, snapshot.get, status.get, op.*,
-    // refusals.ack.
-    Err(RpcError {
-        code: METHOD_NOT_FOUND,
-        message: format!("method not implemented yet: {method}"),
-        data: None,
-    })
-}
-
-fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value, RpcError> {
-    if p.protocol != PROTOCOL {
-        let mut data = ErrorData::new(ErrorKind::Protocol);
-        data.daemon = Some(env!("CARGO_PKG_VERSION").into());
-        data.protocol = Some(PROTOCOL);
-        return Err(RpcError {
-            code: crate::protocol::rpc::REFUSED,
-            message: format!(
-                "protocol {} is not supported; this daemon speaks protocol {PROTOCOL}",
-                p.protocol
-            ),
-            data: Some(data),
-        });
-    }
-    if p.instance != shared.instance {
-        return Err(RpcError::refused(
-            ErrorKind::WrongInstance,
-            format!(
-                "this daemon serves {}, not the instance you asked for",
-                shared.vdir.display()
-            ),
-        ));
-    }
-    // Task 7 creates or resumes sessions; for now every hello gets a fresh id.
-    let session = format!("s-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
-    *conn.session.lock().unwrap() = Some(session.clone());
-    to_result(HelloResult {
-        daemon: env!("CARGO_PKG_VERSION").into(),
-        protocol: PROTOCOL,
-        epoch: shared.epoch.clone(),
-        session,
-        vdir: shared.vdir.clone(),
-    })
-}
-
-/// True when the request is the shutdown call (the connection layer stops the daemon after
-/// the reply is queued).
-pub fn is_shutdown(method: &str) -> bool {
-    method == "daemon.shutdown"
 }
 
 impl Shared {
