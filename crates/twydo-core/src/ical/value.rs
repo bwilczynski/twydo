@@ -11,7 +11,9 @@ use thiserror::Error;
 use super::{Param, Property};
 
 /// A DATE / DATE-TIME value as written, before any timezone resolution.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub enum IcalDateTime {
     Date(NaiveDate),
     Floating(NaiveDateTime),

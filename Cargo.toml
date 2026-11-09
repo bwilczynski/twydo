@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/twydo-core", "crates/tdo"]
+members = ["crates/twydo-core", "crates/twydo-daemon", "crates/tdo"]
 
 [workspace.package]
 edition = "2024"

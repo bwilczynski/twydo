@@ -14,7 +14,9 @@ use crate::ical::value::IcalDateTime;
 use crate::model::repeat::{self, End, Freq, RRule};
 
 /// A repeat rule plus 2Do's "from completion" flag (which is not part of the RRULE).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
+)]
 pub struct RepeatSpec {
     pub rule: RRule,
     pub from_completion: bool,

@@ -8,6 +8,7 @@ repository.workspace = true
 description.workspace = true
 
 [dependencies]
+schemars = { version = "1", features = ["chrono04"] }
 base64 = "0.22.1"
 sha2 = "0.10.9"
 chrono = { version = "0.4.45", features = ["serde"] }

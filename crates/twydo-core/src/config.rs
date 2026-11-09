@@ -6,7 +6,8 @@ use std::str::FromStr;
 
 use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
-use serde::{Deserialize, Deserializer};
+use schemars::JsonSchema;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -24,7 +25,7 @@ pub enum ConfigError {
     Invalid { path: PathBuf, message: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SortField {
     Due,
@@ -33,7 +34,7 @@ pub enum SortField {
     Title,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct Sort {
     pub field: SortField,
@@ -49,7 +50,7 @@ impl Default for Sort {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct ListPrefs {
     pub archived: bool,
@@ -73,7 +74,7 @@ impl Default for ListPrefs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Group {
     pub name: String,
@@ -83,7 +84,7 @@ pub struct Group {
 
 /// `verified` runs only operations the compatibility matrix passes; `test` also runs
 /// unverified ones and must only be used against the isolated test account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WriteMode {
     #[default]
@@ -91,14 +92,14 @@ pub enum WriteMode {
     Test,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct Writes {
     pub mode: WriteMode,
 }
 
 /// `[sync]` table. Absent means sync is off.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SyncConfig {
     /// vdirsyncer pair name.
@@ -142,17 +143,24 @@ impl Default for SyncConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub vdir: PathBuf,
     #[serde(default, deserialize_with = "de_timezone")]
     pub timezone: Option<String>,
     #[serde(default = "default_week_start", deserialize_with = "de_weekday")]
+    #[schemars(with = "String")]
     pub week_start: Weekday,
     #[serde(default = "default_work_days", deserialize_with = "de_weekdays")]
+    #[schemars(with = "Vec<String>")]
     pub work_days: Vec<Weekday>,
-    #[serde(default = "default_morning", deserialize_with = "de_time")]
+    #[serde(
+        default = "default_morning",
+        deserialize_with = "de_time",
+        serialize_with = "ser_time"
+    )]
+    #[schemars(with = "String")]
     pub morning_time: NaiveTime,
     #[serde(default)]
     pub default_list: Option<String>,
@@ -212,6 +220,11 @@ fn de_time<'de, D: Deserializer<'de>>(d: D) -> Result<NaiveTime, D::Error> {
     let s = String::deserialize(d)?;
     NaiveTime::parse_from_str(s.trim(), "%H:%M")
         .map_err(|_| serde::de::Error::custom(format!("invalid time {s:?} (use HH:MM)")))
+}
+
+/// `HH:MM`, the form [`de_time`] reads.
+fn ser_time<S: Serializer>(t: &NaiveTime, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&t.format("%H:%M").to_string())
 }
 
 fn de_timezone<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
