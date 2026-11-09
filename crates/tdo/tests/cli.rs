@@ -558,6 +558,7 @@ mod sync {
             created: at,
             origin: origin("op"),
             label: label.to_string(),
+            request: None,
             kind: Kind::Op {
                 op: Op::Complete {
                     uid: "uid-a".into(),
@@ -572,6 +573,7 @@ mod sync {
                         stage: Stage::Prepared,
                         inverse_of: None,
                         from_queue: None,
+                        request: None,
                         synced: None,
                         holds: Vec::new(),
                         family: None,

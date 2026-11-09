@@ -52,6 +52,17 @@ pub struct Entry {
     /// The queued item this entry was drained from, so it is applied at most once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_queue: Option<FromQueue>,
+    /// The client request that produced this entry (the daemon's idempotency record).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestRef>,
+}
+
+/// Names the client request behind an entry or queued item: the session and the request id
+/// it chose, so a retried request finds its earlier result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestRef {
+    pub session: String,
+    pub request_id: String,
 }
 
 /// Names the write-queue item an entry came from, and when it was queued.
@@ -247,6 +258,15 @@ impl Journal {
             .list()?
             .into_iter()
             .find(|e| e.from_queue.as_ref().is_some_and(|q| q.id == id)))
+    }
+
+    /// The entry a client request produced, if any.
+    pub fn by_request(&self, request_id: &str) -> io::Result<Option<Entry>> {
+        Ok(self.list()?.into_iter().find(|e| {
+            e.request
+                .as_ref()
+                .is_some_and(|r| r.request_id == request_id)
+        }))
     }
 
     /// Every entry, sorted by id. Fails if any entry does not parse.

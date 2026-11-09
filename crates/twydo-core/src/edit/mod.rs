@@ -17,6 +17,7 @@ use crate::repeatinput::RepeatSpec;
 
 pub mod complete;
 pub mod create;
+pub mod describe;
 pub mod family;
 mod reparent;
 pub mod repeat;

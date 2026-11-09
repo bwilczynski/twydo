@@ -19,6 +19,7 @@ fn entry(id: &str) -> Entry {
         stage: Stage::Prepared,
         inverse_of: None,
         from_queue: None,
+        request: None,
         synced: None,
         holds: Vec::new(),
         family: None,
@@ -38,6 +39,7 @@ fn item(op: Op, now: DateTime<Utc>) -> Item {
         created: now,
         origin: origin("op"),
         label: "a task".to_string(),
+        request: None,
         kind: Kind::Op {
             op,
             prepared: Prepared {

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::edit::Op;
-use twydo_core::model::Status;
+pub use twydo_core::edit::describe::op_title;
 use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::store::{DrainOutcome, Store, Submitted, WriteError, existing_vdir_state};
 use twydo_core::sync::batch::{Trigger, after_write};
@@ -222,7 +222,11 @@ impl Writer {
             Request::Apply(op) => {
                 self.done.push(Titled::new(op_title(snap, op), queued_id));
                 self.undone.clear();
-                format!("{}{}", success(snap, op), queued_note(&submitted))
+                format!(
+                    "{}{}",
+                    twydo_core::edit::describe::success_message(snap, op),
+                    queued_note(&submitted)
+                )
             }
             Request::Undo => format!(
                 "{}{}",
@@ -273,23 +277,6 @@ fn step(
     }
 }
 
-/// The title of the task an operation writes, as it is before the write.
-pub fn op_title(snap: &Snapshot, op: &Op) -> String {
-    let uid = match op {
-        Op::Create(t) | Op::CreateAt { task: t, .. } => return t.summary.trim().to_string(),
-        Op::Edit { uid, .. }
-        | Op::Save { uid, .. }
-        | Op::Complete { uid }
-        | Op::Reopen { uid }
-        | Op::Reparent { uid, .. }
-        | Op::Move { uid, .. }
-        | Op::Delete { uid }
-        | Op::Reorder { uid, .. } => uid,
-    };
-    snap.find(uid)
-        .map_or_else(|| uid.clone(), |i| snap.tasks[i].summary.clone())
-}
-
 /// The message for a refused write. A stale file is named by its task's title: the path
 /// means nothing in the TUI.
 fn failure(snap: &Snapshot, e: WriteError) -> String {
@@ -299,60 +286,4 @@ fn failure(snap: &Snapshot, e: WriteError) -> String {
         return format!("\"{}\" changed on disk; reload and try again", t.summary);
     }
     e.to_string()
-}
-
-/// How many children an operation writes with the task, from the snapshot before the write.
-fn family_size(snap: &Snapshot, op: &Op) -> usize {
-    let (Op::Complete { uid } | Op::Reopen { uid } | Op::Move { uid, .. } | Op::Delete { uid }) =
-        op
-    else {
-        return 0;
-    };
-    let Some(idx) = snap.find(uid) else { return 0 };
-    let kids = snap.children(idx);
-    match op {
-        Op::Complete { .. } if snap.tasks[idx].rrule.is_some() => kids.len(),
-        Op::Complete { .. } => snap.open_items(idx),
-        Op::Reopen { .. } => kids
-            .iter()
-            .filter(|&&c| snap.tasks[c].status == Status::Completed)
-            .count(),
-        _ => kids.len(),
-    }
-}
-
-fn success(snap: &Snapshot, op: &Op) -> String {
-    let n = family_size(snap, op);
-    let title = op_title(snap, op);
-    let items = if n == 1 { "item" } else { "items" };
-    let with = |verb: &str| {
-        if n > 0 {
-            format!("{verb}: \"{title}\" and {n} {items}")
-        } else {
-            verb.to_string()
-        }
-    };
-    match op {
-        Op::Complete { .. } => with("done"),
-        Op::Reopen { .. } => with("reopened"),
-        Op::Delete { .. } if n > 0 => format!("deleted \"{title}\" and {n} {items} · u to undo"),
-        Op::Delete { .. } => "deleted · u to undo".into(),
-        Op::Edit { .. } | Op::Save { .. } => "saved".into(),
-        Op::Create(_) | Op::CreateAt { .. } => "added".into(),
-        Op::Reorder { .. } => "reordered · u to undo".into(),
-        Op::Reparent { .. } => "relocated · u to undo".into(),
-        Op::Move { to, .. } => {
-            let name = snap
-                .collections
-                .iter()
-                .find(|c| &c.id == to)
-                .and_then(|c| c.display_name.clone())
-                .unwrap_or_else(|| to.clone());
-            if n > 0 {
-                format!("moved \"{title}\" and {n} {items} to {name}")
-            } else {
-                format!("moved to {name}")
-            }
-        }
-    }
 }

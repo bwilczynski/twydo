@@ -609,6 +609,7 @@ fn stuck_journal_blocks_writes() {
         stage: Stage::Prepared,
         inverse_of: None,
         from_queue: None,
+        request: None,
         synced: None,
         holds: Vec::new(),
         family: None,
