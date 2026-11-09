@@ -110,8 +110,13 @@ pub fn dispatch(
             "the daemon is starting",
         ));
     }
-    // Later tasks add arms here: op.*, refusals.ack.
+    // Later tasks add arms here: refusals.ack.
     match method {
+        "op.submit" => super::writes::submit(shared, parse(params)?),
+        "op.undo" => super::writes::undo(shared, parse(params)?, false),
+        "op.redo" => super::writes::undo(shared, parse(params)?, true),
+        "op.get" => super::writes::get(shared, parse(params)?),
+        "op.check" => super::writes::check(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {
             shared.bus.unsubscribe(conn.id);
@@ -156,9 +161,14 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
             ),
         ));
     }
-    // Task 7 creates or resumes sessions; for now every hello gets a fresh id.
-    let session = format!("s-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
-    *conn.session.lock().unwrap() = Some(session.clone());
+    // Opens (or resumes) the session attached to this connection; a second hello on the same
+    // connection lets go of the first.
+    let session = shared.sessions.open(p.session.as_deref()).map_err(|e| {
+        RpcError::refused(ErrorKind::Internal, format!("cannot open a session: {e}"))
+    })?;
+    if let Some(old) = conn.session.lock().unwrap().replace(session.clone()) {
+        shared.sessions.detach(&old);
+    }
     to_result(HelloResult {
         daemon: env!("CARGO_PKG_VERSION").into(),
         protocol: PROTOCOL,

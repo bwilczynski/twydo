@@ -4,7 +4,11 @@
 pub mod bus;
 pub mod conn;
 pub mod dispatch;
+pub mod lane;
 pub mod publish;
+pub mod replay;
+pub mod sessions;
+pub mod writes;
 
 pub use dispatch::{ConnState, dispatch, is_shutdown};
 
@@ -77,6 +81,17 @@ pub struct Shared {
     pub event_buffer: usize,
     pub session_ttl: Duration,
     pub crash_after_commit: bool,
+    /// The per-vdir state directory (journal, queue, locks).
+    pub state_dir: PathBuf,
+    /// The compatibility matrix the gate checks against.
+    pub matrix: Matrix,
+    /// The vdir lane token. Task 8 sets its drain hook (`Lane::set_drain_hook`).
+    pub lane: lane::Lane,
+    pub sessions: sessions::Sessions,
+    pub requests: replay::RequestLog,
+    /// The background status refresher; see [`Shared::request_status_refresh`].
+    status_refresh: Mutex<Refresher>,
+    status_refresh_cv: Condvar,
     ready: Mutex<bool>,
     ready_cv: Condvar,
     startup_error: Mutex<Option<String>>,
@@ -170,6 +185,7 @@ impl Daemon {
         let (wake_r, wake_w) = wake_pipe()?;
         let bus = bus::EventBus::new();
         let publisher = publish::Publisher::new(cfg.clone(), state.clone(), Arc::clone(&bus));
+        let sessions = sessions::Sessions::new(cfg.clone(), opts.matrix.clone(), opts.session_ttl);
         let shared = Arc::new(Shared {
             cfg,
             bus,
@@ -183,6 +199,13 @@ impl Daemon {
             event_buffer: opts.event_buffer,
             session_ttl: opts.session_ttl,
             crash_after_commit: opts.crash_after_commit,
+            state_dir: state.clone(),
+            matrix: opts.matrix.clone(),
+            lane: lane::Lane::new(),
+            sessions,
+            requests: replay::RequestLog::new(),
+            status_refresh: Mutex::new(Refresher::default()),
+            status_refresh_cv: Condvar::new(),
             ready: Mutex::new(false),
             ready_cv: Condvar::new(),
             startup_error: Mutex::new(None),
@@ -376,9 +399,25 @@ fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
     teardown(&shared);
 }
 
+/// How long teardown waits for the status refresher. A refresher stuck behind a reload that
+/// waits for an outside vdir-lock holder is not joined: the publisher is closed first, so when
+/// it gets `reload_lock` it returns without publishing, and the thread then ends on its own.
+const REFRESHER_WAIT: Duration = Duration::from_secs(1);
+
+#[derive(Default)]
+struct Refresher {
+    running: bool,
+    dirty: bool,
+    handle: Option<JoinHandle<()>>,
+}
+
 fn teardown(shared: &Shared) {
     shared.close_connections();
     let _ = fs::remove_file(&shared.socket);
+    shared.publisher.close();
+    if !shared.wait_refresher(REFRESHER_WAIT) {
+        eprintln!("tdo daemon: status refresher still waiting for the vdir lock; not joined");
+    }
     // Startup may still be writing (recovery): the lock stays held until it has finished.
     if let Some(h) = shared.startup.lock().unwrap().take() {
         let _ = h.join();
@@ -411,6 +450,23 @@ impl DaemonHandle {
     #[doc(hidden)]
     pub fn publisher_for_test(&self) -> &publish::Publisher {
         &self.shared.publisher
+    }
+
+    /// Waits up to `limit` until no status refresh is running; true if none is.
+    #[doc(hidden)]
+    pub fn refresher_idle_for_test(&self, limit: Duration) -> bool {
+        let g = self.shared.status_refresh.lock().unwrap();
+        let (g, _) = self
+            .shared
+            .status_refresh_cv
+            .wait_timeout_while(g, limit, |r| r.running)
+            .unwrap();
+        !g.running
+    }
+
+    #[doc(hidden)]
+    pub fn lane_for_test(&self) -> &lane::Lane {
+        &self.shared.lane
     }
 
     #[doc(hidden)]
@@ -463,6 +519,83 @@ impl Drop for DaemonHandle {
 }
 
 impl Shared {
+    /// Refreshes the status on a background thread, without waiting: requests made while a
+    /// refresh is running are coalesced into one more run. For replies that must not wait on
+    /// the publisher's `reload_lock` (a reload may hold it while a sync holds the vdir). Does
+    /// nothing once the daemon is stopping; teardown waits for the refresher (bounded).
+    pub fn request_status_refresh(self: &Arc<Self>) {
+        let mut g = self.status_refresh.lock().unwrap();
+        if self.is_stopping() {
+            return;
+        }
+        g.dirty = true;
+        if g.running {
+            return;
+        }
+        g.running = true;
+        let shared = Arc::clone(self);
+        // A previous refresher has cleared `running`, so it is finished or about to return:
+        // its handle is dropped without a join.
+        g.handle = Some(std::thread::spawn(move || shared.run_refresher()));
+    }
+
+    fn run_refresher(&self) {
+        /// Clears `running` if `refresh_status` panics, so later requests start a new
+        /// refresher instead of being dropped forever.
+        struct Running<'a> {
+            shared: &'a Shared,
+            armed: bool,
+        }
+        impl Drop for Running<'_> {
+            fn drop(&mut self) {
+                if self.armed {
+                    let mut g = self
+                        .shared
+                        .status_refresh
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    g.running = false;
+                    self.shared.status_refresh_cv.notify_all();
+                }
+            }
+        }
+        let mut guard = Running {
+            shared: self,
+            armed: true,
+        };
+        loop {
+            {
+                let mut g = self.status_refresh.lock().unwrap();
+                if !g.dirty || self.is_stopping() {
+                    g.running = false;
+                    guard.armed = false;
+                    self.status_refresh_cv.notify_all();
+                    return;
+                }
+                g.dirty = false;
+            }
+            self.publisher.refresh_status();
+        }
+    }
+
+    /// Waits up to `limit` for the refresher to finish; true if it has (or none ran).
+    fn wait_refresher(&self, limit: Duration) -> bool {
+        let g = self.status_refresh.lock().unwrap();
+        let (mut g, _) = self
+            .status_refresh_cv
+            .wait_timeout_while(g, limit, |r| r.running)
+            .unwrap();
+        if g.running {
+            return false;
+        }
+        let h = g.handle.take();
+        drop(g);
+        if let Some(h) = h {
+            let _ = h.join();
+        }
+        true
+    }
+
     /// Called by the connection layer after the `daemon.shutdown` reply is queued.
     pub fn stop_after_reply(&self) {
         self.request_stop();

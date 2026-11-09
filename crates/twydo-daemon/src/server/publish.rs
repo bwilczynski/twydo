@@ -5,6 +5,7 @@
 use std::collections::VecDeque;
 use std::io;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
@@ -49,6 +50,9 @@ pub struct Publisher {
     /// in order, without holding `state`: readers never wait behind them.
     reload_lock: Mutex<()>,
     state: Mutex<State>,
+    /// Set at teardown: reloads and status refreshes that get `reload_lock` afterwards do
+    /// nothing (a caller blocked behind a vdir-lock wait may get it after the daemon stopped).
+    closed: AtomicBool,
 }
 
 impl Publisher {
@@ -65,6 +69,7 @@ impl Publisher {
             state_dir,
             bus,
             reload_lock: Mutex::new(()),
+            closed: AtomicBool::new(false),
             state: Mutex::new(State {
                 ring: VecDeque::from([first]),
                 published_once: false,
@@ -72,6 +77,15 @@ impl Publisher {
                 stuck: Vec::new(),
             }),
         }
+    }
+
+    /// Stops publishing: later reloads and status refreshes return the current marks.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
     }
 
     /// Ids of the journal entries recovery left stuck.
@@ -100,6 +114,9 @@ impl Publisher {
     /// differs from the current one. Returns the current revision either way.
     pub fn reload(&self, cause: Cause, uids: Vec<String>) -> io::Result<u64> {
         let _order = self.reload_lock.lock().unwrap();
+        if self.is_closed() {
+            return Ok(self.current().0);
+        }
         // Everything slow happens here, holding only `reload_lock`: the shared vdir lock (a
         // sync may hold it for minutes), the load, the queue overlay and the wire form.
         let snap = {
@@ -110,6 +127,10 @@ impl Publisher {
         let mut wire = to_wire(&snap, 0);
         let mut s = self.state.lock().unwrap();
         let cur = s.ring.back().expect("ring is never empty");
+        // The vdir-lock wait above may have outlasted the daemon.
+        if self.is_closed() {
+            return Ok(cur.revision);
+        }
         wire.revision = cur.revision;
         if s.published_once && wire == cur.wire {
             return Ok(cur.revision);
@@ -137,6 +158,15 @@ impl Publisher {
     /// content changed. Returns the current `status_rev`.
     pub fn refresh_status(&self) -> u64 {
         let _order = self.reload_lock.lock().unwrap();
+        if self.is_closed() {
+            return self
+                .state
+                .lock()
+                .unwrap()
+                .status
+                .as_ref()
+                .map_or(0, |v| v.status_rev);
+        }
         let (stuck, old_rev) = {
             let s = self.state.lock().unwrap();
             (
@@ -152,6 +182,9 @@ impl Publisher {
             }
         };
         let mut s = self.state.lock().unwrap();
+        if self.is_closed() {
+            return old_rev;
+        }
         if s.status.as_ref() == Some(&next) {
             return old_rev;
         }
