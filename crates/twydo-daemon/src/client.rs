@@ -45,8 +45,12 @@ struct Inner {
     pending: Mutex<Option<HashMap<u64, Waiter>>>,
     next_id: AtomicU64,
     counter: AtomicU64,
-    /// The session id after hello, else a random prefix.
+    /// The session id and a per-connection nonce after hello, else a random prefix. The
+    /// nonce keeps request ids unique when a later connection resumes the same session (its
+    /// counter starts again at 1).
     prefix: Mutex<String>,
+    /// What the daemon answered to hello, once it has.
+    hello: Mutex<Option<HelloResult>>,
     stream: UnixStream,
 }
 
@@ -69,7 +73,12 @@ impl Client {
     ) -> Result<(Client, HelloResult), ClientError> {
         let c = Client::connect_raw(socket)?;
         let r: HelloResult = c.call("hello", hello)?;
-        *c.caller.inner.prefix.lock().unwrap() = r.session.clone();
+        *c.caller.inner.prefix.lock().unwrap() = format!(
+            "{}-{}",
+            r.session,
+            &uuid::Uuid::new_v4().simple().to_string()[..6]
+        );
+        *c.caller.inner.hello.lock().unwrap() = Some(r.clone());
         Ok((c, r))
     }
 
@@ -86,6 +95,7 @@ impl Client {
                 "r-{}",
                 &uuid::Uuid::new_v4().simple().to_string()[..8]
             )),
+            hello: Mutex::new(None),
             stream,
         });
         let (tx, rx) = mpsc::channel();
@@ -120,6 +130,16 @@ impl Client {
     pub fn next_request_id(&self) -> String {
         self.caller.next_request_id()
     }
+
+    /// The session hello opened or resumed; `None` before hello.
+    pub fn session(&self) -> Option<String> {
+        self.caller.session()
+    }
+
+    /// The daemon's epoch from hello; `None` before hello.
+    pub fn epoch(&self) -> Option<String> {
+        self.caller.epoch()
+    }
 }
 
 impl Caller {
@@ -152,6 +172,24 @@ impl Caller {
             Ok(Err(e)) => Err(ClientError::Rpc(e)),
             Err(_) => Err(ClientError::Closed),
         }
+    }
+
+    pub fn session(&self) -> Option<String> {
+        self.inner
+            .hello
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|h| h.session.clone())
+    }
+
+    pub fn epoch(&self) -> Option<String> {
+        self.inner
+            .hello
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|h| h.epoch.clone())
     }
 
     pub fn next_request_id(&self) -> String {

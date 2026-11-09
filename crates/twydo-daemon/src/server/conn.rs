@@ -161,6 +161,10 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
             std::thread::spawn(run);
         }
     }
+    // The session outlives the connection for its ttl.
+    if let Some(session) = state.session.lock().unwrap().take() {
+        shared.sessions.detach(&session);
+    }
     // The bus and the state hold senders too: release them so the writer can finish.
     shared.bus.unsubscribe(id);
     drop(state);
