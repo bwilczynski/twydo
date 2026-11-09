@@ -4,7 +4,7 @@
 pub mod batch;
 pub mod ended;
 pub mod hook;
-mod lock;
+pub mod lock;
 pub mod manifest;
 pub mod output;
 pub mod reconcile;

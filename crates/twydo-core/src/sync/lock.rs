@@ -7,12 +7,12 @@ use std::path::Path;
 /// An exclusive lock on a file, released on drop. It unlocks explicitly rather than relying
 /// on close: a child forked by another thread holds a copy of the descriptor until it execs,
 /// and would keep the lock alive.
-pub(crate) struct LockFile(File);
+pub struct LockFile(File);
 
 impl LockFile {
     /// Blocks for the lock on `path` (created if missing), or with `try_only` returns `None`
     /// when another process holds it.
-    pub(crate) fn take(path: &Path, try_only: bool) -> io::Result<Option<LockFile>> {
+    pub fn take(path: &Path, try_only: bool) -> io::Result<Option<LockFile>> {
         let f = OpenOptions::new()
             .read(true)
             .write(true)

@@ -1963,6 +1963,7 @@ name = "twydo-daemon"
 version = "0.1.8"
 dependencies = [
  "chrono",
+ "libc",
  "schemars",
  "serde",
  "serde_json",
