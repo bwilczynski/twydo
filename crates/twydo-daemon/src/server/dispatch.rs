@@ -110,8 +110,8 @@ pub fn dispatch(
             "the daemon is starting",
         ));
     }
-    // Later tasks add arms here: refusals.ack.
     match method {
+        "refusals.ack" => super::writes::ack(shared, parse(params)?),
         "op.submit" => super::writes::submit(shared, parse(params)?),
         "op.undo" => super::writes::undo(shared, parse(params)?, false),
         "op.redo" => super::writes::undo(shared, parse(params)?, true),
