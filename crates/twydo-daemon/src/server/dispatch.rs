@@ -73,7 +73,7 @@ pub fn dispatch(
             "hello" => hello(shared, conn, parse(params)?),
             "rpc.discover" => Ok(schema::document()),
             "daemon.info" => to_result(DaemonInfo {
-                version: env!("CARGO_PKG_VERSION").into(),
+                version: shared.version.clone(),
                 protocol: PROTOCOL,
                 pid: std::process::id(),
                 uptime_secs: shared.started.elapsed().as_secs(),
@@ -167,9 +167,20 @@ pub fn dispatch(
 }
 
 fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value, RpcError> {
+    // The instance is checked first: a `protocol` refusal therefore means the client asked
+    // for this very daemon, which is what lets a newer client replace it (spec §10.3).
+    if p.instance != shared.instance {
+        return Err(RpcError::refused(
+            ErrorKind::WrongInstance,
+            format!(
+                "this daemon serves {}, not the instance you asked for",
+                shared.vdir.display()
+            ),
+        ));
+    }
     if p.protocol != PROTOCOL {
         let mut data = ErrorData::new(ErrorKind::Protocol);
-        data.daemon = Some(env!("CARGO_PKG_VERSION").into());
+        data.daemon = Some(shared.version.clone());
         data.protocol = Some(PROTOCOL);
         return Err(RpcError {
             code: crate::protocol::rpc::REFUSED,
@@ -180,15 +191,6 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
             data: Some(data),
         });
     }
-    if p.instance != shared.instance {
-        return Err(RpcError::refused(
-            ErrorKind::WrongInstance,
-            format!(
-                "this daemon serves {}, not the instance you asked for",
-                shared.vdir.display()
-            ),
-        ));
-    }
     // Opens (or resumes) the session attached to this connection; a second hello on the same
     // connection lets go of the first.
     let session = shared.sessions.open(p.session.as_deref()).map_err(|e| {
@@ -198,7 +200,7 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
         shared.sessions.detach(&old);
     }
     to_result(HelloResult {
-        daemon: env!("CARGO_PKG_VERSION").into(),
+        daemon: shared.version.clone(),
         protocol: PROTOCOL,
         epoch: shared.epoch.clone(),
         session,

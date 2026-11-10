@@ -66,6 +66,23 @@ fn a_client_for_another_instance_gets_wrong_instance() {
 }
 
 #[test]
+fn hello_for_another_instance_and_protocol_is_wrong_instance() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let other = tempfile::tempdir().unwrap();
+    let p = HelloParams {
+        protocol: 2,
+        instance: Instance {
+            config: other.path().join("config.toml"),
+            vdir: Some(other.path().to_path_buf()),
+        },
+        ..td.hello_params()
+    };
+    let err = td.raw().call::<_, HelloResult>("hello", p).unwrap_err();
+    assert_eq!(kind(&err), ErrorKind::WrongInstance);
+}
+
+#[test]
 fn a_refused_instance_leaves_the_daemon_running() {
     let fx = fx();
     let td = TestDaemon::start(&fx);
@@ -154,20 +171,6 @@ fn a_second_daemon_on_the_same_vdir_does_not_start() {
         Daemon::start(fx.config(), fx.instance(), opts),
         Err(StartError::AlreadyRunning)
     ));
-}
-
-#[test]
-fn a_live_daemon_on_the_socket_blocks_another_vdir() {
-    let a = fx();
-    let td = TestDaemon::start(&a);
-    let b = fx();
-    let opts = DaemonOptions::new(td.socket().to_path_buf());
-    assert!(matches!(
-        Daemon::start(b.config(), b.instance(), opts),
-        Err(StartError::AlreadyRunning)
-    ));
-    // and the first one still answers
-    assert!(td.client().call::<_, Value>("daemon.info", empty()).is_ok());
 }
 
 #[test]
@@ -783,4 +786,48 @@ mod during_a_job {
             other => panic!("expected forgot with a stopped sync: {other:?}"),
         }
     }
+}
+
+#[test]
+fn call_timeout_reports_timed_out() {
+    use twydo_daemon::client::ClientError;
+    let fx = fx();
+    let td = TestDaemon::start_with(&fx, |o| {
+        o.test_point = Some(std::sync::Arc::new(|p: &str| {
+            if p == "request:status.get" {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }));
+    });
+    let (c, _) = Client::connect(td.socket(), td.hello_params()).unwrap();
+    let err = c
+        .caller()
+        .call_timeout::<_, Value>("status.get", json!({}), Duration::from_millis(200))
+        .unwrap_err();
+    assert!(matches!(err, ClientError::TimedOut(_)), "{err:?}");
+    assert_eq!(err.to_string(), "the daemon did not answer within 0.2 s");
+    // The connection is still good, and a later call within its limit is answered.
+    let info: Value = c
+        .caller()
+        .call_timeout("daemon.info", json!({}), Duration::from_secs(5))
+        .unwrap();
+    assert!(info["pid"].is_u64());
+}
+
+#[test]
+fn a_live_daemon_on_the_socket_blocks_another_vdir() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let other = Fixture::new(&[("inbox", "b", "Beta", None)]);
+    let mut opts = DaemonOptions::new(td.socket().to_path_buf());
+    opts.schedule = false;
+    let r = Daemon::start(other.config(), other.instance(), opts);
+    let Err(StartError::Io(e)) = r else {
+        panic!("expected a refusal naming the other vdir");
+    };
+    let text = e.to_string();
+    assert!(text.contains("is served by a daemon for"), "{text}");
+    assert!(text.contains("use another --socket"), "{text}");
+    // Still answering.
+    assert!(Client::connect(td.socket(), td.hello_params()).is_ok());
 }

@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod cli;
+pub mod client;
 pub mod editor;
 pub mod form;
 pub mod listform;
