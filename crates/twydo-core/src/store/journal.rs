@@ -160,9 +160,67 @@ impl Journal {
         write_atomic(&self.path(&e.id)?, &bytes)
     }
 
-    /// Records `e` durably. Call before touching the vdir.
+    /// Records `e` durably. Call before touching the vdir. An entry for a client request is
+    /// also indexed by it (`by-request/`, see [`Journal::by_request`]), before the entry
+    /// itself: a crash in between leaves an index naming no entry, which reads as a miss. If
+    /// the index cannot be written the call fails and nothing is stored: an indexed journal
+    /// does not scan on a miss, so an unindexed entry would let a resend apply twice. (A
+    /// journal whose index cannot be built at all is scanned instead, and needs no index.)
     pub fn prepare(&self, e: &Entry) -> io::Result<()> {
+        if let Some(r) = &e.request
+            && self.ensure_indexed()
+        {
+            self.index_request(&r.request_id, &e.id)?;
+        }
         self.store(e)
+    }
+
+    fn index_dir(&self) -> PathBuf {
+        self.dir.join("by-request")
+    }
+
+    /// Is the request index complete (built from every entry that existed, and kept since)?
+    fn indexed(&self) -> bool {
+        self.index_dir().join(".complete").is_file()
+    }
+
+    /// Builds the request index once for a journal that has none (one from before it): a
+    /// scan of the entries that parse, then a marker. Returns whether the index is usable.
+    fn ensure_indexed(&self) -> bool {
+        if self.indexed() {
+            return true;
+        }
+        let build = || -> io::Result<()> {
+            for (_, parsed) in self.list_raw()? {
+                if let Ok(e) = parsed
+                    && let Some(r) = &e.request
+                {
+                    self.index_request(&r.request_id, &e.id)?;
+                }
+            }
+            self.index_request_marker()
+        };
+        build().is_ok()
+    }
+
+    fn index_request_marker(&self) -> io::Result<()> {
+        let dir = self.index_dir();
+        fs::create_dir_all(&dir)?;
+        sync_dir(&self.dir)?;
+        write_atomic(&dir.join(".complete"), b"")
+    }
+
+    fn request_index_path(&self, request_id: &str) -> PathBuf {
+        use sha2::{Digest, Sha256};
+        let digest = Sha256::digest(request_id.as_bytes());
+        let name: String = digest[..8].iter().map(|b| format!("{b:02x}")).collect();
+        self.index_dir().join(name)
+    }
+
+    fn index_request(&self, request_id: &str, entry_id: &str) -> io::Result<()> {
+        let path = self.request_index_path(request_id);
+        fs::create_dir_all(self.index_dir())?;
+        write_atomic(&path, entry_id.as_bytes())
     }
 
     /// Retire source-list intent without claiming it synced. The full originals live in
@@ -235,6 +293,13 @@ impl Journal {
                 && e.synced.is_some_and(|t| t < before)
             {
                 remove_durable(&self.path(&e.id)?)?;
+                if let Some(r) = &e.request {
+                    // Only the index naming this entry: a later entry may own the id's slot.
+                    let index = self.request_index_path(&r.request_id);
+                    if fs::read(&index).is_ok_and(|b| b == e.id.as_bytes()) {
+                        remove_durable(&index)?;
+                    }
+                }
                 gone.push(e.id);
             }
         }
@@ -260,8 +325,23 @@ impl Journal {
             .find(|e| e.from_queue.as_ref().is_some_and(|q| q.id == id)))
     }
 
-    /// The entry a client request produced, if any.
+    /// The entry a client request produced, if any. Served from the index `prepare` writes
+    /// (`by-request/<sha256(request id)[..16 hex]>`, holding the entry id). A journal with no
+    /// index yet (from before it) is indexed by one scan, the first time it is asked; after
+    /// that a miss is a miss, without a scan. If the index cannot be built (a read-only state
+    /// directory) every lookup scans.
     pub fn by_request(&self, request_id: &str) -> io::Result<Option<Entry>> {
+        if self.ensure_indexed() {
+            if let Ok(id) = fs::read_to_string(self.request_index_path(request_id))
+                && let Ok(Some(e)) = self.get(id.trim())
+                && e.request
+                    .as_ref()
+                    .is_some_and(|r| r.request_id == request_id)
+            {
+                return Ok(Some(e));
+            }
+            return Ok(None);
+        }
         Ok(self.list()?.into_iter().find(|e| {
             e.request
                 .as_ref()

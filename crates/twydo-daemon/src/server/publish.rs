@@ -128,6 +128,11 @@ impl Publisher {
         self.state.lock().unwrap().stuck = ids;
     }
 
+    /// Did recovery leave journal entry `id` stuck?
+    pub fn is_stuck(&self, id: &str) -> bool {
+        self.state.lock().unwrap().stuck.iter().any(|s| s == id)
+    }
+
     /// Takes `id` off the stuck list (the entry was abandoned). Takes effect at the next
     /// [`Publisher::refresh_status`].
     pub fn unstick(&self, id: &str) {
