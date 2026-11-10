@@ -38,6 +38,9 @@ pub struct Snapshot {
 struct State {
     ring: VecDeque<Arc<Snapshot>>,
     published_once: bool,
+    /// What the last [`Publisher::reload`] read from the vdir; [`Publisher::overlay`] lays the
+    /// queue over it without reading the vdir again.
+    last_report: Option<LoadReport>,
     status: Option<StatusView>,
     stuck: Vec<String>,
     /// Why the last queue drain stopped with items left; see [`StatusView::drain_error`].
@@ -48,8 +51,9 @@ pub struct Publisher {
     cfg: Config,
     state_dir: PathBuf,
     bus: Arc<EventBus>,
-    /// Serialises reloads and status refreshes (slow I/O, the vdir lock wait) so they publish
-    /// in order, without holding `state`: readers never wait behind them.
+    /// Serialises reloads, overlays and status refreshes (slow I/O) so they publish in order,
+    /// without holding `state`: readers never wait behind them. Never held while waiting for
+    /// the vdir lock: [`Publisher::reload`] takes that first.
     reload_lock: Mutex<()>,
     state: Mutex<State>,
     /// Unreadable queue items already logged, so each is logged once.
@@ -78,6 +82,7 @@ impl Publisher {
             state: Mutex::new(State {
                 ring: VecDeque::from([first]),
                 published_once: false,
+                last_report: None,
                 status: None,
                 stuck: Vec::new(),
                 drain_error: None,
@@ -124,25 +129,57 @@ impl Publisher {
 
     /// Loads the vdir; publishes a new revision (and `data.changed`) only when something
     /// differs from the current one. Returns the current revision either way.
+    ///
+    /// Lock order: the shared vdir lock first (a sync may hold it exclusively for minutes),
+    /// `reload_lock` second. Nothing waits for the vdir lock while holding `reload_lock`, so
+    /// a reload stuck behind a sync never blocks [`Publisher::overlay`] or a status refresh.
     pub fn reload(&self, cause: Cause, uids: Vec<String>) -> io::Result<u64> {
+        let _lock = VdirLock::reader(&self.state_dir)?;
+        let _order = self.reload_lock.lock().unwrap();
+        // The vdir-lock wait above may have outlasted the daemon.
+        if self.is_closed() {
+            return Ok(self.current().0);
+        }
+        let report = vdir::load(&self.cfg.vdir)?;
+        let snap = view(report.clone(), self.cfg.clone());
+        self.publish(snap, Some(report), cause, uids)
+    }
+
+    /// Like [`Publisher::reload`] but without reading the vdir or taking its lock: lays the
+    /// current queue over the report the last reload loaded, so a queued edit shows as pending
+    /// while a long job holds the vdir. Before the first reload there is no report and this
+    /// does nothing (returns the current revision).
+    pub fn overlay(&self, cause: Cause, uids: Vec<String>) -> io::Result<u64> {
         let _order = self.reload_lock.lock().unwrap();
         if self.is_closed() {
             return Ok(self.current().0);
         }
-        // Everything slow happens here, holding only `reload_lock`: the shared vdir lock (a
-        // sync may hold it for minutes), the load, the queue overlay and the wire form.
-        let snap = {
-            let _lock = VdirLock::reader(&self.state_dir)?;
-            let report = vdir::load(&self.cfg.vdir)?;
-            view(report, self.cfg.clone())
+        let Some(report) = self.state.lock().unwrap().last_report.clone() else {
+            return Ok(self.current().0);
         };
+        let snap = view(report, self.cfg.clone());
+        self.publish(snap, None, cause, uids)
+    }
+
+    /// Publishes `snap` as a new revision when its wire form differs from the current one;
+    /// `report`, when given, becomes the report `overlay` builds on. Callers hold `reload_lock`.
+    fn publish(
+        &self,
+        snap: CoreSnapshot,
+        report: Option<LoadReport>,
+        cause: Cause,
+        uids: Vec<String>,
+    ) -> io::Result<u64> {
         let mut wire = to_wire(&snap, 0);
         let mut s = self.state.lock().unwrap();
-        let cur = s.ring.back().expect("ring is never empty");
-        // The vdir-lock wait above may have outlasted the daemon.
+        // Teardown may have started while the snapshot was built.
         if self.is_closed() {
-            return Ok(cur.revision);
+            return Ok(s.ring.back().expect("ring is never empty").revision);
         }
+        if report.is_some() {
+            s.last_report = report;
+        }
+        let cur = s.ring.back().expect("ring is never empty");
         wire.revision = cur.revision;
         if s.published_once && wire == cur.wire {
             return Ok(cur.revision);
