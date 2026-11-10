@@ -3,6 +3,7 @@
 
 pub mod admin;
 pub mod bus;
+pub mod config;
 pub mod conn;
 pub mod dispatch;
 pub mod jobs;
@@ -182,6 +183,10 @@ pub struct Shared {
     heartbeat_thread: Mutex<Option<JoinHandle<()>>>,
     /// The vdir watcher; dropped at teardown.
     watcher: Mutex<Option<watch::Watcher>>,
+    /// The configuration file's watcher; dropped at teardown.
+    config_watcher: Mutex<Option<watch::Watcher>>,
+    /// The bytes of `config.toml` last applied (`None`: never read); see [`config::changed`].
+    config_seen: Mutex<Option<Vec<u8>>>,
 }
 
 impl Shared {
@@ -321,6 +326,8 @@ impl Daemon {
             startup: Mutex::new(None),
             heartbeat_thread: Mutex::new(None),
             watcher: Mutex::new(None),
+            config_watcher: Mutex::new(None),
+            config_seen: Mutex::new(None),
         });
         *shared.heartbeat_thread.lock().unwrap() =
             Some(shared.bus.start_heartbeat(shared.heartbeat));
@@ -538,6 +545,31 @@ fn startup(
             }
             Ok(())
         }),
+        Box::new(|shared| {
+            // Not fatal either; a missing config directory skips the watch.
+            let path = &shared.instance.config;
+            if !path.parent().is_some_and(Path::is_dir) {
+                eprintln!(
+                    "tdo daemon: not watching {}: its directory is missing",
+                    path.display()
+                );
+                return Ok(());
+            }
+            let weak = Arc::downgrade(shared);
+            match watch::start_file(path, move || {
+                if let Some(shared) = weak.upgrade() {
+                    config::changed(&shared);
+                }
+            }) {
+                Ok(w) => {
+                    *shared.config_watcher.lock().unwrap() = Some(w);
+                    // A change since the configuration was loaded is seen by nobody else.
+                    config::changed(shared);
+                }
+                Err(e) => eprintln!("tdo daemon: not watching the configuration: {e}"),
+            }
+            Ok(())
+        }),
     ];
     for step in steps {
         if shared.is_stopping() {
@@ -734,6 +766,7 @@ fn teardown(shared: &Shared) {
     shared.publisher.close();
     // Stops watching; a callback already running returns at once (the publisher is closed).
     shared.watcher.lock().unwrap().take();
+    shared.config_watcher.lock().unwrap().take();
     // A write in flight finishes its commit; none starts after this (its store call answers
     // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
     // writes the vdir while a thread of this one still could.

@@ -191,6 +191,28 @@ pub struct StatusView {
     /// pending; the user decides what to do with them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queue_unreadable: Vec<String>,
+    /// The state of `config.toml` as the daemon reads it live; omitted while all is well.
+    #[serde(default, skip_serializing_if = "ConfigStatus::is_ok")]
+    pub config: ConfigStatus,
+}
+
+/// How the live configuration stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigStatus {
+    /// Why the last change to the file was not applied (unreadable, invalid); the last good
+    /// configuration stays in force.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Binding settings the file now names differently (`vdir`, `state_dir`, `writes`,
+    /// `sync`); they apply only after the daemon restarts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub restart_needed: Vec<String>,
+}
+
+impl ConfigStatus {
+    pub fn is_ok(&self) -> bool {
+        self.error.is_none() && self.restart_needed.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

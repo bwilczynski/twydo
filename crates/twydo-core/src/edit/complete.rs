@@ -196,7 +196,7 @@ pub fn reopen_one_time(cal: &mut Calendar, now: DateTime<Utc>) -> Result<(), Edi
 }
 
 /// The rule as RRULE text, for messages.
-pub(super) fn rule_text(r: &RRule) -> String {
+pub fn rule_text(r: &RRule) -> String {
     let join = |v: Vec<String>| v.join(",");
     let mut parts = vec![format!(
         "FREQ={}",

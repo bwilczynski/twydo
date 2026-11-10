@@ -129,6 +129,7 @@ pub fn dispatch(
         "journal.recover" => super::admin::journal_recover(shared),
         "journal.revert" => super::writes::journal_revert(shared, parse(params)?),
         "journal.abandon" => super::admin::journal_abandon(shared, parse(params)?),
+        "input.parse" => super::admin::input_parse(shared, parse(params)?),
         "job.get" => super::jobs::get(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {

@@ -20,7 +20,7 @@ use twydo_core::views::Snapshot as CoreSnapshot;
 use super::bus::{ConnId, EventBus};
 use crate::protocol::events::{Cause, Event};
 use crate::protocol::methods::{
-    JournalView, RefusalView, StatusView, SubscribeResult, SyncState, SyncView,
+    ConfigStatus, JournalView, RefusalView, StatusView, SubscribeResult, SyncState, SyncView,
 };
 use crate::protocol::wire::{WireSnapshot, to_wire};
 
@@ -47,10 +47,14 @@ struct State {
     drain_error: Option<String>,
     /// A sync is running, and the job it belongs to; see [`Publisher::set_sync_state`].
     sync_running: Option<Option<String>>,
+    /// The state of the live configuration; see [`StatusView::config`].
+    config_status: ConfigStatus,
 }
 
 pub struct Publisher {
-    cfg: Config,
+    /// The live configuration: [`Publisher::set_config`] replaces it when `config.toml`
+    /// changes. Never held across I/O (cloned out).
+    cfg: Mutex<Config>,
     state_dir: PathBuf,
     bus: Arc<EventBus>,
     /// Serialises reloads, overlays and status refreshes (slow I/O) so they publish in order,
@@ -75,7 +79,7 @@ impl Publisher {
             wire,
         });
         Publisher {
-            cfg,
+            cfg: Mutex::new(cfg),
             state_dir,
             bus,
             reload_lock: Mutex::new(()),
@@ -89,6 +93,7 @@ impl Publisher {
                 stuck: Vec::new(),
                 drain_error: None,
                 sync_running: None,
+                config_status: ConfigStatus::default(),
             }),
         }
     }
@@ -100,6 +105,22 @@ impl Publisher {
 
     fn is_closed(&self) -> bool {
         self.closed.load(Ordering::SeqCst)
+    }
+
+    /// The live configuration.
+    pub fn config(&self) -> Config {
+        self.cfg.lock().unwrap().clone()
+    }
+
+    /// Replaces the live configuration. Takes effect at the next reload, overlay or status
+    /// refresh; the caller reloads.
+    pub fn set_config(&self, cfg: Config) {
+        *self.cfg.lock().unwrap() = cfg;
+    }
+
+    /// What `status.config` reports. Takes effect at the next [`Publisher::refresh_status`].
+    pub fn set_config_status(&self, status: ConfigStatus) {
+        self.state.lock().unwrap().config_status = status;
     }
 
     /// Ids of the journal entries recovery left stuck.
@@ -160,8 +181,9 @@ impl Publisher {
         if self.is_closed() {
             return Ok(self.current().0);
         }
-        let report = vdir::load(&self.cfg.vdir)?;
-        let snap = view(report.clone(), self.cfg.clone());
+        let cfg = self.config();
+        let report = vdir::load(&cfg.vdir)?;
+        let snap = view(report.clone(), cfg);
         self.publish(snap, Some(report), cause, uids)
     }
 
@@ -177,7 +199,7 @@ impl Publisher {
         let Some(report) = self.state.lock().unwrap().last_report.clone() else {
             return Ok(self.current().0);
         };
-        let snap = view(report, self.cfg.clone());
+        let snap = view(report, self.config());
         self.publish(snap, None, cause, uids)
     }
 
@@ -242,22 +264,24 @@ impl Publisher {
                 .as_ref()
                 .map_or(0, |v| v.status_rev);
         }
-        let (stuck, drain_error, sync_running, old_rev) = {
+        let (stuck, drain_error, sync_running, config_status, old_rev) = {
             let s = self.state.lock().unwrap();
             (
                 s.stuck.clone(),
                 s.drain_error.clone(),
                 s.sync_running.clone(),
+                s.config_status.clone(),
                 s.status.as_ref().map_or(0, |v| v.status_rev),
             )
         };
-        let mut next = match self.build_status(&stuck, drain_error, sync_running, old_rev) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("tdo daemon: status unavailable: {e}");
-                return old_rev;
-            }
-        };
+        let mut next =
+            match self.build_status(&stuck, drain_error, sync_running, config_status, old_rev) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("tdo daemon: status unavailable: {e}");
+                    return old_rev;
+                }
+            };
         let mut s = self.state.lock().unwrap();
         if self.is_closed() {
             return old_rev;
@@ -277,9 +301,10 @@ impl Publisher {
         stuck: &[String],
         drain_error: Option<String>,
         sync_running: Option<Option<String>>,
+        config: ConfigStatus,
         status_rev: u64,
     ) -> io::Result<StatusView> {
-        let summary = sync::summary(&self.cfg)?;
+        let summary = sync::summary(&self.config())?;
         let queue = Queue::existing(&self.state_dir);
         let refusals = match &queue {
             Some(q) => q
@@ -356,6 +381,7 @@ impl Publisher {
             refusals,
             drain_error,
             queue_unreadable,
+            config,
         })
     }
 

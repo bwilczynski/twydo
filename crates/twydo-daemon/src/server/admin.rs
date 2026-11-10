@@ -25,8 +25,9 @@ use super::dispatch::ConnState;
 use super::replay::Begin;
 use super::writes::{refusal_of, require_request_id};
 use crate::protocol::admin::{
-    AbandonResult, ConflictList, ConflictView, ConflictsResolveParams, JournalAbandonParams,
-    JournalEntryView, RecoverResult, ResolveResult, WireKeep,
+    AbandonResult, ConflictList, ConflictView, ConflictsResolveParams, InputField,
+    InputParseParams, InputParsed, JournalAbandonParams, JournalEntryView, ParsedRepeat,
+    RecoverResult, ResolveResult, WireKeep,
 };
 use crate::protocol::events::Cause;
 use crate::protocol::rpc::{ErrorKind, RpcError};
@@ -255,4 +256,55 @@ fn run_abandon(shared: &Arc<Shared>, p: &JournalAbandonParams) -> Result<Abandon
     // Writes the stuck entry held back may now go through.
     shared.request_drain();
     Ok(AbandonResult { abandoned })
+}
+
+/// `input.parse`: reads typed text of a due, start or repeat field with the code the TUI uses
+/// (`dateinput`, `repeatinput`), against the live configuration's time zone and work days. A
+/// parse error is `invalid`, with the parser's message.
+pub fn input_parse(shared: &Arc<Shared>, p: InputParseParams) -> Result<Value, RpcError> {
+    use twydo_core::{dateinput, repeatinput};
+    let cfg = shared.publisher.config();
+    let today = p
+        .today
+        .unwrap_or_else(|| Utc::now().with_timezone(&cfg.tz()).date_naive());
+    let invalid = |m: String| RpcError::refused(ErrorKind::Invalid, m);
+    let out = match p.field {
+        InputField::Due | InputField::Start => {
+            match dateinput::parse(&p.text, today).map_err(invalid)? {
+                Some(d) => InputParsed {
+                    due: Some(d.due()),
+                    repeat: None,
+                    cleared: false,
+                    description: dateinput::describe(&d, today),
+                },
+                None => cleared(),
+            }
+        }
+        InputField::Repeat => {
+            match repeatinput::parse(&p.text, today, &cfg.work_days).map_err(invalid)? {
+                Some(spec) => InputParsed {
+                    due: None,
+                    repeat: Some(ParsedRepeat {
+                        rrule: twydo_core::edit::complete::rule_text(&spec.rule),
+                        from_completion: spec.from_completion,
+                        spec: spec.clone(),
+                    }),
+                    cleared: false,
+                    description: repeatinput::describe(&spec, None),
+                },
+                None => cleared(),
+            }
+        }
+        InputField::Unknown => return Err(invalid("unknown field".into())),
+    };
+    to_value(out)
+}
+
+fn cleared() -> InputParsed {
+    InputParsed {
+        due: None,
+        repeat: None,
+        cleared: true,
+        description: String::new(),
+    }
 }
