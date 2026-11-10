@@ -561,3 +561,36 @@ pub fn dropping_proxy(
     });
     (path, seen, open)
 }
+
+/// A `ClientSync` as the status line and the conflict overlay read it, built directly from
+/// what a sync summary holds (the daemon sends the same facts in `status.get` and
+/// `conflicts.list`).
+pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
+    use twydo_daemon::protocol::admin::ConflictView;
+    use twydo_daemon::protocol::methods::{ConfigStatus, SyncState, SyncView};
+    tdo::app::ClientSync {
+        sync: Some(SyncView {
+            state: SyncState::Idle,
+            auto: !s.off,
+            last_success: s.status.last_success,
+            last_attempt: s.status.last_attempt,
+            next_attempt: s.status.next_attempt,
+            failures: s.status.failures,
+            last_error: s.status.last_error.clone(),
+            job_id: None,
+            collections: s
+                .status
+                .collections
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+            metasync_error: s.status.metasync_error.clone(),
+        }),
+        unsynced: s.pending,
+        queued: s.queued,
+        conflicts: s.conflicts.iter().map(ConflictView::of).collect(),
+        refusals: Vec::new(),
+        config: ConfigStatus::default(),
+        drain_error: None,
+    }
+}

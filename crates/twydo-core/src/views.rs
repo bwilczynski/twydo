@@ -126,6 +126,12 @@ impl Snapshot {
         }
     }
 
+    /// A snapshot with no tasks and no lists: what a client shows before the daemon has sent
+    /// one.
+    pub fn empty(config: Config) -> Snapshot {
+        Snapshot::new(LoadReport::default(), config)
+    }
+
     /// Replaces the per-task revisions (uid -> rev), e.g. with those a daemon sent.
     pub fn with_revs(mut self, revs: HashMap<String, String>) -> Snapshot {
         self.revs = revs;

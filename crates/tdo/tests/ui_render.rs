@@ -1,5 +1,7 @@
 //! TUI rendering into a `TestBackend`. All content is synthetic.
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -525,7 +527,7 @@ fn summary(
     pending: usize,
     conflicts: Vec<twydo_core::conflicts::Conflict>,
 ) -> tdo::app::ClientSync {
-    tdo::app::ClientSync::from_summary(&twydo_core::sync::SyncSummary {
+    common::client_sync(&twydo_core::sync::SyncSummary {
         status,
         pending,
         conflicts,

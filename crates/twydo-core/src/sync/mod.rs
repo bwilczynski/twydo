@@ -2,7 +2,6 @@
 //! status.
 
 pub mod batch;
-pub mod ended;
 pub mod hook;
 pub mod lock;
 pub mod manifest;

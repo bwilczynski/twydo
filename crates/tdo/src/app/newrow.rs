@@ -252,7 +252,7 @@ impl App {
             form.focus = *next;
         }
         self.form = Some(form);
-        self.form_base = Some(self.snapshot.clone());
+        self.hold_form_base();
         self.mode = Mode::Insert;
     }
 

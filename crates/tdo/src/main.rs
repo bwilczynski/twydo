@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
-use chrono::Utc;
 use clap::{Parser, Subcommand};
-use tdo::app::App;
 use tdo::{cli, term};
+
+/// How long the TUI waits for the daemon's first snapshot before it opens empty.
+const FIRST_SNAPSHOT: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[derive(Parser)]
 #[command(name = "tdo", version, about = "Twydo: a terminal task app")]
@@ -88,19 +89,22 @@ enum Switch {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command.unwrap_or(Command::Tui) {
-        Command::Tui => cli::load_snapshot(cli.vdir.as_deref()).map(|snapshot| {
-            let tz = snapshot.tz();
-            let root = snapshot.config.vdir.clone();
-            let mut app = App::new(snapshot, Utc::now().with_timezone(&tz));
-            let path = twydo_core::config::Config::path();
-            if path.is_file() {
-                app.config_path = Some(path);
+        Command::Tui => {
+            let config = twydo_core::config::Config::path();
+            if !config.exists() && cli.vdir.is_none() {
+                cli::fail(&cli::CliError::NoConfig(config));
             }
-            if let Err(e) = term::run(app, root, tz) {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            let link = term::link::Link::start(target);
+            let app = term::first_app(&link, cli.vdir.as_deref(), FIRST_SNAPSHOT);
+            let tz = app.snapshot.tz();
+            if let Err(e) = term::run(app, link, tz) {
                 eprintln!("tdo: {e}");
                 std::process::exit(cli::EXIT_ERROR);
             }
-        }),
+            Ok(())
+        }
         Command::Op { command } => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());

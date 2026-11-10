@@ -219,20 +219,22 @@ fn a_write_through_the_link_is_answered_and_refetched() {
             based_on,
         },
     });
+    // The answer comes after the snapshot it refers to (cause `op`, with the uids when the
+    // daemon's event came first).
+    let mut snapshot = None;
     let (seq, written) = until(&link, |u| match u {
+        Update::Snapshot {
+            snapshot: s, cause, ..
+        } => {
+            snapshot = Some((s.tasks[0].summary.clone(), cause));
+            None
+        }
         Update::Written { seq, result } => Some((seq, result)),
         _ => None,
     });
     assert_eq!(seq, 7);
     assert!(written.is_ok(), "{written:?}");
-    // The snapshot after an own write says so (cause `op`), with the uids when the daemon's
-    // event came first.
-    let (title, cause) = until(&link, |u| match u {
-        Update::Snapshot {
-            snapshot, cause, ..
-        } => Some((snapshot.tasks[0].summary.clone(), cause)),
-        _ => None,
-    });
+    let (title, cause) = snapshot.expect("the snapshot came before the answer");
     assert_eq!(title, "After");
     assert_eq!(cause, Cause::Op);
 }
@@ -283,6 +285,120 @@ fn a_write_resent_after_a_reconnect_applies_once() {
         .filter(|e| e.request_id.as_deref() == Some(ids[0].as_str()))
         .collect();
     assert_eq!(ours.len(), 1, "{entries:?}");
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    let text = fs::read_to_string(env.vdir().join("inbox/a.ics")).unwrap();
+    assert!(text.contains("SUMMARY:After"), "{text}");
+}
+
+/// A proxy to `target` that answers the first `op.submit` itself with `unavailable` (the
+/// daemon's "still being applied" refusal) without passing it on; it records the request id
+/// of every `op.submit` it sees.
+fn busy_proxy(
+    target: PathBuf,
+    dir: &Path,
+) -> (PathBuf, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    let path = dir.join("busy.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let refused = Arc::new(AtomicBool::new(false));
+    let record = Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for client in listener.incoming() {
+            let Ok(client) = client else { return };
+            let Ok(daemon) = UnixStream::connect(&target) else {
+                continue;
+            };
+            let (mut to_daemon, from_client) =
+                (daemon.try_clone().unwrap(), client.try_clone().unwrap());
+            let mut to_client_early = client.try_clone().unwrap();
+            let record = Arc::clone(&record);
+            let refused = Arc::clone(&refused);
+            std::thread::spawn(move || {
+                for line in BufReader::new(from_client).lines() {
+                    let Ok(line) = line else { break };
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
+                        && v["method"] == "op.submit"
+                    {
+                        record
+                            .lock()
+                            .unwrap()
+                            .push(v["params"]["request_id"].as_str().unwrap().to_string());
+                        if !refused.swap(true, Ordering::SeqCst) {
+                            let reply = json!({
+                                "jsonrpc": "2.0",
+                                "id": v["id"],
+                                "error": {
+                                    "code": -32000,
+                                    "message": "the write is still being applied; try again",
+                                    "data": {"kind": "unavailable"}
+                                }
+                            });
+                            if writeln!(to_client_early, "{reply}").is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    if writeln!(to_daemon, "{line}").is_err() {
+                        break;
+                    }
+                }
+            });
+            std::thread::spawn(move || {
+                let mut to_client = client;
+                for line in BufReader::new(daemon).lines() {
+                    let Ok(line) = line else { break };
+                    if writeln!(to_client, "{line}").is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    (path, seen)
+}
+
+#[test]
+fn a_mid_commit_refusal_is_retried_not_reported() {
+    let env = TestEnv::new("");
+    fs::write(env.vdir().join("inbox/a.ics"), task_ics("uid-a", "Before")).unwrap();
+    let _daemon = env.in_process_daemon(None);
+    let (proxy, submitted) = busy_proxy(env.socket(), env.sock_dir.path());
+    let link = link_to(proxy, env.instance());
+    until(&link, |u| matches!(u, Update::Status(_)).then_some(()));
+    let based_on = link.based_on().unwrap();
+    link.send(Command::Write {
+        seq: 1,
+        write: WriteRequest {
+            request: Request::Apply(Op::Edit {
+                uid: "uid-a".into(),
+                changes: vec![Change::Summary("After".into())],
+            }),
+            based_on,
+        },
+    });
+    let (seq, result) = until(&link, |u| match u {
+        Update::Written { seq, result } => Some((seq, result)),
+        _ => None,
+    });
+    assert_eq!(seq, 1);
+    assert!(result.is_ok(), "{result:?}");
+    while let Some(u) = link.next_update(Duration::from_millis(500)) {
+        assert!(
+            !matches!(u, Update::Written { .. }),
+            "a second reply: {u:?}"
+        );
+    }
+    let ids = submitted.lock().unwrap().clone();
+    assert_eq!(ids.len(), 2, "{ids:?}");
+    assert_eq!(ids[0], ids[1], "the resend must reuse the request id");
+    let c = env.connect(&env.socket());
+    let entries: Vec<twydo_daemon::protocol::admin::JournalEntryView> =
+        c.call("journal.list", json!({})).unwrap();
     assert_eq!(entries.len(), 1, "{entries:?}");
     let text = fs::read_to_string(env.vdir().join("inbox/a.ics")).unwrap();
     assert!(text.contains("SUMMARY:After"), "{text}");
@@ -504,6 +620,44 @@ fn forget_through_the_link_reports_the_backup() {
     });
     assert!(message.starts_with("preserved "), "{message}");
     assert!(message.contains("recover with :recover"), "{message}");
+}
+
+#[test]
+fn a_final_connect_error_stops_the_link_without_retrying() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let tries = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&tries);
+    let connect: Connector = Box::new(move |_| {
+        count.fetch_add(1, Ordering::SeqCst);
+        Err(tdo::client::ConnectError::TooOld {
+            client: "1".into(),
+            daemon: "2".into(),
+        })
+    });
+    let link = Link::start_with(connect);
+    let Some(Update::Down(m)) = link.next_update(Duration::from_secs(5)) else {
+        panic!("no Down update");
+    };
+    assert_eq!(m, "tdo was upgraded; restart it");
+    // A write is refused with that message, and nothing connects again.
+    link.send(Command::Write {
+        seq: 1,
+        write: WriteRequest {
+            request: Request::Undo,
+            based_on: twydo_daemon::protocol::methods::BasedOn {
+                epoch: "e".into(),
+                revision: 0,
+            },
+        },
+    });
+    let Some(Update::Written { result, .. }) = link.next_update(Duration::from_secs(5)) else {
+        panic!("no answer");
+    };
+    assert_eq!(result.unwrap_err(), m);
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(tries.load(Ordering::SeqCst), 1);
+    assert!(link.next_update(Duration::from_millis(10)).is_none());
 }
 
 #[test]

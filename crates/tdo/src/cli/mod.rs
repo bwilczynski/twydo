@@ -73,15 +73,6 @@ pub fn recover_at_startup(config: &Config) {
     }
 }
 
-/// Load the vdir named by the resolved configuration into a snapshot (its `errors` hold the
-/// files that failed to load).
-pub fn load_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
-    let config = resolve_config(vdir)?;
-    recover_at_startup(&config);
-    let report = load_vdir(&config)?;
-    Ok(Snapshot::new(report, config))
-}
-
 /// Read the vdir under the shared vdir lock (spec §6: readers never see a partly applied
 /// operation). The lock is taken only when the vdir's state dir exists; it is never created
 /// here.

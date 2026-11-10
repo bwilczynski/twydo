@@ -18,7 +18,6 @@ use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
 use twydo_core::store::queue::Queue;
 use twydo_core::store::{DrainOutcome, Store, Submitted};
-use twydo_core::sync::ended;
 use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
@@ -1722,75 +1721,12 @@ fn changed_journal_read_dependency_never_becomes_parent_write_conflict() {
 }
 
 #[test]
-fn clean_run_writes_ended() {
-    let fx = Fx::new("exit 0");
-    assert!(ended::read(&fx.cfg).unwrap().is_none());
-    run(&fx.cfg, &manual(), now()).unwrap();
-    assert_eq!(ended::read(&fx.cfg).unwrap().unwrap().at, now());
-}
-
-#[test]
-fn failed_run_writes_ended() {
-    let fx = Fx::new("exit 1");
-    run(&fx.cfg, &manual(), now()).unwrap();
-    assert!(ended::read(&fx.cfg).unwrap().is_some());
-}
-
-#[test]
-fn skipped_runs_write_no_ended() {
-    // Not configured.
-    let mut fx = Fx::new("exit 0");
-    let configured = fx.cfg.sync.take();
-    let r = run(&fx.cfg, &manual(), now()).unwrap();
-    assert!(matches!(r.skipped, Some(Skip::NotConfigured)));
-    assert!(ended::read(&fx.cfg).unwrap().is_none());
-    fx.cfg.sync = configured;
-
-    // Backoff.
-    let st = SyncStatus {
-        next_attempt: Some(now() + chrono::Duration::seconds(60)),
-        ..SyncStatus::default()
-    };
-    let state = fx.state();
-    st.save(&state).unwrap();
-    let r = run(&fx.cfg, &background(), now()).unwrap();
-    assert!(matches!(r.skipped, Some(Skip::Backoff { .. })));
-    assert!(ended::read(&fx.cfg).unwrap().is_none());
-    SyncStatus::default().save(&state).unwrap();
-
-    // Busy.
-    let sync_dir = state.join("sync");
-    let held = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(sync_dir.join("run.lock"))
-        .unwrap();
-    held.lock().unwrap();
-    let r = run(&fx.cfg, &background(), now()).unwrap();
-    assert!(matches!(r.skipped, Some(Skip::Busy)));
-    assert!(ended::read(&fx.cfg).unwrap().is_none());
-}
-
-#[test]
-fn each_run_has_a_new_run_id() {
-    let fx = Fx::new("exit 0");
-    run(&fx.cfg, &manual(), now()).unwrap();
-    let first = ended::read(&fx.cfg).unwrap().unwrap();
-    run(&fx.cfg, &manual(), now()).unwrap();
-    let second = ended::read(&fx.cfg).unwrap().unwrap();
-    assert_ne!(first.run_id, second.run_id);
-}
-
-#[test]
 fn switched_off_background_run_is_skipped() {
     let fx = Fx::new("touch \"$(dirname \"$0\")/marker\"");
     twydo_core::sync::switch::set(&fx.cfg, true).unwrap();
     let r = run(&fx.cfg, &background(), now()).unwrap();
     assert_eq!(r.skipped, Some(Skip::Off));
     assert!(!fx.path("marker").exists());
-    assert!(ended::read(&fx.cfg).unwrap().is_none());
 }
 
 #[test]
@@ -1799,7 +1735,6 @@ fn switched_off_manual_run_still_runs() {
     twydo_core::sync::switch::set(&fx.cfg, true).unwrap();
     let r = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(r.skipped.is_none());
-    assert!(ended::read(&fx.cfg).unwrap().is_some());
 }
 
 #[test]
@@ -2282,7 +2217,7 @@ fn a_held_queue_is_left_on_disk() {
 
 /// Task 6 review: a run that a shutting-down daemon gave up on, blocked on the run lock,
 /// writes nothing once it gets the lock: no recovery (a `Prepared` entry stays as it is), no
-/// status, no ended event, no vdirsyncer.
+/// status, no vdirsyncer.
 #[test]
 fn a_held_run_waiting_for_the_run_lock_writes_nothing() {
     let fx = Fx::new("");
@@ -2351,15 +2286,11 @@ fn a_held_run_waiting_for_the_run_lock_writes_nothing() {
     );
     assert!(!state.join("sync/status.json").exists(), "status written");
     assert_eq!(SyncStatus::load(&state).unwrap(), SyncStatus::default());
-    assert!(
-        ended::read(&fx.cfg).unwrap().is_none(),
-        "ended event written"
-    );
 }
 
 /// Codex review: a run past the early `hold_queue` check, blocked on the vdir lock in its
 /// recovery step while the daemon starts shutting down, writes nothing once it gets the
-/// lock: no recovery (a `Prepared` entry stays as it is), no status, no ended event, no
+/// lock: no recovery (a `Prepared` entry stays as it is), no status, no
 /// vdirsyncer.
 #[test]
 fn a_held_run_waiting_for_the_vdir_lock_in_recovery_writes_nothing() {
@@ -2426,8 +2357,4 @@ fn a_held_run_waiting_for_the_vdir_lock_in_recovery_writes_nothing() {
     );
     assert!(!state.join("sync/status.json").exists(), "status written");
     assert_eq!(SyncStatus::load(&state).unwrap(), SyncStatus::default());
-    assert!(
-        ended::read(&fx.cfg).unwrap().is_none(),
-        "ended event written"
-    );
 }

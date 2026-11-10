@@ -1,3 +1,5 @@
+mod common;
+
 use chrono::{TimeZone, Utc};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::fs;
@@ -106,7 +108,7 @@ fn errors_keep_missing_list_names_and_commands_available_after_sync() {
     };
     let (_dir, cfg) = env();
     let mut a = app(&cfg);
-    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
+    a.set_sync(Some(common::client_sync(&SyncSummary {
         status: SyncStatus {
             last_error: Some("old: Unknown error occurred: Not Found".into()),
             collections: BTreeMap::from([(
@@ -271,7 +273,7 @@ fn missing_list_sync(a: &mut App) {
         SyncSummary,
         status::{CollState, SyncStatus},
     };
-    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
+    a.set_sync(Some(common::client_sync(&SyncSummary {
         status: SyncStatus {
             collections: BTreeMap::from([
                 (
@@ -386,7 +388,7 @@ fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
     let (_dir, cfg) = env();
     let mut a = app(&cfg);
     // Exact persisted message reported by the user: earlier attempts erased list errors.
-    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
+    a.set_sync(Some(common::client_sync(&SyncSummary {
         status: SyncStatus {
             last_error: Some("list discovery failed; backup retained; check vdirsyncer configuration before retrying".into()),
             ..Default::default()
