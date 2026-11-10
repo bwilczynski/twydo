@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use clap::{Subcommand, ValueEnum};
 use twydo_core::config::Config;
-use twydo_core::conflicts::{Conflict, ConflictState, ConflictStore, Side};
+use twydo_core::conflicts::{ConflictState, ConflictStore, Side};
 use twydo_core::ical;
 use twydo_core::store::existing_vdir_state;
 use twydo_core::sync::batch::after_resolve;
@@ -77,15 +77,6 @@ fn field(text: &str, name: &str) -> Option<String> {
     todo.prop(name).map(|p| p.value.clone())
 }
 
-/// The title from either version (local first), else the UID.
-fn title(c: &Conflict) -> String {
-    [&c.local, &c.remote]
-        .into_iter()
-        .flatten()
-        .find_map(|t| field(t, "SUMMARY"))
-        .unwrap_or_else(|| c.uid.clone())
-}
-
 fn state_word(s: ConflictState) -> &'static str {
     match s {
         ConflictState::Open => "open",
@@ -120,7 +111,7 @@ fn list(vdir: Option<&Path>) -> i32 {
             "{}  {}  {}  {}  {}",
             c.id,
             c.collection,
-            title(c),
+            c.title(),
             c.kind.words(),
             state
         );
@@ -190,14 +181,7 @@ fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
     match resolve(&cfg, id, side, Utc::now()) {
         Ok(r) => {
             let recorded = r == Resolution::Recorded;
-            match r {
-                Resolution::Recorded => {
-                    println!("recorded; the next sync applies it");
-                }
-                Resolution::AlreadyInPlace => println!("already in place; conflict resolved"),
-                Resolution::Written(_) => println!("written; conflict resolved"),
-                Resolution::KeptCurrent => println!("kept as it is now; conflict resolved"),
-            }
+            println!("{}", r.message());
             if let Some(t) = after_resolve(&cfg, recorded, Utc::now()) {
                 spawn(&cfg, vdir, t);
             }

@@ -185,3 +185,21 @@ fn record_recovers_from_crash_between_write_and_supersede() {
     assert_eq!(un.len(), 1);
     assert_eq!(un[0].id, c.id);
 }
+
+#[test]
+fn old_conflict_files_still_load() {
+    let d = tempfile::tempdir().unwrap();
+    let s = ConflictStore::open(d.path()).unwrap();
+    let c = s.record(new("inbox/a.ics", None, Some("R")), t(0)).unwrap();
+    let file = d.path().join("conflicts").join(&c.id).join("conflict.json");
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert!(json.get("resolved_by").is_none());
+    assert!(json.get("earlier").is_none());
+    json.as_object_mut().unwrap().remove("resolved_by");
+    std::fs::write(&file, json.to_string()).unwrap();
+    let got = s.get(&c.id).unwrap().unwrap();
+    assert_eq!(got.resolved_by, None);
+    assert!(got.earlier.is_empty());
+    assert!(s.by_request("anything").unwrap().is_none());
+}

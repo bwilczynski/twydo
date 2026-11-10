@@ -21,7 +21,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::store::fsio::{remove_durable, sync_dir, write_atomic};
-use crate::store::journal::new_op_id;
+use crate::store::journal::{RequestRef, new_op_id};
+use crate::sync::resolve::Resolution;
 
 const DIR: &str = "conflicts";
 const LOCK: &str = ".lock";
@@ -83,6 +84,17 @@ pub struct NewConflict {
     pub remote: Option<String>,
 }
 
+/// The request that resolved a conflict and what it did, so a resend after a restart
+/// replays the same answer (the daemon's idempotency record).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct ResolvedBy {
+    pub request: RequestRef,
+    pub resolution: Resolution,
+    /// The journal entry a `Written` resolution made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_id: Option<String>,
+}
+
 /// A recorded conflict. The versions are loaded by `get` and `list`, not stored in the JSON.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Conflict {
@@ -97,6 +109,13 @@ pub struct Conflict {
     pub state: ConflictState,
     pub choice: Option<Side>,
     pub resolved: Option<DateTime<Utc>>,
+    /// The request that resolved or chose last, when one did (older records have none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<ResolvedBy>,
+    /// The requests that chose before [`Conflict::resolved_by`], oldest first: a held conflict
+    /// can be chosen again, and each request keeps its record so its resend replays.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub earlier: Vec<ResolvedBy>,
     #[serde(skip)]
     pub local: Option<String>,
     #[serde(skip)]
@@ -104,6 +123,31 @@ pub struct Conflict {
 }
 
 impl Conflict {
+    /// Makes `by` the latest request record, keeping the one it replaces in `earlier`.
+    fn record_request(&mut self, by: Option<ResolvedBy>) {
+        let Some(by) = by else { return };
+        if let Some(prev) = self.resolved_by.replace(by) {
+            self.earlier.push(prev);
+        }
+    }
+
+    /// The task's `SUMMARY` from either version (local first).
+    pub fn title_opt(&self) -> Option<String> {
+        [&self.local, &self.remote]
+            .into_iter()
+            .flatten()
+            .find_map(|t| {
+                let cal = crate::ical::parse(t.as_bytes()).ok()?;
+                let todo = cal.root.children_named("VTODO").next()?;
+                todo.prop("SUMMARY").map(|p| p.value.clone())
+            })
+    }
+
+    /// The title from either version (local first), else the UID.
+    pub fn title(&self) -> String {
+        self.title_opt().unwrap_or_else(|| self.uid.clone())
+    }
+
     fn unresolved(&self) -> bool {
         matches!(self.state, ConflictState::Open | ConflictState::Chosen)
     }
@@ -249,6 +293,8 @@ impl ConflictStore {
             state: ConflictState::Open,
             choice: None,
             resolved: None,
+            resolved_by: None,
+            earlier: Vec::new(),
             local: c.local,
             remote: c.remote,
         };
@@ -282,6 +328,20 @@ impl ConflictStore {
         Ok(out)
     }
 
+    /// The conflict a request resolved or chose, and that request's record, by its
+    /// `request_id`. Every request that chose counts, not only the last one.
+    pub fn by_request(&self, request_id: &str) -> io::Result<Option<(Conflict, ResolvedBy)>> {
+        Ok(self.list()?.into_iter().find_map(|c| {
+            let by = c
+                .resolved_by
+                .iter()
+                .chain(&c.earlier)
+                .find(|r| r.request.request_id == request_id)
+                .cloned()?;
+            Some((c, by))
+        }))
+    }
+
     /// Conflicts that are Open or Chosen.
     pub fn unresolved(&self) -> io::Result<Vec<Conflict>> {
         Ok(self
@@ -299,6 +359,11 @@ impl ConflictStore {
     /// Records the user's choice: Open becomes Chosen, and a Chosen conflict takes the new
     /// side (a change of mind before the next sync). Resolved and Superseded ones are errors.
     pub fn choose(&self, id: &str, side: Side) -> io::Result<()> {
+        self.choose_by(id, side, None)
+    }
+
+    /// [`ConflictStore::choose`], also recording the request that chose.
+    pub fn choose_by(&self, id: &str, side: Side, by: Option<ResolvedBy>) -> io::Result<()> {
         let _lock = self.lock()?;
         let mut c = self.load_for_update(id)?;
         if !c.unresolved() {
@@ -309,11 +374,23 @@ impl ConflictStore {
         }
         c.state = ConflictState::Chosen;
         c.choice = Some(side);
+        c.record_request(by);
         self.save_record(&c)
     }
 
     /// Marks a conflict Resolved (idempotent). A Superseded one is an error.
     pub fn mark_resolved(&self, id: &str, now: DateTime<Utc>) -> io::Result<()> {
+        self.mark_resolved_by(id, now, None)
+    }
+
+    /// [`ConflictStore::mark_resolved`], also recording the request that resolved. A conflict
+    /// already Resolved keeps its record.
+    pub fn mark_resolved_by(
+        &self,
+        id: &str,
+        now: DateTime<Utc>,
+        by: Option<ResolvedBy>,
+    ) -> io::Result<()> {
         let _lock = self.lock()?;
         let mut c = self.load_for_update(id)?;
         match c.state {
@@ -325,6 +402,7 @@ impl ConflictStore {
         }
         c.state = ConflictState::Resolved;
         c.resolved = Some(now);
+        c.record_request(by);
         self.save_record(&c)
     }
 

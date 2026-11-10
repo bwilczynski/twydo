@@ -318,6 +318,102 @@
         ],
         "type": "object"
       },
+      "ConflictList": {
+        "description": "Result of `conflicts.list`.",
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ConflictView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "conflicts"
+        ],
+        "type": "object"
+      },
+      "ConflictView": {
+        "description": "One unresolved conflict.",
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WireSide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The side chosen, once a held conflict has one (applied on the next sync)."
+          },
+          "collection": {
+            "type": "string"
+          },
+          "detected": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "held": {
+            "description": "True while vdirsyncer still keeps the two sides apart: only local or remote can be kept.",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WireConflictKind"
+          },
+          "path": {
+            "description": "Vdir-relative path of the task's file.",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WireConflictState"
+          },
+          "title": {
+            "description": "The task's `SUMMARY` from either version (local first); absent when neither has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uid",
+          "collection",
+          "path",
+          "kind",
+          "held",
+          "state",
+          "detected"
+        ],
+        "type": "object"
+      },
+      "ConflictsResolveParams": {
+        "description": "Params of `conflicts.resolve`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "keep": {
+            "$ref": "#/components/schemas/WireKeep"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "keep"
+        ],
+        "type": "object"
+      },
       "Created": {
         "properties": {
           "rev": {
@@ -1701,6 +1797,29 @@
         ],
         "type": "object"
       },
+      "ResolveResult": {
+        "description": "Result of `conflicts.resolve`.",
+        "properties": {
+          "message": {
+            "description": "The confirmation, in the words `tdo conflicts resolve` uses.",
+            "type": "string"
+          },
+          "op_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/WireResolution"
+          }
+        },
+        "required": [
+          "resolution",
+          "message"
+        ],
+        "type": "object"
+      },
       "ShutdownParams": {
         "properties": {
           "when_idle": {
@@ -2253,6 +2372,28 @@
         ],
         "type": "object"
       },
+      "WireConflictKind": {
+        "description": "What kind of disagreement a conflict is (mirrors the core's `ConflictKind`).",
+        "enum": [
+          "both_changed",
+          "local_delete_remote_edit",
+          "remote_delete_local_edit",
+          "journal"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "WireConflictState": {
+        "description": "Where a conflict is in its life (mirrors the core's `ConflictState`).",
+        "enum": [
+          "open",
+          "chosen",
+          "resolved",
+          "superseded"
+        ],
+        "type": "string",
+        "x-open": true
+      },
       "WireError": {
         "properties": {
           "message": {
@@ -2268,6 +2409,58 @@
           "message"
         ],
         "type": "object"
+      },
+      "WireKeep": {
+        "description": "Which version to keep.",
+        "oneOf": [
+          {
+            "enum": [
+              "local",
+              "remote"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "current",
+            "description": "The task as the vdir holds it now (not for a held conflict).",
+            "type": "string"
+          }
+        ]
+      },
+      "WireResolution": {
+        "description": "What a resolution did (mirrors the core's `Resolution`).",
+        "oneOf": [
+          {
+            "const": "recorded",
+            "description": "A held conflict: the choice is recorded and the next sync applies it.",
+            "type": "string"
+          },
+          {
+            "const": "already_in_place",
+            "description": "The vdir already held the kept version.",
+            "type": "string"
+          },
+          {
+            "const": "written",
+            "description": "The kept version was written to the vdir (`op_id` names the journal entry).",
+            "type": "string"
+          },
+          {
+            "const": "kept_current",
+            "description": "The conflict is closed and the vdir file left as it is.",
+            "type": "string"
+          }
+        ],
+        "x-open": true
+      },
+      "WireSide": {
+        "description": "Which copy of a task (mirrors the core's `Side`).",
+        "enum": [
+          "local",
+          "remote"
+        ],
+        "type": "string",
+        "x-open": true
       },
       "WireSnapshot": {
         "properties": {
@@ -2872,6 +3065,44 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/JobView"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConflictList"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.resolve",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ConflictsResolveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ResolveResult"
         }
       },
       "x-lifecycle": false

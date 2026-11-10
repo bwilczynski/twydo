@@ -123,6 +123,8 @@ pub fn dispatch(
         "sync.run" => super::syncjob::sync_run(shared, conn, parse(params)?),
         "sync.stop" => super::syncjob::sync_stop(shared),
         "sync.set_auto" => super::syncjob::sync_set_auto(shared, parse(params)?),
+        "conflicts.list" => super::admin::conflicts_list(shared),
+        "conflicts.resolve" => super::admin::conflicts_resolve(shared, conn, parse(params)?),
         "job.get" => super::jobs::get(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {

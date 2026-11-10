@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod events;
 pub mod jobs;
 pub mod methods;
