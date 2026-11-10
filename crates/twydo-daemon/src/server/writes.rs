@@ -43,6 +43,10 @@
 //! session holder may be waiting for that write lane, so the session mutexes must not be
 //! taken under it.
 //!
+//! The scheduler's poke ([`Shared::poke_scheduler`], after a publish and a sync's end) takes
+//! the scheduler slot and then the scheduler's own mutex, both held only to set a flag. The
+//! scheduler thread holds neither while it reads the journal or posts to the job runner.
+//!
 //! Teardown takes the commit gate's write side holding none of the above, so it waits only
 //! for store calls already inside the gate (each bounded by the store's lock try), and it
 //! closes the gate before the daemon lock is released.
@@ -345,6 +349,8 @@ fn publish_applied(shared: &Shared, entry: Option<&str>, drained: &[Drained]) ->
         }
     };
     shared.publisher.refresh_status();
+    // An applied edit may make a batch due.
+    shared.poke_scheduler();
     revision
 }
 

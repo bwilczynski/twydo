@@ -47,6 +47,7 @@ impl SyncDone {
             result: self.result,
             status_rev,
         });
+        shared.poke_scheduler();
     }
 }
 
@@ -205,10 +206,4 @@ pub fn sync_set_auto(shared: &Arc<Shared>, p: SyncSetAutoParams) -> Result<Value
         .map_err(internal)
     })();
     ticket.finish(answer)
-}
-
-impl Shared {
-    /// What follows switching automatic sync on (a background sync when edits are unsynced).
-    /// A no-op until the scheduler exists.
-    pub fn after_switch_on(self: &Arc<Self>) {}
 }

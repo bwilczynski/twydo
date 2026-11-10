@@ -8,6 +8,7 @@ pub mod jobs;
 pub mod lane;
 pub mod publish;
 pub mod replay;
+pub mod schedule;
 pub mod sessions;
 pub mod syncjob;
 pub mod watch;
@@ -64,6 +65,12 @@ pub struct DaemonOptions {
     /// Makes the first status refresher run panic, to check later refreshes still happen.
     #[doc(hidden)]
     pub status_panic_once: bool,
+    /// Runs the scheduler (startup, periodic and batched syncs). Tests turn it off.
+    pub schedule: bool,
+    /// The interval of the periodic sync.
+    pub periodic: Duration,
+    /// The scheduler's clock.
+    pub clock: Arc<dyn schedule::Clock>,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -84,6 +91,9 @@ impl DaemonOptions {
             in_commit: None,
             before_queued_reply: None,
             status_panic_once: false,
+            schedule: true,
+            periodic: Duration::from_secs(60),
+            clock: Arc::new(schedule::SystemClock),
         }
     }
 }
@@ -139,6 +149,8 @@ pub struct Shared {
     /// The background status refresher; see [`Shared::request_status_refresh`].
     status_refresh: Mutex<Refresher>,
     status_refresh_cv: Condvar,
+    /// The scheduler, once started (after ready); taken at teardown.
+    scheduler: Mutex<Option<schedule::Scheduler>>,
     /// The background drainer; see [`Shared::request_drain`].
     drainer: Mutex<Drainer>,
     drainer_cv: Condvar,
@@ -279,6 +291,7 @@ impl Daemon {
             runner: jobs::JobRunner::new(),
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
+            scheduler: Mutex::new(None),
             drainer: Mutex::new(Drainer::default()),
             drainer_cv: Condvar::new(),
             ready: Mutex::new(false),
@@ -326,7 +339,8 @@ impl Daemon {
             let for_thread = Arc::clone(&shared);
             let hook = opts.before_recovery.take();
             let matrix = opts.matrix;
-            let h = std::thread::spawn(move || startup(&for_thread, matrix, hook));
+            let sched = opts.schedule.then_some((opts.clock, opts.periodic));
+            let h = std::thread::spawn(move || startup(&for_thread, matrix, hook, sched));
             *shared.startup.lock().unwrap() = Some(h);
         }
         let accept = {
@@ -420,6 +434,7 @@ fn startup(
     shared: &Arc<Shared>,
     matrix: Matrix,
     before_recovery: Option<Box<dyn FnOnce() + Send>>,
+    sched: Option<(Arc<dyn schedule::Clock>, Duration)>,
 ) {
     type Step<'a> = Box<dyn FnOnce(&Arc<Shared>) -> Result<(), String> + 'a>;
     // One entry per step; the stop flag is checked before each, so a stopping daemon never
@@ -507,6 +522,10 @@ fn startup(
     shared.set_ready();
     if shared.is_ready() {
         shared.runner.start(shared);
+        // After the runner: the scheduler posts the startup sync at once.
+        if let Some((clock, periodic)) = sched {
+            shared.start_scheduler(clock, periodic);
+        }
     }
     // A long job that ended before ready skipped its drain (and the startup drain may have
     // found the lane held): catch up now.
@@ -631,6 +650,8 @@ fn teardown(shared: &Shared) {
     // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
     // writes the vdir while a thread of this one still could.
     shared.close_commits();
+    // No more background syncs are posted; before the runner is closed.
+    shared.stop_scheduler();
     // Queued jobs never run; the running one ends first (its drain skips: the daemon is
     // stopping).
     for view in shared.runner.close() {
@@ -710,6 +731,12 @@ impl DaemonHandle {
             reason,
             background: true,
         });
+    }
+
+    /// Wakes the scheduler to decide again (tests move its clock first).
+    #[doc(hidden)]
+    pub fn poke_scheduler(&self) {
+        self.shared.poke_scheduler();
     }
 
     #[doc(hidden)]

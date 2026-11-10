@@ -3,8 +3,10 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use twydo_core::edit::{Change, NewTask, Op};
 use twydo_daemon::client::{Client, ClientError, Notification};
@@ -14,6 +16,7 @@ use twydo_daemon::protocol::methods::{
 };
 use twydo_daemon::protocol::rpc::{ErrorData, ErrorKind};
 use twydo_daemon::protocol::wire::{WireSnapshot, WireTask};
+use twydo_daemon::server::schedule::Clock;
 use twydo_daemon::server::{Daemon, DaemonHandle, DaemonOptions};
 
 use twydo_core::config::{
@@ -140,6 +143,31 @@ pub fn fake_vdirsyncer(dir: &Path, body: &str) -> PathBuf {
     }
 }
 
+/// A clock the test moves. [`FakeClock::advance`] moves it past the later of itself and the
+/// real clock, so edits (stamped by the real clock) are never in its future.
+pub struct FakeClock {
+    pub now: Mutex<DateTime<Utc>>,
+}
+
+impl FakeClock {
+    pub fn new() -> Arc<FakeClock> {
+        Arc::new(FakeClock {
+            now: Mutex::new(Utc::now()),
+        })
+    }
+
+    pub fn advance(&self, d: Duration) {
+        let mut g = self.now.lock().unwrap();
+        *g = (*g).max(Utc::now()) + chrono::Duration::from_std(d).unwrap();
+    }
+}
+
+impl Clock for FakeClock {
+    fn now(&self) -> DateTime<Utc> {
+        *self.now.lock().unwrap()
+    }
+}
+
 /// The next event matching `pred` (others are skipped), within `limit`.
 pub fn wait_event(c: &Client, limit: Duration, pred: impl Fn(&Event) -> bool) -> Event {
     let deadline = Instant::now() + limit;
@@ -232,6 +260,25 @@ impl TestDaemon {
         td
     }
 
+    /// Starts with configuration `cfg` and the scheduler on, its clock `clock`; waits until
+    /// ready. The scheduler posts its startup sync at once.
+    pub fn start_scheduled(fx: &Fixture, cfg: Config, clock: Arc<FakeClock>) -> TestDaemon {
+        Self::start_scheduled_with(fx, cfg, clock, |_| {})
+    }
+
+    pub fn start_scheduled_with(
+        fx: &Fixture,
+        cfg: Config,
+        clock: Arc<FakeClock>,
+        f: impl FnOnce(&mut DaemonOptions),
+    ) -> TestDaemon {
+        Self::start_cfg(fx, cfg, |o| {
+            o.schedule = true;
+            o.clock = clock;
+            f(o);
+        })
+    }
+
     /// Starts without waiting for startup to finish.
     pub fn start_unready(fx: &Fixture, f: impl FnOnce(&mut DaemonOptions)) -> TestDaemon {
         Self::start_unready_cfg(fx, fx.config(), f)
@@ -245,6 +292,8 @@ impl TestDaemon {
         let dir = short_socket_dir();
         let socket = dir.path().join("s").join("tdo.sock");
         let mut opts = DaemonOptions::new(socket.clone());
+        // No test runs the scheduler unless it asks to (`start_scheduled`).
+        opts.schedule = false;
         f(&mut opts);
         let instance = fx.instance();
         let handle = Daemon::start(cfg, instance.clone(), opts).expect("start");
