@@ -46,8 +46,9 @@ notifications pending; use `tdo op journal` to display their details.
 `tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries of
 their vdir, kept under `state_dir`.
 
-`tdo op --matrix <path>` is a hidden test-only hook: it replaces the compatibility matrix built
-into `tdo` with the file at `<path>`. Never use it on real data.
+`tdo daemon --matrix <path>` and `tdo op check <uid> --matrix <path>` are hidden test-only hooks:
+they replace the compatibility matrix built into `tdo` with the file at `<path>` (writes go
+through the daemon, which owns the matrix). Never use them on real data.
 
 ## `[sync]`
 

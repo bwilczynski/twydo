@@ -1,12 +1,13 @@
 //! `tdo op`: the core write operations as scriptable commands.
 //!
-//! Exit 0 prints the operation id, or `queued (a sync is running): <queue id>` when a sync
-//! holds the vdir and the write waits in the queue (`--wait` waits for its outcome instead
-//! of returning at once); 1 means blocked, stale or stuck (reason on stderr); 2 is a usage,
-//! configuration, IO or edit error.
+//! Writes go to the daemon over its socket (nothing here reads the vdir or the config file;
+//! `op check` is the exception, a local read). Exit 0 prints the operation id, or
+//! `queued (a sync is running): <queue id>` when the daemon's lane is busy and the write
+//! waits in its queue (`--wait` waits for its outcome instead of returning at once); 1 means
+//! blocked, stale or stuck (reason on stderr); 2 is a usage, daemon or edit error.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use clap::{Args, Subcommand, ValueEnum};
@@ -15,16 +16,22 @@ use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::model::TaskKind;
 use twydo_core::repeatinput::{self, RepeatSpec};
-use twydo_core::store::journal::Journal;
-use twydo_core::store::queue::{Queue, Refusal, refusal_message};
-use twydo_core::store::{Store, Submitted, WriteError, existing_vdir_state};
-use twydo_core::sync::batch::after_write;
 use twydo_core::views::Snapshot;
+use twydo_daemon::client::{Client, ClientError, Notification};
+use twydo_daemon::protocol::admin::{
+    AbandonResult, JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult,
+};
+use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::methods::{
+    AckParams, BasedOn, OpGetParams, OpState, StatusView, SubmitParams, SubscribeResult,
+    WriteOutcome, WriteResult,
+};
+use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
+use twydo_daemon::protocol::wire::{WireSnapshot, from_wire};
 
 use super::permissions::{probes, task_lines};
-use super::sync::{print_refusals, spawn};
 use super::{CliError, EXIT_ERROR, permission_snapshot, resolve_config};
-use crate::write::op_title;
+use crate::client::{self, CLI_TIMEOUT, Target};
 
 /// A task type, as `--kind` spells it.
 #[derive(Clone, Copy, ValueEnum)]
@@ -44,8 +51,12 @@ impl From<KindArg> for TaskKind {
     }
 }
 
-/// How often `--wait` looks at the queue.
-const WAIT_POLL: Duration = Duration::from_millis(100);
+/// How often `--wait` asks `op.get` when no event arrives.
+const WAIT_POLL: Duration = Duration::from_secs(5);
+/// How long to wait for a starting daemon to become ready.
+const STARTUP_WAIT: Duration = Duration::from_secs(30);
+/// How long `--wait` keeps trying to reach a daemon that went away.
+const RECONNECT_FOR: Duration = Duration::from_secs(60);
 
 const WAIT_HELP: &str =
     "If a sync holds the vdir, wait until the queued write is applied or refused";
@@ -129,7 +140,12 @@ pub enum OpCommand {
         wait: bool,
     },
     /// Show concrete permissions and actions needing proposed input for a task
-    Check { uid: String },
+    Check {
+        uid: String,
+        /// Compatibility matrix file (test hook)
+        #[arg(long, value_name = "PATH", hide = true)]
+        matrix: Option<PathBuf>,
+    },
     /// List journal entries
     Journal,
     /// Run journal recovery and report the result
@@ -187,13 +203,23 @@ impl From<CliError> for Failure {
     }
 }
 
-impl From<WriteError> for Failure {
-    fn from(e: WriteError) -> Self {
-        match e {
-            WriteError::Blocked(_) | WriteError::Stale(_) | WriteError::Stuck(_) => {
-                Failure::Blocked(e.to_string())
-            }
-            _ => Failure::Error(e.to_string()),
+impl From<client::ConnectError> for Failure {
+    fn from(e: client::ConnectError) -> Self {
+        Failure::Error(e.to_string())
+    }
+}
+
+impl From<ClientError> for Failure {
+    fn from(e: ClientError) -> Self {
+        match &e {
+            ClientError::Rpc(r) => match r.data.as_ref().map(|d| d.kind) {
+                Some(RpcKind::Blocked | RpcKind::Stale | RpcKind::Stuck) => {
+                    Failure::Blocked(e.to_string())
+                }
+                _ => Failure::Error(e.to_string()),
+            },
+            ClientError::TimedOut(_) => Failure::Error("daemon did not answer; try again".into()),
+            _ => Failure::Error(format!("daemon not running: {e}")),
         }
     }
 }
@@ -313,22 +339,28 @@ fn check_lines(
     Ok(task_lines(&probes(snap, matrix, mode, idx, now)))
 }
 
-/// Run an `op` subcommand; returns the process exit code.
-pub fn run(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> i32 {
-    match run_inner(vdir, matrix, cmd) {
+/// `tdo op check`: a local read of the vdir (no daemon), with `--matrix` for tests.
+pub fn check_command(vdir: Option<&Path>, matrix: Option<&PathBuf>, uid: &str) -> i32 {
+    match check_inner(vdir, matrix, uid) {
         Ok(()) => 0,
-        Err(Failure::Blocked(m)) => {
+        Err(f) => report(f),
+    }
+}
+
+fn report(f: Failure) -> i32 {
+    match f {
+        Failure::Blocked(m) => {
             eprintln!("tdo: {m}");
             EXIT_BLOCKED
         }
-        Err(Failure::Error(m)) => {
+        Failure::Error(m) => {
             eprintln!("tdo: {m}");
             EXIT_ERROR
         }
     }
 }
 
-fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> Result<(), Failure> {
+fn check_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, uid: &str) -> Result<(), Failure> {
     let cfg = resolve_config(vdir)?;
     let matrix = match matrix {
         Some(p) => Matrix::load(p).map_err(CliError::from)?,
@@ -337,24 +369,66 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
     if cfg.writes.mode == WriteMode::Test {
         eprintln!("tdo: test write mode: unverified operations are enabled");
     }
+    let snap = permission_snapshot(&cfg)?;
+    for line in check_lines(&snap, &matrix, cfg.writes.mode, uid, Utc::now())? {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// Run an `op` subcommand; returns the process exit code.
+pub fn run(target: &Target, cmd: OpCommand) -> i32 {
+    if let OpCommand::Check { uid, matrix } = &cmd {
+        return check_command(target.vdir.as_deref(), matrix.as_ref(), uid);
+    }
+    match run_inner(target, cmd) {
+        Ok(()) => 0,
+        Err(f) => report(f),
+    }
+}
+
+const CLIENT: &str = "tdo-op";
+
+/// A request id: `op-` marks it as a CLI write, so other CLI runs print its refusal.
+fn request_id(c: &Client) -> String {
+    format!("op-{}", c.next_request_id())
+}
+
+fn rpc<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    c: &Client,
+    method: &str,
+    params: P,
+) -> Result<R, Failure> {
+    Ok(c.caller().call_timeout(method, params, CLI_TIMEOUT)?)
+}
+
+/// `snapshot.get`, retried while the daemon is still starting (it answers hello first).
+fn snapshot(c: &Client) -> Result<WireSnapshot, Failure> {
+    Ok(client::call_ready(
+        &c.caller(),
+        "snapshot.get",
+        &serde_json::json!({}),
+        CLI_TIMEOUT,
+        STARTUP_WAIT,
+    )?)
+}
+
+fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
+    let (client, hello) = client::connect(target, CLIENT, None)?;
+    let session = hello.session.clone();
+    let wire = snapshot(&client)?;
+    let based_on = BasedOn {
+        epoch: hello.epoch.clone(),
+        revision: wire.revision,
+    };
+    let snap = from_wire(wire);
+    let cfg = &snap.config;
+    if cfg.writes.mode == WriteMode::Test {
+        eprintln!("tdo: test write mode: unverified operations are enabled");
+    }
+    print_refusals(&client)?;
     let now = Utc::now();
     let today = now.with_timezone(&cfg.tz()).date_naive();
-    let (mut store, report) = Store::open_with(&cfg, matrix.clone())?;
-    // Permission reports must not disclose task labels or consume notifications.
-    // The next ordinary operation (including `journal`) still reports them once.
-    if !matches!(&cmd, OpCommand::Check { .. }) {
-        print_refusals(&cfg);
-    }
-    let journal_dir = store.state_dir().join("journal");
-    for (id, reason) in &report.stuck {
-        if reason.starts_with("unreadable journal entry") {
-            eprintln!(
-                "tdo: {}: unreadable journal entry; move it out of {} to continue",
-                journal_dir.join(format!("{id}.json")).display(),
-                journal_dir.display()
-            );
-        }
-    }
 
     let wait;
     let op = match cmd {
@@ -373,7 +447,7 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             let mut due = due.as_deref().map(parse_due).transpose()?;
             let repeat = repeat
                 .as_deref()
-                .map(|t| parse_repeat(t, today, &cfg))
+                .map(|t| parse_repeat(t, today, cfg))
                 .transpose()?;
             if repeat.is_some() && due.is_none() {
                 due = Some(Due::Date(today));
@@ -390,9 +464,8 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
         }
         OpCommand::Edit(a) => {
             wait = a.wait;
+            let t = snap.find(&a.uid).map(|i| &snap.tasks[i]);
             let (has_due, declared) = if a.repeat.is_some() || a.kind.is_some() {
-                let snap = permission_snapshot(&cfg)?;
-                let t = snap.find(&a.uid).map(|i| &snap.tasks[i]);
                 (
                     t.is_some_and(|t| t.due.is_some()) && !a.clear_due,
                     t.map(twydo_core::views::declared_kind),
@@ -401,23 +474,20 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
                 (true, None)
             };
             Op::Edit {
-                changes: edit_changes(&a, &cfg, today, has_due, declared)?,
+                changes: edit_changes(&a, cfg, today, has_due, declared)?,
                 uid: a.uid,
             }
         }
         OpCommand::Complete { uid, all, wait: w } => {
             wait = w;
-            if !all {
-                let snap = permission_snapshot(&cfg)?;
-                if let Some(i) = snap.find(&uid) {
-                    let open = snap.open_items(i);
-                    if open > 0 {
-                        return Err(Failure::Blocked(format!(
-                            "\"{}\" has {open} open {}; pass --all to complete them too",
-                            snap.tasks[i].summary,
-                            if open == 1 { "item" } else { "items" }
-                        )));
-                    }
+            if !all && let Some(i) = snap.find(&uid) {
+                let open = snap.open_items(i);
+                if open > 0 {
+                    return Err(Failure::Blocked(format!(
+                        "\"{}\" has {open} open {}; pass --all to complete them too",
+                        snap.tasks[i].summary,
+                        if open == 1 { "item" } else { "items" }
+                    )));
                 }
             }
             Op::Complete { uid }
@@ -448,35 +518,42 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             }
         }
         OpCommand::Undo { op_id, wait } => {
-            let submitted = store.undo(&op_id, now)?;
-            return finish(&mut store, &cfg, vdir, submitted, wait);
+            let r: WriteResult = rpc(
+                &client,
+                "journal.revert",
+                JournalRevertParams {
+                    session,
+                    request_id: request_id(&client),
+                    op_id,
+                },
+            )?;
+            return finish(target, client, r, wait);
         }
         OpCommand::Abandon { op_id } => {
-            store.abandon(&op_id)?;
+            let _: AbandonResult = rpc(
+                &client,
+                "journal.abandon",
+                JournalAbandonParams {
+                    request_id: request_id(&client),
+                    op_id: op_id.clone(),
+                },
+            )?;
             println!("abandoned {op_id}");
             return Ok(());
         }
         OpCommand::Recover => {
-            println!("resumed: {}", report.resumed.len());
-            println!("stuck: {}", report.stuck.len());
-            for (id, reason) in &report.stuck {
-                println!("  {id}: {reason}");
+            let r: RecoverResult = rpc(&client, "journal.recover", serde_json::json!({}))?;
+            println!("resumed: {}", r.resumed.len());
+            println!("stuck: {}", r.stuck.len());
+            for s in &r.stuck {
+                println!("  {}: {}", s.id, s.reason);
             }
             return Ok(());
         }
         OpCommand::Journal => {
-            if report
-                .stuck
-                .iter()
-                .any(|(_, r)| r.starts_with("unreadable journal entry"))
-            {
-                return usage("journal has unreadable entries");
-            }
-            let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
-                return Ok(());
-            };
-            let journal = twydo_core::store::journal::Journal::open(&state)?;
-            for e in journal.list()? {
+            let entries: Vec<JournalEntryView> =
+                rpc(&client, "journal.list", serde_json::json!({}))?;
+            for e in entries {
                 println!(
                     "{}  {}  {}  {}  {}  {}",
                     e.id,
@@ -498,95 +575,190 @@ fn run_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, cmd: OpCommand) -> R
             }
             return Ok(());
         }
-        OpCommand::Check { uid } => {
-            let snap = permission_snapshot(&cfg)?;
-            for line in check_lines(&snap, &matrix, cfg.writes.mode, &uid, now)? {
-                println!("{line}");
-            }
-            return Ok(());
-        }
+        OpCommand::Check { .. } => unreachable!("handled by run"),
     };
-    let snap = permission_snapshot(&cfg)?;
-    let label = op_title(&snap, &op);
-    let submitted = store.submit(&snap, &op, &label, "op", now)?;
-    finish(&mut store, &cfg, vdir, submitted, wait)
+    let r: WriteResult = rpc(
+        &client,
+        "op.submit",
+        SubmitParams {
+            session,
+            request_id: request_id(&client),
+            based_on,
+            op,
+        },
+    )?;
+    finish(target, client, r, wait)
+}
+
+/// Prints the refusals of queued writes no screen has shown yet (those of earlier CLI runs,
+/// or without a session) once, and acknowledges them.
+fn print_refusals(c: &Client) -> Result<(), Failure> {
+    let status: StatusView = rpc(c, "status.get", serde_json::json!({}))?;
+    let mut ids = Vec::new();
+    for r in status.refusals {
+        let ours = r.session.is_none()
+            || r.request_id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("op-"));
+        if ours {
+            eprintln!("tdo: {}", r.message);
+            ids.push(r.id);
+        }
+    }
+    if !ids.is_empty() {
+        let _: serde_json::Value = rpc(
+            c,
+            "refusals.ack",
+            AckParams {
+                request_id: request_id(c),
+                ids,
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// Reports what a submit did. Applied: the journal entry id. Queued: `queued (a sync is
 /// running): <queue id>` at once, or with `--wait` the outcome once the item is applied or
 /// refused.
-fn finish(
-    store: &mut Store,
-    cfg: &Config,
-    vdir: Option<&Path>,
-    submitted: Submitted,
-    wait: bool,
-) -> Result<(), Failure> {
-    match submitted {
-        Submitted::Applied(id) => println!("{id}"),
-        Submitted::Cancelled => println!("cancelled"),
-        Submitted::Queued(item) => {
+fn finish(target: &Target, client: Client, r: WriteResult, wait: bool) -> Result<(), Failure> {
+    match r.outcome {
+        WriteOutcome::Queued => {
             if !wait {
-                println!("queued (a sync is running): {}", item.id);
+                println!("queued (a sync is running): {}", r.op_id);
                 return Ok(());
             }
-            let id = wait_for(store, &item.id)?;
+            let id = wait_for(target, client, &r.op_id)?;
             println!("{id}");
         }
+        _ => println!("{}", r.op_id),
     }
-    sync_after_write(cfg, vdir);
     Ok(())
 }
 
-/// Waits until queued item `id` is neither pending nor claimed, then returns the journal entry
-/// the drain made from it. While it waits it drains the queue itself whenever the vdir lock is
-/// free (the sync that held it may be gone, and nothing else is bound to drain). A first
-/// look that still finds it pending says so once on stderr. A refusal is printed, marked
-/// shown and fails with the blocked exit code; an item that vanished without either (someone
-/// cancelled it) fails the same way.
-fn wait_for(store: &mut Store, id: &str) -> Result<String, Failure> {
-    let state = store.state_dir().to_path_buf();
-    let state = state.as_path();
-    let dir = state.join("queue");
-    let mut told = false;
-    // Pending first, then claimed: a drain renames the one to the other, so checking in this
-    // order never sees an item in flight as gone.
-    while dir.join(format!("{id}.json")).exists() || dir.join(format!("{id}.claim")).exists() {
-        match store.drain(Utc::now()) {
-            Ok(_) | Err(WriteError::Busy) => {}
-            Err(e) => return Err(e.into()),
+/// What `op.get` or `op.finished` says about a queued write.
+enum Verdict {
+    Pending,
+    Done(String),
+    Failed(Failure),
+}
+
+fn verdict(c: &Client, queue_id: &str, state: OpState) -> Verdict {
+    match state {
+        OpState::Applied { op_id } | OpState::Satisfied { op_id } => Verdict::Done(op_id),
+        OpState::Refused { kind, message } => {
+            // Shown here, so nothing repeats it later.
+            let _: Result<serde_json::Value, _> = rpc(
+                c,
+                "refusals.ack",
+                AckParams {
+                    request_id: request_id(c),
+                    ids: vec![queue_id.to_string()],
+                },
+            );
+            Verdict::Failed(match kind {
+                RpcKind::Blocked | RpcKind::Stale | RpcKind::Stuck => Failure::Blocked(message),
+                _ => Failure::Error(message),
+            })
         }
-        if !told && dir.join(format!("{id}.json")).exists() {
-            eprintln!("waiting for the sync to finish (queued {id})");
-            told = true;
-        }
-        std::thread::sleep(WAIT_POLL);
-    }
-    if state.join("journal").is_dir()
-        && let Some(e) = Journal::open(state)?.by_queue_id(id)?
-    {
-        return Ok(e.id);
-    }
-    let refusal = std::fs::read(dir.join("refused").join(format!("{id}.json")))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Refusal>(&b).ok());
-    match refusal {
-        Some(r) => {
-            if let Some(q) = Queue::existing(state) {
-                let _ = q.mark_shown(id);
-            }
-            Err(Failure::Blocked(refusal_message(&r)))
-        }
-        None => Err(Failure::Blocked(format!(
-            "queued write {id} was cancelled before it was applied"
+        OpState::Cancelled => Verdict::Failed(Failure::Blocked(format!(
+            "queued write {queue_id} was cancelled before it was applied"
         ))),
+        OpState::Pending | OpState::Unknown => Verdict::Pending,
     }
 }
 
-/// After a write that exited 0: a background sync when the batch is due, else the batch
-/// waiter (nothing without `[sync]` or while switched off).
-fn sync_after_write(cfg: &Config, vdir: Option<&Path>) {
-    if let Some(t) = after_write(cfg, Utc::now()) {
-        spawn(cfg, vdir, t);
+/// Waits for the queued write `id` to be applied or refused, by `op.finished` events, asking
+/// `op.get` every 5 s and after `missed` or a reconnect. Returns the journal entry id.
+fn wait_for(target: &Target, client: Client, id: &str) -> Result<String, Failure> {
+    eprintln!("waiting for the sync to finish (queued {id})");
+    let mut client = client;
+    let mut subscribed =
+        rpc::<_, SubscribeResult>(&client, "events.subscribe", serde_json::json!({})).is_ok();
+    let mut gone_since: Option<Instant> = None;
+    let mut check_now = true;
+    loop {
+        if check_now {
+            check_now = false;
+            let got: Result<OpState, ClientError> = client.caller().call_timeout(
+                "op.get",
+                OpGetParams {
+                    op_id: Some(id.to_string()),
+                    request_id: None,
+                },
+                CLI_TIMEOUT,
+            );
+            match got {
+                Ok(state) => {
+                    gone_since = None;
+                    match verdict(&client, id, state) {
+                        Verdict::Done(op) => return Ok(op),
+                        Verdict::Failed(f) => return Err(f),
+                        Verdict::Pending => {}
+                    }
+                }
+                Err(ClientError::Rpc(e))
+                    if matches!(e.data.as_ref().map(|d| d.kind), Some(RpcKind::Unavailable)) =>
+                {
+                    // Connected, but the daemon is not ready (or is shutting down): ask
+                    // again shortly, for as long as it keeps saying so.
+                    let since = *gone_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() > RECONNECT_FOR {
+                        return Err(Failure::Error(
+                            "daemon not running: it did not come back".into(),
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(200));
+                    check_now = true;
+                    continue;
+                }
+                Err(ClientError::Rpc(e)) => return Err(ClientError::Rpc(e).into()),
+                Err(_) => {
+                    // The daemon went away (or is starting): connect again, which starts it
+                    // when nobody has. The session is gone; `op.get` needs none.
+                    let since = *gone_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() > RECONNECT_FOR {
+                        return Err(Failure::Error(
+                            "daemon not running: it did not come back".into(),
+                        ));
+                    }
+                    match client::connect(target, CLIENT, None) {
+                        Ok((c, _)) => {
+                            client = c;
+                            subscribed = rpc::<_, SubscribeResult>(
+                                &client,
+                                "events.subscribe",
+                                serde_json::json!({}),
+                            )
+                            .is_ok();
+                        }
+                        Err(_) => std::thread::sleep(Duration::from_millis(500)),
+                    }
+                    check_now = true;
+                    continue;
+                }
+            }
+            if !subscribed {
+                std::thread::sleep(Duration::from_millis(500));
+                check_now = true;
+                continue;
+            }
+        }
+        match client.notifications().recv_timeout(WAIT_POLL) {
+            Ok(Notification::Event(env)) => {
+                if let Event::OpFinished { op_id, state, .. } = env.event
+                    && op_id == id
+                {
+                    match verdict(&client, id, state) {
+                        Verdict::Done(op) => return Ok(op),
+                        Verdict::Failed(f) => return Err(f),
+                        Verdict::Pending => check_now = true,
+                    }
+                }
+            }
+            Ok(Notification::Missed(_)) => check_now = true,
+            Ok(Notification::Heartbeat(_)) => {}
+            Err(_) => check_now = true,
+        }
     }
 }

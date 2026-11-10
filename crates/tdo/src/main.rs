@@ -28,9 +28,6 @@ enum Command {
     ExportJson,
     /// Write operations on tasks (scriptable)
     Op {
-        /// Compatibility matrix file (test hook)
-        #[arg(long, value_name = "PATH", hide = true)]
-        matrix: Option<PathBuf>,
         #[command(subcommand)]
         command: cli::op::OpCommand,
     },
@@ -104,8 +101,10 @@ fn main() {
                 std::process::exit(cli::EXIT_ERROR);
             }
         }),
-        Command::Op { matrix, command } => {
-            std::process::exit(cli::op::run(cli.vdir.as_deref(), matrix.as_ref(), command))
+        Command::Op { command } => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::op::run(&target, command))
         }
         Command::Daemon {
             matrix,
