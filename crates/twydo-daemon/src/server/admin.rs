@@ -3,10 +3,10 @@
 //! `journal.abandon` (`journal.revert` lives with the writes, in `writes.rs`).
 //!
 //! A resolution is a write the queue cannot hold, so it waits behind a running job
-//! ([`Lane::write_waiting`](super::lane::Lane::write_waiting)); it takes no session mutex (the
-//! lock order in `writes.rs` is respected: request log slot, lane, commit gate, then the
-//! publisher after the lane's gate is let go). The conflict records the request, so a resend
-//! after a restart replays ([`ConflictStore::by_request`]).
+//! ([`Lane::write_waiting`](super::lane::Lane::write_waiting)), as `journal.recover` and
+//! `journal.abandon` do; for the locks they take, see the lock order in `writes.rs`. The
+//! conflict records the request, so a resend after a restart replays
+//! ([`ConflictStore::by_request`]).
 
 use std::sync::Arc;
 

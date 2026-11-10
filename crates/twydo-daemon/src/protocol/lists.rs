@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use twydo_core::lists::ListState;
@@ -153,4 +155,74 @@ pub struct ListExportParams {
     pub request_id: String,
     pub backup: String,
     pub destination: PathBuf,
+}
+
+/// Params of `lists.preview_forget`: the list to forget, by directory or display name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListPreviewForgetParams {
+    pub name: String,
+}
+
+/// What forgetting a list would preserve.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ForgetPreview {
+    /// The list's directory name.
+    pub collection: String,
+    pub name: String,
+    pub tasks: usize,
+    /// Edits of the list that are not yet synced.
+    pub pending: usize,
+}
+
+/// Params of `lists.forget`: the list `name` as the preview showed it; the job fails when
+/// `name` now resolves to another directory than `collection`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListForgetParams {
+    pub request_id: String,
+    pub name: String,
+    pub collection: String,
+}
+
+/// Params of `lists.recover`: copy the tasks of retired-list backup `backup` into the
+/// existing list `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListRecoverParams {
+    pub session: String,
+    pub request_id: String,
+    pub backup: String,
+    pub to: String,
+}
+
+/// A preserved (forgotten) list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RetiredBackupView {
+    pub id: String,
+    pub collection: String,
+    pub name: String,
+    pub created: DateTime<Utc>,
+    pub tasks: usize,
+    pub pending: usize,
+    pub retired: bool,
+}
+
+/// A backup a list deletion kept.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeletedBackupView {
+    pub id: String,
+    pub collection: String,
+    pub name: String,
+    pub created: DateTime<Utc>,
+}
+
+/// The answer of `lists.backups`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Backups {
+    pub retired: Vec<RetiredBackupView>,
+    pub deleted: Vec<DeletedBackupView>,
+}
+
+/// Params of `lists.backup_preview`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BackupPreviewParams {
+    pub id: String,
 }

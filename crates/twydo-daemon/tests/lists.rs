@@ -17,11 +17,15 @@ use twydo_daemon::client::{Client, Notification};
 use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::jobs::{JobResult, JobStarted, JobState};
 use twydo_daemon::protocol::lists::{
-    ListArchiveParams, ListCreateParams, ListDeleteParams, ListExportParams,
-    ListPreviewDeleteParams, ListUpdateParams, WireDeletePreview, WireListState,
+    BackupPreviewParams, Backups, ForgetPreview, ListArchiveParams, ListCreateParams,
+    ListDeleteParams, ListExportParams, ListForgetParams, ListPreviewDeleteParams,
+    ListPreviewForgetParams, ListRecoverParams, ListUpdateParams, WireDeletePreview, WireListState,
 };
 use twydo_daemon::protocol::methods::{OpState, WriteOutcome};
 use twydo_daemon::protocol::rpc::ErrorKind;
+use twydo_daemon::protocol::sync::{SyncReason, SyncRunParams};
+use twydo_daemon::protocol::wire::WireSnapshot;
+use twydo_daemon::server::DaemonOptions;
 
 const BOUND: Duration = Duration::from_secs(20);
 
@@ -125,6 +129,11 @@ fn matrix() -> Matrix {
 }
 
 fn env_with(f: impl FnOnce(&mut Config)) -> Env {
+    env_opts(f, |_| {})
+}
+
+/// [`env_with`], and daemon options set by `o`.
+fn env_opts(f: impl FnOnce(&mut Config), o: impl FnOnce(&mut DaemonOptions)) -> Env {
     let fx = Fixture::new(&[("c1", "u1", "One", None), ("c2", "u2", "Two", None)]);
     let root = fx.vdir().parent().unwrap().to_path_buf();
     let mut collections = serde_json::Map::new();
@@ -158,7 +167,10 @@ fn env_with(f: impl FnOnce(&mut Config)) -> Env {
     .unwrap();
     let mut cfg = Config::load(&path).unwrap();
     f(&mut cfg);
-    let td = TestDaemon::start_cfg(&fx, cfg, |o| o.matrix = matrix());
+    let td = TestDaemon::start_cfg(&fx, cfg, |opts| {
+        opts.matrix = matrix();
+        o(opts);
+    });
     let c = td.client();
     let _: Value = c.call("events.subscribe", empty()).unwrap();
     Env { fx, td, c }
@@ -550,4 +562,296 @@ fn invalid_colour_is_refused_before_a_job_starts() {
         .unwrap_err();
     assert_eq!(common::kind(&err), ErrorKind::Invalid);
     let _ = &e.td;
+}
+
+/// Forgets `c1` (as `Synthetic one`); returns the job's state and the events before it ended.
+fn forget(e: &Env) -> (JobState, Vec<Event>) {
+    let p: ForgetPreview =
+        e.c.call(
+            "lists.preview_forget",
+            ListPreviewForgetParams { name: "c1".into() },
+        )
+        .unwrap();
+    let job = call(
+        &e.c,
+        "lists.forget",
+        ListForgetParams {
+            request_id: e.c.next_request_id(),
+            name: "c1".into(),
+            collection: p.collection,
+        },
+    );
+    until_finished(&e.c, &job)
+}
+
+fn forgot(state: JobState) -> (String, String, bool) {
+    match state {
+        JobState::Finished {
+            result:
+                JobResult::Forgot {
+                    backup,
+                    message,
+                    sync,
+                    ..
+                },
+        } => (backup, message, sync.is_some()),
+        other => panic!("expected forgot: {other:?}"),
+    }
+}
+
+fn recover_params(e: &Env, backup: &str, to: &str) -> ListRecoverParams {
+    ListRecoverParams {
+        session: e.c.session().expect("hello"),
+        request_id: e.c.next_request_id(),
+        backup: backup.into(),
+        to: to.into(),
+    }
+}
+
+fn recovered(state: JobState) -> (Option<String>, bool, String) {
+    match state {
+        JobState::Finished {
+            result:
+                JobResult::Recovered {
+                    op_id,
+                    applied,
+                    message,
+                },
+        } => (op_id, applied, message),
+        other => panic!("expected recovered: {other:?}"),
+    }
+}
+
+#[test]
+fn forget_preserves_and_syncs() {
+    let e = env();
+    let p: ForgetPreview =
+        e.c.call(
+            "lists.preview_forget",
+            ListPreviewForgetParams { name: "c1".into() },
+        )
+        .unwrap();
+    assert_eq!(
+        (p.collection.as_str(), p.name.as_str(), p.tasks, p.pending),
+        ("c1", "Synthetic one", 1, 0)
+    );
+    let (state, events) = forget(&e);
+    let (backup, message, synced) = forgot(state);
+    assert_eq!(
+        message,
+        format!(
+            "preserved \"Synthetic one\" as {backup}; recover with :recover {backup} <destination-list>"
+        )
+    );
+    assert!(synced);
+    let started = events
+        .iter()
+        .filter(|ev| {
+            matches!(
+                ev,
+                Event::SyncStarted {
+                    reason: SyncReason::List,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(started, 1);
+    let snap: WireSnapshot = e.c.call("snapshot.get", empty()).unwrap();
+    assert!(snap.collections.iter().all(|c| c.id != "c1"));
+}
+
+#[test]
+fn forget_with_a_changed_list_fails() {
+    let e = env();
+    let job = call(
+        &e.c,
+        "lists.forget",
+        ListForgetParams {
+            request_id: e.c.next_request_id(),
+            name: "c1".into(),
+            collection: "c2".into(),
+        },
+    );
+    let (kind, message) = failed(finished(&e.c, &job));
+    assert_eq!(kind, ErrorKind::Blocked);
+    assert_eq!(message, "list changed; reload and try again");
+    let snap: WireSnapshot = e.c.call("snapshot.get", empty()).unwrap();
+    assert!(snap.collections.iter().any(|c| c.id == "c1"));
+}
+
+#[test]
+fn recover_into_a_list_applies_once() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let params = recover_params(&e, &backup, "c2");
+    let job = call(&e.c, "lists.recover", params.clone());
+    assert_eq!(call(&e.c, "lists.recover", params.clone()), job);
+    let (op_id, applied, message) = recovered(finished(&e.c, &job));
+    assert!(applied && op_id.is_some());
+    assert_eq!(message, "recovered local snapshot into c2; backup retained");
+    let snap: WireSnapshot = e.c.call("snapshot.get", empty()).unwrap();
+    assert_eq!(
+        snap.tasks
+            .iter()
+            .filter(|t| t.task.path.starts_with("c2/"))
+            .count(),
+        2
+    );
+
+    let again = call(&e.c, "lists.recover", recover_params(&e, &backup, "c2"));
+    let (_, applied, message) = recovered(finished(&e.c, &again));
+    assert!(!applied);
+    assert_eq!(message, "already recovered; backup retained");
+}
+
+#[test]
+fn recover_waits_behind_a_sync_instead_of_failing() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    fake_vdirsyncer(&e.root(), "sleep 1");
+    let sync: JobStarted =
+        e.c.call(
+            "sync.run",
+            SyncRunParams {
+                request_id: e.c.next_request_id(),
+                force_delete: Vec::new(),
+            },
+        )
+        .unwrap();
+    wait_event(&e.c, BOUND, |ev| matches!(ev, Event::SyncStarted { .. }));
+    let job = call(&e.c, "lists.recover", recover_params(&e, &backup, "c2"));
+    let (state, events) = until_finished(&e.c, &job);
+    let (_, applied, _) = recovered(state);
+    assert!(applied);
+    assert!(
+        events.iter().any(|ev| matches!(
+            ev,
+            Event::SyncFinished { job_id: Some(id), .. } if *id == sync.job_id
+        )),
+        "sync.finished must come before the recover finishes: {events:?}"
+    );
+}
+
+#[test]
+fn backups_list_both_kinds() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let deleted = preview(&e, "c2");
+    let b: Backups = e.c.call("lists.backups", empty()).unwrap();
+    assert_eq!(b.retired.len(), 1);
+    let r = &b.retired[0];
+    assert_eq!(
+        (
+            r.id.as_str(),
+            r.collection.as_str(),
+            r.name.as_str(),
+            r.tasks,
+            r.pending,
+            r.retired
+        ),
+        (backup.as_str(), "c1", "Synthetic one", 1, 0, true)
+    );
+    assert_eq!(b.deleted.len(), 1);
+    assert_eq!(b.deleted[0].id, deleted.backup);
+    assert_eq!(b.deleted[0].collection, "c2");
+}
+
+#[test]
+fn backup_preview_shows_the_tasks() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let snap: WireSnapshot =
+        e.c.call("lists.backup_preview", BackupPreviewParams { id: backup })
+            .unwrap();
+    assert_eq!(snap.revision, 0);
+    assert_eq!(snap.tasks.len(), 1);
+    assert_eq!(snap.collections.len(), 1);
+    assert_eq!(snap.collections[0].id, "c1");
+}
+
+#[test]
+fn recover_can_be_undone() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let job = call(&e.c, "lists.recover", recover_params(&e, &backup, "c2"));
+    assert!(recovered(finished(&e.c, &job)).1);
+    let count = |e: &Env| {
+        let snap: WireSnapshot = e.c.call("snapshot.get", empty()).unwrap();
+        snap.tasks
+            .iter()
+            .filter(|t| t.task.path.starts_with("c2/"))
+            .count()
+    };
+    assert_eq!(count(&e), 2);
+
+    // Another session's undo does not touch it.
+    let other = e.td.client();
+    let _ = common::undo(&other);
+    assert_eq!(count(&e), 2);
+
+    let r = common::undo(&e.c).unwrap();
+    assert_eq!(r.message, "undone: recovered list");
+    assert_eq!(count(&e), 1);
+}
+
+#[test]
+fn recover_with_an_unknown_session_is_refused() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let mut p = recover_params(&e, &backup, "c2");
+    p.session = "s-nope".into();
+    let err = e.c.call::<_, JobStarted>("lists.recover", p).unwrap_err();
+    assert_eq!(common::kind(&err), ErrorKind::NotFound);
+}
+
+/// Final review: a panic in the recovery (holding the session) fails the job and leaves the
+/// session usable: its writes and undo still work.
+#[test]
+fn a_panic_in_recover_leaves_the_session_usable() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let armed = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&armed);
+    let e = env_opts(
+        |_| {},
+        move |o| {
+            o.test_point = Some(Arc::new(move |p: &str| {
+                if p == "recover" && flag.swap(false, Ordering::SeqCst) {
+                    panic!("test panic in recover");
+                }
+            }));
+        },
+    );
+    let (backup, _, _) = forgot(forget(&e).0);
+    armed.store(true, Ordering::SeqCst);
+    let job = call(&e.c, "lists.recover", recover_params(&e, &backup, "c2"));
+    let (kind, _) = failed(finished(&e.c, &job));
+    assert_eq!(kind, ErrorKind::Internal);
+    let w = submit(&e.c, edit_title("u2", "After")).unwrap();
+    assert_eq!(w.outcome, WriteOutcome::Applied);
+    let u = common::undo(&e.c).unwrap();
+    assert_eq!(u.message, "undone: Two");
+    // The recovery itself runs on a retry.
+    let again = call(&e.c, "lists.recover", recover_params(&e, &backup, "c2"));
+    assert!(recovered(finished(&e.c, &again)).1);
+}
+
+/// Final review: the unknown-session refusal is not recorded (as for task writes), so the same
+/// request resent under a new session runs.
+#[test]
+fn recover_resent_under_a_new_session_runs() {
+    let e = env();
+    let (backup, _, _) = forgot(forget(&e).0);
+    let mut p = recover_params(&e, &backup, "c2");
+    p.session = "s-expired".into();
+    let err =
+        e.c.call::<_, JobStarted>("lists.recover", p.clone())
+            .unwrap_err();
+    assert_eq!(common::kind(&err), ErrorKind::NotFound);
+    // Hello again: a new session; the same request id.
+    let fresh = e.td.client();
+    p.session = fresh.session().expect("hello");
+    let job = call(&e.c, "lists.recover", p);
+    assert!(recovered(finished(&e.c, &job)).1);
 }

@@ -139,6 +139,11 @@ pub fn dispatch(
         "lists.delete" => super::lists::delete(shared, conn, parse(params)?),
         "lists.reconcile" => super::lists::reconcile(shared, conn, parse(params)?),
         "lists.export" => super::lists::export(shared, conn, parse(params)?),
+        "lists.forget" => super::lists::forget(shared, conn, parse(params)?),
+        "lists.recover" => super::lists::recover(shared, conn, parse(params)?),
+        "lists.preview_forget" => super::lists::preview_forget(shared, parse(params)?),
+        "lists.backups" => super::lists::backups(shared),
+        "lists.backup_preview" => super::lists::backup_preview(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {
             shared.bus.unsubscribe(conn.id);

@@ -12,7 +12,7 @@ use twydo_core::sync::switch;
 
 use super::Shared;
 use super::dispatch::ConnState;
-use super::jobs::JobBody;
+use super::jobs::{JobBody, NotStarted};
 use super::lane::LongKind;
 use super::replay::Begin;
 use super::writes;
@@ -71,6 +71,7 @@ pub fn run_sync(
         job_id: job_id.clone(),
         reason,
     });
+    shared.test_point("sync");
     let ran = run(&shared.cfg, &opts, Utc::now());
     {
         // The sync is over: a `sync.stop` from here on finds nothing to stop, and one that
@@ -132,10 +133,10 @@ pub fn sync_run(
     p: SyncRunParams,
 ) -> Result<Value, RpcError> {
     let session = conn.session.lock().unwrap().clone();
-    let prepare = || -> Result<JobBody, RpcError> {
+    let prepare = || -> Result<JobBody, NotStarted> {
         let invalid = |m: String| RpcError::refused(ErrorKind::Invalid, m);
         if shared.cfg.sync.is_none() {
-            return Err(invalid(NOT_CONFIGURED.to_string()));
+            return Err(invalid(NOT_CONFIGURED.to_string()).into());
         }
         let force_delete = p
             .force_delete

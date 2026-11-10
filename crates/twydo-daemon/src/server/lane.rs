@@ -84,7 +84,7 @@ impl Lane {
 
     /// Takes the token for one write, waiting through a long job as well. For writes that
     /// cannot be queued (`conflicts.resolve`, the journal methods). Take it holding no session
-    /// mutex: a long job's drain hook takes session mutexes while it holds the lane.
+    /// mutex; see the lock order in `writes.rs`.
     pub fn write_waiting(&self) -> WriteGuard<'_> {
         let mut h = self.holder.lock().unwrap();
         while *h != Holder::Free {
@@ -113,7 +113,7 @@ impl Lane {
     }
 
     fn release(&self) {
-        *self.holder.lock().unwrap() = Holder::Free;
+        *self.holder.lock().unwrap_or_else(|e| e.into_inner()) = Holder::Free;
         self.cv.notify_all();
     }
 }
@@ -138,13 +138,26 @@ impl Drop for LongGuard<'_> {
     fn drop(&mut self) {
         // The hook runs while the lane is still held, so no write slips in between the job and
         // the drain of what was queued during it. Only the hook slot's own lock is taken.
-        if let Some(hook) = self.lane.drain_hook.lock().unwrap().as_ref() {
-            hook();
-        }
+        let drained = run_hook(&self.lane.drain_hook);
+        // Freed even if the hook panicked: a lane held forever would queue every write and
+        // block every later job.
         self.lane.release();
-        if let Some(hook) = self.lane.release_hook.lock().unwrap().as_ref() {
-            hook();
+        let released = run_hook(&self.lane.release_hook);
+        // The first panic goes on to the job's owner (unless one is unwinding already).
+        if let Some(panic) = drained.err().or(released.err())
+            && !std::thread::panicking()
+        {
+            std::panic::resume_unwind(panic);
         }
+    }
+}
+
+/// Runs the hook in `slot`, if any, catching a panic (the slot's lock is not poisoned).
+fn run_hook(slot: &Mutex<Option<DrainHook>>) -> std::thread::Result<()> {
+    let hook = slot.lock().unwrap_or_else(|e| e.into_inner());
+    match hook.as_ref() {
+        Some(h) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(h)),
+        None => Ok(()),
     }
 }
 

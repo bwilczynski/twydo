@@ -1,6 +1,6 @@
 //! List actions as jobs (daemon spec §7.4): `lists.create`, `lists.update`, `lists.archive`,
-//! `lists.unarchive`, `lists.preview_delete`, `lists.delete`, `lists.reconcile` and
-//! `lists.export`. Each runs on the job runner holding the vdir lane long as a list job and
+//! `lists.unarchive`, `lists.preview_delete`, `lists.delete`, `lists.reconcile`,
+//! `lists.export`, `lists.forget` and `lists.recover`. Each runs on the job runner holding the vdir lane long as a list job and
 //! calls the [`ListService`] method the TUI calls for that action
 //! (`tdo/src/term/lists.rs::perform_list_action`), then publishes the vdir with cause `list`.
 //! Edits saved meanwhile are queued and drained when the job ends; the collection fence is
@@ -8,20 +8,31 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use serde_json::Value;
 use twydo_core::lists::{ListError, ListRequest, ListResult, ListService, ListState, backup};
+use twydo_core::retired;
+use twydo_core::store::Submitted;
+use twydo_core::store::journal::RequestRef;
+use twydo_core::sync::run::RunOptions;
 
 use super::Shared;
 use super::dispatch::ConnState;
-use super::jobs::JobBody;
+use super::jobs::{JobBody, NotStarted};
 use super::lane::LongKind;
+use super::syncjob::run_sync;
+use super::writes::{refusal_of, unknown_session};
 use crate::protocol::events::Cause;
 use crate::protocol::jobs::{JobKind, JobResult};
 use crate::protocol::lists::{
-    ListArchiveParams, ListCreateParams, ListDeleteParams, ListExportParams,
-    ListPreviewDeleteParams, ListReconcileParams, ListUpdateParams, WireListState, parse_color,
+    BackupPreviewParams, Backups, DeletedBackupView, ForgetPreview, ListArchiveParams,
+    ListCreateParams, ListDeleteParams, ListExportParams, ListForgetParams,
+    ListPreviewDeleteParams, ListPreviewForgetParams, ListReconcileParams, ListRecoverParams,
+    ListUpdateParams, RetiredBackupView, WireListState, parse_color,
 };
 use crate::protocol::rpc::{ErrorKind, RpcError};
+use crate::protocol::sync::SyncReason;
+use crate::protocol::wire::{WireSnapshot, to_wire};
 
 /// What a list job does with the service.
 type Action = Box<dyn FnOnce(&Shared, &mut ListService) -> Result<ListResult, ListError> + Send>;
@@ -81,7 +92,7 @@ fn start(
     prepare: impl FnOnce() -> Result<Action, RpcError>,
 ) -> Result<Value, RpcError> {
     let session = conn.session.lock().unwrap().clone();
-    let prepare = || -> Result<JobBody, RpcError> {
+    let prepare = || -> Result<JobBody, NotStarted> {
         let action = prepare()?;
         Ok(Box::new(move |shared: &Arc<Shared>| {
             let result = service(shared)
@@ -225,4 +236,186 @@ pub fn export(
             })
         }))
     })
+}
+
+/// An I/O error from the retired-list functions: a bad name or id is the caller's.
+fn io_refusal(e: std::io::Error) -> RpcError {
+    match e.kind() {
+        std::io::ErrorKind::InvalidInput => RpcError::refused(ErrorKind::Invalid, e.to_string()),
+        std::io::ErrorKind::NotFound => RpcError::refused(ErrorKind::NotFound, e.to_string()),
+        _ => internal(e),
+    }
+}
+
+/// What a list job runs, apart from the service-based ones.
+type Body = Box<dyn FnOnce(&Arc<Shared>) -> Result<JobResult, RpcError> + Send>;
+
+/// Starts a list job for `request_id`. `prepare` checks the params (not on a resend) and
+/// returns the body; the job runs it, then publishes the vdir with cause `list`.
+fn start_body(
+    shared: &Arc<Shared>,
+    conn: &ConnState,
+    request_id: &str,
+    kind: JobKind,
+    prepare: impl FnOnce() -> Result<Body, NotStarted>,
+) -> Result<Value, RpcError> {
+    let session = conn.session.lock().unwrap().clone();
+    shared.start_job_with(request_id, session.as_deref(), kind, LongKind::List, || {
+        let body = prepare()?;
+        Ok(Box::new(move |shared: &Arc<Shared>| {
+            let result = body(shared);
+            if let Err(e) = shared.publisher.reload(Cause::List, Vec::new()) {
+                eprintln!("tdo daemon: reload after a list job failed: {e}");
+            }
+            shared.poke_scheduler();
+            result
+        }))
+    })
+}
+
+/// `lists.preview_forget`: what forgetting list `name` would preserve.
+pub fn preview_forget(shared: &Arc<Shared>, p: ListPreviewForgetParams) -> Result<Value, RpcError> {
+    let preview = retired::preview(&shared.cfg, &p.name).map_err(io_refusal)?;
+    serde_json::to_value(ForgetPreview {
+        collection: preview.collection,
+        name: preview.name,
+        tasks: preview.tasks,
+        pending: preview.pending,
+    })
+    .map_err(internal)
+}
+
+/// `lists.forget`: preserves the list, then (holding the same lane) runs the manual sync the
+/// TUI runs after it. The sync's end is published once the lane is let go.
+pub fn forget(
+    shared: &Arc<Shared>,
+    conn: &ConnState,
+    p: ListForgetParams,
+) -> Result<Value, RpcError> {
+    let rid = p.request_id.clone();
+    start_body(shared, conn, &rid, JobKind::ListForget, || {
+        Ok(Box::new(move |shared: &Arc<Shared>| {
+            let preview = retired::preview(&shared.cfg, &p.name).map_err(io_refusal)?;
+            if preview.collection != p.collection {
+                return Err(RpcError::refused(
+                    ErrorKind::Blocked,
+                    "list changed; reload and try again",
+                ));
+            }
+            let b = retired::forget(&shared.cfg, &preview, Utc::now()).map_err(|e| {
+                RpcError::refused(ErrorKind::Blocked, format!("list was not removed: {e}"))
+            })?;
+            let mut message = format!(
+                "preserved {:?} as {}; recover with :recover {} <destination-list>",
+                b.name, b.id, b.id
+            );
+            let sync = shared.cfg.sync.is_some().then(|| {
+                let job_id = shared.runner.current_job();
+                let done = run_sync(
+                    shared,
+                    job_id.as_deref(),
+                    SyncReason::List,
+                    RunOptions::default(),
+                );
+                let result = done.result.clone();
+                shared.runner.defer_sync_end(done);
+                Box::new(result)
+            });
+            if let Some(r) = &sync
+                && !r.problems.is_empty()
+            {
+                message = format!("{message} \u{b7} {}", r.problems.join("; "));
+            }
+            Ok(JobResult::Forgot {
+                backup: b.id,
+                name: b.name,
+                message,
+                sync,
+            })
+        }))
+    })
+}
+
+/// `lists.recover`: copies a preserved list's tasks into list `to`. Waits behind a running
+/// sync like any list job.
+pub fn recover(
+    shared: &Arc<Shared>,
+    conn: &ConnState,
+    p: ListRecoverParams,
+) -> Result<Value, RpcError> {
+    let rid = p.request_id.clone();
+    start_body(shared, conn, &rid, JobKind::ListRecover, || {
+        // An unknown session is not recorded: the request resent under a new one runs.
+        let session = shared
+            .sessions
+            .get(&p.session)
+            .ok_or_else(|| NotStarted::Unrecorded(unknown_session()))?;
+        Ok(Box::new(move |shared: &Arc<Shared>| {
+            // The recovery goes on the calling session's store and undo stack, so its `op.undo`
+            // undoes it (as `u` after `:recover` does in the TUI). The job holds the lane long,
+            // and session holders never wait for a long job.
+            let mut s = super::sessions::lock(&session);
+            s.store.set_request(Some(RequestRef {
+                session: p.session,
+                request_id: p.request_id,
+            }));
+            shared.test_point("recover");
+            let snap = Arc::clone(&shared.publisher.current().1);
+            let r = s
+                .store
+                .recover_list(&snap.snap, &p.backup, &p.to, Utc::now());
+            s.store.set_request(None);
+            match r {
+                Ok((_, false)) => Ok(JobResult::Recovered {
+                    op_id: None,
+                    applied: false,
+                    message: "already recovered; backup retained".into(),
+                }),
+                Ok((op_id, true)) => {
+                    s.pushed("recovered list".into(), &Submitted::Applied(op_id.clone()));
+                    Ok(JobResult::Recovered {
+                        op_id: Some(op_id),
+                        applied: true,
+                        message: format!("recovered local snapshot into {}; backup retained", p.to),
+                    })
+                }
+                Err(e) => Err(refusal_of(e, shared)),
+            }
+        }))
+    })
+}
+
+/// `lists.backups`: the preserved lists and the backups list deletions kept, newest first.
+pub fn backups(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let retired = retired::list(&shared.cfg)
+        .map_err(io_refusal)?
+        .into_iter()
+        .map(|b| RetiredBackupView {
+            id: b.id,
+            collection: b.collection,
+            name: b.name,
+            created: b.created,
+            tasks: b.tasks,
+            pending: b.pending,
+            retired: b.retired,
+        })
+        .collect();
+    let deleted = backup::list(&shared.cfg)
+        .map_err(io_refusal)?
+        .into_iter()
+        .map(|b| DeletedBackupView {
+            id: b.id,
+            collection: b.collection,
+            name: b.name,
+            created: b.created,
+        })
+        .collect();
+    serde_json::to_value(Backups { retired, deleted }).map_err(internal)
+}
+
+/// `lists.backup_preview`: the tasks of a preserved list, as a snapshot (revision 0).
+pub fn backup_preview(shared: &Arc<Shared>, p: BackupPreviewParams) -> Result<Value, RpcError> {
+    let snap = retired::snapshot(&shared.cfg, &p.id).map_err(io_refusal)?;
+    let wire: WireSnapshot = to_wire(&snap, 0);
+    serde_json::to_value(wire).map_err(internal)
 }

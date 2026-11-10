@@ -96,6 +96,22 @@ pub enum JobResult {
         backup: String,
         destination: PathBuf,
     },
+    /// `lists.forget` preserved list `name` as `backup`; `message` is what the TUI shows
+    /// (with the sync's problems appended), `sync` the sync that followed.
+    Forgot {
+        backup: String,
+        name: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sync: Option<Box<SyncResult>>,
+    },
+    /// `lists.recover` copied a backup into a list (`applied`), or found it already copied.
+    Recovered {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        op_id: Option<String>,
+        applied: bool,
+        message: String,
+    },
     /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
     /// this client was built with; see "Unknown values" in the daemon spec §6.2.
     #[serde(other)]
