@@ -1,7 +1,6 @@
 //! `tdo sync`, `tdo status`, and starting a background sync.
 
-use std::collections::BTreeMap;
-use std::path::{Component, Path};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use chrono::{DateTime, Utc};
@@ -9,12 +8,12 @@ use twydo_core::config::Config;
 use twydo_core::store::DrainOutcome;
 use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::sync::batch::{self, Due, Trigger};
-use twydo_core::sync::run::{RunOptions, RunReport, run};
-use twydo_core::sync::status::CollState;
+use twydo_core::sync::report::{collection_id, describe, messages};
+use twydo_core::sync::run::{RunOptions, run};
 use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
 use twydo_core::sync::{summary, switch};
 
-use super::{EXIT_ERROR, load_vdir, resolve_config};
+use super::{EXIT_ERROR, resolve_config};
 
 const NOT_CONFIGURED: &str = "sync is not configured: add a [sync] table (docs/sync.md)";
 
@@ -73,29 +72,17 @@ pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete:
     if !background {
         print_refusals(&cfg);
     }
-    let names = list_names(&cfg, &report);
-    let problems = problems(&report, &names);
-    for p in &problems {
+    let m = messages(&cfg, &report);
+    for p in &m.problems {
         eprintln!("tdo: {p}");
     }
-    for w in &report.warnings {
+    for w in &m.warnings {
         eprintln!("tdo: warning: {w}");
     }
-    for path in &report.unexpected {
-        eprintln!("tdo: warning: {path} changed before its edit synced; the edit stays pending");
-    }
-    for path in &report.superseded {
-        eprintln!(
-            "tdo: warning: {path} was changed on the server after its edit synced; keeping the server's version"
-        );
-    }
-    if problems.is_empty() {
+    if m.problems.is_empty() {
         if !background {
-            for c in &report.auto_forced {
-                println!(
-                    "applied the emptied list \"{}\" on the server",
-                    name_of(&names, c)
-                );
+            for n in &m.notes {
+                println!("{n}");
             }
             println!("synced");
         }
@@ -123,105 +110,6 @@ pub(super) fn print_refusals(cfg: &Config) {
 fn error(e: &dyn std::fmt::Display) -> i32 {
     eprintln!("tdo: {e}");
     EXIT_ERROR
-}
-
-/// Display names of the lists a run reported on (best effort; empty when unreadable).
-fn list_names(cfg: &Config, r: &RunReport) -> BTreeMap<String, String> {
-    if r.collections.is_empty() && r.auto_forced.is_empty() {
-        return BTreeMap::new();
-    }
-    load_vdir(cfg)
-        .map(|v| {
-            v.collections
-                .into_iter()
-                .filter_map(|c| c.display_name.map(|n| (c.id, n)))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The list's display name when known, else its collection id.
-fn name_of<'a>(names: &'a BTreeMap<String, String>, coll: &'a str) -> &'a str {
-    names.get(coll).map_or(coll, String::as_str)
-}
-
-/// One line per thing the user should know about after a run.
-fn problems(r: &RunReport, names: &BTreeMap<String, String>) -> Vec<String> {
-    let mut out = Vec::new();
-    for (coll, state) in &r.collections {
-        match state {
-            CollState::Ok => {}
-            CollState::Error { message }
-                if message.trim_end_matches(';').ends_with("Not Found") =>
-            {
-                out.push(format!(
-                    "list {:?} ({coll}): server returned Not Found; if you deleted this list on another device, run :forget-list to choose a list (or :forget-list {coll})",
-                    name_of(names, coll)
-                ));
-            }
-            CollState::Error { .. } if r.transient.is_some() => {}
-            CollState::EmptiedLocal | CollState::EmptiedRemote => {
-                let n = name_of(names, coll);
-                let (where_, to) = if *state == CollState::EmptiedLocal {
-                    ("here", "on the server")
-                } else {
-                    ("on the server", "here")
-                };
-                out.push(format!(
-                    "list \"{n}\" was emptied {where_}; to apply that {to} run: tdo sync --force-delete \"{n}\""
-                ));
-            }
-            other => out.push(format!("list \"{coll}\": {}", describe(other))),
-        }
-    }
-    if let Some(t) = &r.transient {
-        out.push(format!("sync failed: {t}"));
-    }
-    if !r.new_conflicts.is_empty() {
-        out.push(format!(
-            "{} new conflict(s); see tdo status",
-            r.new_conflicts.len()
-        ));
-    }
-    if let Some(m) = &r.metasync_error {
-        out.push(format!("metasync failed: {m}"));
-    }
-    out
-}
-
-fn describe(s: &CollState) -> String {
-    match s {
-        CollState::Ok => "ok".into(),
-        CollState::Conflict => "conflict".into(),
-        CollState::EmptiedLocal => "emptied here".into(),
-        CollState::EmptiedRemote => "emptied on the server".into(),
-        CollState::Error { message } => format!("error: {message}"),
-    }
-}
-
-/// A `--force-delete` argument as a collection id: a collection directory name, else a
-/// unique display name.
-fn collection_id(cfg: &Config, name: &str) -> Result<String, String> {
-    let plain = Path::new(name)
-        .components()
-        .all(|c| matches!(c, Component::Normal(_)))
-        && !name.contains('/');
-    if plain && !name.is_empty() && cfg.vdir.join(name).is_dir() {
-        return Ok(name.to_string());
-    }
-    let report = load_vdir(cfg).map_err(|e| e.to_string())?;
-    let mut ids = report
-        .collections
-        .iter()
-        .filter(|c| c.display_name.as_deref() == Some(name))
-        .map(|c| c.id.clone());
-    match (ids.next(), ids.next()) {
-        (Some(id), None) => Ok(id),
-        (Some(_), Some(_)) => Err(format!(
-            "list name {name:?} is ambiguous; pass its directory name"
-        )),
-        (None, _) => Err(format!("no list {name:?} in {}", cfg.vdir.display())),
-    }
 }
 
 fn print_warnings(cfg: &Config) {
@@ -369,42 +257,5 @@ fn start(config: &Config, vdir_flag: Option<&Path>, when_due: bool) {
     };
     if let Some(cmd) = background_command(&exe, config, vdir_flag, when_due) {
         detach(cmd);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_lists_identify_every_target_and_the_confirmation_command() {
-        let r = RunReport {
-            transient: Some("c1: Unknown error occurred: Not Found".into()),
-            collections: BTreeMap::from([
-                (
-                    "c1".into(),
-                    CollState::Error {
-                        message: "Unknown error occurred: Not Found".into(),
-                    },
-                ),
-                (
-                    "c2".into(),
-                    CollState::Error {
-                        message: "Unknown error occurred: Not Found".into(),
-                    },
-                ),
-            ]),
-            ..RunReport::default()
-        };
-        let names = BTreeMap::from([("c1".into(), "Old Projects".into())]);
-        let text = problems(&r, &names).join("\n");
-        assert!(text.contains("Old Projects"), "{text}");
-        assert!(text.contains(":forget-list c1"), "{text}");
-        assert!(text.contains(":forget-list c2"), "{text}");
-        assert!(text.contains(":forget-list to choose a list"), "{text}");
-        assert!(
-            !text.contains("was deleted"),
-            "404 is not proof of deletion"
-        );
     }
 }

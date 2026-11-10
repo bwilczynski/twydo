@@ -294,3 +294,60 @@ fn caldav_config_changed_is_unattributed() {
     );
     assert!(o.synced.is_empty() && o.errors.is_empty() && o.transfers.is_empty());
 }
+
+/// The lines `tdo sync` printed before its wording moved to `twydo_core::sync::report`.
+#[test]
+fn messages_keep_the_tdo_sync_wording() {
+    use std::collections::BTreeMap;
+    use twydo_core::config::Config;
+    use twydo_core::sync::report::messages;
+    use twydo_core::sync::run::RunReport;
+    use twydo_core::sync::status::CollState;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vdir = dir.path().join("vdir");
+    for c in ["c1", "c2", "c3"] {
+        std::fs::create_dir_all(vdir.join(c)).unwrap();
+    }
+    std::fs::write(vdir.join("c1/displayname"), "Groceries\n").unwrap();
+    std::fs::write(vdir.join("c3/displayname"), "Chores\n").unwrap();
+    let mut cfg = Config::with_vdir(vdir);
+    cfg.state_dir = Some(dir.path().join("state"));
+
+    let r = RunReport {
+        collections: BTreeMap::from([
+            ("c1".into(), CollState::EmptiedLocal),
+            (
+                "c2".into(),
+                CollState::Error {
+                    message: "boom".into(),
+                },
+            ),
+        ]),
+        unexpected: vec!["c1/u1.ics".into()],
+        superseded: vec!["c2/u2.ics".into()],
+        warnings: vec!["the manifest is unreadable".into()],
+        auto_forced: vec!["c3".into()],
+        ..RunReport::default()
+    };
+    let m = messages(&cfg, &r);
+    assert_eq!(
+        m.problems,
+        vec![
+            "list \"Groceries\" was emptied here; to apply that on the server run: tdo sync --force-delete \"Groceries\"".to_string(),
+            "list \"c2\": error: boom".to_string(),
+        ]
+    );
+    assert_eq!(
+        m.warnings,
+        vec![
+            "the manifest is unreadable".to_string(),
+            "c1/u1.ics changed before its edit synced; the edit stays pending".to_string(),
+            "c2/u2.ics was changed on the server after its edit synced; keeping the server's version".to_string(),
+        ]
+    );
+    assert_eq!(
+        m.notes,
+        vec!["applied the emptied list \"Chores\" on the server".to_string()]
+    );
+}
