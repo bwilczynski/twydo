@@ -8,12 +8,16 @@ use std::time::{Duration, Instant};
 
 use common::{Fixture, TestDaemon, edit_title, empty, kind, submit, wait_event};
 use twydo_core::sync::lock::LockFile;
+use twydo_core::sync::report::switch_message;
 use twydo_daemon::client::{Client, Notification};
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
 use twydo_daemon::protocol::methods::{OpState, StatusView, SyncState, WriteOutcome};
 use twydo_daemon::protocol::rpc::ErrorKind;
-use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason, SyncResult, SyncRunParams};
+use twydo_daemon::protocol::sync::{
+    SyncOutcome, SyncReason, SyncResult, SyncRunParams, SyncSetAutoParams, SyncSetAutoResult,
+    SyncStopResult,
+};
 
 const BOUND: Duration = Duration::from_secs(10);
 
@@ -352,4 +356,137 @@ fn a_resend_replays_before_mapping_force_delete() {
     std::fs::remove_dir_all(fx.vdir().join("c1")).unwrap();
     assert_eq!(sync_run_with(&c, "r-fd", &["c1"]).unwrap().job_id, id);
     assert_eq!(sync_run_with(&c, "r-fd", &["Nope"]).unwrap().job_id, id);
+}
+
+fn sync_stop(c: &Client) -> SyncStopResult {
+    c.call("sync.stop", empty()).unwrap()
+}
+
+fn set_auto(c: &Client, request_id: &str, on: bool) -> SyncSetAutoResult {
+    c.call(
+        "sync.set_auto",
+        SyncSetAutoParams {
+            request_id: request_id.to_string(),
+            on,
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn sync_stop_ends_a_running_sync() {
+    let fx = fx();
+    let (_td, c) = start(&fx, "sleep 30");
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    assert!(sync_stop(&c).stopping);
+    let r = sync_finished(&c, &id);
+    assert_eq!(r.outcome, SyncOutcome::Stopped, "{r:?}");
+}
+
+#[test]
+fn stop_with_nothing_running_does_not_block_the_next_sync() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0.1"));
+    assert!(!sync_stop(&c).stopping);
+    let id = sync_run(&c).job_id;
+    let r = sync_finished(&c, &id);
+    assert_eq!(r.outcome, SyncOutcome::Ok, "{r:?}");
+}
+
+#[test]
+fn stop_request_is_withdrawn_after_the_stopped_sync() {
+    let fx = fx();
+    let (_td, c) = start(&fx, "sleep 30");
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    assert!(sync_stop(&c).stopping);
+    assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Stopped);
+    assert!(!fx.state().join("sync/stop").exists());
+}
+
+#[test]
+fn the_sync_after_a_stopped_one_finishes_ok() {
+    let fx = fx();
+    let marker = fx.state().parent().unwrap().join("slow");
+    let body = format!(
+        "if [ -e {m} ]; then sleep 0.1; else sleep 30; fi\necho 'Syncing twydo/c1' >&2\nexit 0",
+        m = marker.display()
+    );
+    let (_td, c) = start(&fx, &body);
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    assert!(sync_stop(&c).stopping);
+    assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Stopped);
+    std::fs::write(&marker, "").unwrap();
+    let id = sync_run(&c).job_id;
+    let r = sync_finished(&c, &id);
+    assert_eq!(r.outcome, SyncOutcome::Ok, "{r:?}");
+}
+
+fn status(c: &Client) -> StatusView {
+    c.call("status.get", empty()).unwrap()
+}
+
+fn auto_is(c: &Client, want: bool) -> bool {
+    let deadline = Instant::now() + BOUND;
+    loop {
+        if status(c).sync.is_some_and(|s| s.auto == want) {
+            return true;
+        }
+        if Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn set_auto_persists_the_switch() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0"));
+    let off = fx.state().join("sync/off");
+    let a = set_auto(&c, "r-off", false);
+    assert!(!a.auto);
+    assert_eq!(a.message, switch_message(false));
+    assert!(off.exists());
+    assert!(auto_is(&c, false));
+    assert_eq!(set_auto(&c, "r-off", false), a, "a resend replays");
+    let b = set_auto(&c, "r-on", true);
+    assert!(b.auto);
+    assert_eq!(b.message, switch_message(true));
+    assert!(!off.exists());
+    assert!(auto_is(&c, true));
+}
+
+#[test]
+fn set_auto_needs_a_request_id() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0"));
+    let e = c
+        .call::<_, SyncSetAutoResult>(
+            "sync.set_auto",
+            SyncSetAutoParams {
+                request_id: String::new(),
+                on: false,
+            },
+        )
+        .unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid);
+}
+
+#[test]
+fn writes_during_a_stopped_sync_drain_after_it() {
+    let fx = fx();
+    let (_td, c) = start(&fx, "sleep 30");
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued, "{r:?}");
+    assert!(sync_stop(&c).stopping);
+    let done = sync_finished(&c, &id);
+    assert_eq!(done.outcome, SyncOutcome::Stopped, "{done:?}");
+    // The runner's own drain (op.finished comes before sync.finished) applied it.
+    assert_eq!(done.drained, 1, "{done:?}");
+    assert!(fx.read("c1/u1.ics").contains("SUMMARY:Renamed"));
 }

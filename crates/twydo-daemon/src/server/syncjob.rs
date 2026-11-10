@@ -5,18 +5,24 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::Value;
-use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, messages};
+use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, messages, switch_message};
 use twydo_core::sync::run::{RunOptions, run};
+use twydo_core::sync::running;
+use twydo_core::sync::switch;
 
 use super::Shared;
 use super::dispatch::ConnState;
 use super::jobs::JobBody;
 use super::lane::LongKind;
+use super::replay::Begin;
 use super::writes;
 use crate::protocol::events::{Cause, Event};
 use crate::protocol::jobs::{JobKind, JobResult};
 use crate::protocol::rpc::{ErrorKind, RpcError};
-use crate::protocol::sync::{SyncOutcome, SyncReason, SyncResult, SyncRunParams};
+use crate::protocol::sync::{
+    SyncOutcome, SyncReason, SyncResult, SyncRunParams, SyncSetAutoParams, SyncSetAutoResult,
+    SyncStopResult,
+};
 
 /// A sync that has run: what is left to do once the lane is free.
 pub struct SyncDone {
@@ -59,7 +65,19 @@ pub fn run_sync(
         job_id: job_id.clone(),
         reason,
     });
-    let result = match run(&shared.cfg, &opts, Utc::now()) {
+    let ran = run(&shared.cfg, &opts, Utc::now());
+    {
+        // The sync is over: a `sync.stop` from here on finds nothing to stop, and one that
+        // came in during it is withdrawn so it does not stop the next sync.
+        let mut stop = shared.runner.stop_gate();
+        shared.publisher.set_sync_state(false, None);
+        if std::mem::take(&mut *stop)
+            && let Err(e) = running::clear_stop(&shared.cfg)
+        {
+            eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
+        }
+    }
+    let result = match ran {
         Ok(mut report) => {
             let m = messages(&shared.cfg, &report);
             let drained = std::mem::take(&mut report.drained);
@@ -141,4 +159,56 @@ pub fn sync_run(
         LongKind::Sync,
         prepare,
     )
+}
+
+fn internal(e: impl std::fmt::Display) -> RpcError {
+    RpcError::refused(ErrorKind::Internal, e.to_string())
+}
+
+/// `sync.stop`: asks the running sync to stop. No `request_id`: it is idempotent and writes
+/// nothing a client could lose. With no sync running in this daemon it answers
+/// `stopping: false` and leaves `sync/stop` alone, so the next sync is not stopped.
+pub fn sync_stop(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let mut stop = shared.runner.stop_gate();
+    let stopping = if shared.publisher.sync_running() {
+        running::request_stop(&shared.cfg).map_err(internal)?;
+        *stop = true;
+        true
+    } else {
+        false
+    };
+    drop(stop);
+    serde_json::to_value(SyncStopResult { stopping }).map_err(internal)
+}
+
+/// `sync.set_auto`: switches automatic sync, replayed from the in-memory request log. The
+/// switch file is the durable state. Switching on hands over to [`Shared::after_switch_on`].
+pub fn sync_set_auto(shared: &Arc<Shared>, p: SyncSetAutoParams) -> Result<Value, RpcError> {
+    writes::require_request_id(&p.request_id)?;
+    let ticket = match shared.requests.begin(&p.request_id) {
+        Begin::Done(r) => return r,
+        Begin::New(t) => t,
+    };
+    let answer = (|| {
+        if shared.cfg.sync.is_none() {
+            return Err(RpcError::refused(ErrorKind::Invalid, NOT_CONFIGURED));
+        }
+        switch::set(&shared.cfg, !p.on).map_err(internal)?;
+        shared.request_status_refresh();
+        if p.on {
+            shared.after_switch_on();
+        }
+        serde_json::to_value(SyncSetAutoResult {
+            auto: p.on,
+            message: switch_message(p.on).to_string(),
+        })
+        .map_err(internal)
+    })();
+    ticket.finish(answer)
+}
+
+impl Shared {
+    /// What follows switching automatic sync on (a background sync when edits are unsynced).
+    /// A no-op until the scheduler exists.
+    pub fn after_switch_on(self: &Arc<Self>) {}
 }

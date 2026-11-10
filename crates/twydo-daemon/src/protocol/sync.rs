@@ -62,3 +62,26 @@ pub struct SyncResult {
     /// Queued edits the sync dealt with (each also gets its `op.finished`).
     pub drained: usize,
 }
+
+/// Result of `sync.stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SyncStopResult {
+    /// False when no sync ran in this daemon, so there was nothing to stop.
+    pub stopping: bool,
+}
+
+/// Params of `sync.set_auto`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SyncSetAutoParams {
+    pub request_id: String,
+    pub on: bool,
+}
+
+/// Result of `sync.set_auto`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SyncSetAutoResult {
+    /// The switch as it is now.
+    pub auto: bool,
+    /// The confirmation, in the words `tdo sync on|off` uses.
+    pub message: String,
+}

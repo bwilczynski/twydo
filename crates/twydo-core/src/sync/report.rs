@@ -13,6 +13,15 @@ use crate::store::fsio::VdirLock;
 use crate::vdir::{self, LoadReport};
 
 /// Why a sync cannot run: no `[sync]` table.
+/// The confirmation for `tdo sync on|off` and `:sync on|off`.
+pub fn switch_message(on: bool) -> &'static str {
+    if on {
+        "automatic sync on"
+    } else {
+        "automatic sync off"
+    }
+}
+
 pub const NOT_CONFIGURED: &str = "sync is not configured: add a [sync] table (docs/sync.md)";
 
 /// The lines about one run, without any prefix (`tdo sync` adds `tdo: ` and
