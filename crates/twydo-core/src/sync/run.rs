@@ -46,8 +46,9 @@ pub struct RunOptions {
     /// While set, queued edits stay on disk: the runner's drains are skipped; set before the
     /// run has the run lock, the run writes nothing at all and returns stopped. Another
     /// thread may set it during the run; the daemon does when it shuts down during a sync, so
-    /// the edits wait for the next daemon (daemon spec §7.5) and a run it stopped waiting for
-    /// never writes after the daemon let the vdir go.
+    /// the edits wait for the next daemon (daemon spec §7.5). Each pass's recovery checks it
+    /// again once it holds the vdir lock: set by then, the run stops there, writing nothing
+    /// more (nothing at all in its first pass), and no further pass starts.
     pub hold_queue: Arc<AtomicBool>,
 }
 
@@ -156,9 +157,8 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     };
 
     // The caller is shutting down: write nothing at all, not even recovery, status or the
-    // ended event. A caller that gave up waiting for this run (a daemon past its shutdown
-    // wait, this run blocked on the run lock) may no longer own the vdir. An ordinary stop
-    // request is not enough: that run still recovers and records its stop (step 4).
+    // ended event; the next owner of the vdir recovers. An ordinary stop request is not
+    // enough: that run still recovers and records its stop (step 4).
     if opts.hold_queue.load(Ordering::SeqCst) {
         return Ok(RunReport {
             stopped: true,
@@ -176,14 +176,15 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
 
     // Created after the backoff check: skipped runs record no event. Dropped on every exit,
     // including an error from a pass.
-    let _ended = EndedGuard {
+    let mut ended = EndedGuard {
         state: &state,
         at: now,
+        armed: true,
     };
     let mut report = RunReport::default();
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
-        one_pass(
+        let ran = one_pass(
             pass == MAX_RERUNS,
             &opts.hold_queue,
             cfg,
@@ -195,6 +196,13 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
             &mut status,
             &mut report,
         )?;
+        if !ran {
+            // Held at the first recovery: this run wrote nothing, not even its end.
+            if pass == 0 {
+                ended.armed = false;
+            }
+            break;
+        }
         force.clear();
         // Step 7.
         // A stopped pass is not rerun: the user stopped the sync so that they can write.
@@ -210,16 +218,21 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
 struct EndedGuard<'a> {
     state: &'a Path,
     at: DateTime<Utc>,
+    /// False for a run that wrote nothing (held before its first recovery).
+    armed: bool,
 }
 
 impl Drop for EndedGuard<'_> {
     fn drop(&mut self) {
-        let _ = super::ended::write(self.state, self.at);
+        if self.armed {
+            let _ = super::ended::write(self.state, self.at);
+        }
     }
 }
 
 /// Steps 3 to 6. `last_pass`: no rerun follows, so edits drained in step 5 wait for the next
-/// sync.
+/// sync. False when `hold_queue` was set by the time recovery held the vdir lock: the pass
+/// stopped there and wrote nothing (`report.stopped` is set).
 #[allow(clippy::too_many_arguments)]
 fn one_pass(
     last_pass: bool,
@@ -232,9 +245,12 @@ fn one_pass(
     started: DateTime<Utc>,
     status: &mut SyncStatus,
     report: &mut RunReport,
-) -> Result<(), SyncError> {
+) -> Result<bool, SyncError> {
     // Step 3: recovery under the exclusive lock.
-    recover_and_park(cfg, state, now, hold_queue, report)?;
+    if !recover_and_park(cfg, state, now, hold_queue, report)? {
+        report.stopped = true;
+        return Ok(false);
+    }
 
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
@@ -452,7 +468,7 @@ fn one_pass(
     status.save(state)?;
     report.collections = collections;
     report.transient = transient;
-    Ok(())
+    Ok(true)
 }
 
 /// A failed discovery may stop at the first missing collection, before sync can report
@@ -625,17 +641,23 @@ fn transient(
 /// Step 3: rolls Prepared entries forward. For a stuck entry, every write whose file does
 /// not hold its `after` (it holds the `before`, or a third version) becomes a `Journal`
 /// conflict (the vdir keeps the file as it is), and the entry is abandoned. Writes already
-/// applied stay. Entries that cannot be read or have an invalid path are left stuck. Returns
-/// the new conflict ids.
+/// applied stay. Entries that cannot be read or have an invalid path are left stuck. The new
+/// conflict ids go to `out`.
+///
+/// False, having written nothing, when `hold_queue` is set once the lock is held: the lock
+/// may have been waited for (another process held it) while the caller began shutting down.
 fn recover_and_park(
     cfg: &Config,
     state: &Path,
     now: DateTime<Utc>,
     hold_queue: &AtomicBool,
     out: &mut RunReport,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     let vdir = &cfg.vdir;
     let lock = VdirLock::exclusive(state)?;
+    if hold_queue.load(Ordering::SeqCst) {
+        return Ok(false);
+    }
     let journal = Journal::open(state)?;
     let report = recover_locked(vdir, &journal)?;
     let mut ids = Vec::new();
@@ -643,7 +665,7 @@ fn recover_and_park(
         // Nothing stuck: apply what was queued while no sync held the lock.
         out.drained
             .extend(drain_into(cfg, &lock, now, hold_queue, &mut out.warnings));
-        return Ok(());
+        return Ok(true);
     }
     let conflicts = ConflictStore::open(state)?;
     for (id, _reason) in &report.stuck {
@@ -704,7 +726,7 @@ fn recover_and_park(
         journal.set_stage(id, Stage::Abandoned)?;
     }
     out.new_conflicts.extend(ids);
-    Ok(())
+    Ok(true)
 }
 
 /// Drains the write queue under `held`, unless `hold_queue` is set (see

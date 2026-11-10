@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod events;
 pub mod jobs;
+pub mod lists;
 pub mod methods;
 pub mod rpc;
 pub mod sync;

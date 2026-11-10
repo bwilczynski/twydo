@@ -2356,3 +2356,78 @@ fn a_held_run_waiting_for_the_run_lock_writes_nothing() {
         "ended event written"
     );
 }
+
+/// Codex review: a run past the early `hold_queue` check, blocked on the vdir lock in its
+/// recovery step while the daemon starts shutting down, writes nothing once it gets the
+/// lock: no recovery (a `Prepared` entry stays as it is), no status, no ended event, no
+/// vdirsyncer.
+#[test]
+fn a_held_run_waiting_for_the_vdir_lock_in_recovery_writes_nothing() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    let file = fx.cfg.vdir.join("c1/a.ics");
+    let third = task("u1", "third");
+    fs::write(&file, &third).unwrap();
+    let state = fx.state();
+    let entry = Entry {
+        format: 1,
+        id: "20261101T090000Z-0000beef".into(),
+        created: now(),
+        kind: "edit".into(),
+        uids: vec!["u1".into()],
+        stage: Stage::Prepared,
+        inverse_of: None,
+        from_queue: None,
+        request: None,
+        synced: None,
+        holds: Vec::new(),
+        family: None,
+        families: Vec::new(),
+        writes: vec![Write {
+            path: "c1/a.ics".into(),
+            before: Some(task("u1", "before")),
+            after: Some(task("u1", "after")),
+        }],
+    };
+    Journal::open(&state).unwrap().prepare(&entry).unwrap();
+    let lock = twydo_core::store::fsio::VdirLock::exclusive(&state).unwrap();
+    let opts = manual();
+    let hold = std::sync::Arc::clone(&opts.hold_queue);
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &opts, now()).unwrap());
+    // The run passes the early check and waits for the vdir lock; the caller starts shutting
+    // down, then the lock frees.
+    std::thread::sleep(Duration::from_millis(200));
+    hold.store(true, std::sync::atomic::Ordering::SeqCst);
+    drop(lock);
+    let r = t.join().unwrap();
+    assert!(r.stopped);
+    assert_eq!(r.transient, None);
+    assert!(r.drained.is_empty());
+    assert!(!count.exists(), "vdirsyncer ran");
+    assert_eq!(fs::read_to_string(&file).unwrap(), third, "vdir untouched");
+    let kept = Journal::open(&state)
+        .unwrap()
+        .get(&entry.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.stage, Stage::Prepared, "recovery ran");
+    assert!(
+        ConflictStore::open(&state)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!state.join("sync/status.json").exists(), "status written");
+    assert_eq!(SyncStatus::load(&state).unwrap(), SyncStatus::default());
+    assert!(
+        ended::read(&fx.cfg).unwrap().is_none(),
+        "ended event written"
+    );
+}

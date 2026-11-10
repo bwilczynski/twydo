@@ -1,10 +1,13 @@
 //! Jobs: long requests (a sync, list actions) that answer at once with a `job_id` and report
 //! their outcome as `job.finished` and through `job.get` (daemon spec §7.4).
 
+use std::path::PathBuf;
+
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::lists::{WireDeletePreview, WireListState};
 use super::rpc::ErrorKind;
 use super::sync::SyncResult;
 
@@ -80,6 +83,19 @@ impl JobState {
 #[schemars(transform = super::open_enum)]
 pub enum JobResult {
     Sync(SyncResult),
+    /// A list was created, changed, archived, unarchived or reconciled; `operation` is the
+    /// list operation's id (empty for a local archive change).
+    ListSaved {
+        operation: String,
+        state: WireListState,
+    },
+    /// `lists.preview_delete` saved a backup.
+    DeletePreview(WireDeletePreview),
+    /// `lists.export` copied backup `backup` to `destination`.
+    Exported {
+        backup: String,
+        destination: PathBuf,
+    },
     /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
     /// this client was built with; see "Unknown values" in the daemon spec §6.2.
     #[serde(other)]

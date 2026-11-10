@@ -47,9 +47,14 @@
 //! the scheduler slot and then the scheduler's own mutex, both held only to set a flag. The
 //! scheduler thread holds neither while it reads the journal or posts to the job runner.
 //!
-//! Teardown takes the commit gate's write side holding none of the above, so it waits only
-//! for store calls already inside the gate (each bounded by the store's lock try), and it
-//! closes the gate before the daemon lock is released.
+//! Teardown first waits for the job runner to finish its current work item (`stop_jobs`),
+//! holding none of the above and taking only the stop gate (above) to ask a running sync to
+//! stop, at every poll once the grace is over. It has no give-up path: a long job, a list
+//! job's helper included, may write until it ends, so the daemon lock stays held until then
+//! (a job that never ends is ended by the service manager's stop timeout). Teardown then takes
+//! the commit gate's write side holding none of the above, so it waits only for store calls
+//! already inside the gate (each bounded by the store's lock try), and it closes the gate
+//! before the daemon lock is released.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -66,7 +71,7 @@ use twydo_core::store::{DrainOutcome, Drained, Submitted, WriteError};
 use twydo_core::views::Snapshot as CoreSnapshot;
 
 use super::Shared;
-use super::lane::{LongBusy, WriteGuard};
+use super::lane::{LongBusy, LongKind, WriteGuard};
 use super::publish::Snapshot;
 use super::replay::Begin;
 use super::sessions::{QUEUED, Session, queued_note, step};
@@ -412,12 +417,15 @@ fn run_store_write<'a>(
         session: session.to_string(),
         request_id: request_id.to_string(),
     }));
-    // A long job holds the vdir: plan and queue at once, without trying the lock.
+    // A long job holds the vdir: plan and queue at once, without trying the lock. During a
+    // list job the collection fence waits for the drain (daemon spec §7.4).
     store.set_vdir_busy(lane.is_err());
+    store.set_fence_at_drain(matches!(lane, Err(LongBusy(LongKind::List))));
     let r = match shared.commit_gate() {
         Some(_gate) => Ok(f(store, now)),
         None => Err(stopping()),
     };
+    store.set_fence_at_drain(false);
     store.set_vdir_busy(false);
     store.set_request(None);
     let outcome = r?;
@@ -554,12 +562,16 @@ fn run_undo(
         session: p.session.clone(),
         request_id: p.request_id.clone(),
     }));
+    // As in `run_store_write`: during a list job the collection fence waits for the drain.
     s.store.set_vdir_busy(lane.is_err());
+    s.store
+        .set_fence_at_drain(matches!(lane, Err(LongBusy(LongKind::List))));
     let r = match shared.commit_gate() {
         Some(_gate) if redo => Ok(s.store.redo_last(now)),
         Some(_gate) => Ok(s.store.undo_last(now)),
         None => Err(stopping()),
     };
+    s.store.set_fence_at_drain(false);
     s.store.set_vdir_busy(false);
     s.store.set_request(None);
     let r = r?;

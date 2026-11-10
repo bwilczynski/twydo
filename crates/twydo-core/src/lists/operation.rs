@@ -122,6 +122,25 @@ pub fn ensure_idle(state: &Path) -> io::Result<()> {
     )))
 }
 
+/// The list an unfinished collection operation fences: `None` when no operation is active
+/// or it has finished. An unreadable marker or record is an error, as for [`ensure_idle`].
+pub fn fenced_collection(state: &Path) -> io::Result<Option<String>> {
+    let marker = state.join("lists/active");
+    let id = match fs::read_to_string(&marker) {
+        Ok(id) => id,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    if fs::symlink_metadata(marker)?.is_symlink() {
+        return Err(invalid("collection operation marker must be a plain file"));
+    }
+    let operation = read(state, id.trim())?;
+    if operation.phase == Phase::Complete {
+        return Ok(None);
+    }
+    Ok(operation.request.collection)
+}
+
 /// The pending collection operation, including a create with no visible local list yet.
 pub fn active(cfg: &Config) -> io::Result<Option<ListOperation>> {
     let Some(state) = crate::store::existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {

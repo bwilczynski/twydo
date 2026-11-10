@@ -15,6 +15,10 @@ use crate::protocol::admin::{
 };
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
 use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
+use crate::protocol::lists::{
+    ListArchiveParams, ListCreateParams, ListDeleteParams, ListExportParams,
+    ListPreviewDeleteParams, ListReconcileParams, ListUpdateParams,
+};
 use crate::protocol::methods::*;
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
@@ -85,6 +89,54 @@ pub const METHODS: &[MethodSpec] = &[
         of::<SyncSetAutoResult>,
     ),
     m("job.get", false, of::<JobGetParams>, of::<JobView>),
+    m(
+        "lists.create",
+        false,
+        of::<ListCreateParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.update",
+        false,
+        of::<ListUpdateParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.archive",
+        false,
+        of::<ListArchiveParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.unarchive",
+        false,
+        of::<ListArchiveParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.preview_delete",
+        false,
+        of::<ListPreviewDeleteParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.delete",
+        false,
+        of::<ListDeleteParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.reconcile",
+        false,
+        of::<ListReconcileParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.export",
+        false,
+        of::<ListExportParams>,
+        of::<JobStarted>,
+    ),
     m("conflicts.list", false, of::<Empty>, of::<ConflictList>),
     m(
         "conflicts.resolve",
