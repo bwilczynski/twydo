@@ -53,6 +53,12 @@ pub fn run(
 
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [SIGTERM, SIGINT] {
+        // Registered first, so a second signal (the flag is already set) ends the process at
+        // once with 130 instead of waiting for the teardown.
+        if let Err(e) = flag::register_conditional_shutdown(sig, 130, Arc::clone(&stop)) {
+            eprintln!("tdo: cannot handle signals: {e}");
+            return EXIT_ERROR;
+        }
         if let Err(e) = flag::register(sig, Arc::clone(&stop)) {
             eprintln!("tdo: cannot handle signals: {e}");
             return EXIT_ERROR;

@@ -2,7 +2,7 @@
 //! emits `data.changed` and `status.changed`. One mutex serialises every publish, so
 //! revisions and the `seq` of their events rise together.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,6 +52,8 @@ pub struct Publisher {
     /// in order, without holding `state`: readers never wait behind them.
     reload_lock: Mutex<()>,
     state: Mutex<State>,
+    /// Unreadable queue items already logged, so each is logged once.
+    logged_unreadable: Mutex<HashSet<String>>,
     /// Set at teardown: reloads and status refreshes that get `reload_lock` afterwards do
     /// nothing (a caller blocked behind a vdir-lock wait may get it after the daemon stopped).
     closed: AtomicBool,
@@ -72,6 +74,7 @@ impl Publisher {
             bus,
             reload_lock: Mutex::new(()),
             closed: AtomicBool::new(false),
+            logged_unreadable: Mutex::new(HashSet::new()),
             state: Mutex::new(State {
                 ring: VecDeque::from([first]),
                 published_once: false,
@@ -233,6 +236,22 @@ impl Publisher {
                 .collect(),
             None => Vec::new(),
         };
+        let queue_unreadable: Vec<String> = match &queue {
+            Some(q) => q
+                .unreadable()?
+                .into_iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            None => Vec::new(),
+        };
+        {
+            let mut logged = self.logged_unreadable.lock().unwrap();
+            for p in &queue_unreadable {
+                if logged.insert(p.clone()) {
+                    eprintln!("tdo daemon: unreadable queue item {p}");
+                }
+            }
+        }
         let (sync_view, pending_edits, conflicts, unfinished) = match &summary {
             Some(m) => (
                 Some(SyncView {
@@ -272,6 +291,7 @@ impl Publisher {
             },
             refusals,
             drain_error,
+            queue_unreadable,
         })
     }
 
