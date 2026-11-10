@@ -506,3 +506,107 @@ fn opening_an_enum_and_adding_a_value_at_once_is_a_break() {
         Vec::<String>::new()
     );
 }
+
+fn one_method(lifecycle: bool, params: Value, result: Value) -> Value {
+    json!({
+        "methods": [{
+            "name": "m",
+            "x-lifecycle": lifecycle,
+            "params": [{"name": "params", "schema": params}],
+            "result": {"name": "result", "schema": result}
+        }],
+        "components": {"schemas": {}}
+    })
+}
+
+#[test]
+fn lifecycle_description_change_is_not_a_break() {
+    let doc = |text: &str| {
+        one_method(
+            true,
+            json!({"type": "object", "description": text,
+                   "properties": {"a": {"type": "string", "description": text}}}),
+            json!({"type": "object"}),
+        )
+    };
+    assert_eq!(
+        breaks(&doc("old words"), &doc("new words")),
+        Vec::<String>::new()
+    );
+    // A real change is still frozen.
+    let changed = one_method(
+        true,
+        json!({"type": "object", "properties": {"a": {"type": "integer"}}}),
+        json!({"type": "object"}),
+    );
+    let lines = breaks(&doc("x"), &changed);
+    assert!(
+        lines.iter().any(|l| l.contains("lifecycle method params")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn reordered_all_of_is_not_a_break() {
+    let a = json!({"type": "object", "properties": {"a": {"type": "string"}}});
+    let b = json!({"type": "object", "properties": {"b": {"type": "string"}}});
+    let doc = |parts: Value| one_method(false, json!({"type": "object"}), json!({"allOf": parts}));
+    assert_eq!(
+        breaks(&doc(json!([a, b])), &doc(json!([b, a]))),
+        Vec::<String>::new()
+    );
+    // A part that lost a property is still caught after reordering.
+    let b2 = json!({"type": "object", "properties": {}});
+    let lines = breaks(&doc(json!([a, b])), &doc(json!([b2, a])));
+    assert!(
+        lines.iter().any(|l| l.contains("property removed")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn integer_to_number_in_params_is_not_a_break() {
+    let doc = |t: &str| {
+        one_method(
+            false,
+            json!({"type": "object", "properties": {"n": {"type": t}}}),
+            json!({"type": "object"}),
+        )
+    };
+    assert_eq!(
+        breaks(&doc("integer"), &doc("number")),
+        Vec::<String>::new()
+    );
+    // The other way narrows what the daemon accepts.
+    assert!(!breaks(&doc("number"), &doc("integer")).is_empty());
+}
+
+#[test]
+fn integer_to_number_in_results_is_a_break() {
+    let doc = |t: &str| {
+        one_method(
+            false,
+            json!({"type": "object"}),
+            json!({"type": "object", "properties": {"n": {"type": t}}}),
+        )
+    };
+    let lines = breaks(&doc("integer"), &doc("number"));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("m.result.n") && l.contains("number")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn removed_all_of_part_in_a_result_is_a_break() {
+    let a = json!({"type": "object", "properties": {"a": {"type": "string"}}});
+    let b = json!({"type": "object", "properties": {"b": {"type": "string"}}});
+    let doc = |parts: Value| one_method(false, json!({"type": "object"}), json!({"allOf": parts}));
+    let lines = breaks(&doc(json!([a, b])), &doc(json!([a])));
+    assert!(
+        lines.iter().any(|l| l.contains("allOf part removed")),
+        "{lines:?}"
+    );
+}
