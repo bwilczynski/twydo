@@ -15,6 +15,7 @@ pub struct EventEnvelope {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type")]
+#[schemars(transform = super::open_enum)]
 pub enum Event {
     #[serde(rename = "status.changed")]
     StatusChanged { status_rev: u64 },
@@ -31,10 +32,16 @@ pub enum Event {
         request_id: Option<String>,
         state: OpState,
     },
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum Cause {
     Op,
     Sync,
@@ -42,6 +49,11 @@ pub enum Cause {
     List,
     Recovery,
     Config,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 /// Params of the `missed` notification: events were dropped; refetch from these marks.
