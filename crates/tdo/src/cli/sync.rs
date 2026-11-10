@@ -8,7 +8,7 @@ use twydo_core::config::Config;
 use twydo_core::store::DrainOutcome;
 use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::sync::batch::{self, Due, Trigger};
-use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, describe, messages};
+use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, describe, messages, switch_message};
 use twydo_core::sync::run::{RunOptions, run};
 use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
 use twydo_core::sync::{summary, switch};
@@ -143,15 +143,6 @@ pub fn set_switch(cfg: &Config, vdir_flag: Option<&Path>, on: bool) -> std::io::
         spawn(cfg, vdir_flag, Trigger::SyncNow);
     }
     Ok(())
-}
-
-/// The confirmation for `tdo sync on|off` and `:sync on|off`.
-pub fn switch_message(on: bool) -> &'static str {
-    if on {
-        "automatic sync on"
-    } else {
-        "automatic sync off"
-    }
 }
 
 /// `tdo status`: last success, pending entries, conflicts, failures and per-list state.

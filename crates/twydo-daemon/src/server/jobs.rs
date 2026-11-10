@@ -243,6 +243,10 @@ struct RunnerState {
 pub struct JobRunner {
     state: Mutex<RunnerState>,
     cv: Condvar,
+    /// Whether `sync.stop` left a stop request for the running sync. Held across the check
+    /// that a sync runs and writing the request, and by the sync when it withdraws it, so a
+    /// request never outlives the sync it was meant for.
+    stop: Mutex<bool>,
 }
 
 impl JobRunner {
@@ -326,6 +330,11 @@ impl JobRunner {
     /// body only.
     pub fn defer_sync_end(&self, end: SyncDone) {
         self.state.lock().unwrap().sync_end = Some(end);
+    }
+
+    /// The stop gate; see [`JobRunner`]'s `stop` field.
+    pub(super) fn stop_gate(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.stop.lock().unwrap()
     }
 
     /// The id of the job running now (for a job's body, which is built before its id).

@@ -118,6 +118,8 @@ pub fn dispatch(
         "op.get" => super::writes::get(shared, parse(params)?),
         "op.check" => super::writes::check(shared, parse(params)?),
         "sync.run" => super::syncjob::sync_run(shared, conn, parse(params)?),
+        "sync.stop" => super::syncjob::sync_stop(shared),
+        "sync.set_auto" => super::syncjob::sync_set_auto(shared, parse(params)?),
         "job.get" => super::jobs::get(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {

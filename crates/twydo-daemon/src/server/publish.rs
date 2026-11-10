@@ -119,6 +119,11 @@ impl Publisher {
         self.state.lock().unwrap().sync_running = running.then_some(job_id);
     }
 
+    /// Whether a sync runs in this daemon now (as [`Publisher::set_sync_state`] last said).
+    pub fn sync_running(&self) -> bool {
+        self.state.lock().unwrap().sync_running.is_some()
+    }
+
     /// The newest published revision.
     pub fn current(&self) -> (u64, Arc<Snapshot>) {
         let s = self.state.lock().unwrap();

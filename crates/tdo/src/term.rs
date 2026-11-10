@@ -139,7 +139,7 @@ fn event_loop(
                                 "sync is not configured".into()
                             } else {
                                 match crate::cli::sync::set_switch(cfg, Some(&cfg.vdir), on) {
-                                    Ok(()) => crate::cli::sync::switch_message(on).into(),
+                                    Ok(()) => twydo_core::sync::report::switch_message(on).into(),
                                     Err(e) => format!("cannot switch automatic sync: {e}"),
                                 }
                             });

@@ -2035,6 +2035,40 @@
         ],
         "type": "object"
       },
+      "SyncSetAutoParams": {
+        "description": "Params of `sync.set_auto`.",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "on"
+        ],
+        "type": "object"
+      },
+      "SyncSetAutoResult": {
+        "description": "Result of `sync.set_auto`.",
+        "properties": {
+          "auto": {
+            "description": "The switch as it is now.",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "The confirmation, in the words `tdo sync on|off` uses.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "auto",
+          "message"
+        ],
+        "type": "object"
+      },
       "SyncState": {
         "enum": [
           "idle",
@@ -2042,6 +2076,19 @@
         ],
         "type": "string",
         "x-open": true
+      },
+      "SyncStopResult": {
+        "description": "Result of `sync.stop`.",
+        "properties": {
+          "stopping": {
+            "description": "False when no sync ran in this daemon, so there was nothing to stop.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopping"
+        ],
+        "type": "object"
       },
       "SyncView": {
         "properties": {
@@ -2768,6 +2815,44 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.stop",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SyncStopResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.set_auto",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SyncSetAutoParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SyncSetAutoResult"
         }
       },
       "x-lifecycle": false
