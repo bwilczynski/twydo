@@ -9,6 +9,7 @@ use twydo_core::edit::{Change, Op};
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::store::{Store, Submitted, bind_vdir_state};
+use twydo_core::sync::status::SyncStatus;
 use twydo_daemon::protocol::methods::StatusView;
 use twydo_daemon::protocol::wire::WireSnapshot;
 
@@ -149,4 +150,56 @@ fn reads_answer_while_a_reload_waits_for_the_vdir_lock() {
     });
     let after: WireSnapshot = c.call("snapshot.get", empty()).unwrap();
     assert_eq!(after.tasks.len(), before.tasks.len() + 1);
+}
+
+fn seed_sync_status(fx: &Fixture, cfg: &twydo_core::config::Config, status: &SyncStatus) {
+    // Automatic sync off: the daemon starts without running (and rewriting) a sync.
+    twydo_core::sync::switch::set(cfg, true).unwrap();
+    status.save(&fx.state()).unwrap();
+}
+
+#[test]
+fn status_carries_per_list_sync_state() {
+    use twydo_core::sync::status::CollState;
+    use twydo_daemon::protocol::methods::WireCollState;
+    let fx = fx();
+    let cfg = fx.with_sync("exit 0");
+    let mut status = SyncStatus::default();
+    status.collections.insert(
+        "inbox".into(),
+        CollState::Error {
+            message: "404 Client Error: Not Found".into(),
+        },
+    );
+    status
+        .collections
+        .insert("work".into(), CollState::Conflict);
+    status
+        .collections
+        .insert("misc".into(), CollState::EmptiedRemote);
+    status.metasync_error = Some("metasync failed".into());
+    seed_sync_status(&fx, &cfg, &status);
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let st: StatusView = td.client().call("status.get", empty()).unwrap();
+    let sync = st.sync.unwrap();
+    assert_eq!(
+        sync.collections["inbox"],
+        WireCollState::Error {
+            message: "404 Client Error: Not Found".into()
+        }
+    );
+    assert_eq!(sync.collections["work"], WireCollState::Conflict);
+    assert_eq!(sync.collections["misc"], WireCollState::EmptiedRemote);
+    assert_eq!(sync.metasync_error.as_deref(), Some("metasync failed"));
+}
+
+#[test]
+fn status_without_collection_states_reads_as_empty() {
+    // A daemon older than this field sends none: `collections` defaults.
+    let v: twydo_daemon::protocol::methods::SyncView = serde_json::from_value(serde_json::json!({
+        "state": "idle", "auto": true, "last_success": null, "last_attempt": null,
+        "next_attempt": null, "failures": 0, "last_error": null
+    }))
+    .unwrap();
+    assert!(v.collections.is_empty() && v.metasync_error.is_none());
 }

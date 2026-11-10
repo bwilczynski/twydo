@@ -19,6 +19,7 @@ use crate::protocol::lists::{
     BackupPreviewParams, Backups, ForgetPreview, ListArchiveParams, ListCreateParams,
     ListDeleteParams, ListExportParams, ListForgetParams, ListPreviewDeleteParams,
     ListPreviewForgetParams, ListReconcileParams, ListRecoverParams, ListUpdateParams,
+    PendingListOp,
 };
 use crate::protocol::methods::*;
 use crate::protocol::rpc::ErrorKind;
@@ -155,6 +156,12 @@ pub const METHODS: &[MethodSpec] = &[
         false,
         of::<ListRecoverParams>,
         of::<JobStarted>,
+    ),
+    m(
+        "lists.pending",
+        false,
+        of::<Empty>,
+        of::<Option<PendingListOp>>,
     ),
     m("lists.backups", false, of::<Empty>, of::<Backups>),
     m(

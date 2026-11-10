@@ -104,7 +104,10 @@ pub fn from_wire(w: WireSnapshot) -> Snapshot {
     for wt in w.tasks {
         let mut t = wt.task;
         t.path = vdir.join(&t.path);
-        revs.insert(t.uid.clone(), wt.rev);
+        // An empty `rev` is how the wire says "bytes unknown": keep that as no revision.
+        if !wt.rev.is_empty() {
+            revs.insert(t.uid.clone(), wt.rev);
+        }
         if wt.pending {
             pending.insert(t.uid.clone());
         }

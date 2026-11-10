@@ -909,3 +909,81 @@ fn recover_resent_under_a_new_session_runs() {
     let job = call(&e.c, "lists.recover", p);
     assert!(recovered(finished(&e.c, &job)).1);
 }
+
+/// Writes an unfinished list operation record and marks it active, as an interrupted save
+/// leaves it.
+fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
+    use twydo_core::lists::helper::HelperRequest;
+    use twydo_core::lists::operation::{ListOperation, Phase};
+    let cfg = fx.config();
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = "op-synthetic-1".to_string();
+    let request = HelperRequest {
+        version: 1,
+        action: "update".into(),
+        pair: "p".into(),
+        local_storage: "s".into(),
+        vdir: fx.vdir(),
+        config: None,
+        collection: Some("inbox".into()),
+        operation: None,
+        state: None,
+        name: Some("Renamed".into()),
+        color: Some("#112233".into()),
+        expected: None,
+        mode: "execute".into(),
+        keep_server: false,
+        timeout_secs: 5,
+    };
+    let record = ListOperation {
+        format: 1,
+        id: id.clone(),
+        created: chrono::Utc::now(),
+        vdir: fs::canonicalize(fx.vdir()).unwrap(),
+        phase: Phase::Uncertain,
+        request,
+        holds: None,
+        receipt: observed.map(|o| json!({"observed": o})),
+        remote_target: None,
+        connection_digest: None,
+        local_base: None,
+        local_after: None,
+    };
+    twydo_core::lists::operation::save(&state, &record).unwrap();
+    fs::create_dir_all(state.join("lists")).unwrap();
+    fs::write(state.join("lists/active"), &id).unwrap();
+    id
+}
+
+#[test]
+fn lists_pending_reports_an_unfinished_list_save() {
+    use twydo_daemon::protocol::lists::PendingListOp;
+    let fx = Fixture::new(&[("inbox", "u1", "One", None)]);
+    let id = seed_pending(
+        &fx,
+        Some(json!({"name": "Server name", "color": "#445566"})),
+    );
+    let td = TestDaemon::start(&fx);
+    let got: Option<PendingListOp> = td.client().call("lists.pending", empty()).unwrap();
+    assert_eq!(
+        got,
+        Some(PendingListOp {
+            operation: id,
+            action: "update".into(),
+            collection: Some("inbox".into()),
+            name: Some("Renamed".into()),
+            color: Some("#112233".into()),
+            observed_name: Some("Server name".into()),
+            observed_color: Some("#445566".into()),
+        })
+    );
+}
+
+#[test]
+fn lists_pending_is_none_when_idle() {
+    use twydo_daemon::protocol::lists::PendingListOp;
+    let fx = Fixture::new(&[("inbox", "u1", "One", None)]);
+    let td = TestDaemon::start(&fx);
+    let got: Option<PendingListOp> = td.client().call("lists.pending", empty()).unwrap();
+    assert_eq!(got, None);
+}

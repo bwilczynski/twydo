@@ -51,22 +51,6 @@ pub struct ListCompletion {
     pub server_values: Option<(Option<String>, Option<String>)>,
 }
 
-pub(crate) fn observed(
-    record: &operation::ListOperation,
-) -> Option<(Option<String>, Option<String>)> {
-    let value = record.receipt.as_ref()?.get("observed")?;
-    Some((
-        value
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-        value
-            .get("color")
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-    ))
-}
-
 impl App {
     pub(super) fn open_collection_backups(&mut self) {
         match twydo_core::lists::backup::list(&self.snapshot.config) {
@@ -151,7 +135,7 @@ impl App {
         }
         form.operation = Some(record.id.clone());
         form.focus = ListField::Reconcile;
-        form.server_values = observed(&record);
+        form.server_values = operation::observed(&record);
         form.notice = Some("Finish the pending list save before starting another".into());
         self.list_form = Some(form);
         self.mode = Mode::Insert;

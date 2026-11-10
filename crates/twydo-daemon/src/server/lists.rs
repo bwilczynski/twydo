@@ -28,7 +28,7 @@ use crate::protocol::lists::{
     BackupPreviewParams, Backups, DeletedBackupView, ForgetPreview, ListArchiveParams,
     ListCreateParams, ListDeleteParams, ListExportParams, ListForgetParams,
     ListPreviewDeleteParams, ListPreviewForgetParams, ListReconcileParams, ListRecoverParams,
-    ListUpdateParams, RetiredBackupView, WireListState, parse_color,
+    ListUpdateParams, PendingListOp, RetiredBackupView, WireListState, parse_color,
 };
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::sync::SyncReason;
@@ -276,13 +276,7 @@ fn start_body(
 /// `lists.preview_forget`: what forgetting list `name` would preserve.
 pub fn preview_forget(shared: &Arc<Shared>, p: ListPreviewForgetParams) -> Result<Value, RpcError> {
     let preview = retired::preview(&shared.cfg, &p.name).map_err(io_refusal)?;
-    serde_json::to_value(ForgetPreview {
-        collection: preview.collection,
-        name: preview.name,
-        tasks: preview.tasks,
-        pending: preview.pending,
-    })
-    .map_err(internal)
+    serde_json::to_value(ForgetPreview::of(&preview)).map_err(internal)
 }
 
 /// `lists.forget`: preserves the list, then (holding the same lane) runs the manual sync the
@@ -390,15 +384,7 @@ pub fn backups(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     let retired = retired::list(&shared.cfg)
         .map_err(io_refusal)?
         .into_iter()
-        .map(|b| RetiredBackupView {
-            id: b.id,
-            collection: b.collection,
-            name: b.name,
-            created: b.created,
-            tasks: b.tasks,
-            pending: b.pending,
-            retired: b.retired,
-        })
+        .map(|b| RetiredBackupView::of(&b))
         .collect();
     let deleted = backup::list(&shared.cfg)
         .map_err(io_refusal)?
@@ -418,4 +404,10 @@ pub fn backup_preview(shared: &Arc<Shared>, p: BackupPreviewParams) -> Result<Va
     let snap = retired::snapshot(&shared.cfg, &p.id).map_err(io_refusal)?;
     let wire: WireSnapshot = to_wire(&snap, 0);
     serde_json::to_value(wire).map_err(internal)
+}
+
+/// `lists.pending`: the unfinished list save, if any.
+pub fn pending(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let record = twydo_core::lists::operation::active(&shared.cfg).map_err(io_refusal)?;
+    serde_json::to_value(record.as_ref().map(PendingListOp::of)).map_err(internal)
 }

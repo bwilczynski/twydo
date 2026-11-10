@@ -63,3 +63,52 @@ fn queued_op_encoding_is_unchanged() {
         r#"{"Edit":{"uid":"u1","changes":[{"Summary":"X"}]}}"#
     );
 }
+
+const ALARM_ICS: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:alarm\r\nSUMMARY:With alarm\r\nDUE:20261114T093000Z\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:x\r\nTRIGGER;VALUE=DATE-TIME:20261114T083000Z\r\nEND:VALARM\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+const RRULE_ICS: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:until\r\nSUMMARY:Repeats\r\nDUE;VALUE=DATE:20261114\r\nRRULE:FREQ=WEEKLY;UNTIL=20271231T000000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+const ZONED_ICS: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:zoned\r\nSUMMARY:Zoned\r\nDUE;TZID=Europe/Berlin:20261114T093000\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+const DATE_ICS: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:dateonly\r\nSUMMARY:Date only\r\nDUE;VALUE=DATE:20261114\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+
+#[test]
+fn wire_round_trip_keeps_alarms_rrule_and_zoned_due() {
+    let fx = common::Fixture::new(&[]);
+    fx.write("inbox/alarm.ics", ALARM_ICS);
+    fx.write("inbox/until.ics", RRULE_ICS);
+    fx.write("inbox/zoned.ics", ZONED_ICS);
+    fx.write("inbox/dateonly.ics", DATE_ICS);
+    let snap = fx.snapshot();
+    assert_eq!(snap.tasks.len(), 4, "{:?}", snap.errors);
+    let back = from_wire(
+        serde_json::from_str(&serde_json::to_string(&to_wire(&snap, 3)).unwrap()).unwrap(),
+    );
+    for t in &snap.tasks {
+        let b = &back.tasks[back.find(&t.uid).unwrap()];
+        let mut want = t.clone();
+        want.path = fx.vdir().join(&t.path);
+        assert_eq!(b, &want, "task {} changed on the wire", t.uid);
+        let i = back.find(&t.uid).unwrap();
+        assert_eq!(
+            back.rev(i),
+            snap.rev(snap.find(&t.uid).unwrap()),
+            "revision of {}",
+            t.uid
+        );
+    }
+    let alarm = &back.tasks[back.find("alarm").unwrap()];
+    assert!(!alarm.alarms.is_empty(), "{alarm:?}");
+    let until = &back.tasks[back.find("until").unwrap()];
+    assert!(
+        until.rrule.as_deref().is_some_and(|r| r.contains("UNTIL")),
+        "{until:?}"
+    );
+}
+
+#[test]
+fn an_empty_wire_rev_stays_unknown() {
+    let fx = common::Fixture::new(&[("inbox", "u1", "Synthetic", None)]);
+    let mut wire = to_wire(&fx.snapshot(), 1);
+    assert_eq!(wire.tasks[0].rev.len(), 16);
+    wire.tasks[0].rev = String::new();
+    let back = from_wire(wire);
+    assert_eq!(back.rev(back.find("u1").unwrap()), None);
+}

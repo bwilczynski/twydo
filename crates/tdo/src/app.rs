@@ -9,7 +9,6 @@ mod sync_activity;
 pub use recovery::{Confirmation, RecoveryPanel};
 pub use sync_activity::SyncActivity;
 
-pub(crate) use lists::observed;
 pub use lists::{CollectionBackups, ListAction, ListCompletion};
 pub use newrow::{NewRow, default_list};
 

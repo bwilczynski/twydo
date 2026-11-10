@@ -191,11 +191,11 @@ fn a_gained_value_of_a_closed_enum_in_params_is_not_a_break() {
 #[test]
 fn every_open_enum_reads_an_unknown_value() {
     use twydo_daemon::protocol::admin::{
-        InputField, WireConflictKind, WireConflictState, WireResolution, WireSide, WireStage,
+        WireConflictKind, WireConflictState, WireResolution, WireSide, WireStage,
     };
     use twydo_daemon::protocol::events::{Cause, Event, EventEnvelope};
     use twydo_daemon::protocol::jobs::{JobKind, JobResult, JobState};
-    use twydo_daemon::protocol::methods::{OpState, SyncState, WriteOutcome};
+    use twydo_daemon::protocol::methods::{OpState, SyncState, WireCollState, WriteOutcome};
     use twydo_daemon::protocol::rpc::ErrorKind;
     use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason};
     let doc = schema::document();
@@ -212,7 +212,6 @@ fn every_open_enum_reads_an_unknown_value() {
             "Cause",
             "ErrorKind",
             "EventEnvelope",
-            "InputField",
             "JobKind",
             "JobResult",
             "JobState",
@@ -220,6 +219,7 @@ fn every_open_enum_reads_an_unknown_value() {
             "SyncOutcome",
             "SyncReason",
             "SyncState",
+            "WireCollState",
             "WireConflictKind",
             "WireConflictState",
             "WireResolution",
@@ -249,8 +249,8 @@ fn every_open_enum_reads_an_unknown_value() {
         OpState::Unknown
     );
     assert_eq!(
-        serde_json::from_value::<InputField>(json!("brand_new")).unwrap(),
-        InputField::Unknown
+        serde_json::from_value::<WireCollState>(json!({"state": "brand_new", "x": 1})).unwrap(),
+        WireCollState::Unknown
     );
     assert_eq!(
         serde_json::from_value::<JobKind>(json!("brand_new")).unwrap(),

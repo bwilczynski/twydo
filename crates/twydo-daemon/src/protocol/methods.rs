@@ -1,11 +1,13 @@
 //! Params and results of the plan-1 methods.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use twydo_core::edit::Op;
+use twydo_core::sync::status::CollState;
 
 use super::rpc::ErrorKind;
 
@@ -245,6 +247,39 @@ pub enum SyncState {
     Unknown,
 }
 
+/// The last reported sync result of one list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
+pub enum WireCollState {
+    Ok,
+    Conflict,
+    EmptiedLocal,
+    EmptiedRemote,
+    Error {
+        message: String,
+    },
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+impl From<&CollState> for WireCollState {
+    fn from(s: &CollState) -> Self {
+        match s {
+            CollState::Ok => WireCollState::Ok,
+            CollState::Conflict => WireCollState::Conflict,
+            CollState::EmptiedLocal => WireCollState::EmptiedLocal,
+            CollState::EmptiedRemote => WireCollState::EmptiedRemote,
+            CollState::Error { message } => WireCollState::Error {
+                message: message.clone(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SyncView {
     pub state: SyncState,
@@ -257,4 +292,10 @@ pub struct SyncView {
     /// The job of the running sync (a `sync.run`); absent for a background sync.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
+    /// The last reported state of each list, by directory name.
+    #[serde(default)]
+    pub collections: BTreeMap<String, WireCollState>,
+    /// Why the last list-metadata sync failed, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metasync_error: Option<String>,
 }

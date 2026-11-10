@@ -651,6 +651,7 @@ fn parse_input(
             field,
             text: text.into(),
             today: Some(chrono::NaiveDate::from_ymd_opt(2026, 11, 10).unwrap()),
+            anchor: None,
         },
     )
 }
@@ -694,4 +695,74 @@ fn input_parse_due_and_repeat() {
 
     let e = parse_input(&c, InputField::Due, "9").unwrap_err();
     assert_eq!(kind(&e), ErrorKind::Invalid);
+}
+
+#[test]
+fn input_parse_describes_a_monthly_repeat_from_the_anchor() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let call = |anchor| -> InputParsed {
+        c.call(
+            "input.parse",
+            InputParseParams {
+                field: InputField::Repeat,
+                text: "monthly".into(),
+                today: Some(chrono::NaiveDate::from_ymd_opt(2026, 11, 10).unwrap()),
+                anchor,
+            },
+        )
+        .unwrap()
+    };
+    let anchored = call(Some(chrono::NaiveDate::from_ymd_opt(2026, 11, 14).unwrap()));
+    assert!(anchored.description.contains("14"), "{anchored:?}");
+    let plain = call(None);
+    assert!(!plain.description.contains("14"), "{plain:?}");
+}
+
+#[test]
+fn input_parse_defaults_to_today_in_the_configured_zone() {
+    use chrono::Weekday;
+    let fx = fx();
+    let mut cfg = fx.config();
+    cfg.timezone = Some("Pacific/Kiritimati".into());
+    cfg.work_days = vec![Weekday::Mon, Weekday::Wed];
+    let td_tz = cfg.tz();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let tz = td_tz;
+    let today = || Utc::now().with_timezone(&tz).date_naive();
+    let before = today();
+    let r: InputParsed = c
+        .call(
+            "input.parse",
+            InputParseParams {
+                field: InputField::Due,
+                text: "tomorrow".into(),
+                today: None,
+                anchor: None,
+            },
+        )
+        .unwrap();
+    let after = today();
+    let got = match r.due {
+        Some(twydo_core::edit::Due::Date(d)) => d,
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        got == before.succ_opt().unwrap() || got == after.succ_opt().unwrap(),
+        "{got} is not tomorrow in the configured zone ({before})"
+    );
+    let r: InputParsed = c
+        .call(
+            "input.parse",
+            InputParseParams {
+                field: InputField::Repeat,
+                text: "workdays".into(),
+                today: None,
+                anchor: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(r.repeat.unwrap().rrule, "FREQ=WEEKLY;BYDAY=MO,WE");
 }
