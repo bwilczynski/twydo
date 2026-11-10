@@ -327,7 +327,7 @@ the live previews of the date and repeat grammars, and computing views.
 - **Outcome events** report something that finished, for messages and exit codes:
   `sync.started`, `sync.finished` (result `ok`, `failed`, `stopped`, with counts and
   message), `op.finished` (for a queued op: `applied`, `refused` with kind and message, or
-  `satisfied`), `job.progress` / `job.finished` (list jobs, §7.4), and later
+  `satisfied`), `job.progress` (not built yet, see §7.4) / `job.finished` (list jobs, §7.4), and later
   `reminder.due` (§9). A client never needs them to stay in step with the data.
 - **Ordering:** `seq` rises by one per event and restarts with the epoch. Events go to every
   subscriber, including the connection that caused them.
@@ -394,8 +394,9 @@ the live previews of the date and repeat grammars, and computing views.
   ever planned against a newer snapshot than the client saw, so the §11 preservation contract
   is exactly as strong as today's in-process check.
 - **`request_id`** is required on **every method that changes anything**: `op.*`,
-  `journal.revert`, `journal.abandon`, `conflicts.resolve`, `sync.set_auto`, `refusals.ack`
-  and every `lists.*` job *(widened after review)*. It is chosen by the client and globally
+  `journal.revert`, `journal.abandon`, `conflicts.resolve`, `sync.run`, `sync.set_auto`,
+  `refusals.ack` and every `lists.*` job *(widened after review; `sync.run` added by the builder
+  in plan 2, since it starts a job record)*. It is chosen by the client and globally
   unique (session id plus a counter, the session id itself being random). The daemon records
   it, with the session, in what the call produces: the journal entry, the queue item, the
   refused-items record, the cancellation record (an undo that withdrew a queued item, §6.7),
@@ -543,8 +544,8 @@ In order, before accepting any request other than `hello` and `daemon.info` (whi
 ### 7.4 Long-running jobs
 
 List create, update, delete, recover and forget (#69) and `sync.run` take seconds and talk to
-the network. They answer at once with a `job_id`, report `job.progress` where the adapter can,
-and end with `job.finished` carrying the result or the error kind; `job.get` returns the same
+the network. They answer at once with a `job_id`, report `job.progress` where the adapter can
+*(builder decision, plan 2: no `job.progress` yet; jobs only end)*, and end with `job.finished` carrying the result or the error kind; `job.get` returns the same
 outcome later (§6.5). Jobs run on the vdir lane (§5), one at a time with syncs and writes.
 `:recover` therefore no longer waits on a lock or says "a sync is running; try again": it runs
 after the sync.

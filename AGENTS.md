@@ -68,15 +68,22 @@ app replacing 2Do for one user, plan by plan.
    (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`). **Decided 2026-11-09:**
    `tdo` gets a daemon that owns the data, sync and scheduling; the TUI and CLI become
    clients over a Unix socket
-   ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md), branch
-   `feat/twydo-daemon`). Build it before write-queue plan 3 (rebasing, now inside the
+   ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md)). Build it before write-queue plan 3 (rebasing, now inside the
    daemon) and before Plan 2 (the notifier, which lives in the daemon); do not extend the
-   cross-process queue, waiter or sync timer meanwhile. **Daemon plan 1 is done** on that
-   branch (`docs/superpowers/plans/2026-11-09-daemon-1-core-and-writes.md`): the hidden
-   `tdo daemon` serves snapshots, status, events and task writes over a Unix socket; no
-   client uses it yet. Next: plan 2 (sync jobs and scheduling, conflicts, journal and list
-   jobs inside the daemon), then plan 3 (the TUI and CLI switch to the daemon; the Writer
-   and the batch waiter go away). Spec decision D13: once clients switch, only the daemon
+   cross-process queue, waiter or sync timer meanwhile. **Daemon plan 1 is merged** (PR #78;
+   `docs/superpowers/plans/2026-11-09-daemon-1-core-and-writes.md`). **Daemon plan 2 is done**
+   on `feat/daemon-2-sync-jobs` (`docs/superpowers/plans/2026-11-10-daemon-2-sync-and-jobs.md`):
+   the hidden `tdo daemon` runs syncs and list jobs on its vdir lane with durable job records,
+   `job.get` and `sync.started`/`sync.finished`/`job.finished` events; serves `sync.run`,
+   `stop` and `set_auto` with a scheduler (startup, every 60 s, batched, after a recorded
+   conflict choice, switch turned on, wake from sleep); reaps an orphaned vdirsyncer at startup
+   and shuts down cleanly during a job (`shutdown_grace`, `when_idle`); serves
+   `conflicts.list`/`resolve` (replayable), `journal.list`/`recover`/`revert`/`abandon`, every
+   `lists.*` action as a job (forget and recover included; recover is undoable per session),
+   `input.parse`, and live `config.toml` reload (binding fields need a restart). No client uses
+   it yet: the TUI, `tdo sync`, the waiter and the timer still run their own syncs. Next: plan 3
+   (the TUI and CLI switch to the daemon; the Writer and the batch waiter go away; plan 1's
+   deferred client-side items are in that plan's notes). Spec decision D13: once clients switch, only the daemon
    reads `config.toml`. The default socket is per user; other setups choose theirs with
    `--socket` or `TWYDO_SOCKET` (the test setup will need `TWYDO_SOCKET` next to
    `XDG_CONFIG_HOME` once plan 3 lands).
