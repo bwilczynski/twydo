@@ -1,7 +1,6 @@
 //! List workers use the same service in the real loop and the integration tests.
 use crate::app::{ListAction, ListCompletion};
 use std::path::Path;
-use std::sync::mpsc;
 use twydo_core::{
     config::Config,
     lists::{ListError, ListResult, ListService, operation},
@@ -60,18 +59,4 @@ pub fn perform_list_action(
         pending,
         server_values,
     }
-}
-
-pub(super) fn start(
-    cfg: &Config,
-    path: Option<&Path>,
-    action: ListAction,
-    tx: &mpsc::Sender<ListCompletion>,
-) {
-    let cfg = cfg.clone();
-    let path = path.map(Path::to_path_buf);
-    let tx = tx.clone();
-    std::thread::spawn(move || {
-        let _ = tx.send(perform_list_action(&cfg, path.as_deref(), action));
-    });
 }

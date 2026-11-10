@@ -196,6 +196,10 @@ pub struct App {
     /// The snapshot the form opened on: its save is checked against these bytes, so a sync
     /// that lands meanwhile makes the save stale instead of being overwritten.
     form_base: Option<Snapshot>,
+    /// The daemon revision `form_base` was built from.
+    form_base_revision: u64,
+    /// The daemon revision of `snapshot`, set by the loop on each `Update::Snapshot`.
+    pub snapshot_revision: u64,
     /// The new row (`o`, `O`, `a`); open while `mode` is Insert.
     pub new_row: Option<NewRow>,
     /// A create sent to the store, to follow the new task after the reload.
@@ -261,6 +265,8 @@ impl App {
             picker: None,
             form: None,
             form_base: None,
+            form_base_revision: 0,
+            snapshot_revision: 0,
             new_row: None,
             adding: None,
             converting: None,
@@ -509,6 +515,13 @@ impl App {
         {
             self.cursor = row;
         }
+    }
+
+    /// Show `text` as a note that clears itself like a success message.
+    pub fn notice(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        self.transient = Some((text.clone(), None));
+        self.message = Some(text);
     }
 
     /// Report a failed reload; the message stays until a reload succeeds or Esc.
@@ -1012,8 +1025,14 @@ impl App {
         }
         form.focus = focus;
         self.form = Some(form);
-        self.form_base = Some(self.snapshot.clone());
+        self.hold_form_base();
         self.mode = Mode::Insert;
+    }
+
+    /// Remember the current snapshot (and its revision) as the one the open card is built on.
+    pub(crate) fn hold_form_base(&mut self) {
+        self.form_base = Some(self.snapshot.clone());
+        self.form_base_revision = self.snapshot_revision;
     }
 
     fn close_form(&mut self) {
@@ -1030,6 +1049,15 @@ impl App {
         match (&self.form, &self.form_base) {
             (Some(f), Some(base)) if f.uid.is_some() => base,
             _ => &self.snapshot,
+        }
+    }
+
+    /// The daemon revision [`App::write_snapshot`] was built from: what a write is
+    /// `based_on`.
+    pub fn write_based_on(&self) -> u64 {
+        match (&self.form, &self.form_base) {
+            (Some(f), Some(_)) if f.uid.is_some() => self.form_base_revision,
+            _ => self.snapshot_revision,
         }
     }
 
@@ -1062,7 +1090,7 @@ impl App {
                 f.focus = focus;
             }
             f.error = Some(format!("{error}; the form now shows the saved version"));
-            self.form_base = Some(self.snapshot.clone());
+            self.hold_form_base();
             f
         } else {
             let mut f = form.clone();

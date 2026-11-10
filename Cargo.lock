@@ -1729,7 +1729,6 @@ dependencies = [
  "chrono-tz",
  "clap",
  "libc",
- "notify",
  "ratatui",
  "serde",
  "serde_json",

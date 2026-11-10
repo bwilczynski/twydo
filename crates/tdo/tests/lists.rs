@@ -221,21 +221,20 @@ fn blank_name_and_invalid_color_do_not_emit_a_worker_request() {
 #[test]
 fn external_archive_reload_preserves_card_input_and_moves_out_of_archived_view() {
     let (_d, cfg, path, mut app) = setup();
-    let mut watch = tdo::term::PreferenceWatch::new(Some(path.clone()), &cfg);
     select(&mut app, "a");
     app.view = View::List("a".into());
     app.handle_key(key(KeyCode::Char('i')));
     app.list_form.as_mut().unwrap().name = "Held input".into();
     twydo_core::lists::prefs::set_archived(&path, &cfg.vdir, "a", true, &fs::read(&path).unwrap())
         .unwrap();
-    let next = watch.poll(&cfg).unwrap().unwrap();
+    // The daemon applies the saved preferences and sends the snapshot (cause `config`).
+    let next = twydo_core::config::Config::load(&path).unwrap();
     app.reload(Snapshot::new(
         twydo_core::vdir::load(&cfg.vdir).unwrap(),
         next,
     ));
     assert_eq!(app.view, View::Today);
     assert_eq!(app.list_form.as_ref().unwrap().name, "Held input");
-    assert!(watch.poll(&app.snapshot.config).unwrap().is_none());
 }
 
 #[test]
@@ -277,22 +276,6 @@ fn busy_card_cannot_be_replaced_or_changed_by_keys_and_paste() {
     }
     app.paste("injected\ntext");
     assert_eq!(app.list_form, held);
-}
-
-#[test]
-fn preference_reload_refuses_a_changed_store_or_write_policy() {
-    let (_d, cfg, path, _app) = setup();
-    let mut watch = tdo::term::PreferenceWatch::new(Some(path.clone()), &cfg);
-    let text = fs::read_to_string(&path).unwrap();
-    fs::write(&path, format!("{text}\n[writes]\nmode = \"test\"\n")).unwrap();
-    assert!(watch.poll(&cfg).unwrap_err().contains("restart"));
-    assert!(watch.poll(&cfg).unwrap().is_none());
-    fs::write(
-        &path,
-        text.replace(cfg.vdir.to_str().unwrap(), "/missing-synthetic-store"),
-    )
-    .unwrap();
-    assert!(watch.poll(&cfg).unwrap_err().contains("restart"));
 }
 
 #[test]

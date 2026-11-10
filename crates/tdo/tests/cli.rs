@@ -353,8 +353,6 @@ mod sync {
     use std::process::{Command, Output};
     use std::time::{Duration, Instant};
 
-    use twydo_core::config::Config;
-
     /// A temp dir holding `xdg/twydo/config.toml`, `vdir/c1/` and `state/`.
     struct Fx {
         dir: tempfile::TempDir,
@@ -732,21 +730,6 @@ mod sync {
                 stderr(&o)
             );
         }
-    }
-
-    #[test]
-    fn background_command_names_the_keepalive_invocation() {
-        let fx = Fx::with_fake(|_| "exit 0".into());
-        let cfg = Config::load(&fx.config_path()).unwrap();
-        let cmd = tdo::cli::sync::background_command(Path::new("tdo"), &cfg, None, true).unwrap();
-        let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
-        assert_eq!(args, ["sync", "--background", "--when-due"]);
-
-        let mut no_sync = cfg.clone();
-        no_sync.sync = None;
-        assert!(
-            tdo::cli::sync::background_command(Path::new("tdo"), &no_sync, None, false).is_none()
-        );
     }
 }
 

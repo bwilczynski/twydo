@@ -1,14 +1,11 @@
-//! `tdo sync`, `tdo status`, and starting a background sync.
+//! `tdo sync`, `tdo status` and `tdo sync on|off`.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use twydo_core::config::Config;
-use twydo_core::sync::batch::{self, Due, Trigger};
 use twydo_core::sync::report::{NOT_CONFIGURED, describe};
-use twydo_core::sync::{summary, switch};
+use twydo_core::sync::summary;
 use twydo_daemon::client::{Client, ClientError, Notification};
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
@@ -246,12 +243,6 @@ fn error(e: &dyn std::fmt::Display) -> i32 {
     EXIT_ERROR
 }
 
-fn print_warnings(cfg: &Config) {
-    for w in cfg.warnings() {
-        eprintln!("warning: {w}");
-    }
-}
-
 /// `tdo sync on|off`: the daemon switches automatic sync (turning it on with unsynced edits
 /// starts a sync). Exit 0, or 2 when sync is not configured or the daemon is out of reach.
 pub fn switch_command(target: &Target, on: bool) -> i32 {
@@ -283,24 +274,15 @@ pub fn switch_command(target: &Target, on: bool) -> i32 {
     }
 }
 
-/// Switches automatic sync for the old TUI (`:sync on|off`; goes with it). Turning it on with unsynced
-/// edits starts a background sync at once. Once the switch is set, the call succeeds: an
-/// error reading the unsynced edits starts a sync too, which checks again itself.
-pub fn set_switch(cfg: &Config, vdir_flag: Option<&Path>, on: bool) -> std::io::Result<()> {
-    switch::set(cfg, !on)?;
-    if on && !matches!(batch::due(cfg, Utc::now()), Ok(Due::Nothing)) {
-        spawn(cfg, vdir_flag, Trigger::SyncNow);
-    }
-    Ok(())
-}
-
 /// `tdo status`: last success, pending entries, conflicts, failures and per-list state.
 pub fn status(vdir: Option<&Path>) -> i32 {
     let cfg = match resolve_config(vdir) {
         Ok(c) => c,
         Err(e) => return error(&e),
     };
-    print_warnings(&cfg);
+    for w in cfg.warnings() {
+        eprintln!("warning: {w}");
+    }
     let s = match summary(&cfg) {
         Ok(Some(s)) => s,
         Ok(None) => return error(&NOT_CONFIGURED),
@@ -338,62 +320,4 @@ pub fn status(vdir: Option<&Path>) -> i32 {
         }
     }
     0
-}
-
-/// The command that runs a background sync: `exe [--vdir <flag>] sync --background`, plus
-/// `--when-due` for the batch waiter, with stdin, stdout and stderr null, in a process group
-/// of its own so that closing the terminal does not kill it. `None` when sync is not
-/// configured.
-pub fn background_command(
-    exe: &Path,
-    config: &Config,
-    vdir_flag: Option<&Path>,
-    when_due: bool,
-) -> Option<Command> {
-    config.sync.as_ref()?;
-    let mut cmd = Command::new(exe);
-    if let Some(v) = vdir_flag {
-        cmd.arg("--vdir").arg(v);
-    }
-    cmd.args(["sync", "--background"]);
-    if when_due {
-        cmd.arg("--when-due");
-    }
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    Some(cmd)
-}
-
-/// Starts `cmd` without waiting for it. A thread reaps it when it exits, so a long-lived
-/// caller (the TUI) leaves no zombies. Errors are ignored.
-pub fn detach(mut cmd: Command) {
-    if let Ok(mut child) = cmd.spawn() {
-        let _ = std::thread::Builder::new()
-            .name("sync-reaper".into())
-            .spawn(move || child.wait());
-    }
-}
-
-/// Starts `tdo [--vdir <flag>] sync --background` detached when `config.sync` is set. Errors
-/// are ignored: the timer catches up.
-pub fn spawn_background(config: &Config, vdir_flag: Option<&Path>) {
-    start(config, vdir_flag, false);
-}
-
-/// Starts what a write asked for, detached: a background sync now, or the batch waiter.
-/// Nothing without `[sync]`; errors are ignored (the timer or the next edit catches up).
-pub fn spawn(config: &Config, vdir_flag: Option<&Path>, t: Trigger) {
-    start(config, vdir_flag, t == Trigger::Waiter);
-}
-
-fn start(config: &Config, vdir_flag: Option<&Path>, when_due: bool) {
-    let Ok(exe) = std::env::current_exe() else {
-        return;
-    };
-    if let Some(cmd) = background_command(&exe, config, vdir_flag, when_due) {
-        detach(cmd);
-    }
 }

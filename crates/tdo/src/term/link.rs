@@ -54,9 +54,15 @@ const JOB_POLL: Duration = Duration::from_secs(5);
 const TICK: Duration = Duration::from_millis(20);
 const BACKOFF_FIRST: Duration = Duration::from_millis(250);
 const BACKOFF_MAX: Duration = Duration::from_secs(2);
+/// How long a write the daemon answered `unavailable` waits before it is sent again.
+const BUSY_RETRY: Duration = Duration::from_millis(200);
+/// How many times in a row such a write is sent again before the refusal is reported (about
+/// 5 s: the loop waits 8 s for the answer).
+const BUSY_RETRIES: u32 = 25;
 
 /// The text of a call that timed out.
-pub const NO_ANSWER: &str = "daemon did not answer; try again";
+pub const NO_ANSWER: &str =
+    "daemon did not answer; the save may still apply — check before retrying";
 
 /// A write the loop asks for: the request and the snapshot revision it was planned against.
 #[derive(Debug, Clone, PartialEq)]
@@ -155,6 +161,7 @@ impl Link {
             session: None,
             epoch: None,
             inflight: None,
+            retry_at: None,
             acks: Vec::new(),
             jobs: HashMap::new(),
             down: None,
@@ -223,6 +230,8 @@ struct Inflight {
     seq: u64,
     request_id: String,
     write: WriteRequest,
+    /// How many times the daemon answered `unavailable` to this write.
+    busy: u32,
 }
 
 /// What a started job will report.
@@ -250,6 +259,8 @@ struct Thread {
     session: Option<String>,
     epoch: Option<String>,
     inflight: Option<Inflight>,
+    /// When the in-flight write the daemon found busy is sent again.
+    retry_at: Option<Instant>,
     jobs: HashMap<String, Job>,
     /// Refusals the loop acknowledged while down; sent after the next connect.
     acks: Vec<String>,
@@ -291,6 +302,12 @@ impl Thread {
                             self.report_down(format!("daemon not running: {why}; retrying"))
                         }
                     }
+                }
+                // These will not change by waiting (spec §10.3): say so and stop trying.
+                Err(e @ (ConnectError::WrongInstance(_) | ConnectError::TooOld { .. })) => {
+                    self.report_down(e.to_string());
+                    while self.idle(BACKOFF_MAX) {}
+                    return;
                 }
                 Err(e) => self.report_down(format!("{e}; retrying")),
             }
@@ -376,6 +393,7 @@ impl Thread {
         if let Err(e) = self.send_acks(&caller) {
             return Lost::Failed(e);
         }
+        self.retry_at = None;
         if let Some(i) = self.inflight.take() {
             // The connection dropped (or timed out) under this write: ask again with the
             // same request id; the daemon replays an answer it already gave.
@@ -394,6 +412,14 @@ impl Thread {
                         }
                     }
                     Err(TryRecvError::Empty) => break,
+                }
+            }
+            if self.retry_at.is_some_and(|at| Instant::now() >= at) {
+                self.retry_at = None;
+                if let Some(i) = self.inflight.take()
+                    && let Err(lost) = self.write(client, &mut held, i)
+                {
+                    return lost;
                 }
             }
             match client.notifications().recv_timeout(TICK) {
@@ -515,6 +541,7 @@ impl Thread {
                         seq,
                         request_id,
                         write,
+                        busy: 0,
                     },
                 )
             }
@@ -670,22 +697,26 @@ impl Thread {
         );
         match sent {
             Ok(r) => {
-                self.send(Update::Written {
-                    seq,
-                    result: Ok(r.message.clone()),
-                });
                 // The daemon publishes the change (`data.changed`, cause `op`, with the uids)
                 // before it answers, so the event is already waiting: take it first, and it
                 // brings the snapshot with its cause and uids. When it did not come (or not
                 // yet), fetch the snapshot here as `Cause::Op` with no uids, so an own write
                 // never looks like a change from outside; the later event for the same
-                // revision is then skipped as a duplicate.
-                self.take_waiting(client, held).map_err(Lost::Failed)?;
-                if r.revision > held.revision {
-                    self.fetch_snapshot(caller, held, Cause::Op, Vec::new())
-                        .map_err(|e| Lost::Failed(e.to_string()))?;
-                }
-                Ok(())
+                // revision is then skipped as a duplicate. The answer follows the snapshot,
+                // so a loop that shows the result has the data it refers to.
+                let fetched = self.take_waiting(client, held).and_then(|()| {
+                    if r.revision > held.revision {
+                        self.fetch_snapshot(caller, held, Cause::Op, Vec::new())
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Ok(())
+                    }
+                });
+                self.send(Update::Written {
+                    seq,
+                    result: Ok(r.message.clone()),
+                });
+                fetched.map_err(Lost::Failed)
             }
             Err(e) => self.write_failed(i, e, held),
         }
@@ -694,8 +725,19 @@ impl Thread {
     /// A write call that failed: an answer of the daemon (an error, or a reply that does not
     /// parse) is reported; anything else (a lost connection, a timeout) keeps the write in
     /// flight and ends this connection.
-    fn write_failed(&mut self, i: Inflight, e: ClientError, held: &Held) -> Result<(), Lost> {
+    fn write_failed(&mut self, mut i: Inflight, e: ClientError, held: &Held) -> Result<(), Lost> {
         match e {
+            // "Still being applied" or "starting" is no final answer: the write stays in
+            // flight and goes out again, with the same request id, shortly.
+            ClientError::Rpc(ref r)
+                if r.data.as_ref().map(|d| d.kind) == Some(RpcKind::Unavailable)
+                    && i.busy < BUSY_RETRIES =>
+            {
+                i.busy += 1;
+                self.inflight = Some(i);
+                self.retry_at = Some(Instant::now() + BUSY_RETRY);
+                Ok(())
+            }
             ClientError::Rpc(e) => {
                 self.send(Update::Written {
                     seq: i.seq,
@@ -711,9 +753,18 @@ impl Thread {
                 Ok(())
             }
             e => {
+                let seq = i.seq;
                 self.inflight = Some(i);
                 Err(Lost::Failed(match e {
-                    ClientError::TimedOut(_) => NO_ANSWER.to_string(),
+                    ClientError::TimedOut(_) => {
+                        // Unblock the loop now; the write is sent again after the reconnect
+                        // and a later answer for this seq is ignored there.
+                        self.send(Update::Written {
+                            seq,
+                            result: Err(NO_ANSWER.to_string()),
+                        });
+                        NO_ANSWER.to_string()
+                    }
                     e => e.to_string(),
                 }))
             }

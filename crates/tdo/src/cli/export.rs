@@ -8,16 +8,24 @@ use twydo_core::ical::value::{IcalDateTime, Resolved};
 use twydo_core::model::{Status, Task, TaskKind, Trigger};
 use twydo_core::views::Snapshot;
 
-use super::{CliError, load_snapshot, task_rule_class};
+use super::{CliError, load_vdir, recover_at_startup, resolve_config, task_rule_class};
 
 pub fn run(vdir: Option<&Path>) -> Result<(), CliError> {
-    let snap = load_snapshot(vdir)?;
+    let snap = local_snapshot(vdir)?;
     if !snap.errors.is_empty() {
         eprintln!("skipped {} unparseable resources", snap.errors.len());
     }
     let out = export(&snap);
     println!("{}", serde_json::to_string_pretty(&out).expect("json"));
     Ok(())
+}
+
+/// Reads the vdir directly (no daemon): this read-only command moves to the daemon in plan 4.
+fn local_snapshot(vdir: Option<&Path>) -> Result<Snapshot, CliError> {
+    let config = resolve_config(vdir)?;
+    recover_at_startup(&config);
+    let report = load_vdir(&config)?;
+    Ok(Snapshot::new(report, config))
 }
 
 fn date_string(v: &IcalDateTime, snap: &Snapshot) -> String {

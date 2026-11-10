@@ -160,8 +160,8 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Busy));
     };
 
-    // The caller is shutting down: write nothing at all, not even recovery, status or the
-    // ended event; the next owner of the vdir recovers. An ordinary stop request is not
+    // The caller is shutting down: write nothing at all, not even recovery or status; the
+    // next owner of the vdir recovers. An ordinary stop request is not
     // enough: that run still recovers and records its stop (step 4).
     if opts.hold_queue.load(Ordering::SeqCst) {
         return Ok(RunReport {
@@ -178,13 +178,6 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Backoff { until }));
     }
 
-    // Created after the backoff check: skipped runs record no event. Dropped on every exit,
-    // including an error from a pass.
-    let mut ended = EndedGuard {
-        state: &state,
-        at: now,
-        armed: true,
-    };
     let mut report = RunReport::default();
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
@@ -209,10 +202,6 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
             Err(e) => return Err(e),
         };
         if !ran {
-            // Held at the first recovery: this run wrote nothing, not even its end.
-            if pass == 0 {
-                ended.armed = false;
-            }
             break;
         }
         force.clear();
@@ -224,22 +213,6 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         fs::remove_file(&requested)?;
     }
     Ok(report)
-}
-
-/// Records the sync-ended event when a run that got past the backoff check ends.
-struct EndedGuard<'a> {
-    state: &'a Path,
-    at: DateTime<Utc>,
-    /// False for a run that wrote nothing (held before its first recovery).
-    armed: bool,
-}
-
-impl Drop for EndedGuard<'_> {
-    fn drop(&mut self) {
-        if self.armed {
-            let _ = super::ended::write(self.state, self.at);
-        }
-    }
 }
 
 /// Steps 3 to 6. `last_pass`: no rerun follows, so edits drained in step 5 wait for the next
