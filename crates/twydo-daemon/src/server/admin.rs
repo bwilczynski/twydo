@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::Value;
-use twydo_core::conflicts::{ConflictState, ConflictStore, ResolvedBy, Side};
+use twydo_core::conflicts::{ConflictStore, ResolvedBy};
 use twydo_core::retired;
 use twydo_core::store::Store;
 use twydo_core::store::existing_vdir_state;
@@ -157,7 +157,6 @@ fn run_resolve(
         request_id: p.request_id.clone(),
     };
     let lane = shared.lane.write_waiting();
-    refuse_rechoice(shared, &p.id, keep)?;
     let resolution = {
         let Some(_gate) = shared.commit_gate() else {
             return Err(RpcError::refused(
@@ -194,36 +193,6 @@ fn conflict_uids(shared: &Shared, id: &str) -> Result<Vec<String>, RpcError> {
         .map_err(internal)?
         .map(|c| vec![c.uid])
         .unwrap_or_default())
-}
-
-/// A choice recorded under another request stands: a differing one is refused, so a resend of
-/// the earlier request can never find its choice overridden. The same choice again is let
-/// through (it records its own request).
-fn refuse_rechoice(shared: &Shared, id: &str, keep: Keep) -> Result<(), RpcError> {
-    let wanted = match keep {
-        Keep::Local => Side::Local,
-        Keep::Remote => Side::Remote,
-        Keep::Current => return Ok(()),
-    };
-    let Some(store) = ConflictStore::existing(&shared.state_dir).map_err(internal)? else {
-        return Ok(());
-    };
-    let Some(c) = store.get(id).map_err(internal)? else {
-        return Ok(());
-    };
-    match (c.state, c.choice) {
-        (ConflictState::Chosen, Some(side)) if side != wanted => Err(RpcError::refused(
-            ErrorKind::Invalid,
-            format!(
-                "conflict {id} already resolved as {}",
-                match side {
-                    Side::Local => "local",
-                    Side::Remote => "remote",
-                }
-            ),
-        )),
-        _ => Ok(()),
-    }
 }
 
 /// `journal.list`: every journal entry, oldest first, as `tdo op journal` lists them.

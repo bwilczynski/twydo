@@ -22,6 +22,7 @@ use twydo_daemon::protocol::admin::{
     AbandonResult, JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult,
 };
 use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::jobs::{JobState, JobView};
 use twydo_daemon::protocol::methods::{
     AckParams, BasedOn, OpGetParams, OpState, StatusView, SubmitParams, SubscribeResult,
     WriteOutcome, WriteResult,
@@ -152,6 +153,8 @@ pub enum OpCommand {
     Recover,
     /// Give up on an unfinished operation
     Abandon { op_id: String },
+    /// Show what became of a change, by the request id an unanswered command printed
+    Status { request_id: String },
 }
 
 #[derive(Args)]
@@ -218,7 +221,7 @@ impl From<ClientError> for Failure {
                 }
                 _ => Failure::Error(e.to_string()),
             },
-            ClientError::TimedOut(_) => Failure::Error("daemon did not answer; try again".into()),
+            ClientError::TimedOut(_) => Failure::Error("daemon did not answer".into()),
             _ => Failure::Error(format!("daemon not running: {e}")),
         }
     }
@@ -402,6 +405,85 @@ fn rpc<P: serde::Serialize, R: serde::de::DeserializeOwned>(
     Ok(c.caller().call_timeout(method, params, CLI_TIMEOUT)?)
 }
 
+/// A changing call: resent with the same params (and so the same request id) until answered
+/// or the window ends, when the outcome is reported as unknown (never "try again").
+fn change<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    target: &Target,
+    c: &mut Client,
+    method: &str,
+    request_id: &str,
+    unknown: client::Unknown,
+    params: impl Fn(&str) -> P,
+) -> Result<R, Failure> {
+    match client::call_changing(target, CLIENT, c, method, params, client::reconnect_for()) {
+        Ok(r) => Ok(r),
+        Err(client::ChangeError::Failed(e)) => Err(e.into()),
+        Err(client::ChangeError::NoAnswer) => Err(Failure::Error(client::no_answer_message(
+            unknown, request_id,
+        ))),
+    }
+}
+
+/// `tdo op status`: asks `op.get`, then `job.get`, about a request id and prints one line.
+/// Exit 0 when the daemon knows the request, 1 when it does not.
+fn status(c: &Client, request_id: &str) -> Result<(), Failure> {
+    let ask =
+        |method: &str, params: serde_json::Value| -> Result<Option<serde_json::Value>, Failure> {
+            match client::call_ready::<_, serde_json::Value>(
+                &c.caller(),
+                method,
+                &params,
+                CLI_TIMEOUT,
+                STARTUP_WAIT,
+            ) {
+                Ok(v) => Ok(Some(v)),
+                Err(ClientError::Rpc(e))
+                    if e.data.as_ref().map(|d| d.kind) == Some(RpcKind::NotFound) =>
+                {
+                    Ok(None)
+                }
+                Err(e) => Err(e.into()),
+            }
+        };
+    if let Some(v) = ask("op.get", serde_json::json!({ "request_id": request_id }))? {
+        let state: OpState = serde_json::from_value(v)
+            .map_err(|e| Failure::Error(format!("unreadable reply from the daemon: {e}")))?;
+        println!("{}", op_state_line(&state));
+        return Ok(());
+    }
+    if let Some(v) = ask("job.get", serde_json::json!({ "request_id": request_id }))? {
+        let job: JobView = serde_json::from_value(v)
+            .map_err(|e| Failure::Error(format!("unreadable reply from the daemon: {e}")))?;
+        println!("{}", job_state_line(&job.state));
+        return Ok(());
+    }
+    Err(Failure::Blocked(format!(
+        "no record of request {request_id}: only task writes and syncs are looked up; it may not have reached the daemon, or may still be applied"
+    )))
+}
+
+fn op_state_line(s: &OpState) -> String {
+    match s {
+        OpState::Pending => "pending".into(),
+        OpState::Applied { op_id } => format!("applied {op_id}"),
+        OpState::Refused { message, .. } => format!("refused: {message}"),
+        OpState::Cancelled => "cancelled".into(),
+        OpState::Satisfied { op_id } => format!("satisfied {op_id}"),
+        OpState::Unknown => "unknown state (a newer daemon)".into(),
+    }
+}
+
+fn job_state_line(s: &JobState) -> String {
+    match s {
+        JobState::Queued => "queued".into(),
+        JobState::Running => "running".into(),
+        JobState::Finished { .. } => "finished".into(),
+        JobState::Failed { message, .. } => format!("failed: {message}"),
+        JobState::Interrupted => "interrupted".into(),
+        JobState::Unknown => "unknown state (a newer daemon)".into(),
+    }
+}
+
 /// `snapshot.get`, retried while the daemon is still starting (it answers hello first).
 fn snapshot(c: &Client) -> Result<WireSnapshot, Failure> {
     Ok(client::call_ready(
@@ -414,8 +496,10 @@ fn snapshot(c: &Client) -> Result<WireSnapshot, Failure> {
 }
 
 fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
-    let (client, hello) = client::connect(target, CLIENT, None)?;
-    let session = hello.session.clone();
+    let (mut client, hello) = client::connect(target, CLIENT, None)?;
+    if let OpCommand::Status { request_id } = &cmd {
+        return status(&client, request_id);
+    }
     let wire = snapshot(&client)?;
     let based_on = BasedOn {
         epoch: hello.epoch.clone(),
@@ -518,23 +602,31 @@ fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
             }
         }
         OpCommand::Undo { op_id, wait } => {
-            let r: WriteResult = rpc(
-                &client,
+            let rid = request_id(&client);
+            let r: WriteResult = change(
+                target,
+                &mut client,
                 "journal.revert",
-                JournalRevertParams {
-                    session,
-                    request_id: request_id(&client),
-                    op_id,
+                &rid,
+                client::Unknown::Change,
+                |session| JournalRevertParams {
+                    session: session.to_string(),
+                    request_id: rid.clone(),
+                    op_id: op_id.clone(),
                 },
             )?;
             return finish(target, client, r, wait);
         }
         OpCommand::Abandon { op_id } => {
-            let _: AbandonResult = rpc(
-                &client,
+            let rid = request_id(&client);
+            let _: AbandonResult = change(
+                target,
+                &mut client,
                 "journal.abandon",
-                JournalAbandonParams {
-                    request_id: request_id(&client),
+                &rid,
+                client::Unknown::Abandon { op_id: &op_id },
+                |_| JournalAbandonParams {
+                    request_id: rid.clone(),
                     op_id: op_id.clone(),
                 },
             )?;
@@ -576,15 +668,20 @@ fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
             return Ok(());
         }
         OpCommand::Check { .. } => unreachable!("handled by run"),
+        OpCommand::Status { .. } => unreachable!("handled before the snapshot"),
     };
-    let r: WriteResult = rpc(
-        &client,
+    let rid = request_id(&client);
+    let r: WriteResult = change(
+        target,
+        &mut client,
         "op.submit",
-        SubmitParams {
-            session,
-            request_id: request_id(&client),
-            based_on,
-            op,
+        &rid,
+        client::Unknown::Change,
+        |session| SubmitParams {
+            session: session.to_string(),
+            request_id: rid.clone(),
+            based_on: based_on.clone(),
+            op: op.clone(),
         },
     )?;
     finish(target, client, r, wait)
@@ -592,8 +689,10 @@ fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
 
 /// Prints the refusals of queued writes no screen has shown yet (those of earlier CLI runs,
 /// or without a session) once, and acknowledges them.
-fn print_refusals(c: &Client) -> Result<(), Failure> {
-    let status: StatusView = rpc(c, "status.get", serde_json::json!({}))?;
+pub(super) fn print_refusals(c: &Client) -> Result<(), ClientError> {
+    let status: StatusView =
+        c.caller()
+            .call_timeout("status.get", serde_json::json!({}), CLI_TIMEOUT)?;
     let mut ids = Vec::new();
     for r in status.refusals {
         let ours = r.session.is_none()
@@ -606,13 +705,13 @@ fn print_refusals(c: &Client) -> Result<(), Failure> {
         }
     }
     if !ids.is_empty() {
-        let _: serde_json::Value = rpc(
-            c,
+        let _: serde_json::Value = c.caller().call_timeout(
             "refusals.ack",
             AckParams {
                 request_id: request_id(c),
                 ids,
             },
+            CLI_TIMEOUT,
         )?;
     }
     Ok(())

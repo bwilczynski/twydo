@@ -1,8 +1,8 @@
 //! List actions as jobs (daemon spec §7.4): `lists.create`, `lists.update`, `lists.archive`,
 //! `lists.unarchive`, `lists.preview_delete`, `lists.delete`, `lists.reconcile`,
-//! `lists.export`, `lists.forget` and `lists.recover`. Each runs on the job runner holding the vdir lane long as a list job and
-//! calls the [`ListService`] method the TUI calls for that action
-//! (`tdo/src/term/lists.rs::perform_list_action`), then publishes the vdir with cause `list`.
+//! `lists.export`, `lists.forget` and `lists.recover`. Each runs on the job runner as a list
+//! job holding the vdir lane and calls the [`ListService`] method for that action, then
+//! publishes the vdir with cause `list`.
 //! Edits saved meanwhile are queued and drained when the job ends; the collection fence is
 //! checked there ([`twydo_core::store::Store::set_fence_at_drain`]).
 

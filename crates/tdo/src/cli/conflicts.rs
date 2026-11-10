@@ -8,12 +8,11 @@ use twydo_core::config::Config;
 use twydo_core::conflicts::{ConflictState, ConflictStore, Side};
 use twydo_core::ical;
 use twydo_core::store::existing_vdir_state;
-use twydo_core::sync::batch::after_resolve;
 use twydo_core::sync::hook::{VDIR_ENV, conflict_hook};
-use twydo_core::sync::resolve::{Keep as CoreKeep, Resolution, resolve};
+use twydo_daemon::protocol::admin::{ConflictsResolveParams, ResolveResult, WireKeep};
 
-use super::sync::spawn;
 use super::{EXIT_ERROR, resolve_config};
+use crate::client::Target;
 
 /// Which version to keep.
 #[derive(Clone, Copy, ValueEnum)]
@@ -48,11 +47,12 @@ pub enum ConflictsCommand {
 }
 
 /// Runs a `tdo conflicts` subcommand; returns the exit code.
-pub fn run(vdir: Option<&Path>, command: Option<ConflictsCommand>) -> i32 {
+pub fn run(target: &Target, command: Option<ConflictsCommand>) -> i32 {
+    let vdir = target.vdir.as_deref();
     match command {
         None => list(vdir),
         Some(ConflictsCommand::Show { id }) => show(vdir, &id),
-        Some(ConflictsCommand::Resolve { id, keep }) => resolve_cmd(vdir, &id, keep),
+        Some(ConflictsCommand::Resolve { id, keep }) => resolve_cmd(target, &id, keep),
         Some(ConflictsCommand::Hook { a, b }) => hook(vdir, &a, &b),
     }
 }
@@ -168,26 +168,36 @@ fn show(vdir: Option<&Path>, id: &str) -> i32 {
     0
 }
 
-fn resolve_cmd(vdir: Option<&Path>, id: &str, keep: Keep) -> i32 {
-    let cfg = match resolve_config(vdir) {
+/// `tdo conflicts resolve`: the daemon records or applies the choice (and schedules the
+/// sync that follows); this prints what it did.
+fn resolve_cmd(target: &Target, id: &str, keep: Keep) -> i32 {
+    let mut client = match super::sync::connect(target) {
         Ok(c) => c,
-        Err(e) => return fail(e),
+        Err(code) => return code,
     };
-    let side = match keep {
-        Keep::Local => CoreKeep::Local,
-        Keep::Remote => CoreKeep::Remote,
-        Keep::Current => CoreKeep::Current,
+    let rid = format!("resolve-{}", client.next_request_id());
+    let params = ConflictsResolveParams {
+        request_id: rid.clone(),
+        id: id.to_string(),
+        keep: match keep {
+            Keep::Local => WireKeep::Local,
+            Keep::Remote => WireKeep::Remote,
+            Keep::Current => WireKeep::Current,
+        },
     };
-    match resolve(&cfg, id, side, Utc::now()) {
+    match super::sync::change::<_, ResolveResult>(
+        target,
+        &mut client,
+        "conflicts.resolve",
+        &rid,
+        &params,
+        crate::client::Unknown::Choice,
+    ) {
         Ok(r) => {
-            let recorded = r == Resolution::Recorded;
-            println!("{}", r.message());
-            if let Some(t) = after_resolve(&cfg, recorded, Utc::now()) {
-                spawn(&cfg, vdir, t);
-            }
+            println!("{}", r.message);
             0
         }
-        Err(e) => fail(e),
+        Err(code) => code,
     }
 }
 

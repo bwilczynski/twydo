@@ -192,34 +192,42 @@ fn resend_after_restart_replays_the_resolution() {
     assert_eq!(resolve(&c, "r1", "other", WireKeep::Local).unwrap(), first);
 }
 
-/// A chooses local, B asks for remote on a held conflict: refused, so A's resend (also after
-/// a restart) is answered from A's record and the choice stays local.
+/// A chooses local, B asks for remote on a held conflict: the later choice wins.
 #[test]
-fn a_differing_rechoice_is_refused() {
+fn a_differing_rechoice_from_a_new_request_wins() {
     let fx = fx();
     let id = seed(&fx, true);
-    let first = {
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    resolve(&c, "a", &id, WireKeep::Local).unwrap();
+    let b = resolve(&c, "b", &id, WireKeep::Remote).unwrap();
+    assert_eq!(b.resolution, WireResolution::Recorded);
+    let l = list(&c);
+    assert_eq!(l.conflicts[0].choice, Some(WireSide::Remote));
+}
+
+/// A local, B remote, restart, A resent: A's own answer, nothing re-runs, the choice stays
+/// remote.
+#[test]
+fn resending_an_earlier_choice_after_a_newer_one_does_not_rerun_it() {
+    let fx = fx();
+    let id = seed(&fx, true);
+    let a = {
         let td = TestDaemon::start(&fx);
         let c = td.client();
         let a = resolve(&c, "a", &id, WireKeep::Local).unwrap();
-        let e = resolve(&c, "b", &id, WireKeep::Remote).unwrap_err();
-        assert_eq!(kind(&e), ErrorKind::Invalid);
-        assert!(
-            e.to_string()
-                .contains(&format!("conflict {id} already resolved as local")),
-            "{e}"
-        );
+        resolve(&c, "b", &id, WireKeep::Remote).unwrap();
         assert_eq!(resolve(&c, "a", &id, WireKeep::Local).unwrap(), a);
         a
     };
-    assert_eq!(first.resolution, WireResolution::Recorded);
+    assert_eq!(a.resolution, WireResolution::Recorded);
     let td = TestDaemon::start(&fx);
     let c = td.client();
-    assert_eq!(resolve(&c, "a", &id, WireKeep::Local).unwrap(), first);
+    assert_eq!(resolve(&c, "a", &id, WireKeep::Local).unwrap(), a);
     let l = list(&c);
     assert_eq!(l.conflicts.len(), 1);
     assert_eq!(l.conflicts[0].state, WireConflictState::Chosen);
-    assert_eq!(l.conflicts[0].choice, Some(WireSide::Local));
+    assert_eq!(l.conflicts[0].choice, Some(WireSide::Remote));
 }
 
 /// A crash between the restore and recording the resolution: the resend finds the journal

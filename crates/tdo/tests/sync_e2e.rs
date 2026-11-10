@@ -46,7 +46,7 @@ macro_rules! require_vdirsyncer {
 /// vdirsyncer config. `new` syncs three tasks `u1`..`u3` once.
 struct Pair {
     dir: tempfile::TempDir,
-    /// Holds the socket of the short-lived daemons `tdo op` talks to.
+    /// Holds the socket of the short-lived daemons the client commands talk to.
     sock_dir: tempfile::TempDir,
 }
 
@@ -93,9 +93,11 @@ impl Pair {
             ),
         )
         .unwrap();
-        // Each test syncs by hand: no background sync or batch waiter may race it.
-        let o = p.tdo(&["sync", "off"]);
-        assert!(o.status.success(), "tdo sync off: {o:?}");
+        // Each test syncs by hand: no scheduled sync may race it.
+        let state =
+            twydo_core::store::bind_vdir_state(&p.state().join("twydo"), &p.vdir()).unwrap();
+        fs::create_dir_all(state.join("sync")).unwrap();
+        fs::write(state.join("sync/off"), "").unwrap();
         let mut matrix = String::from("matrix_version = 1\n");
         for op in ["create", "edit", "delete"] {
             matrix.push_str(&format!(
@@ -197,10 +199,12 @@ impl Pair {
     }
 
     fn tdo(&self, args: &[&str]) -> Output {
-        // `tdo op` talks to a daemon. Each call gets a fresh one (test matrix, sync off) that
-        // is stopped afterwards: it then starts from what `vdirsyncer` and `tdo sync` left on
-        // disk, with no watcher latency in between.
-        let daemon = (args.first() == Some(&"op")).then(|| self.start_daemon());
+        // `tdo op`, `tdo sync` and `tdo conflicts resolve` talk to a daemon. Each call gets a
+        // fresh one (test matrix, sync off) that is stopped afterwards: it then starts from
+        // what `vdirsyncer` left on disk, with no watcher latency in between.
+        let client = matches!(args.first(), Some(&"op" | &"sync"))
+            || args.starts_with(&["conflicts", "resolve"]);
+        let daemon = client.then(|| self.start_daemon());
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tdo"));
         cmd.args(args);
         self.env(&mut cmd);
@@ -1022,7 +1026,7 @@ fn resolve_held_via_cli() {
     require_vdirsyncer!();
     let p = Pair::new();
     let (op, id) = held_conflict(&p);
-    // Change of mind before the next sync: the later choice wins.
+    // The later choice wins while the conflict is held.
     let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
     assert!(o.status.success(), "{o:?}");
     assert!(stdout(&o).contains("next sync"), "{}", stdout(&o));
@@ -1033,17 +1037,21 @@ fn resolve_held_via_cli() {
         (c.state, c.choice),
         (ConflictState::Chosen, Some(Side::Remote))
     );
+    let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
+    assert!(o.status.success(), "{o:?}");
+    let c = p.conflicts().get(&id).unwrap().unwrap();
+    assert_eq!(
+        (c.state, c.choice),
+        (ConflictState::Chosen, Some(Side::Local))
+    );
     let (code, err) = p.tdo_sync();
     assert_eq!(code, 0, "{err}");
     assert!(p.synced(&op));
     let c = p.conflicts().get(&id).unwrap().unwrap();
     assert_eq!(c.state, ConflictState::Resolved);
-    assert_eq!(
-        p.read_vdir("u1"),
-        Some(task("u1", "one-remote").replace("\r\n", "\n"))
-    );
-    // The server keeps its own (CRLF) bytes; the vdir copy came back with LF.
-    assert_eq!(p.read_server("u1"), Some(task("u1", "one-remote")));
+    for side in [p.read_vdir("u1"), p.read_server("u1")] {
+        assert!(side.unwrap().contains("SUMMARY:one-local"));
+    }
     // Resolved conflicts cannot be resolved again.
     let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
     assert!(!o.status.success());

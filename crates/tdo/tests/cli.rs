@@ -1,3 +1,5 @@
+mod common;
+
 use std::process::Command;
 
 #[test]
@@ -356,6 +358,14 @@ mod sync {
     /// A temp dir holding `xdg/twydo/config.toml`, `vdir/c1/` and `state/`.
     struct Fx {
         dir: tempfile::TempDir,
+        /// Holds the socket of the daemon the commands start on demand.
+        sock_dir: tempfile::TempDir,
+    }
+
+    impl Drop for Fx {
+        fn drop(&mut self) {
+            crate::common::stop_daemon_at(&self.socket());
+        }
     }
 
     impl Fx {
@@ -363,6 +373,7 @@ mod sync {
         fn new(sync: Option<&str>) -> Fx {
             let fx = Fx {
                 dir: tempfile::tempdir().unwrap(),
+                sock_dir: crate::common::short_socket_dir(),
             };
             fs::create_dir_all(fx.path("vdir/c1")).unwrap();
             fs::create_dir_all(fx.path("xdg/twydo")).unwrap();
@@ -380,6 +391,7 @@ mod sync {
                 "command = \"{}\"\nmetasync = false",
                 fake.display()
             )));
+            fx.auto_off();
             fx
         }
 
@@ -395,6 +407,19 @@ mod sync {
             fs::write(self.config_path(), text).unwrap();
         }
 
+        /// Switches automatic sync off on disk: the daemon's own syncs (startup, periodic)
+        /// would race the explicit ones.
+        fn auto_off(&self) {
+            let state = twydo_core::store::bind_vdir_state(&self.path("state"), &self.path("vdir"))
+                .unwrap();
+            fs::create_dir_all(state.join("sync")).unwrap();
+            fs::write(state.join("sync/off"), "").unwrap();
+        }
+
+        fn socket(&self) -> PathBuf {
+            self.sock_dir.path().join("tdo.sock")
+        }
+
         fn path(&self, rel: &str) -> PathBuf {
             self.dir.path().join(rel)
         }
@@ -407,6 +432,10 @@ mod sync {
             Command::new(env!("CARGO_BIN_EXE_tdo"))
                 .args(args)
                 .env("XDG_CONFIG_HOME", self.path("xdg"))
+                .env("XDG_STATE_HOME", self.path("xdg-state"))
+                .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+                .env("TWYDO_SOCKET", self.socket())
+                .env("HOME", self.dir.path())
                 .output()
                 .expect("run tdo")
         }
@@ -455,7 +484,6 @@ mod sync {
             "{}",
             stderr(&o)
         );
-        assert!(!fx.path("state").exists());
     }
 
     #[test]
@@ -545,6 +573,90 @@ mod sync {
         assert!(stdout(&o).contains("automatic sync on"), "{}", stdout(&o));
     }
 
+    #[test]
+    fn sync_waits_behind_a_running_sync_instead_of_failing() {
+        let fx =
+            Fx::with_fake(|fx| format!("echo run >> '{}'\nsleep 2", fx.path("runs.txt").display()));
+        // Start the daemon first, so both commands find it.
+        assert_eq!(fx.tdo(&["sync", "off"]).status.code(), Some(0));
+        let spawn = || {
+            Command::new(env!("CARGO_BIN_EXE_tdo"))
+                .arg("sync")
+                .env("XDG_CONFIG_HOME", fx.path("xdg"))
+                .env("XDG_STATE_HOME", fx.path("xdg-state"))
+                .env("XDG_RUNTIME_DIR", fx.sock_dir.path().join("run"))
+                .env("TWYDO_SOCKET", fx.socket())
+                .env("HOME", fx.dir.path())
+                .stdin(std::process::Stdio::null())
+                .spawn()
+                .unwrap()
+        };
+        let (mut a, mut b) = (spawn(), spawn());
+        assert!(a.wait().unwrap().success());
+        assert!(b.wait().unwrap().success());
+        let runs = fs::read_to_string(fx.path("runs.txt")).unwrap();
+        assert_eq!(runs.lines().count(), 2, "{runs}");
+    }
+
+    #[test]
+    fn background_flag_only_keeps_the_daemon_alive() {
+        let fx = Fx::with_fake(|fx| format!("echo run >> '{}'", fx.path("runs.txt").display()));
+        let o = fx.tdo(&["sync", "--background"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{o:?}");
+        let o = fx.tdo(&["sync", "--background", "--when-due"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{o:?}");
+        let c = twydo_daemon::client::Client::connect_raw(&fx.socket()).expect("daemon answers");
+        let _: twydo_daemon::protocol::methods::DaemonInfo = c
+            .caller()
+            .call_timeout("daemon.info", serde_json::json!({}), Duration::from_secs(5))
+            .unwrap();
+        std::thread::sleep(Duration::from_secs(1));
+        assert!(!fx.path("runs.txt").exists(), "a sync ran");
+    }
+
+    #[test]
+    fn sync_prints_the_daemons_config_warnings() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
+        let mut text = fs::read_to_string(fx.config_path()).unwrap();
+        text.push_str("after_edit = true\n");
+        fs::write(fx.config_path(), text).unwrap();
+        for args in [&["sync"][..], &["sync", "off"][..]] {
+            let o = fx.tdo(args);
+            assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+            assert!(stderr(&o).contains("warning: "), "{args:?}: {}", stderr(&o));
+        }
+        let o = fx.tdo(&["sync", "--background"]);
+        assert!(o.stderr.is_empty(), "{}", stderr(&o));
+    }
+
+    #[test]
+    fn sync_switch_goes_through_the_daemon() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
+        let auto = || {
+            let hello = twydo_daemon::protocol::methods::HelloParams {
+                client: "test".into(),
+                version: "0".into(),
+                protocol: twydo_daemon::PROTOCOL,
+                session: None,
+                instance: twydo_daemon::paths::instance_for(&fx.config_path(), None).unwrap(),
+            };
+            let (c, _) =
+                twydo_daemon::client::Client::connect(&fx.socket(), hello).expect("daemon");
+            let s: twydo_daemon::protocol::methods::StatusView = c
+                .caller()
+                .call_timeout("status.get", serde_json::json!({}), Duration::from_secs(5))
+                .unwrap();
+            s.sync.expect("sync is configured").auto
+        };
+        assert_eq!(fx.tdo(&["sync", "on"]).status.code(), Some(0));
+        assert!(auto());
+        let o = fx.tdo(&["sync", "off"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        assert!(!auto());
+    }
+
     /// A refusal for a queued edit titled `label`, not yet shown.
     fn record_refusal(fx: &Fx, label: &str) {
         use chrono::{TimeZone, Utc};
@@ -623,45 +735,12 @@ mod sync {
     }
 
     #[test]
-    fn when_due_waiter_exits_when_nothing_is_unsynced() {
-        let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
-        let o = fx.tdo(&["sync", "--background", "--when-due"]);
-        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-        assert!(
-            !fx.path("marker").exists(),
-            "nothing was due, yet it synced"
-        );
-        let o = fx.tdo(&["sync", "--when-due"]);
-        assert_eq!(o.status.code(), Some(2), "--when-due requires --background");
-
+    fn background_command_names_the_keepalive_invocation() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
         let cfg = Config::load(&fx.config_path()).unwrap();
         let cmd = tdo::cli::sync::background_command(Path::new("tdo"), &cfg, None, true).unwrap();
         let args: Vec<_> = cmd.get_args().map(|a| a.to_str().unwrap()).collect();
         assert_eq!(args, ["sync", "--background", "--when-due"]);
-    }
-
-    #[test]
-    fn spawn_background_starts_runner() {
-        let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
-        let marker = fx.path("marker");
-        let cfg = Config::load(&fx.config_path()).unwrap();
-        let mut cmd = tdo::cli::sync::background_command(
-            Path::new(env!("CARGO_BIN_EXE_tdo")),
-            &cfg,
-            None,
-            false,
-        )
-        .expect("sync is configured");
-        cmd.env("XDG_CONFIG_HOME", fx.path("xdg"));
-        tdo::cli::sync::detach(cmd);
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !marker.exists() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        assert!(
-            marker.exists(),
-            "the background runner never ran the command"
-        );
 
         let mut no_sync = cfg.clone();
         no_sync.sync = None;

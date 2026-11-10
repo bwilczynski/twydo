@@ -14,7 +14,6 @@ pub mod run;
 pub mod running;
 pub mod status;
 pub mod switch;
-pub mod waiter;
 
 use std::io;
 

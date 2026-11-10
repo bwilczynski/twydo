@@ -1532,3 +1532,306 @@ fn text_capability_reports_and_cli_edit_closed_recurring_checklists() {
     };
     assert_eq!(held(&before), held(&after));
 }
+
+/// Entries of `op journal`, one line each.
+fn journal_lines(env: &Env) -> Vec<String> {
+    let j = env.op(&["journal"]);
+    assert!(j.status.success(), "{}", err(&j));
+    out(&j).lines().map(str::to_string).collect()
+}
+
+#[test]
+fn op_add_resent_after_a_lost_answer_applies_once() {
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let (proxy, submitted) =
+        common::lossy_proxy(env.socket(), env.sock_dir.path(), common::Lose::First);
+    let o = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .args(["op", "add", "--list", "list1", "--title", "Synthetic lost"])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
+    let ids = submitted.lock().unwrap().clone();
+    assert_eq!(ids.len(), 2, "{ids:?}");
+    assert_eq!(ids[0], ids[1], "the resend must reuse the request id");
+    let n = fs::read_dir(env.vdir().join("list1"))
+        .unwrap()
+        .filter_map(|e| fs::read_to_string(e.unwrap().path()).ok())
+        .filter(|t| t.contains("SUMMARY:Synthetic lost"))
+        .count();
+    assert_eq!(n, 1, "the task was created once");
+    let journal = journal_lines(&env);
+    assert_eq!(
+        journal.iter().filter(|l| l.contains("create")).count(),
+        1,
+        "{journal:?}"
+    );
+}
+
+#[test]
+fn op_add_with_no_answer_reports_an_unknown_outcome() {
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let (proxy, submitted) =
+        common::lossy_proxy(env.socket(), env.sock_dir.path(), common::Lose::All);
+    let o = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .env("TDO_RECONNECT_FOR_MS", "2000")
+        .args([
+            "op",
+            "add",
+            "--list",
+            "list1",
+            "--title",
+            "Synthetic silent",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    let e = err(&o);
+    assert!(e.contains("may have been applied"), "{e}");
+    assert!(e.contains("request "), "{e}");
+    assert!(!e.contains("try again"), "{e}");
+    assert!(!submitted.lock().unwrap().is_empty());
+}
+
+#[test]
+fn op_add_lost_before_receipt_then_daemon_restart() {
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let (proxy, submitted, gate) = common::dropping_proxy(env.socket(), env.sock_dir.path());
+    let child = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .env("TDO_RECONNECT_FOR_MS", "20000")
+        .args([
+            "op",
+            "add",
+            "--list",
+            "list1",
+            "--title",
+            "Synthetic restart",
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while submitted.lock().unwrap().is_empty() {
+        assert!(Instant::now() < deadline, "no submit seen");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // The first submit never reached the daemon; restart it (a new epoch and session).
+    env.stop_daemon();
+    *env.daemon.borrow_mut() = None;
+    env.ensure_daemon();
+    gate.store(true, std::sync::atomic::Ordering::SeqCst);
+    let o = child.wait_with_output().unwrap();
+    let e = err(&o);
+    assert!(!e.contains("unknown session"), "{e}");
+    assert!(!e.contains("reconnect"), "{e}");
+    let ids = submitted.lock().unwrap().clone();
+    assert!(ids.len() >= 2, "{ids:?}");
+    assert!(ids.iter().all(|i| *i == ids[0]), "same request id: {ids:?}");
+    let n = fs::read_dir(env.vdir().join("list1"))
+        .unwrap()
+        .filter_map(|e| fs::read_to_string(e.unwrap().path()).ok())
+        .filter(|t| t.contains("SUMMARY:Synthetic restart"))
+        .count();
+    match o.status.code() {
+        Some(0) => assert_eq!(n, 1, "applied once"),
+        Some(1) => {
+            assert_eq!(n, 0, "a refusal creates nothing");
+            assert!(e.contains("reload and try again"), "{e}");
+        }
+        c => panic!("exit {c:?}: {e}"),
+    }
+}
+
+#[test]
+fn op_status_reports_an_applied_request() {
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let (proxy, submitted) =
+        common::lossy_proxy(env.socket(), env.sock_dir.path(), common::Lose::First);
+    let o = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .args([
+            "op",
+            "add",
+            "--list",
+            "list1",
+            "--title",
+            "Synthetic status",
+        ])
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    let rid = submitted.lock().unwrap()[0].clone();
+    let s = env.tdo(&["op", "status", &rid]);
+    assert_eq!(s.status.code(), Some(0), "{}", err(&s));
+    assert_eq!(out(&s).trim(), format!("applied {}", out(&o).trim()));
+}
+
+#[test]
+fn op_status_reports_a_queued_request() {
+    use twydo_daemon::server::lane::LongKind;
+    let env = Env::new("test");
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
+    let (proxy, submitted) =
+        common::lossy_proxy(env.socket(), env.sock_dir.path(), common::Lose::First);
+    let o = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .args(["op", "complete", TASK_E])
+        .output()
+        .unwrap();
+    assert!(out(&o).starts_with("queued"), "{}", out(&o));
+    let rid = submitted.lock().unwrap()[0].clone();
+    let s = env.tdo(&["op", "status", &rid]);
+    assert_eq!(s.status.code(), Some(0), "{}", err(&s));
+    assert_eq!(out(&s).trim(), "pending");
+    drop(lock);
+}
+
+#[test]
+fn op_status_reports_a_sync_job() {
+    use twydo_daemon::client::Client;
+    use twydo_daemon::protocol::sync::SyncRunParams;
+    let env = Env::new("test");
+    let fake = env.dir.path().join("quick.sh");
+    common::write_script(&fake, "exit 0");
+    let cfg_path = env.dir.path().join("config/twydo/config.toml");
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&cfg_path)
+        .and_then(|mut f| {
+            use std::io::Write;
+            write!(
+                f,
+                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                fake.display()
+            )
+        })
+        .unwrap();
+    let sdir = twydo_core::store::bind_vdir_state(&env.state().join("twydo"), &env.vdir()).unwrap();
+    fs::create_dir_all(sdir.join("sync")).unwrap();
+    fs::write(sdir.join("sync/off"), "").unwrap();
+    env.ensure_daemon_with(false);
+    let hello = twydo_daemon::protocol::methods::HelloParams {
+        client: "test".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        protocol: twydo_daemon::PROTOCOL,
+        session: None,
+        instance: twydo_daemon::paths::instance_for(&cfg_path, None).unwrap(),
+    };
+    let (raw, _) = Client::connect(&env.socket(), hello).unwrap();
+    let deadline = Instant::now() + common::WAIT;
+    loop {
+        let r: Result<serde_json::Value, _> = raw.call(
+            "sync.run",
+            SyncRunParams {
+                request_id: "t-status-sync".into(),
+                force_delete: vec![],
+            },
+        );
+        match r {
+            Ok(_) => break,
+            Err(e) if e.to_string() == "the daemon is starting" => {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(50))
+            }
+            Err(e) => panic!("sync.run: {e}"),
+        }
+    }
+    let s = env.tdo(&["op", "status", "t-status-sync"]);
+    assert_eq!(s.status.code(), Some(0), "{}", err(&s));
+    let line = out(&s);
+    assert!(
+        ["queued", "running", "finished", "failed: ", "interrupted"]
+            .iter()
+            .any(|p| line.starts_with(p)),
+        "{line}"
+    );
+}
+
+#[test]
+fn op_status_of_an_unknown_request_exits_1() {
+    let env = Env::new("test");
+    let o = env.op(&["status", "no-such-request"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(
+        err(&o).contains(
+            "no record of request no-such-request: only task writes and syncs are looked up; it may not have reached the daemon, or may still be applied"
+        ),
+        "{}",
+        err(&o)
+    );
+    assert!(out(&o).is_empty());
+}
+
+/// Runs `args` through a proxy that swallows every answer to `method`; returns stderr.
+fn silent_stderr(method: &'static str, args: &[&str]) -> String {
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let (proxy, submitted) =
+        common::lossy_proxy_for(env.socket(), env.sock_dir.path(), common::Lose::All, method);
+    let o = env
+        .cmd()
+        .env("TWYDO_SOCKET", &proxy)
+        .env("TDO_RECONNECT_FOR_MS", "1500")
+        .args(args)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(!submitted.lock().unwrap().is_empty());
+    err(&o)
+}
+
+#[test]
+fn set_auto_with_no_answer_names_tdo_status() {
+    let e = silent_stderr("sync.set_auto", &["sync", "off"]);
+    assert!(
+        e.contains("automatic sync may already be off (request "),
+        "{e}"
+    );
+    assert!(
+        e.contains("check with tdo status; running it again is safe"),
+        "{e}"
+    );
+    assert!(!e.contains("tdo op status"), "{e}");
+}
+
+#[test]
+fn resolve_with_no_answer_names_tdo_conflicts() {
+    let e = silent_stderr(
+        "conflicts.resolve",
+        &["conflicts", "resolve", "c-1", "--keep", "local"],
+    );
+    assert!(
+        e.contains("the choice may have been recorded (request "),
+        "{e}"
+    );
+    assert!(
+        e.contains("check with tdo conflicts; choosing again is safe"),
+        "{e}"
+    );
+    assert!(!e.contains("tdo op status"), "{e}");
+}
+
+#[test]
+fn abandon_with_no_answer_names_op_journal() {
+    let e = silent_stderr("journal.abandon", &["op", "abandon", "op-1"]);
+    assert!(e.contains("op-1 may already be abandoned (request "), "{e}");
+    assert!(
+        e.contains("check with tdo op journal; running it again is safe"),
+        "{e}"
+    );
+    assert!(!e.contains("tdo op status"), "{e}");
+}

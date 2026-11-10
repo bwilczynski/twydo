@@ -66,6 +66,9 @@ pub struct RpcError {
     pub data: Option<ErrorData>,
 }
 
+/// The message of the `unavailable` error a daemon answers with while it loads its data.
+pub const STARTING: &str = "the daemon is starting";
+
 impl RpcError {
     /// An application refusal (code `-32000`) with a stable `kind`.
     pub fn refused(kind: ErrorKind, message: impl Into<String>) -> RpcError {
