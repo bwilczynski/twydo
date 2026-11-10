@@ -306,13 +306,15 @@ fn conflict(id: &str, uid: &str) -> twydo_core::conflicts::Conflict {
 }
 
 fn with_conflicts(a: &mut App, cs: Vec<twydo_core::conflicts::Conflict>) {
-    a.set_sync(Some(twydo_core::sync::SyncSummary {
-        status: Default::default(),
-        pending: 0,
-        conflicts: cs,
-        off: false,
-        queued: 0,
-    }));
+    a.set_sync(Some(tdo::app::ClientSync::from_summary(
+        &twydo_core::sync::SyncSummary {
+            status: Default::default(),
+            pending: 0,
+            conflicts: cs,
+            off: false,
+            queued: 0,
+        },
+    )));
 }
 
 fn run_cmd(a: &mut App, s: &str) -> Outcome {

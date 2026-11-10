@@ -106,7 +106,7 @@ fn errors_keep_missing_list_names_and_commands_available_after_sync() {
     };
     let (_dir, cfg) = env();
     let mut a = app(&cfg);
-    a.set_sync(Some(SyncSummary {
+    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
         status: SyncStatus {
             last_error: Some("old: Unknown error occurred: Not Found".into()),
             collections: BTreeMap::from([(
@@ -121,7 +121,7 @@ fn errors_keep_missing_list_names_and_commands_available_after_sync() {
         conflicts: vec![],
         off: false,
         queued: 0,
-    }));
+    })));
     assert!(render(&a).contains(":forget-list to choose"));
     command(&mut a, "errors");
     let backend = ratatui::backend::TestBackend::new(120, 30);
@@ -271,7 +271,7 @@ fn missing_list_sync(a: &mut App) {
         SyncSummary,
         status::{CollState, SyncStatus},
     };
-    a.set_sync(Some(SyncSummary {
+    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
         status: SyncStatus {
             collections: BTreeMap::from([
                 (
@@ -294,7 +294,7 @@ fn missing_list_sync(a: &mut App) {
         conflicts: vec![],
         off: false,
         queued: 0,
-    }));
+    })));
 }
 
 #[test]
@@ -386,7 +386,7 @@ fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
     let (_dir, cfg) = env();
     let mut a = app(&cfg);
     // Exact persisted message reported by the user: earlier attempts erased list errors.
-    a.set_sync(Some(SyncSummary {
+    a.set_sync(Some(tdo::app::ClientSync::from_summary(&SyncSummary {
         status: SyncStatus {
             last_error: Some("list discovery failed; backup retained; check vdirsyncer configuration before retrying".into()),
             ..Default::default()
@@ -395,7 +395,7 @@ fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
         conflicts: vec![],
         off: false,
         queued: 0,
-    }));
+    })));
     let status = render(&a);
     assert!(status.contains(":forget-list"), "{status}");
     command(&mut a, "errors");

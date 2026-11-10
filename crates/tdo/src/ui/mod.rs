@@ -99,7 +99,7 @@ fn overlay_rect(area: Rect, width: u16, height: u16) -> Rect {
 
 /// The `:errors` overlay: each unreadable file with the reason it failed to load.
 fn render_errors(f: &mut Frame, area: Rect, app: &App) {
-    use twydo_core::sync::status::CollState;
+    use twydo_daemon::protocol::methods::WireCollState;
     let mut lines: Vec<Line> = app
         .snapshot
         .errors
@@ -107,9 +107,9 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
         .map(|(path, msg)| Line::raw(format!("{}: {msg}", path.display())))
         .collect();
     let mut sync_errors = false;
-    if let Some(summary) = &app.sync {
-        for (id, state) in &summary.status.collections {
-            if let CollState::Error { message } = state {
+    if let Some(sync) = app.sync.as_ref().and_then(|cs| cs.sync.as_ref()) {
+        for (id, state) in &sync.collections {
+            if let WireCollState::Error { message } = state {
                 sync_errors = true;
                 lines.push(Line::raw(format!(
                     "List {:?} ({id}): {message}",
@@ -123,7 +123,7 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
                 }
             }
         }
-        if let Some(error) = &summary.status.last_error
+        if let Some(error) = &sync.last_error
             && (!sync_errors || error.starts_with("list discovery failed;"))
         {
             sync_errors = true;

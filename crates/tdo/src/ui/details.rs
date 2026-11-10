@@ -71,7 +71,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     }
     if let Some(c) = app.conflict_for(&t.uid) {
         lines.push(Line::styled(
-            format!("! conflict: {} — :conflicts", c.kind.words()),
+            format!(
+                "! conflict: {} — :conflicts",
+                super::conflicts::kind_words(c.kind)
+            ),
             yellow,
         ));
     }
