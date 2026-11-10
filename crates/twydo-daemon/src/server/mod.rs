@@ -4,10 +4,12 @@
 pub mod bus;
 pub mod conn;
 pub mod dispatch;
+pub mod jobs;
 pub mod lane;
 pub mod publish;
 pub mod replay;
 pub mod sessions;
+pub mod syncjob;
 pub mod watch;
 pub mod writes;
 
@@ -32,6 +34,7 @@ use twydo_core::store::{Store, bind_vdir_state};
 use crate::paths::DaemonLock;
 use crate::protocol::events::Cause;
 use crate::protocol::methods::Instance;
+use crate::protocol::sync::SyncReason;
 
 pub struct DaemonOptions {
     pub socket: PathBuf,
@@ -129,6 +132,10 @@ pub struct Shared {
     pub lane: lane::Lane,
     pub sessions: sessions::Sessions,
     pub requests: replay::RequestLog,
+    /// The job records.
+    pub jobs: jobs::JobStore,
+    /// Runs jobs and syncs on the lane, one at a time; started once ready.
+    pub runner: jobs::JobRunner,
     /// The background status refresher; see [`Shared::request_status_refresh`].
     status_refresh: Mutex<Refresher>,
     status_refresh_cv: Condvar,
@@ -236,6 +243,7 @@ impl Daemon {
         let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
         let vdir = fs::canonicalize(&cfg.vdir)?;
         let lock = DaemonLock::take(&state)?.ok_or(StartError::AlreadyRunning)?;
+        let job_store = jobs::JobStore::open(&state)?;
 
         let listener = bind_socket(&opts.socket)?;
         listener.set_nonblocking(true)?;
@@ -267,6 +275,8 @@ impl Daemon {
             lane: lane::Lane::new(),
             sessions,
             requests: replay::RequestLog::new(),
+            jobs: job_store,
+            runner: jobs::JobRunner::new(),
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
             drainer: Mutex::new(Drainer::default()),
@@ -421,6 +431,15 @@ fn startup(
             }
             Ok(())
         }),
+        Box::new(|shared| {
+            // Jobs a stopped daemon left unfinished, and records past their retention.
+            let jobs = &shared.jobs;
+            jobs.interrupt_unfinished().map_err(|e| e.to_string())?;
+            let days = shared.cfg.sync.as_ref().map_or(30, |s| s.retention_days);
+            jobs.prune(chrono::Utc::now() - chrono::Duration::days(days.into()))
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        }),
         Box::new(move |shared| {
             // The recovery store is dropped; only the stuck ids are kept, for the status.
             let (_store, report) =
@@ -486,6 +505,9 @@ fn startup(
         }
     }
     shared.set_ready();
+    if shared.is_ready() {
+        shared.runner.start(shared);
+    }
     // A long job that ended before ready skipped its drain (and the startup drain may have
     // found the lane held): catch up now.
     if shared.queue_has_items() {
@@ -609,6 +631,20 @@ fn teardown(shared: &Shared) {
     // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
     // writes the vdir while a thread of this one still could.
     shared.close_commits();
+    // Queued jobs never run; the running one ends first (its drain skips: the daemon is
+    // stopping).
+    for view in shared.runner.close() {
+        if let Err(e) = shared
+            .jobs
+            .set_state(&view.job_id, crate::protocol::jobs::JobState::Interrupted)
+        {
+            eprintln!(
+                "tdo daemon: cannot record job {} interrupted: {e}",
+                view.job_id
+            );
+        }
+    }
+    shared.runner.join();
     if !shared.wait_drainer(REFRESHER_WAIT) {
         eprintln!("tdo daemon: queue drainer still waiting; not joined");
     }
@@ -665,6 +701,15 @@ impl DaemonHandle {
     /// [`lane::LongKind::Test`]). Writes meanwhile are queued; dropping the guard drains them.
     pub fn hold_long(&self, kind: lane::LongKind) -> lane::LongGuard<'_> {
         self.shared.lane.long(kind)
+    }
+
+    /// Posts a sync that is not a job, as the scheduler will.
+    #[doc(hidden)]
+    pub fn post_sync_for_test(&self, reason: SyncReason) {
+        self.shared.runner.post(jobs::Work::Sync {
+            reason,
+            background: true,
+        });
     }
 
     #[doc(hidden)]

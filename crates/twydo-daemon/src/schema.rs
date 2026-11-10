@@ -10,8 +10,10 @@ use serde_json::{Map, Value, json};
 
 use crate::PROTOCOL;
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
+use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
 use crate::protocol::methods::*;
 use crate::protocol::rpc::ErrorKind;
+use crate::protocol::sync::SyncRunParams;
 use crate::protocol::wire::WireSnapshot;
 
 /// An empty params or result object.
@@ -70,6 +72,8 @@ pub const METHODS: &[MethodSpec] = &[
     m("op.get", false, of::<OpGetParams>, of::<OpState>),
     m("op.check", false, of::<CheckParams>, of::<CheckResult>),
     m("refusals.ack", false, of::<AckParams>, of::<AckResult>),
+    m("sync.run", false, of::<SyncRunParams>, of::<JobStarted>),
+    m("job.get", false, of::<JobGetParams>, of::<JobView>),
 ];
 
 fn to_value(s: Schema) -> Value {

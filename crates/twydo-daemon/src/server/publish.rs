@@ -45,6 +45,8 @@ struct State {
     stuck: Vec<String>,
     /// Why the last queue drain stopped with items left; see [`StatusView::drain_error`].
     drain_error: Option<String>,
+    /// A sync is running, and the job it belongs to; see [`Publisher::set_sync_state`].
+    sync_running: Option<Option<String>>,
 }
 
 pub struct Publisher {
@@ -86,6 +88,7 @@ impl Publisher {
                 status: None,
                 stuck: Vec::new(),
                 drain_error: None,
+                sync_running: None,
             }),
         }
     }
@@ -108,6 +111,12 @@ impl Publisher {
     /// Takes effect at the next [`Publisher::refresh_status`].
     pub fn set_drain_error(&self, e: Option<String>) {
         self.state.lock().unwrap().drain_error = e;
+    }
+
+    /// What `status.sync.state` and `status.sync.job_id` report: running (with the job of a
+    /// `sync.run`) or idle. Takes effect at the next [`Publisher::refresh_status`].
+    pub fn set_sync_state(&self, running: bool, job_id: Option<String>) {
+        self.state.lock().unwrap().sync_running = running.then_some(job_id);
     }
 
     /// The newest published revision.
@@ -222,15 +231,16 @@ impl Publisher {
                 .as_ref()
                 .map_or(0, |v| v.status_rev);
         }
-        let (stuck, drain_error, old_rev) = {
+        let (stuck, drain_error, sync_running, old_rev) = {
             let s = self.state.lock().unwrap();
             (
                 s.stuck.clone(),
                 s.drain_error.clone(),
+                s.sync_running.clone(),
                 s.status.as_ref().map_or(0, |v| v.status_rev),
             )
         };
-        let mut next = match self.build_status(&stuck, drain_error, old_rev) {
+        let mut next = match self.build_status(&stuck, drain_error, sync_running, old_rev) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("tdo daemon: status unavailable: {e}");
@@ -255,6 +265,7 @@ impl Publisher {
         &self,
         stuck: &[String],
         drain_error: Option<String>,
+        sync_running: Option<Option<String>>,
         status_rev: u64,
     ) -> io::Result<StatusView> {
         let summary = sync::summary(&self.cfg)?;
@@ -292,13 +303,18 @@ impl Publisher {
         let (sync_view, pending_edits, conflicts, unfinished) = match &summary {
             Some(m) => (
                 Some(SyncView {
-                    state: SyncState::Idle,
+                    state: if sync_running.is_some() {
+                        SyncState::Running
+                    } else {
+                        SyncState::Idle
+                    },
                     auto: !m.off,
                     last_success: m.status.last_success,
                     last_attempt: m.status.last_attempt,
                     next_attempt: m.status.next_attempt,
                     failures: m.status.failures,
                     last_error: m.status.last_error.clone(),
+                    job_id: sync_running.flatten(),
                 }),
                 m.queued,
                 m.conflicts.len(),
