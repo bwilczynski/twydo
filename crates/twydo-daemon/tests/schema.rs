@@ -190,6 +190,9 @@ fn a_gained_value_of_a_closed_enum_in_params_is_not_a_break() {
 
 #[test]
 fn every_open_enum_reads_an_unknown_value() {
+    use twydo_daemon::protocol::admin::{
+        WireConflictKind, WireConflictState, WireResolution, WireSide,
+    };
     use twydo_daemon::protocol::events::{Cause, Event, EventEnvelope};
     use twydo_daemon::protocol::jobs::{JobKind, JobResult, JobState};
     use twydo_daemon::protocol::methods::{OpState, SyncState, WriteOutcome};
@@ -216,6 +219,10 @@ fn every_open_enum_reads_an_unknown_value() {
             "SyncOutcome",
             "SyncReason",
             "SyncState",
+            "WireConflictKind",
+            "WireConflictState",
+            "WireResolution",
+            "WireSide",
             "WriteOutcome"
         ]
     );
@@ -258,6 +265,22 @@ fn every_open_enum_reads_an_unknown_value() {
     assert_eq!(
         serde_json::from_value::<JobResult>(json!({"type": "brand_new", "x": 1})).unwrap(),
         JobResult::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<WireConflictKind>(json!("brand_new")).unwrap(),
+        WireConflictKind::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<WireConflictState>(json!("brand_new")).unwrap(),
+        WireConflictState::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<WireResolution>(json!("brand_new")).unwrap(),
+        WireResolution::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<WireSide>(json!("brand_new")).unwrap(),
+        WireSide::Unknown
     );
     let ev: EventEnvelope =
         serde_json::from_value(json!({"seq": 3, "type": "brand.new", "x": 1})).unwrap();

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::PROTOCOL;
+use crate::protocol::admin::{ConflictList, ConflictsResolveParams, ResolveResult};
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
 use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
 use crate::protocol::methods::*;
@@ -81,6 +82,13 @@ pub const METHODS: &[MethodSpec] = &[
         of::<SyncSetAutoResult>,
     ),
     m("job.get", false, of::<JobGetParams>, of::<JobView>),
+    m("conflicts.list", false, of::<Empty>, of::<ConflictList>),
+    m(
+        "conflicts.resolve",
+        false,
+        of::<ConflictsResolveParams>,
+        of::<ResolveResult>,
+    ),
 ];
 
 fn to_value(s: Schema) -> Value {

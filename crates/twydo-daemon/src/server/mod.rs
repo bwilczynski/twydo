@@ -1,6 +1,7 @@
 //! The daemon: a private Unix socket, a single-instance lock, lifecycle methods and the
 //! dispatch table that later tasks extend.
 
+pub mod admin;
 pub mod bus;
 pub mod conn;
 pub mod dispatch;

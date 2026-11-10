@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use twydo_core::config::Config;
 use twydo_core::conflicts::{ConflictKind, ConflictState, ConflictStore, NewConflict, Side};
 use twydo_core::store::bind_vdir_state;
-use twydo_core::sync::resolve::{Keep, Resolution, ResolveError, resolve};
+use twydo_core::store::journal::RequestRef;
+use twydo_core::sync::resolve::{Keep, Resolution, ResolveError, resolve, resolve_with};
 
 fn now() -> DateTime<Utc> {
     "2026-11-01T10:00:00Z".parse().unwrap()
@@ -215,4 +216,93 @@ fn keep_current_is_refused_for_a_held_conflict() {
         fx.store.get(&id).unwrap().unwrap().state,
         ConflictState::Open
     );
+}
+
+fn req(id: &str) -> RequestRef {
+    RequestRef {
+        session: "s1".into(),
+        request_id: id.into(),
+    }
+}
+
+#[test]
+fn resolution_records_its_request() {
+    // (held, the file holds, keep, expected)
+    let cases = [
+        (true, Keep::Remote, "recorded"),
+        (false, Keep::Remote, "already_in_place"),
+        (false, Keep::Local, "written"),
+        (false, Keep::Current, "kept_current"),
+    ];
+    for (n, (held, keep, word)) in cases.into_iter().enumerate() {
+        let fx = Fx::new();
+        fs::write(fx.file(), "R\n").unwrap();
+        let id = fx.record(held, Side::Remote, Some("L\n"), Some("R\n"));
+        let rid = format!("r{n}");
+        let got = resolve_with(&fx.cfg, &id, keep, now(), Some(req(&rid))).unwrap();
+        let (c, by) = fx
+            .store
+            .by_request(&rid)
+            .unwrap()
+            .expect("found by request");
+        assert_eq!(c.id, id);
+        assert_eq!(c.resolved_by.as_ref(), Some(&by));
+        assert_eq!(by.request, req(&rid));
+        assert_eq!(by.resolution, got);
+        assert!(
+            serde_json::to_value(&got)
+                .unwrap()
+                .to_string()
+                .contains(word)
+        );
+        match &got {
+            Resolution::Written(op) => assert_eq!(by.op_id.as_deref(), Some(op.as_str())),
+            _ => assert_eq!(by.op_id, None),
+        }
+        assert!(fx.store.by_request("other").unwrap().is_none());
+    }
+}
+
+/// Codex review: every request that chose a held conflict keeps its record. A chooses local,
+/// B remote; A's record still answers A, and the choice stays B's.
+#[test]
+fn every_request_that_chose_keeps_its_record() {
+    let fx = Fx::new();
+    fs::write(fx.file(), "L\n").unwrap();
+    let id = fx.record(true, Side::Local, Some("L\n"), Some("R\n"));
+    resolve_with(&fx.cfg, &id, Keep::Local, now(), Some(req("a"))).unwrap();
+    resolve_with(&fx.cfg, &id, Keep::Remote, now(), Some(req("b"))).unwrap();
+    // A store opened afresh, as after a restart.
+    let state = bind_vdir_state(&fx.cfg.state_dir(), &fx.cfg.vdir).unwrap();
+    let store = ConflictStore::open(&state).unwrap();
+    let (c, a) = store.by_request("a").unwrap().expect("A's record");
+    assert_eq!(c.id, id);
+    assert_eq!(a.request, req("a"));
+    assert_eq!(a.resolution, Resolution::Recorded);
+    let (_, b) = store.by_request("b").unwrap().expect("B's record");
+    assert_eq!(b.request, req("b"));
+    let c = store.get(&id).unwrap().unwrap();
+    assert_eq!(
+        (c.state, c.choice),
+        (ConflictState::Chosen, Some(Side::Remote))
+    );
+}
+
+#[test]
+fn written_resolution_names_its_request_in_the_journal() {
+    let fx = Fx::new();
+    fs::write(fx.file(), "R\n").unwrap();
+    let id = fx.record(false, Side::Remote, Some("L\n"), Some("R\n"));
+    let Resolution::Written(op) =
+        resolve_with(&fx.cfg, &id, Keep::Local, now(), Some(req("r9"))).unwrap()
+    else {
+        panic!("written")
+    };
+    let state = bind_vdir_state(&fx.cfg.state_dir(), &fx.cfg.vdir).unwrap();
+    let e = twydo_core::store::journal::Journal::open(&state)
+        .unwrap()
+        .get(&op)
+        .unwrap()
+        .unwrap();
+    assert_eq!(e.request, Some(req("r9")));
 }

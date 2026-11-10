@@ -82,6 +82,18 @@ impl Lane {
         }
     }
 
+    /// Takes the token for one write, waiting through a long job as well. For writes that
+    /// cannot be queued (`conflicts.resolve`, the journal methods). Take it holding no session
+    /// mutex: a long job's drain hook takes session mutexes while it holds the lane.
+    pub fn write_waiting(&self) -> WriteGuard<'_> {
+        let mut h = self.holder.lock().unwrap();
+        while *h != Holder::Free {
+            h = self.cv.wait(h).unwrap();
+        }
+        *h = Holder::Write;
+        WriteGuard { lane: self }
+    }
+
     /// Takes the token for a long job, waiting until it is free.
     pub fn long(&self, kind: LongKind) -> LongGuard<'_> {
         let mut h = self.holder.lock().unwrap();
@@ -152,6 +164,22 @@ mod tests {
         drop(g);
         assert_eq!(lane.current_long(), None);
         assert!(lane.write().is_ok());
+    }
+
+    #[test]
+    fn a_waiting_write_gets_the_lane_after_a_long_job() {
+        let lane = Arc::new(Lane::new());
+        let long = lane.long(LongKind::Test);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let l2 = Arc::clone(&lane);
+        let h = std::thread::spawn(move || {
+            let _g = l2.write_waiting();
+            tx.send(()).unwrap();
+        });
+        assert!(rx.recv_timeout(Duration::from_millis(100)).is_err());
+        drop(long);
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        h.join().unwrap();
     }
 
     #[test]

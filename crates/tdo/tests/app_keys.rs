@@ -298,6 +298,8 @@ fn conflict(id: &str, uid: &str) -> twydo_core::conflicts::Conflict {
         state: ConflictState::Open,
         choice: None,
         resolved: None,
+        resolved_by: None,
+        earlier: Vec::new(),
         local: None,
         remote: None,
     }

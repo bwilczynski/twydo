@@ -14,10 +14,12 @@ use std::fs;
 use std::io;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-use crate::conflicts::{Conflict, ConflictState, ConflictStore, Side};
+use crate::conflicts::{Conflict, ConflictState, ConflictStore, ResolvedBy, Side};
 use crate::store::fsio::VdirLock;
+use crate::store::journal::RequestRef;
 use crate::store::{Store, WriteError, existing_vdir_state};
 
 /// Which version of a conflict to keep.
@@ -31,7 +33,8 @@ pub enum Keep {
 }
 
 /// What `resolve` did.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Resolution {
     /// A held conflict: the choice is recorded and the next sync applies it.
     Recorded,
@@ -41,6 +44,18 @@ pub enum Resolution {
     Written(String),
     /// [`Keep::Current`]: the conflict is closed and the vdir file left as it is.
     KeptCurrent,
+}
+
+impl Resolution {
+    /// What `tdo conflicts resolve` tells the user.
+    pub fn message(&self) -> &'static str {
+        match self {
+            Resolution::Recorded => "recorded; the next sync applies it",
+            Resolution::AlreadyInPlace => "already in place; conflict resolved",
+            Resolution::Written(_) => "written; conflict resolved",
+            Resolution::KeptCurrent => "kept as it is now; conflict resolved",
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -90,6 +105,28 @@ pub fn resolve(
     keep: Keep,
     now: DateTime<Utc>,
 ) -> Result<Resolution, ResolveError> {
+    resolve_with(cfg, id, keep, now, None)
+}
+
+/// [`resolve`] for a client request: the conflict and, for a written version, the journal
+/// entry record `request`, so a resend finds its earlier result ([`ConflictStore::by_request`]).
+pub fn resolve_with(
+    cfg: &Config,
+    id: &str,
+    keep: Keep,
+    now: DateTime<Utc>,
+    request: Option<RequestRef>,
+) -> Result<Resolution, ResolveError> {
+    let by = |resolution: &Resolution| {
+        request.clone().map(|request| ResolvedBy {
+            request,
+            op_id: match resolution {
+                Resolution::Written(op) => Some(op.clone()),
+                _ => None,
+            },
+            resolution: resolution.clone(),
+        })
+    };
     let not_found = || ResolveError::NotFound(id.to_string());
     let state = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)?.ok_or_else(not_found)?;
     if crate::retired::archived_conflict(&state, id)? {
@@ -108,15 +145,17 @@ pub fn resolve(
         (Keep::Current, true) => return Err(ResolveError::Held(id.to_string())),
         (Keep::Current, false) => {
             // Both versions stay in the conflict's files; the vdir is not touched.
-            store.mark_resolved(id, now)?;
-            return Ok(Resolution::KeptCurrent);
+            let r = Resolution::KeptCurrent;
+            store.mark_resolved_by(id, now, by(&r))?;
+            return Ok(r);
         }
         (Keep::Local, _) => Side::Local,
         (Keep::Remote, _) => Side::Remote,
     };
     if c.held {
-        store.choose(id, keep)?;
-        return Ok(Resolution::Recorded);
+        let r = Resolution::Recorded;
+        store.choose_by(id, keep, by(&r))?;
+        return Ok(r);
     }
     let kept = version(&c, keep);
     let holds = version(&c, c.vdir_holds);
@@ -135,8 +174,9 @@ pub fn resolve(
     };
     // Kept version in place, or a retry after a crash between the write and `mark_resolved`.
     if same_text(actual.as_deref(), kept) {
-        store.mark_resolved(id, now)?;
-        return Ok(Resolution::AlreadyInPlace);
+        let r = Resolution::AlreadyInPlace;
+        store.mark_resolved_by(id, now, by(&r))?;
+        return Ok(r);
     }
     // The file no longer holds the version it held then (a later sync or edit changed or
     // deleted it): keeping either side now would drop the current task, or close the
@@ -151,7 +191,9 @@ pub fn resolve(
     // The file holds `holds`, perhaps with other line endings: hand `restore` the bytes
     // actually on disk (it refuses if they change before it takes the lock).
     let (mut writer, _) = Store::open(cfg)?;
+    writer.set_request(request.clone());
     let op = writer.restore(&c.path, actual.as_deref(), kept, vec![c.uid.clone()], now)?;
-    store.mark_resolved(id, now)?;
-    Ok(Resolution::Written(op))
+    let r = Resolution::Written(op);
+    store.mark_resolved_by(id, now, by(&r))?;
+    Ok(r)
 }
