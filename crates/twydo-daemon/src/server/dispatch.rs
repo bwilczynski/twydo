@@ -81,9 +81,12 @@ pub fn dispatch(
                 epoch: shared.epoch.clone(),
             }),
             "daemon.shutdown" => {
-                // Nothing long runs yet, so `when_idle` changes nothing. The reply is queued
-                // by the caller before stopping: see `conn::serve`.
-                let _: ShutdownParams = parse(params)?;
+                // The reply is queued by the caller before stopping: see `conn::serve`. With
+                // `when_idle`, new jobs are refused from here on, before the reply.
+                let p: ShutdownParams = parse(params)?;
+                if p.when_idle {
+                    shared.runner.set_closing();
+                }
                 Ok(json!({}))
             }
             _ => unreachable!("lifecycle table and dispatch disagree"),
@@ -182,8 +185,13 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
     })
 }
 
-/// True when the request is the shutdown call (the connection layer stops the daemon after
-/// the reply is queued).
-pub fn is_shutdown(method: &str) -> bool {
-    method == "daemon.shutdown"
+/// For the shutdown call, its `when_idle`; `None` for any other request. The connection
+/// layer stops the daemon after the reply is queued, or once idle.
+pub fn is_shutdown(method: &str, params: Option<&Value>) -> Option<bool> {
+    (method == "daemon.shutdown").then(|| {
+        params
+            .and_then(|p| p.get("when_idle"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    })
 }

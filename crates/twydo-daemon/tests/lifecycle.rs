@@ -427,3 +427,235 @@ fn a_regular_file_at_the_socket_path_is_never_deleted() {
     }
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "not a socket");
 }
+
+// ---- Task 6: an orphaned vdirsyncer at startup, and stopping during a job ----
+
+mod during_a_job {
+    use std::os::unix::process::CommandExt;
+    use std::time::{Duration, Instant};
+
+    use super::common::*;
+    use serde_json::{Value, json};
+    use twydo_core::store::fsio::VdirLock;
+    use twydo_core::store::queue::Queue;
+    use twydo_core::sync::lock::LockFile;
+    use twydo_core::sync::running::{Running, process_start};
+    use twydo_daemon::client::Client;
+    use twydo_daemon::protocol::events::Event;
+    use twydo_daemon::protocol::jobs::{JobStarted, JobState, JobView};
+    use twydo_daemon::protocol::methods::WriteOutcome;
+    use twydo_daemon::protocol::rpc::ErrorKind;
+    use twydo_daemon::protocol::sync::{SyncOutcome, SyncResult, SyncRunParams};
+
+    const BOUND: Duration = Duration::from_secs(10);
+
+    fn fx() -> Fixture {
+        Fixture::new(&[("c1", "u1", "One", None)])
+    }
+
+    /// A daemon whose fake vdirsyncer runs `body`, stopping syncs after `grace`, and a
+    /// subscribed client.
+    fn start(fx: &Fixture, body: &str, grace: Duration) -> (TestDaemon, Client) {
+        let td = TestDaemon::start_cfg(fx, fx.with_sync(body), |o| o.shutdown_grace = grace);
+        let c = td.client();
+        let _: Value = c.call("events.subscribe", empty()).unwrap();
+        (td, c)
+    }
+
+    fn sync_run(c: &Client) -> Result<JobStarted, twydo_daemon::client::ClientError> {
+        c.call(
+            "sync.run",
+            SyncRunParams {
+                request_id: c.next_request_id(),
+                force_delete: Vec::new(),
+            },
+        )
+    }
+
+    fn sync_finished(c: &Client, id: &str) -> SyncResult {
+        match wait_event(
+            c,
+            BOUND,
+            |e| matches!(e, Event::SyncFinished { job_id: Some(j), .. } if j == id),
+        ) {
+            Event::SyncFinished { result, .. } => result,
+            _ => unreachable!(),
+        }
+    }
+
+    fn started(c: &Client, id: &str) {
+        wait_event(
+            c,
+            BOUND,
+            |e| matches!(e, Event::SyncStarted { job_id: Some(j), .. } if j == id),
+        );
+    }
+
+    /// A finished process: its pid names no live runner.
+    fn dead_pid() -> u32 {
+        let mut gone = std::process::Command::new("true").spawn().unwrap();
+        gone.wait().unwrap();
+        gone.id()
+    }
+
+    /// Waits up to `limit` for the daemon to have stopped.
+    fn stopped_within(td: &TestDaemon, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        while !td.handle().is_stopped() {
+            if Instant::now() > deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+
+    #[test]
+    fn startup_reaps_an_orphaned_vdirsyncer() {
+        let fx = fx();
+        let mut orphan = std::process::Command::new("sh")
+            .args(["-c", "sleep 30"])
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let sync_dir = fx.state().join("sync");
+        std::fs::create_dir_all(&sync_dir).unwrap();
+        let rec = Running {
+            runner_pid: dead_pid(),
+            runner_start: None,
+            child_pgid: Some(orphan.id()),
+            child_start: process_start(orphan.id()),
+            started: chrono::Utc::now(),
+        };
+        std::fs::write(
+            sync_dir.join("running.json"),
+            serde_json::to_vec(&rec).unwrap(),
+        )
+        .unwrap();
+        let t = Instant::now();
+        let td = TestDaemon::start_unready_cfg(&fx, fx.with_sync("sleep 30"), |_| {});
+        assert!(td.handle().wait_ready(Duration::from_secs(5)), "not ready");
+        assert!(t.elapsed() < Duration::from_secs(5));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while orphan.try_wait().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "the orphan survived startup");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!sync_dir.join("running.json").exists());
+        assert!(!sync_dir.join("stop").exists());
+        VdirLock::exclusive(&fx.state()).expect("the vdir lock is free");
+    }
+
+    #[test]
+    fn sigterm_during_a_sync_loses_no_edit() {
+        let fx = fx();
+        let (td, c) = start(&fx, "sleep 30", Duration::from_millis(200));
+        let id = sync_run(&c).unwrap().job_id;
+        started(&c, &id);
+        let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+        assert_eq!(r.outcome, WriteOutcome::Queued, "{r:?}");
+        let t = Instant::now();
+        td.handle().shutdown();
+        assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+        assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Stopped);
+        let queue = Queue::existing(&fx.state()).expect("a queue");
+        assert!(!queue.is_empty().unwrap(), "the queued edit is on disk");
+        assert!(fx.read("c1/u1.ics").contains("SUMMARY:One"));
+        drop(td);
+        // The next daemon applies it, once.
+        let td = TestDaemon::start_cfg(&fx, fx.with_sync("sleep 30"), |_| {});
+        let deadline = Instant::now() + BOUND;
+        while !Queue::existing(&fx.state()).unwrap().is_empty().unwrap() {
+            assert!(Instant::now() < deadline, "never drained");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(count_titled(&td, "Renamed"), 1);
+        assert_eq!(count_titled(&td, "One"), 0);
+    }
+
+    #[test]
+    fn queued_jobs_are_interrupted_at_shutdown() {
+        let fx = fx();
+        let (td, c) = start(&fx, "sleep 30", Duration::from_millis(200));
+        let a = sync_run(&c).unwrap().job_id;
+        started(&c, &a);
+        let b = sync_run(&c).unwrap().job_id;
+        td.handle().shutdown();
+        match wait_event(
+            &c,
+            BOUND,
+            |e| matches!(e, Event::JobFinished { job_id, .. } if *job_id == b),
+        ) {
+            Event::JobFinished { state, .. } => assert_eq!(state, JobState::Interrupted),
+            _ => unreachable!(),
+        }
+        let record = fx.state().join("daemon/jobs").join(format!("{b}.json"));
+        let view: JobView = serde_json::from_slice(&std::fs::read(record).unwrap()).unwrap();
+        assert_eq!(view.state, JobState::Interrupted);
+        assert!(view.ended.is_some());
+    }
+
+    #[test]
+    fn shutdown_when_idle_waits_for_jobs() {
+        let fx = fx();
+        let (td, c) = start(
+            &fx,
+            "sleep 1\necho 'Syncing twydo/c1' >&2\nexit 0",
+            Duration::from_secs(10),
+        );
+        let id = sync_run(&c).unwrap().job_id;
+        started(&c, &id);
+        let t = Instant::now();
+        let r: Value = c
+            .call("daemon.shutdown", json!({"when_idle": true}))
+            .unwrap();
+        assert_eq!(r, json!({}));
+        assert!(
+            t.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            t.elapsed()
+        );
+        let e = sync_run(&c).unwrap_err();
+        assert_eq!(kind(&e), ErrorKind::Unavailable);
+        assert!(e.to_string().contains("the daemon is shutting down"), "{e}");
+        assert!(!td.handle().is_stopped());
+        assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Ok);
+        assert!(stopped_within(&td, BOUND), "the daemon never stopped");
+        assert!(!td.socket().exists());
+    }
+
+    /// Task 3 review: a manual sync waiting for a run lock another process holds cannot be
+    /// stopped, and must not hold the daemon up for longer than the grace and the stop wait.
+    #[test]
+    fn shutdown_does_not_hang_on_a_sync_waiting_for_the_run_lock() {
+        let fx = fx();
+        let ran = fx.state().parent().unwrap().join("ran");
+        let (td, c) = start(
+            &fx,
+            &format!("echo run >> '{}'", ran.display()),
+            Duration::from_millis(200),
+        );
+        let sync_dir = fx.state().join("sync");
+        std::fs::create_dir_all(&sync_dir).unwrap();
+        let lock = LockFile::take(&sync_dir.join("run.lock"), true)
+            .unwrap()
+            .expect("run lock free");
+        let id = sync_run(&c).unwrap().job_id;
+        started(&c, &id);
+        let t = Instant::now();
+        td.handle().shutdown();
+        assert!(t.elapsed() < Duration::from_secs(13), "{:?}", t.elapsed());
+        assert!(!td.socket().exists());
+        // The sync left behind gets the lock now; the daemon has let the vdir go, so it must
+        // write nothing.
+        let status = std::fs::read(sync_dir.join("status.json")).ok();
+        let ended = std::fs::read(sync_dir.join("ended")).ok();
+        let task = fx.read("c1/u1.ics");
+        drop(lock);
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(!ran.exists(), "vdirsyncer ran after the daemon stopped");
+        assert_eq!(std::fs::read(sync_dir.join("status.json")).ok(), status);
+        assert_eq!(std::fs::read(sync_dir.join("ended")).ok(), ended);
+        assert_eq!(fx.read("c1/u1.ics"), task);
+    }
+}

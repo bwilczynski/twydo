@@ -160,6 +160,51 @@ pub fn request_stop(cfg: &Config) -> io::Result<StopResult> {
     Ok(StopResult::Killed)
 }
 
+/// What [`reap_orphan`] found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reaped {
+    /// No record (or no `[sync]`, or no state yet).
+    Nothing,
+    /// A record whose runner and child are both gone; it was removed.
+    Stale,
+    /// The runner was gone and its vdirsyncer still ran: that group was killed (recorded as
+    /// a stopped sync, like any orphan stop) and the record removed.
+    Killed,
+    /// The recorded runner is alive: another process's sync, left alone.
+    LiveRunner,
+}
+
+/// Stops a vdirsyncer left behind by a runner that is gone (killed, crashed), as a daemon
+/// does when it starts. The orphan path of [`request_stop`], whose request is then withdrawn
+/// ([`clear_stop`]): no write of the caller waits behind it.
+pub fn reap_orphan(cfg: &Config) -> io::Result<Reaped> {
+    if cfg.sync.is_none() {
+        return Ok(Reaped::Nothing);
+    }
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+        return Ok(Reaped::Nothing);
+    };
+    let Some(rec) = load(&state)? else {
+        return Ok(Reaped::Nothing);
+    };
+    if runner_is_live(&rec) {
+        return Ok(Reaped::LiveRunner);
+    }
+    if child_is_live(&rec).is_some() {
+        let stopped = request_stop(cfg)?;
+        clear_stop(cfg)?;
+        // The child may have ended between the two looks; its record is gone either way.
+        return Ok(match stopped {
+            StopResult::Killed => Reaped::Killed,
+            _ => Reaped::Stale,
+        });
+    }
+    match fs::remove_file(running_path(&state)) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+        _ => Ok(Reaped::Stale),
+    }
+}
+
 /// Whether a pass begun at `since` must stop: a fresh request is pending, or a stop was
 /// asked for after the pass began. A stale request file is removed.
 pub(crate) fn stop_requested(state: &Path, since: DateTime<Utc>) -> io::Result<bool> {

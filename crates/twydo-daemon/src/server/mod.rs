@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::store::{Store, bind_vdir_state};
+use twydo_core::sync::running::{self, Reaped};
 
 use crate::paths::DaemonLock;
 use crate::protocol::events::Cause;
@@ -71,6 +72,8 @@ pub struct DaemonOptions {
     pub periodic: Duration,
     /// The scheduler's clock.
     pub clock: Arc<dyn schedule::Clock>,
+    /// How long a sync running at shutdown may go on before it is stopped.
+    pub shutdown_grace: Duration,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -94,6 +97,7 @@ impl DaemonOptions {
             schedule: true,
             periodic: Duration::from_secs(60),
             clock: Arc::new(schedule::SystemClock),
+            shutdown_grace: Duration::from_secs(10),
         }
     }
 }
@@ -146,6 +150,11 @@ pub struct Shared {
     pub jobs: jobs::JobStore,
     /// Runs jobs and syncs on the lane, one at a time; started once ready.
     pub runner: jobs::JobRunner,
+    /// Set once stopping: a sync then leaves the queued edits on disk
+    /// ([`twydo_core::sync::run::RunOptions::hold_queue`]).
+    pub hold_queue: Arc<AtomicBool>,
+    /// How long a sync running at shutdown may go on before it is stopped.
+    shutdown_grace: Duration,
     /// The background status refresher; see [`Shared::request_status_refresh`].
     status_refresh: Mutex<Refresher>,
     status_refresh_cv: Condvar,
@@ -207,6 +216,7 @@ impl Shared {
 
     /// Asks the daemon to stop; the accept thread does the teardown.
     fn request_stop(&self) {
+        self.hold_queue.store(true, Ordering::SeqCst);
         *self.stop.lock().unwrap() = true;
         self.stop_cv.notify_all();
         // Wake the accept loop through the wake pipe, independent of the socket path.
@@ -289,6 +299,8 @@ impl Daemon {
             requests: replay::RequestLog::new(),
             jobs: job_store,
             runner: jobs::JobRunner::new(),
+            hold_queue: Arc::new(AtomicBool::new(false)),
+            shutdown_grace: opts.shutdown_grace,
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
             scheduler: Mutex::new(None),
@@ -443,6 +455,23 @@ fn startup(
         Box::new(move |_| {
             if let Some(hook) = before_recovery {
                 hook();
+            }
+            Ok(())
+        }),
+        Box::new(|shared| {
+            // A vdirsyncer whose runner is gone (a daemon killed during a sync) still holds
+            // the vdir: stop it before recovery. Not fatal: its locks only make writes wait.
+            if shared.cfg.sync.is_some() {
+                match running::reap_orphan(&shared.cfg) {
+                    Ok(Reaped::Killed) => {
+                        eprintln!("tdo daemon: stopped a vdirsyncer left by an earlier run")
+                    }
+                    Ok(Reaped::LiveRunner) => eprintln!(
+                        "tdo daemon: another process is syncing this vdir; writes wait for it"
+                    ),
+                    Ok(Reaped::Nothing | Reaped::Stale) => {}
+                    Err(e) => eprintln!("tdo daemon: cannot check for a left-over sync: {e}"),
+                }
             }
             Ok(())
         }),
@@ -640,7 +669,65 @@ struct Drainer {
     handle: Option<JoinHandle<()>>,
 }
 
+/// How long teardown waits for a sync after asking it to stop.
+const STOP_WAIT: Duration = Duration::from_secs(10);
+
+/// How often teardown looks at the running work while it waits.
+const STOP_POLL: Duration = Duration::from_millis(50);
+
+/// Ends the job runner before the connections close, so clients get the ends: queued jobs
+/// become `interrupted` (with `job.finished`); a running sync gets the grace period, is then
+/// stopped and waited for [`STOP_WAIT`] more; a list job is waited for. A sync that does not
+/// stop (one waiting for a run lock another process holds cannot be interrupted) is left
+/// behind and logged: the daemon always exits.
+fn stop_jobs(shared: &Shared) {
+    use crate::protocol::events::Event;
+    use crate::protocol::jobs::JobState;
+    // No more background syncs are posted.
+    shared.stop_scheduler();
+    for view in shared.runner.close() {
+        let state = JobState::Interrupted;
+        if let Err(e) = shared.jobs.set_state(&view.job_id, state.clone()) {
+            eprintln!(
+                "tdo daemon: cannot record job {} interrupted: {e}",
+                view.job_id
+            );
+        }
+        shared.bus.emit(Event::JobFinished {
+            job_id: view.job_id,
+            request_id: view.request_id,
+            state,
+        });
+    }
+    let grace_end = Instant::now() + shared.shutdown_grace;
+    let mut give_up: Option<Instant> = None;
+    let mut asked = false;
+    while !shared.runner.wait_idle(STOP_POLL) {
+        if shared.runner.current_kind() != Some(lane::LongKind::Sync) {
+            continue;
+        }
+        let now = Instant::now();
+        if now < grace_end {
+            continue;
+        }
+        let limit = *give_up.get_or_insert(now + STOP_WAIT);
+        if now >= limit {
+            eprintln!("tdo daemon: the sync did not stop within {STOP_WAIT:?}; not waiting for it");
+            return;
+        }
+        // Asked until the sync takes it: one that has not begun yet has nothing to stop.
+        if !asked {
+            match syncjob::stop_running_sync(shared) {
+                Ok(a) => asked = a,
+                Err(e) => eprintln!("tdo daemon: cannot stop the running sync: {e}"),
+            }
+        }
+    }
+    shared.runner.join();
+}
+
 fn teardown(shared: &Shared) {
+    stop_jobs(shared);
     shared.close_connections();
     let _ = fs::remove_file(&shared.socket);
     shared.publisher.close();
@@ -650,22 +737,6 @@ fn teardown(shared: &Shared) {
     // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
     // writes the vdir while a thread of this one still could.
     shared.close_commits();
-    // No more background syncs are posted; before the runner is closed.
-    shared.stop_scheduler();
-    // Queued jobs never run; the running one ends first (its drain skips: the daemon is
-    // stopping).
-    for view in shared.runner.close() {
-        if let Err(e) = shared
-            .jobs
-            .set_state(&view.job_id, crate::protocol::jobs::JobState::Interrupted)
-        {
-            eprintln!(
-                "tdo daemon: cannot record job {} interrupted: {e}",
-                view.job_id
-            );
-        }
-    }
-    shared.runner.join();
     if !shared.wait_drainer(REFRESHER_WAIT) {
         eprintln!("tdo daemon: queue drainer still waiting; not joined");
     }
@@ -1002,5 +1073,25 @@ impl Shared {
     /// Called by the connection layer after the `daemon.shutdown` reply is queued.
     pub fn stop_after_reply(&self) {
         self.request_stop();
+    }
+
+    /// Called by the connection layer after a `daemon.shutdown {when_idle: true}` reply is
+    /// queued (the runner already takes no new work): stops once the queued work has run.
+    pub fn stop_when_idle(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        std::thread::spawn(move || {
+            loop {
+                let Some(shared) = weak.upgrade() else {
+                    return;
+                };
+                if shared.is_stopping() {
+                    return;
+                }
+                if shared.runner.wait_idle(Duration::from_millis(200)) {
+                    shared.request_stop();
+                    return;
+                }
+            }
+        });
     }
 }
