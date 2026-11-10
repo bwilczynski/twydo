@@ -297,3 +297,52 @@ pub struct AbandonResult {
     /// False when the entry was already abandoned.
     pub abandoned: bool,
 }
+
+/// Which field `input.parse` reads text for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
+pub enum InputField {
+    Due,
+    Start,
+    Repeat,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+/// Params of `input.parse`: typed text of a date or repeat field, read with the grammar the
+/// TUI uses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InputParseParams {
+    pub field: InputField,
+    pub text: String,
+    /// The day "today" means; defaults to today in the configured time zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub today: Option<chrono::NaiveDate>,
+}
+
+/// A parsed repeat rule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ParsedRepeat {
+    /// The rule as RRULE text.
+    pub rrule: String,
+    pub from_completion: bool,
+    /// The rule in the form `Op` takes (`repeat` of a `set` or a `create`).
+    pub spec: twydo_core::repeatinput::RepeatSpec,
+}
+
+/// Result of `input.parse`. Empty text clears the field: `cleared` is true and the rest is
+/// empty. A date field fills `due` (for `start` too: it is the date the field takes).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InputParsed {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<twydo_core::edit::Due>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<ParsedRepeat>,
+    pub cleared: bool,
+    /// The preview line the TUI shows under the field.
+    pub description: String,
+}

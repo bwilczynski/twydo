@@ -10,8 +10,8 @@ use serde_json::{Map, Value, json};
 
 use crate::PROTOCOL;
 use crate::protocol::admin::{
-    AbandonResult, ConflictList, ConflictsResolveParams, JournalAbandonParams, JournalEntryView,
-    JournalRevertParams, RecoverResult, ResolveResult,
+    AbandonResult, ConflictList, ConflictsResolveParams, InputParseParams, InputParsed,
+    JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult, ResolveResult,
 };
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
 use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
@@ -110,6 +110,12 @@ pub const METHODS: &[MethodSpec] = &[
         false,
         of::<JournalAbandonParams>,
         of::<AbandonResult>,
+    ),
+    m(
+        "input.parse",
+        false,
+        of::<InputParseParams>,
+        of::<InputParsed>,
     ),
 ];
 

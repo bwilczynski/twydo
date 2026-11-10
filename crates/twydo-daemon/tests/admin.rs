@@ -19,9 +19,9 @@ use twydo_core::store::bind_vdir_state;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::admin::{
-    AbandonResult, ConflictList, ConflictsResolveParams, JournalAbandonParams, JournalEntryView,
-    JournalRevertParams, RecoverResult, ResolveResult, WireConflictKind, WireConflictState,
-    WireKeep, WireResolution, WireSide, WireStage,
+    AbandonResult, ConflictList, ConflictsResolveParams, InputField, InputParseParams, InputParsed,
+    JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult, ResolveResult,
+    WireConflictKind, WireConflictState, WireKeep, WireResolution, WireSide, WireStage,
 };
 use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::jobs::JobStarted;
@@ -559,4 +559,62 @@ fn journal_recover_drains_what_the_stuck_entry_held_back() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+// ---- input.parse ----
+
+fn parse_input(
+    c: &Client,
+    field: InputField,
+    text: &str,
+) -> Result<InputParsed, twydo_daemon::client::ClientError> {
+    c.call(
+        "input.parse",
+        InputParseParams {
+            field,
+            text: text.into(),
+            today: Some(chrono::NaiveDate::from_ymd_opt(2026, 11, 10).unwrap()),
+        },
+    )
+}
+
+#[test]
+fn input_parse_due_and_repeat() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+
+    let due = parse_input(&c, InputField::Due, "fri 5pm").unwrap();
+    let want = chrono::NaiveDate::from_ymd_opt(2026, 11, 13)
+        .unwrap()
+        .and_hms_opt(17, 0, 0)
+        .unwrap();
+    assert_eq!(due.due, Some(twydo_core::edit::Due::Time(want)));
+    let parsed = twydo_core::dateinput::parse("fri 5pm", today)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        due.description,
+        twydo_core::dateinput::describe(&parsed, today)
+    );
+    assert!(!due.cleared && due.repeat.is_none());
+
+    let start = parse_input(&c, InputField::Start, "tomorrow").unwrap();
+    assert_eq!(
+        start.due,
+        Some(twydo_core::edit::Due::Date(today.succ_opt().unwrap()))
+    );
+
+    let rep = parse_input(&c, InputField::Repeat, "2nd tue").unwrap();
+    assert_eq!(rep.repeat.unwrap().rrule, "FREQ=MONTHLY;BYDAY=2TU");
+    assert!(rep.due.is_none() && !rep.description.is_empty());
+
+    let cleared = parse_input(&c, InputField::Due, "").unwrap();
+    assert!(cleared.cleared && cleared.due.is_none());
+    let cleared = parse_input(&c, InputField::Repeat, "none").unwrap();
+    assert!(cleared.cleared && cleared.repeat.is_none());
+
+    let e = parse_input(&c, InputField::Due, "9").unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid);
 }

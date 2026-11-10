@@ -331,6 +331,26 @@
         ],
         "type": "object"
       },
+      "ConfigStatus": {
+        "description": "How the live configuration stands.",
+        "properties": {
+          "error": {
+            "description": "Why the last change to the file was not applied (unreadable, invalid); the last good\nconfiguration stays in force.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restart_needed": {
+            "description": "Binding settings the file now names differently (`vdir`, `state_dir`, `writes`,\n`sync`); they apply only after the daemon restarts.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "ConflictList": {
         "description": "Result of `conflicts.list`.",
         "properties": {
@@ -908,6 +928,77 @@
             "type": "object"
           }
         ]
+      },
+      "InputField": {
+        "description": "Which field `input.parse` reads text for.",
+        "enum": [
+          "due",
+          "start",
+          "repeat"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "InputParseParams": {
+        "description": "Params of `input.parse`: typed text of a date or repeat field, read with the grammar the\nTUI uses.",
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/InputField"
+          },
+          "text": {
+            "type": "string"
+          },
+          "today": {
+            "description": "The day \"today\" means; defaults to today in the configured time zone.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "text"
+        ],
+        "type": "object"
+      },
+      "InputParsed": {
+        "description": "Result of `input.parse`. Empty text clears the field: `cleared` is true and the rest is\nempty. A date field fills `due` (for `start` too: it is the date the field takes).",
+        "properties": {
+          "cleared": {
+            "type": "boolean"
+          },
+          "description": {
+            "description": "The preview line the TUI shows under the field.",
+            "type": "string"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Due"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repeat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParsedRepeat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cleared",
+          "description"
+        ],
+        "type": "object"
       },
       "Instance": {
         "description": "Which configuration and vdir a client means; checked by `hello`.",
@@ -1736,6 +1827,32 @@
         ],
         "x-open": true
       },
+      "ParsedRepeat": {
+        "description": "A parsed repeat rule.",
+        "properties": {
+          "from_completion": {
+            "type": "boolean"
+          },
+          "rrule": {
+            "description": "The rule as RRULE text.",
+            "type": "string"
+          },
+          "spec": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RepeatSpec"
+              }
+            ],
+            "description": "The rule in the form `Op` takes (`repeat` of a `set` or a `create`)."
+          }
+        },
+        "required": [
+          "rrule",
+          "from_completion",
+          "spec"
+        ],
+        "type": "object"
+      },
       "Placement": {
         "description": "A write operation on the task store.",
         "enum": [
@@ -1987,6 +2104,14 @@
       },
       "StatusView": {
         "properties": {
+          "config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfigStatus"
+              }
+            ],
+            "description": "The state of `config.toml` as the daemon reads it live; omitted while all is well."
+          },
           "conflicts": {
             "format": "uint",
             "minimum": 0,
@@ -3327,6 +3452,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/AbandonResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "input.parse",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/InputParseParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/InputParsed"
         }
       },
       "x-lifecycle": false
