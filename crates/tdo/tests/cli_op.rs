@@ -1,15 +1,23 @@
 //! `tdo op` and startup recovery, driven through the built binary. Content is synthetic
 //! (phase-0 fixtures from the isolated test account).
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::{Duration, Instant};
+
+use common::Proc;
 
 const TASK_E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
 const TASK_A: &str = "0a04f22aeb294b719633c978fe1975e5";
 
 struct Env {
     dir: tempfile::TempDir,
+    sock_dir: tempfile::TempDir,
+    /// The daemon `op` started with this env's matrix, if it did.
+    daemon: std::cell::RefCell<Option<Proc>>,
 }
 
 impl Env {
@@ -66,7 +74,11 @@ impl Env {
             "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
         );
         fs::write(root.join("matrix.toml"), matrix).unwrap();
-        Env { dir }
+        Env {
+            dir,
+            sock_dir: common::short_socket_dir(),
+            daemon: Default::default(),
+        }
     }
 
     fn vdir(&self) -> PathBuf {
@@ -82,20 +94,122 @@ impl Env {
         twydo_core::store::vdir_state_dir(&self.state().join("twydo"), &self.vdir()).unwrap()
     }
 
-    fn tdo(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_tdo"))
-            .args(args)
-            .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
-            .env("XDG_STATE_HOME", self.state())
-            .output()
-            .expect("run tdo")
+    fn socket(&self) -> PathBuf {
+        self.sock_dir.path().join("tdo.sock")
     }
 
+    /// A `tdo` command in this env: its own config, state and socket (never the user's).
+    fn cmd(&self) -> Command {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
+        c.env("TWYDO_SOCKET", self.socket())
+            .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
+            .env("XDG_STATE_HOME", self.state())
+            .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+            .env("HOME", self.dir.path());
+        c
+    }
+
+    fn tdo(&self, args: &[&str]) -> Output {
+        self.cmd().args(args).output().expect("run tdo")
+    }
+
+    /// Starts `tdo daemon --matrix <env matrix>` unless one answers already; waits for its
+    /// socket.
+    fn ensure_daemon(&self) {
+        self.ensure_daemon_with(true);
+    }
+
+    fn ensure_daemon_with(&self, matrix: bool) {
+        if std::os::unix::net::UnixStream::connect(self.socket()).is_ok() {
+            return;
+        }
+        let m = self.dir.path().join("matrix.toml");
+        let mut c = self.cmd();
+        c.arg("daemon");
+        if matrix {
+            c.args(["--matrix", m.to_str().unwrap()]);
+        }
+        c.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        *self.daemon.borrow_mut() = Some(Proc(c.spawn().unwrap()));
+        let deadline = Instant::now() + common::WAIT;
+        while std::os::unix::net::UnixStream::connect(self.socket()).is_err() {
+            assert!(Instant::now() < deadline, "daemon never listened");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// `tdo op <args>` against a daemon running this env's matrix. `op check` is a local read
+    /// and takes the matrix itself.
     fn op(&self, args: &[&str]) -> Output {
         let m = self.dir.path().join("matrix.toml");
-        let mut a = vec!["op", "--matrix", m.to_str().unwrap()];
+        let mut a = vec!["op"];
         a.extend_from_slice(args);
+        if args.first() == Some(&"check") {
+            a.extend_from_slice(&["--matrix", m.to_str().unwrap()]);
+        } else {
+            self.ensure_daemon();
+        }
         self.tdo(&a)
+    }
+
+    /// Spawns `tdo op <args>` with piped output.
+    fn spawn_op(&self, args: &[&str]) -> std::process::Child {
+        self.ensure_daemon();
+        self.cmd()
+            .arg("op")
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    /// An in-process daemon with this env's matrix, so a test can hold its lane.
+    fn in_process_daemon(&self) -> twydo_daemon::server::DaemonHandle {
+        use twydo_daemon::server::{Daemon, DaemonOptions};
+        let mut cfg =
+            twydo_core::config::Config::load(&self.dir.path().join("config/twydo/config.toml"))
+                .unwrap();
+        cfg.state_dir = Some(self.state().join("twydo"));
+        let mut opts = DaemonOptions::new(self.socket());
+        opts.schedule = false;
+        opts.matrix =
+            twydo_core::compat::Matrix::load(&self.dir.path().join("matrix.toml")).unwrap();
+        let instance = twydo_daemon::paths::instance_for(
+            &self.dir.path().join("config/twydo/config.toml"),
+            None,
+        )
+        .unwrap();
+        let h = Daemon::start(cfg, instance, opts).expect("start");
+        assert!(h.wait_ready(Duration::from_secs(10)), "not ready");
+        h
+    }
+}
+
+impl Drop for Env {
+    fn drop(&mut self) {
+        self.stop_daemon();
+    }
+}
+
+impl Env {
+    /// Stops whatever daemon answers on this env's socket and waits for it to go.
+    fn stop_daemon(&self) {
+        use twydo_daemon::client::Client;
+        // Stops a daemon any `tdo` started on demand; the matrix one is killed by its Proc.
+        if let Ok(raw) = Client::connect_raw(&self.socket()) {
+            let _ = raw.caller().call_timeout::<_, serde_json::Value>(
+                "daemon.shutdown",
+                twydo_daemon::protocol::methods::ShutdownParams { when_idle: false },
+                Duration::from_secs(5),
+            );
+            drop(raw);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Client::connect_raw(&self.socket()).is_ok() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
     }
 }
 
@@ -381,7 +495,7 @@ fn op_snapshot_waits_for_writer_lock() {
     let lock = VdirLock::exclusive(&env.vdir_state()).unwrap();
     let m = env.dir.path().join("matrix.toml");
     let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
-        .args(["op", "--matrix", m.to_str().unwrap(), "check", TASK_E])
+        .args(["op", "check", TASK_E, "--matrix", m.to_str().unwrap()])
         .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
         .env("XDG_STATE_HOME", env.state())
         .stdout(std::process::Stdio::null())
@@ -435,98 +549,28 @@ fn op_journal_shows_synced() {
 }
 
 /// Adds a `[sync]` table whose command is a fake script touching `marker`; returns the marker.
-/// A fake sync command whose waiter syncs after one second, so no test leaves a waiter
-/// sleeping for the default minute.
 fn with_fake_sync(env: &Env) -> PathBuf {
-    with_fake_sync_waiting(env, 1)
-}
-
-fn with_fake_sync_waiting(env: &Env, max_wait_secs: u64) -> PathBuf {
     use std::io::Write;
-    use std::os::unix::fs::PermissionsExt;
     let marker = env.dir.path().join("marker");
     let fake = env.dir.path().join("fake.sh");
-    fs::write(
-        &fake,
-        format!(
-            "#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\ntouch '{}'\n",
-            marker.display()
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    common::write_script(&fake, &format!("touch '{}'", marker.display()));
     let mut cfg = fs::OpenOptions::new()
         .append(true)
         .open(env.dir.path().join("config/twydo/config.toml"))
         .unwrap();
     write!(
         cfg,
-        "[sync]\ncommand = \"{}\"\nmetasync = false\nmax_wait_secs = {max_wait_secs}\n",
+        "[sync]\ncommand = \"{}\"\nmetasync = false\n",
         fake.display()
     )
     .unwrap();
     marker
 }
 
-fn marker_appears(marker: &Path) -> bool {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-    while !marker.exists() && std::time::Instant::now() < deadline {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    marker.exists()
-}
-
 /// True if `marker` stays absent for a grace period.
 fn marker_stays_absent(marker: &Path) -> bool {
     std::thread::sleep(std::time::Duration::from_millis(1500));
     !marker.exists()
-}
-
-/// One write is below `batch_size`: no sync at once, but the batch waiter syncs it once
-/// `max_wait_secs` have passed.
-#[test]
-fn op_starts_the_waiter_after_a_write() {
-    let env = Env::new("test");
-    let marker = with_fake_sync_waiting(&env, 2);
-    let o = env.op(&["complete", TASK_E]);
-    assert!(o.status.success(), "{}", err(&o));
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    assert!(!marker.exists(), "one write synced at once");
-    assert!(marker_appears(&marker), "the waiter did not sync the write");
-}
-
-#[test]
-fn op_with_sync_off_starts_nothing() {
-    let env = Env::new("test");
-    let marker = with_fake_sync(&env);
-    let o = env.tdo(&["sync", "off"]);
-    assert!(o.status.success(), "{}", err(&o));
-    let o = env.op(&["complete", TASK_E]);
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(
-        marker_stays_absent(&marker),
-        "a sync ran while switched off"
-    );
-}
-
-#[test]
-fn op_check_does_not_trigger_sync() {
-    let env = Env::new("test");
-    let marker = with_fake_sync(&env);
-    for args in [&["check", TASK_E][..], &["journal"], &["recover"]] {
-        let o = env.op(args);
-        assert!(o.status.success(), "{}", err(&o));
-    }
-    assert!(marker_stays_absent(&marker), "read-only op started a sync");
-}
-
-#[test]
-fn failed_op_does_not_trigger_sync() {
-    let env = Env::new("verified");
-    let marker = with_fake_sync(&env);
-    let o = env.op(&["complete", TASK_E]);
-    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
-    assert!(marker_stays_absent(&marker), "blocked op started a sync");
 }
 
 #[test]
@@ -795,8 +839,8 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     );
 }
 
-/// What a running sync does to a writer: holds the vdir lock shared, so a save cannot get the
-/// exclusive lock and queues.
+/// What a running sync does to a writer in the old setup: holds the vdir lock shared. Only the
+/// no-daemon report test uses it now.
 fn sync_holds_vdir(env: &Env) -> twydo_core::store::fsio::VdirLock {
     twydo_core::store::fsio::VdirLock::shared(&env.vdir_state()).unwrap()
 }
@@ -810,26 +854,29 @@ fn touch_task_file(env: &Env, uid: &str) {
     fs::write(&file, changed).unwrap();
 }
 
-fn spawn_op(env: &Env, args: &[&str]) -> std::process::Child {
-    let m = env.dir.path().join("matrix.toml");
-    Command::new(env!("CARGO_BIN_EXE_tdo"))
-        .args(["op", "--matrix", m.to_str().unwrap()])
-        .args(args)
-        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
-        .env("XDG_STATE_HOME", env.state())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .unwrap()
+/// Waits until the daemon has recorded `n` refusals nobody has seen.
+fn wait_unshown(env: &Env, n: usize) {
+    let deadline = Instant::now() + common::WAIT;
+    loop {
+        if let Some(q) = twydo_core::store::queue::Queue::existing(&env.vdir_state())
+            && q.unshown().unwrap().len() == n
+        {
+            return;
+        }
+        assert!(Instant::now() < deadline, "no {n} unshown refusals");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]
-fn op_during_a_sync_is_queued() {
+fn op_during_a_long_job_is_queued() {
+    use twydo_daemon::server::lane::LongKind;
     let env = Env::new("test");
-    let lock = sync_holds_vdir(&env);
-    let start = std::time::Instant::now();
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
+    let start = Instant::now();
     let o = env.op(&["complete", TASK_E]);
-    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    assert!(start.elapsed() < Duration::from_secs(5));
     assert_eq!(o.status.code(), Some(0), "{}", err(&o));
     assert!(
         out(&o).starts_with("queued (a sync is running): "),
@@ -852,13 +899,20 @@ fn op_during_a_sync_is_queued() {
 
 #[test]
 fn op_wait_reports_the_outcome() {
+    use twydo_daemon::server::lane::LongKind;
     let env = Env::new("test");
-    let lock = sync_holds_vdir(&env);
-    let child = spawn_op(&env, &["complete", TASK_E, "--wait"]);
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
+    let child = env.spawn_op(&["complete", TASK_E, "--wait"]);
+    std::thread::sleep(Duration::from_millis(1000));
     drop(lock);
     let o = child.wait_with_output().unwrap();
     assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(
+        err(&o).contains("waiting for the sync to finish (queued "),
+        "{}",
+        err(&o)
+    );
     assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
     let j = env.op(&["journal"]);
     assert!(out(&j).contains(out(&o).trim()), "{}", out(&j));
@@ -866,10 +920,12 @@ fn op_wait_reports_the_outcome() {
 
 #[test]
 fn op_wait_reports_a_refusal() {
+    use twydo_daemon::server::lane::LongKind;
     let env = Env::new("test");
-    let lock = sync_holds_vdir(&env);
-    let child = spawn_op(&env, &["complete", TASK_E, "--wait"]);
-    std::thread::sleep(std::time::Duration::from_millis(600));
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
+    let child = env.spawn_op(&["complete", TASK_E, "--wait"]);
+    std::thread::sleep(Duration::from_millis(1000));
     touch_task_file(&env, TASK_E);
     drop(lock);
     let o = child.wait_with_output().unwrap();
@@ -883,21 +939,20 @@ fn op_wait_reports_a_refusal() {
 
 #[test]
 fn op_prints_unshown_refusals_once() {
+    use twydo_daemon::server::lane::LongKind;
     let env = Env::new("test");
-    let lock = sync_holds_vdir(&env);
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
     let o = env.op(&["complete", TASK_E]);
     assert!(out(&o).starts_with("queued"), "{}", out(&o));
     touch_task_file(&env, TASK_E);
     drop(lock);
-    // the next write drains the queue and records the refusal
-    let o = env.op(&["edit", TASK_A, "--title", "Renamed"]);
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(!err(&o).contains("Not saved"), "{}", err(&o));
+    wait_unshown(&env, 1);
     let queue = twydo_core::store::queue::Queue::existing(&env.vdir_state()).unwrap();
     let pending = queue.unshown().unwrap();
-    assert_eq!(pending.len(), 1);
     let before = serde_json::to_value(&pending).unwrap();
     let private_label = &pending[0].item.label;
+    // Permission reports must not disclose task labels or consume the notification.
     for report in [env.op(&["check", TASK_E]), env.tdo(&["check"])] {
         assert_eq!(report.status.code(), Some(0), "{}", err(&report));
         assert!(!err(&report).contains("Not saved"), "{}", err(&report));
@@ -908,10 +963,147 @@ fn op_prints_unshown_refusals_once() {
             before
         );
     }
+    // The next ordinary operation reports it once.
     let first = env.op(&["journal"]);
     assert!(err(&first).contains("Not saved"), "{}", err(&first));
     let second = env.op(&["journal"]);
     assert!(!err(&second).contains("Not saved"), "{}", err(&second));
+}
+
+#[test]
+fn op_prints_refusals_of_ended_cli_sessions_once() {
+    use twydo_daemon::server::lane::LongKind;
+    let env = Env::new("test");
+    let d = env.in_process_daemon();
+    let lock = d.hold_long(LongKind::Test);
+    // This session ends when `tdo` exits; its queued write is refused afterwards.
+    let o = env.op(&["edit", TASK_A, "--title", "Renamed"]);
+    assert!(out(&o).starts_with("queued"), "{}", out(&o));
+    touch_task_file(&env, TASK_A);
+    drop(lock);
+    wait_unshown(&env, 1);
+    let first = env.op(&["edit", TASK_E, "--title", "Other"]);
+    assert!(first.status.success(), "{}", err(&first));
+    assert_eq!(
+        err(&first).matches("Not saved").count(),
+        1,
+        "{}",
+        err(&first)
+    );
+    let second = env.op(&["journal"]);
+    assert!(!err(&second).contains("Not saved"), "{}", err(&second));
+}
+
+/// The daemon is killed while a queued write waits behind a sleeping sync; the daemon that
+/// replaces it applies the write and the waiting `tdo op --wait` prints the journal id.
+#[test]
+fn op_wait_survives_a_daemon_restart() {
+    use twydo_daemon::client::Client;
+    use twydo_daemon::protocol::sync::SyncRunParams;
+    let env = Env::new("test");
+    let release = env.dir.path().join("release");
+    let fake = env.dir.path().join("sleeper.sh");
+    common::write_script(
+        &fake,
+        &format!("while [ ! -f '{}' ]; do sleep 0.1; done", release.display()),
+    );
+    fs::OpenOptions::new()
+        .append(true)
+        .open(env.dir.path().join("config/twydo/config.toml"))
+        .and_then(|mut f| {
+            use std::io::Write;
+            write!(
+                f,
+                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                fake.display()
+            )
+        })
+        .unwrap();
+    // Automatic sync off: only the `sync.run` below runs the script.
+    let sdir = twydo_core::store::bind_vdir_state(&env.state().join("twydo"), &env.vdir()).unwrap();
+    fs::create_dir_all(sdir.join("sync")).unwrap();
+    fs::write(sdir.join("sync/off"), "").unwrap();
+
+    env.ensure_daemon_with(false);
+    let cfg_path = env.dir.path().join("config/twydo/config.toml");
+    let hello = twydo_daemon::protocol::methods::HelloParams {
+        client: "test".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        protocol: twydo_daemon::PROTOCOL,
+        session: None,
+        instance: twydo_daemon::paths::instance_for(&cfg_path, None).unwrap(),
+    };
+    let deadline = Instant::now() + common::WAIT;
+    let raw = loop {
+        match Client::connect(&env.socket(), hello.clone()) {
+            Ok((c, _)) => break c,
+            Err(e) => {
+                assert!(Instant::now() < deadline, "no daemon: {e}");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
+    };
+    let started = loop {
+        let r: Result<serde_json::Value, _> = raw.call(
+            "sync.run",
+            SyncRunParams {
+                request_id: "t-sync".into(),
+                force_delete: vec![],
+            },
+        );
+        match r {
+            Ok(v) => break v,
+            Err(e) if e.to_string() == "the daemon is starting" => {
+                std::thread::sleep(Duration::from_millis(50))
+            }
+            Err(e) => panic!("sync.run: {e}"),
+        }
+    };
+    let _ = started;
+
+    let child = env.spawn_op(&["edit", TASK_A, "--title", "Queued title", "--wait"]);
+    let qdir = env.vdir_state().join("queue");
+    let deadline = Instant::now() + common::WAIT;
+    while !fs::read_dir(&qdir).is_ok_and(|d| {
+        d.filter_map(Result::ok)
+            .any(|e| e.path().extension().is_some_and(|x| x == "json"))
+    }) {
+        assert!(Instant::now() < deadline, "the write was never queued");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // kill -9 the daemon, let the sync script finish, and bring a daemon back.
+    {
+        let mut d = env.daemon.borrow_mut();
+        let p = d.as_mut().unwrap();
+        p.0.kill().unwrap();
+        p.0.wait().unwrap();
+    }
+    drop(raw);
+    fs::write(&release, "").unwrap();
+    env.ensure_daemon_with(false);
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
+    assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
+    let after = fs::read_to_string(env.vdir().join(format!("list1/{TASK_A}.ics"))).unwrap();
+    assert!(after.contains("SUMMARY:Queued title"), "{after}");
+}
+
+/// `tdo op` never opens `config.toml` itself: with the file unreadable the daemon still
+/// serves it.
+#[test]
+fn op_never_opens_the_config_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new("test");
+    env.ensure_daemon_with(false);
+    // Wait until the daemon is ready, then take the file away.
+    let ready = env.tdo(&["op", "journal"]);
+    assert!(ready.status.success(), "{}", err(&ready));
+    let cfg = env.dir.path().join("config/twydo/config.toml");
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o000)).unwrap();
+    let o = env.tdo(&["op", "edit", TASK_A, "--title", "Without config"]);
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
 }
 
 #[test]
@@ -1271,6 +1463,7 @@ fn reparent_cli_reports_context_and_shipping_refusal() {
     // Only this isolated test's custom matrix admits the candidate. Shipping stays refused.
     let text = "matrix_version=1\n[[operation]]\ncase=\"item-outdent\"\nop=\"reparent\"\niphone_baseline=\"pass\"\nmac_to_iphone=\"unverified\"\niphone_to_mac=\"unverified\"\ntwydo_to_iphone=\"pass\"\niphone_to_twydo=\"pass\"\n";
     fs::write(e.dir.path().join("matrix.toml"), text).unwrap();
+    e.stop_daemon();
     let moved = e.op(&["reparent", TASK_A, "--list", "list2"]);
     assert!(moved.status.success(), "{}", err(&moved));
     assert!(!e.vdir().join(format!("list1/{TASK_A}.ics")).exists());

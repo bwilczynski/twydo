@@ -1,6 +1,8 @@
 //! Sync end to end: real vdirsyncer between two filesystem storages, `tdo` as its conflict
 //! hook. Content is synthetic. Every test skips when vdirsyncer is not installed.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -44,6 +46,8 @@ macro_rules! require_vdirsyncer {
 /// vdirsyncer config. `new` syncs three tasks `u1`..`u3` once.
 struct Pair {
     dir: tempfile::TempDir,
+    /// Holds the socket of the short-lived daemons `tdo op` talks to.
+    sock_dir: tempfile::TempDir,
 }
 
 #[allow(dead_code)]
@@ -55,7 +59,10 @@ impl Pair {
     /// Like [`Pair::new`], with `extra` lines appended to the `[sync]` table.
     fn with_sync(extra: &str) -> Pair {
         let dir = tempfile::tempdir().unwrap();
-        let p = Pair { dir };
+        let p = Pair {
+            dir,
+            sock_dir: common::short_socket_dir(),
+        };
         fs::create_dir_all(p.server().join(COLL)).unwrap();
         fs::create_dir_all(p.vdir().join(COLL)).unwrap();
         fs::create_dir_all(p.root().join("vdirsyncer")).unwrap();
@@ -159,6 +166,9 @@ impl Pair {
         cmd.env("VDIRSYNCER_CONFIG", self.vdirsyncer_config())
             .env("XDG_CONFIG_HOME", self.root().join("config"))
             .env("XDG_STATE_HOME", self.state())
+            .env("TWYDO_SOCKET", self.sock_dir.path().join("tdo.sock"))
+            .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+            .env("HOME", self.root())
             .env_remove(HOOK_LOG_ENV)
             .stdin(Stdio::null());
     }
@@ -187,16 +197,44 @@ impl Pair {
     }
 
     fn tdo(&self, args: &[&str]) -> Output {
+        // `tdo op` talks to a daemon. Each call gets a fresh one (test matrix, sync off) that
+        // is stopped afterwards: it then starts from what `vdirsyncer` and `tdo sync` left on
+        // disk, with no watcher latency in between.
+        let daemon = (args.first() == Some(&"op")).then(|| self.start_daemon());
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tdo"));
         cmd.args(args);
         self.env(&mut cmd);
-        cmd.output().expect("run tdo")
+        let out = cmd.output().expect("run tdo");
+        drop(daemon);
+        out
     }
 
-    /// `tdo op --matrix <test matrix> args…`; asserts success and returns the op id.
-    fn op(&self, args: &[&str]) -> String {
+    fn start_daemon(&self) -> Daemon {
         let m = self.root().join("matrix.toml");
-        let mut a = vec!["op", "--matrix", m.to_str().unwrap()];
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tdo"));
+        cmd.args(["daemon", "--matrix", m.to_str().unwrap()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        self.env(&mut cmd);
+        let child = cmd.spawn().expect("start daemon");
+        let sock = self.sock_dir.path().join("tdo.sock");
+        let deadline = std::time::Instant::now() + common::WAIT;
+        while std::os::unix::net::UnixStream::connect(&sock).is_err() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "daemon never listened"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        Daemon {
+            child: common::Proc(child),
+            sock,
+        }
+    }
+
+    /// `tdo op args…` against a daemon with the test matrix; asserts success and returns the op id.
+    fn op(&self, args: &[&str]) -> String {
+        let mut a = vec!["op"];
         a.extend_from_slice(args);
         let o = self.tdo(&a);
         assert!(o.status.success(), "tdo {a:?}: {o:?}");
@@ -233,6 +271,26 @@ impl Pair {
 
     fn conflict_dir(&self, id: &str) -> PathBuf {
         self.vdir_state().join("conflicts").join(id)
+    }
+}
+
+/// A daemon for one `tdo op` call; stopped (and waited for) on drop.
+struct Daemon {
+    child: common::Proc,
+    sock: PathBuf,
+}
+
+impl Drop for Daemon {
+    fn drop(&mut self) {
+        use twydo_daemon::client::Client;
+        if let Ok(raw) = Client::connect_raw(&self.sock) {
+            let _ = raw.caller().call_timeout::<_, serde_json::Value>(
+                "daemon.shutdown",
+                twydo_daemon::protocol::methods::ShutdownParams { when_idle: false },
+                common::WAIT,
+            );
+        }
+        let _ = common::wait_exit(&mut self.child);
     }
 }
 

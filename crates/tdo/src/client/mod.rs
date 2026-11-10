@@ -23,6 +23,33 @@ const START_WAIT: Duration = Duration::from_secs(2);
 pub const STOP_WAIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(100);
 
+/// The message of the `unavailable` error a daemon answers with while it loads its data.
+const STARTING: &str = "the daemon is starting";
+
+/// Calls `method`, retrying (about every 100 ms, for up to `limit`) while the daemon answers
+/// that it is still starting: it says hello before it is ready for requests.
+pub fn call_ready<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    caller: &twydo_daemon::client::Caller,
+    method: &str,
+    params: &P,
+    call_limit: Duration,
+    limit: Duration,
+) -> Result<R, ClientError> {
+    let begun = Instant::now();
+    loop {
+        match caller.call_timeout(method, params, call_limit) {
+            Err(ClientError::Rpc(e))
+                if e.data.as_ref().map(|d| d.kind) == Some(RpcKind::Unavailable)
+                    && e.message == STARTING
+                    && begun.elapsed() < limit =>
+            {
+                std::thread::sleep(POLL);
+            }
+            other => return other,
+        }
+    }
+}
+
 /// Which daemon to talk to: the socket, and the `--vdir` flag the instance check uses.
 #[derive(Debug, Clone)]
 pub struct Target {
