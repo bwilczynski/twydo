@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use serde_json::Value;
-use twydo_core::conflicts::ConflictStore;
+use twydo_core::conflicts::{ConflictState, ConflictStore, ResolvedBy, Side};
 use twydo_core::retired;
 use twydo_core::store::Store;
 use twydo_core::store::existing_vdir_state;
@@ -67,17 +67,41 @@ pub fn conflicts_list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     to_value(ConflictList { conflicts: found })
 }
 
-/// What a recorded resolution answered.
-fn replay_of(shared: &Shared, request_id: &str) -> Option<Result<ResolveResult, RpcError>> {
+/// What a recorded resolution answered: from the conflict's own record, else from the journal
+/// entry the request wrote (a crash between `restore` and recording the resolution leaves only
+/// that), in which case the conflict is closed now, as the first run would have.
+fn replay_of(
+    shared: &Shared,
+    request_id: &str,
+    conflict: &str,
+) -> Option<Result<ResolveResult, RpcError>> {
     let store = match ConflictStore::existing(&shared.state_dir) {
         Ok(s) => s?,
         Err(e) => return Some(Err(internal(e))),
     };
     match store.by_request(request_id) {
-        Ok(Some((_, by))) => Some(Ok(ResolveResult::of(&by.resolution))),
-        Ok(None) => None,
-        Err(e) => Some(Err(internal(e))),
+        Ok(Some((_, by))) => return Some(Ok(ResolveResult::of(&by.resolution))),
+        Ok(None) => {}
+        Err(e) => return Some(Err(internal(e))),
     }
+    if !shared.state_dir.join("journal").is_dir() {
+        return None;
+    }
+    let entry = match Journal::open(&shared.state_dir).and_then(|j| j.by_request(request_id)) {
+        Ok(Some(e)) => e,
+        Ok(None) => return None,
+        Err(e) => return Some(Err(internal(e))),
+    };
+    let resolution = Resolution::Written(entry.id.clone());
+    let by = entry.request.map(|request| ResolvedBy {
+        request,
+        op_id: Some(entry.id),
+        resolution: resolution.clone(),
+    });
+    if let Err(e) = store.mark_resolved_by(conflict, Utc::now(), by) {
+        return Some(Err(internal(e)));
+    }
+    Some(Ok(ResolveResult::of(&resolution)))
 }
 
 fn refusal(e: ResolveError) -> RpcError {
@@ -106,7 +130,7 @@ pub fn conflicts_resolve(
         Begin::Done(r) => return r,
         Begin::New(t) => t,
     };
-    if let Some(found) = replay_of(shared, &p.request_id) {
+    if let Some(found) = replay_of(shared, &p.request_id, &p.id) {
         return ticket.finish(found.and_then(to_value));
     }
     let Some(session) = conn.session.lock().unwrap().clone() else {
@@ -133,6 +157,7 @@ fn run_resolve(
         request_id: p.request_id.clone(),
     };
     let lane = shared.lane.write_waiting();
+    refuse_rechoice(shared, &p.id, keep)?;
     let resolution = {
         let Some(_gate) = shared.commit_gate() else {
             return Err(RpcError::refused(
@@ -142,12 +167,7 @@ fn run_resolve(
         };
         resolve_with(&shared.cfg, &p.id, keep, Utc::now(), Some(request)).map_err(refusal)?
     };
-    let uids = twydo_core::conflicts::ConflictStore::existing(&shared.state_dir)
-        .ok()
-        .flatten()
-        .and_then(|s| s.get(&p.id).ok().flatten())
-        .map(|c| vec![c.uid])
-        .unwrap_or_default();
+    let uids = conflict_uids(shared, &p.id)?;
     if let Err(e) = shared.publisher.reload(Cause::Op, uids) {
         eprintln!("tdo daemon: reload after a conflict resolution failed: {e}");
     }
@@ -161,6 +181,49 @@ fn run_resolve(
         shared.poke_scheduler();
     }
     Ok(ResolveResult::of(&resolution))
+}
+
+/// The uid of conflict `id`, for the reload's hint; an unreadable record is an error, not a
+/// publish without uids.
+fn conflict_uids(shared: &Shared, id: &str) -> Result<Vec<String>, RpcError> {
+    let Some(store) = ConflictStore::existing(&shared.state_dir).map_err(internal)? else {
+        return Ok(Vec::new());
+    };
+    Ok(store
+        .get(id)
+        .map_err(internal)?
+        .map(|c| vec![c.uid])
+        .unwrap_or_default())
+}
+
+/// A choice recorded under another request stands: a differing one is refused, so a resend of
+/// the earlier request can never find its choice overridden. The same choice again is let
+/// through (it records its own request).
+fn refuse_rechoice(shared: &Shared, id: &str, keep: Keep) -> Result<(), RpcError> {
+    let wanted = match keep {
+        Keep::Local => Side::Local,
+        Keep::Remote => Side::Remote,
+        Keep::Current => return Ok(()),
+    };
+    let Some(store) = ConflictStore::existing(&shared.state_dir).map_err(internal)? else {
+        return Ok(());
+    };
+    let Some(c) = store.get(id).map_err(internal)? else {
+        return Ok(());
+    };
+    match (c.state, c.choice) {
+        (ConflictState::Chosen, Some(side)) if side != wanted => Err(RpcError::refused(
+            ErrorKind::Invalid,
+            format!(
+                "conflict {id} already resolved as {}",
+                match side {
+                    Side::Local => "local",
+                    Side::Remote => "remote",
+                }
+            ),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// `journal.list`: every journal entry, oldest first, as `tdo op journal` lists them.
@@ -218,9 +281,9 @@ pub fn journal_recover(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     }
     shared.publisher.refresh_status();
     drop(lane);
+    // Writes the unfinished entries held back may now go through (as after abandon).
+    shared.request_drain();
     if !report.resumed.is_empty() {
-        // Writes the unfinished entries held back may now go through (as after abandon).
-        shared.request_drain();
         shared.poke_scheduler();
     }
     to_value(RecoverResult::of(&report))

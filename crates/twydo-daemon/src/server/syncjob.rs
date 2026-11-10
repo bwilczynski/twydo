@@ -12,7 +12,7 @@ use twydo_core::sync::switch;
 
 use super::Shared;
 use super::dispatch::ConnState;
-use super::jobs::{JobBody, NotStarted};
+use super::jobs::{ActiveSync, JobBody, NotStarted};
 use super::lane::LongKind;
 use super::replay::Begin;
 use super::writes;
@@ -33,26 +33,38 @@ pub struct SyncDone {
 
 impl SyncDone {
     /// The end of a sync, after the caller let the lane go (so the drain hook has run):
-    /// publishes the vdir as the sync left it, reports the sync idle and sends
-    /// `sync.finished` with the status after it.
+    /// publishes the vdir as the sync left it, then reports the sync idle and sends
+    /// `sync.finished` with the status after it, in one step: `status.sync.state` stays
+    /// `running` until `sync.finished` is sent. Then the sync is no longer active (a stop
+    /// request that came in meanwhile is withdrawn).
     pub fn finish(self, shared: &Arc<Shared>) {
         if let Err(e) = shared.publisher.reload(Cause::Sync, Vec::new()) {
             eprintln!("tdo daemon: reload after a sync failed: {e}");
         }
-        shared.publisher.set_sync_state(false, None);
-        let status_rev = shared.publisher.refresh_status();
-        shared.bus.emit(Event::SyncFinished {
-            job_id: self.job_id,
-            reason: self.reason,
-            result: self.result,
-            status_rev,
-        });
+        shared
+            .publisher
+            .finish_sync(|status_rev| Event::SyncFinished {
+                job_id: self.job_id,
+                reason: self.reason,
+                result: self.result,
+                status_rev,
+            });
+        {
+            let mut gate = shared.runner.stop_gate();
+            gate.active = None;
+            if std::mem::take(&mut gate.requested)
+                && let Err(e) = running::clear_stop(&shared.cfg)
+            {
+                eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
+            }
+        }
         shared.poke_scheduler();
     }
 }
 
 /// Runs one sync. The caller holds the lane long, and calls [`SyncDone::finish`] after
-/// letting it go. The queued edits the runner drained get their `op.finished` here.
+/// letting it go. The queued edits the runner drained get their `op.finished` here, one each,
+/// also when the run failed after draining them.
 pub fn run_sync(
     shared: &Arc<Shared>,
     job_id: Option<&str>,
@@ -65,6 +77,10 @@ pub fn run_sync(
         hold_queue: Arc::clone(&shared.hold_queue),
         ..opts
     };
+    shared.runner.stop_gate().active = Some(ActiveSync {
+        job_id: job_id.clone(),
+        reason,
+    });
     shared.publisher.set_sync_state(true, job_id.clone());
     shared.publisher.refresh_status();
     shared.bus.emit(Event::SyncStarted {
@@ -73,24 +89,18 @@ pub fn run_sync(
     });
     shared.test_point("sync");
     let ran = run(&shared.cfg, &opts, Utc::now());
-    {
-        // The sync is over: a `sync.stop` from here on finds nothing to stop, and one that
-        // came in during it is withdrawn so it does not stop the next sync.
-        let mut stop = shared.runner.stop_gate();
-        shared.publisher.set_sync_state(false, None);
-        if std::mem::take(&mut *stop)
-            && let Err(e) = running::clear_stop(&shared.cfg)
-        {
-            eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
-        }
-    }
     let result = match ran {
         Ok(mut report) => {
-            let m = messages(&shared.cfg, &report);
+            let mut m = messages(&shared.cfg, &report);
             let drained = std::mem::take(&mut report.drained);
             let count = drained.len();
             writes::finish_drain(shared, drained);
-            let outcome = if report.stopped {
+            if let Some(e) = &report.error {
+                m.problems.push(e.clone());
+            }
+            let outcome = if report.error.is_some() {
+                SyncOutcome::Failed
+            } else if report.stopped {
                 SyncOutcome::Stopped
             } else if report.skipped.is_some() {
                 SyncOutcome::Skipped
@@ -182,15 +192,15 @@ pub fn sync_stop(shared: &Arc<Shared>) -> Result<Value, RpcError> {
 }
 
 /// Asks the sync running in this daemon to stop, through the stop gate (see
-/// [`super::jobs::JobRunner`]): the sync withdraws the request when it ends. False when no
+/// [`super::jobs::JobRunner`]): the sync's end withdraws the request. False when no
 /// sync runs (nothing is requested). Used by `sync.stop` and by teardown.
 pub(super) fn stop_running_sync(shared: &Shared) -> std::io::Result<bool> {
-    let mut stop = shared.runner.stop_gate();
-    if !shared.publisher.sync_running() {
+    let mut gate = shared.runner.stop_gate();
+    if gate.active.is_none() {
         return Ok(false);
     }
     running::request_stop(&shared.cfg)?;
-    *stop = true;
+    gate.requested = true;
     Ok(true)
 }
 

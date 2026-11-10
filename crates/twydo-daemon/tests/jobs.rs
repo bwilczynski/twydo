@@ -193,6 +193,11 @@ fn job_get_unknown_is_not_found() {
             )
             .unwrap_err();
         assert_eq!(kind(&e), ErrorKind::Invalid);
+        assert!(
+            e.to_string()
+                .contains("give exactly one of job_id or request_id"),
+            "{e}"
+        );
     }
 }
 
@@ -304,4 +309,26 @@ fn a_panic_in_the_drain_after_a_job_keeps_the_runner() {
     assert_eq!(job_get(&c, Some(&id), None).state, state);
     assert!(!armed.load(Ordering::SeqCst), "the hook never ran");
     runner_still_works(&td, &c);
+}
+
+#[test]
+fn a_panicking_sync_job_ends_failed_and_clears_running() {
+    let fx = fx();
+    let (_td, c, armed) = start_armed(&fx, |o, a| panic_at(o, "sync", a));
+    armed.store(true, Ordering::SeqCst);
+    let id = sync_run(&c, "r-panic-2").job_id;
+    let finished = wait_event(
+        &c,
+        BOUND,
+        |e| matches!(e, Event::SyncFinished { job_id: Some(j), .. } if *j == id),
+    );
+    let Event::SyncFinished { result, .. } = finished else {
+        unreachable!()
+    };
+    assert_eq!(result.outcome, SyncOutcome::Failed);
+    match job_finished(&c, &id) {
+        JobState::Failed { kind, .. } => assert_eq!(kind, ErrorKind::Internal),
+        other => panic!("expected failed: {other:?}"),
+    }
+    sync_idle(&c);
 }

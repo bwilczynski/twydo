@@ -329,3 +329,27 @@ fn busy_drain_is_retried_by_the_scheduler() {
     assert!(matches!(state, OpState::Applied { .. }), "{state:?}");
     assert!(fx.read("c1/u1.ics").contains("SUMMARY:Queued"));
 }
+
+#[test]
+fn huge_periodic_does_not_panic() {
+    let fx = fx();
+    let cfg = fx.with_sync(OK);
+    let clock = FakeClock::new();
+    let td = TestDaemon::start_scheduled_with(&fx, cfg, clock, |o| {
+        o.periodic = Duration::MAX / 2;
+    });
+    let c = td.client();
+    std::thread::sleep(Duration::from_secs(1));
+    // The scheduler is alive: it answers a poke by taking a sync on request.
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Resolve);
+    wait_event(&c, BOUND, |e| {
+        matches!(
+            e,
+            Event::SyncFinished {
+                reason: SyncReason::Resolve,
+                ..
+            }
+        )
+    });
+}

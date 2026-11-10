@@ -1,8 +1,8 @@
 //! Live `config.toml`: the daemon rereads the file when it changes and applies what may change
-//! at run time. The binding fields (`vdir`, `state_dir`, `writes`, `sync`) never change in a
-//! running daemon; a file that names them differently is reported in
-//! `status.config.restart_needed` and not applied. An unreadable or invalid file keeps the last
-//! good configuration and sets `status.config.error`. The comparisons mirror the TUI's
+//! at run time. The binding fields (`vdir`, `state_dir`, `writes`, `sync`, `timezone`,
+//! `work_days`) never change in a running daemon; a file that names them differently is
+//! reported in `status.config.restart_needed` and not applied. An unreadable or invalid file
+//! keeps the last good configuration and sets `status.config.error`. The comparisons mirror the TUI's
 //! (`tdo/src/term/preferences.rs`): canonical vdir, absolute state directory.
 
 use std::fs;
@@ -31,6 +31,14 @@ fn restart_needed(bound: &Config, new: &Config) -> Vec<String> {
     }
     if bound.sync != new.sync {
         out.push("sync");
+    }
+    // The queue's drain gate reads "today" and the work days when the daemon starts; a live
+    // change would be half applied.
+    if bound.timezone != new.timezone {
+        out.push("timezone");
+    }
+    if bound.work_days != new.work_days {
+        out.push("work_days");
     }
     out.into_iter().map(String::from).collect()
 }
@@ -95,6 +103,8 @@ fn apply(shared: &Shared) -> ConfigStatus {
     live.state_dir = shared.cfg.state_dir.clone();
     live.writes = shared.cfg.writes;
     live.sync = shared.cfg.sync.clone();
+    live.timezone = shared.cfg.timezone.clone();
+    live.work_days = shared.cfg.work_days.clone();
     if live != shared.publisher.config() {
         shared.publisher.set_config(live);
         if let Err(e) = shared.publisher.reload(Cause::Config, Vec::new()) {

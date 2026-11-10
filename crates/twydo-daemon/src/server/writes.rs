@@ -44,14 +44,14 @@
 //! The runner thread takes the lane long holding nothing; the job's body then takes, under it:
 //!
 //! - a sync ([`super::syncjob::run_sync`]; a `sync.run` job, a background sync, and the sync
-//!   `lists.forget` runs after preserving its list): the publisher (`state` to report the sync
+//!   `lists.forget` runs after preserving its list): the stop gate (to mark the sync active, let
+//!   go at once), then the publisher (`state` to report the sync
 //!   running, then `reload_lock` and `state` for the status, then the bus), let go before the
 //!   sync runs; the core runner then takes the sync run lock (`<state>/sync/run.lock`), then
-//!   the vdir lock, both released before it returns; then the runner's stop gate, then `state`
-//!   (to report the sync idle), then the stop file (to withdraw a stop request), see the stop
-//!   gate below; then it publishes the items it drained as the drain hook does. Its reload
-//!   and `sync.finished` ([`super::syncjob::SyncDone::finish`]) run after the lane is let
-//!   go, so after the drain hook.
+//!   the vdir lock, both released before it returns; then it publishes the items it drained
+//!   as the drain hook does. The sync stays reported running (the status, the stop gate's
+//!   active sync) until its reload and `sync.finished` ([`super::syncjob::SyncDone::finish`])
+//!   run after the lane is let go, so after the drain hook; see the stop gate below.
 //! - a list job ([`super::lists`]): the `ListService` takes the vdir lock exclusively
 //!   (released before it returns); then the publisher (`reload`, as above).
 //! - `lists.recover`: the calling session's mutex, then (inside the store) the vdir lock, and
@@ -67,12 +67,29 @@
 //! let go, one session mutex at a time (to prune refused steps), then the publisher
 //! (`reload_lock`, `state`) and the bus. The hook never takes the lane itself.
 //!
-//! ## The stop gate
+//! ## The stop gate and the end gate
 //!
-//! `syncjob::stop_running_sync` (`sync.stop` and teardown) takes the runner's stop gate, then
-//! the publisher's `state` (is a sync running?), then writes the stop file, all holding the
-//! gate. A sync withdrawing its request, and the runner putting
-//! things right after a panic, take the same order.
+//! `syncjob::stop_running_sync` (`sync.stop` and teardown) takes the runner's stop gate (the
+//! active sync and its stop request), then writes the stop file, all holding the gate. A sync's
+//! end ([`super::syncjob::SyncDone::finish`], after its `sync.finished` is sent) withdraws its
+//! request, and the runner putting things right after a panic does the same, under the same
+//! gate and never holding the publisher's locks (the gate is taken after them, not around
+//! them). The end gate (`JobRunner::end_gate`) is held by a job's end while it records the
+//! final state and emits `job.finished`, and by `job.get` while it reads. Both take the end
+//! gate first, then the job store's lock (a leaf, let go before the emit), then, in the job's
+//! end, the bus; neither takes the stop gate or the publisher while holding it.
+//!
+//! ## The publisher and the configuration reload
+//!
+//! `Publisher::finish_sync` (the end of a sync) takes `reload_lock`, then `state` (to report
+//! the sync idle, build and store the status), emits `status.changed` and `sync.finished`
+//! while holding `state`, so a status reader (`state`) waits for both. `Publisher::set_config`
+//! takes `reload_lock` alone, then the `cfg` leaf, so a reload or overlay never builds half
+//! of its snapshot with each configuration. `Publisher.cfg` is a leaf: it is cloned out and
+//! never held across I/O. `Shared::config_seen` is taken first by the configuration reload
+//! ([`super::config::changed`]) and held throughout; `reload_lock` and the vdir lock follow
+//! it, never the other way round. `before_queued_reply` (a test hook) runs with the session
+//! mutex held and takes nothing else.
 //!
 //! ## Background threads
 //!
@@ -84,8 +101,8 @@
 //!
 //! The scheduler's poke ([`Shared::poke_scheduler`], after a publish and a sync's end) takes
 //! the scheduler slot and then the scheduler's own mutex (`core.inner`), both held only to set
-//! a flag. [`Shared::sync_now`] takes the slot, then `core.inner` (let go), then the runner's
-//! `state` (to queue the sync), then `core.inner` again. The scheduler thread holds neither
+//! a flag. [`Shared::sync_now`] (the scheduler's `sync_now`) takes the slot, then `core.inner`
+//! (let go), then the runner's `state` (to queue the sync), then `core.inner` again. The scheduler thread holds neither
 //! while it reads the journal or posts to the job runner.
 //!
 //! The configuration reload ([`super::config::changed`]) takes `config_seen` and holds it

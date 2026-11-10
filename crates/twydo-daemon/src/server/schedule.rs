@@ -71,6 +71,12 @@ pub fn next(s: &SchedState, batch: Due, now: DateTime<Utc>) -> Next {
     }
 }
 
+/// `now` plus `d`; an overflow means no deadline (the end of time).
+fn later(now: DateTime<Utc>, d: chrono::Duration) -> DateTime<Utc> {
+    now.checked_add_signed(d)
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
+}
+
 struct Inner {
     state: SchedState,
     poked: bool,
@@ -90,7 +96,7 @@ impl Core {
         shared.runner.background_sync(reason);
         let now = self.clock.now();
         let mut g = self.inner.lock().unwrap();
-        g.state.next_periodic = now + self.periodic;
+        g.state.next_periodic = later(now, self.periodic);
     }
 }
 
@@ -110,7 +116,7 @@ impl Scheduler {
             inner: Mutex::new(Inner {
                 state: SchedState {
                     startup_pending: true,
-                    next_periodic: now + periodic,
+                    next_periodic: later(now, periodic),
                 },
                 poked: false,
                 stopped: false,
