@@ -24,7 +24,7 @@ use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::run::{RunOptions, Skip, run};
 use twydo_core::sync::running::{
-    Running, StopResult, clear_stop, process_start, request_stop, running,
+    Reaped, Running, StopResult, clear_stop, process_start, reap_orphan, request_stop, running,
 };
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
 use twydo_core::views::Snapshot;
@@ -112,7 +112,7 @@ fn write_script(path: &Path, body: &str) {
 fn manual() -> RunOptions {
     RunOptions {
         background: false,
-        force_delete: Vec::new(),
+        ..RunOptions::default()
     }
 }
 
@@ -171,7 +171,7 @@ fn failed_rediscovery_blocks_sync_and_is_retried_before_sync() {
 fn background() -> RunOptions {
     RunOptions {
         background: true,
-        force_delete: Vec::new(),
+        ..RunOptions::default()
     }
 }
 
@@ -2171,4 +2171,188 @@ fn stopped_pass_that_drained_leaves_no_rerun_request() {
         r.drained
     );
     assert!(!fx.state().join("sync/requested").exists());
+}
+
+// Daemon plan 2, Task 6: a vdirsyncer left by a runner that is gone, reaped at startup.
+
+/// A finished process: its pid names no live runner.
+fn dead_pid() -> u32 {
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    gone.wait().unwrap();
+    gone.id()
+}
+
+fn write_record(fx: &Fx, rec: &Running) {
+    fs::create_dir_all(fx.state().join("sync")).unwrap();
+    fs::write(running_file(fx), serde_json::to_vec(rec).unwrap()).unwrap();
+}
+
+#[test]
+fn reap_orphan_kills_a_child_whose_runner_is_gone() {
+    use std::os::unix::process::CommandExt;
+    let fx = Fx::new("");
+    let mut orphan = std::process::Command::new("sh")
+        .args(["-c", "sleep 30"])
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    write_record(
+        &fx,
+        &Running {
+            runner_pid: dead_pid(),
+            runner_start: None,
+            child_pgid: Some(orphan.id()),
+            child_start: process_start(orphan.id()),
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(reap_orphan(&fx.cfg).unwrap(), Reaped::Killed);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while orphan.try_wait().unwrap().is_none() {
+        assert!(Instant::now() < deadline, "orphan survived the reap");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!running_file(&fx).exists());
+    assert!(
+        !fx.state().join("sync/stop").exists(),
+        "the reaper withdraws its stop request"
+    );
+}
+
+#[test]
+fn reap_orphan_leaves_a_live_runner() {
+    let fx = Fx::new("");
+    let me = std::process::id();
+    let rec = Running {
+        runner_pid: me,
+        runner_start: process_start(me),
+        child_pgid: None,
+        child_start: None,
+        started: Utc::now(),
+    };
+    write_record(&fx, &rec);
+    assert_eq!(reap_orphan(&fx.cfg).unwrap(), Reaped::LiveRunner);
+    assert_eq!(running(&fx.cfg).unwrap(), Some(rec), "the record is kept");
+    assert!(!fx.state().join("sync/stop").exists());
+}
+
+#[test]
+fn reap_orphan_removes_a_stale_record() {
+    let fx = Fx::new("");
+    assert_eq!(reap_orphan(&fx.cfg).unwrap(), Reaped::Nothing);
+    write_record(
+        &fx,
+        &Running {
+            runner_pid: dead_pid(),
+            runner_start: Some("Thu Jan  1 00:00:00 1970".into()),
+            child_pgid: Some(dead_pid()),
+            child_start: Some("Thu Jan  1 00:00:00 1970".into()),
+            started: Utc::now(),
+        },
+    );
+    assert_eq!(reap_orphan(&fx.cfg).unwrap(), Reaped::Stale);
+    assert!(!running_file(&fx).exists());
+    assert!(!fx.state().join("sync/stop").exists());
+    // Nothing was stopped, so nothing backs off.
+    assert_eq!(SyncStatus::load(&fx.state()).unwrap().failures, 0);
+}
+
+#[test]
+fn a_held_queue_is_left_on_disk() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("{}\nexit 0", cat_fixture("clean.txt")),
+    );
+    queue_rename(&fx);
+    let opts = manual();
+    opts.hold_queue
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let r = run(&fx.cfg, &opts, now()).unwrap();
+    assert!(r.drained.is_empty(), "{:?}", r.drained);
+    assert!(!Queue::open(&fx.state()).unwrap().is_empty().unwrap());
+    assert!(
+        !fs::read_to_string(qa_path(&fx))
+            .unwrap()
+            .contains("SUMMARY:renamed")
+    );
+}
+
+/// Task 6 review: a run that a shutting-down daemon gave up on, blocked on the run lock,
+/// writes nothing once it gets the lock: no recovery (a `Prepared` entry stays as it is), no
+/// status, no ended event, no vdirsyncer.
+#[test]
+fn a_held_run_waiting_for_the_run_lock_writes_nothing() {
+    let fx = Fx::new("");
+    let count = fx.path("count");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo run >> '{}'", count.display()),
+    );
+    let file = fx.cfg.vdir.join("c1/a.ics");
+    let third = task("u1", "third");
+    fs::write(&file, &third).unwrap();
+    let state = fx.state();
+    let entry = Entry {
+        format: 1,
+        id: "20261101T090000Z-0000beef".into(),
+        created: now(),
+        kind: "edit".into(),
+        uids: vec!["u1".into()],
+        stage: Stage::Prepared,
+        inverse_of: None,
+        from_queue: None,
+        request: None,
+        synced: None,
+        holds: Vec::new(),
+        family: None,
+        families: Vec::new(),
+        writes: vec![Write {
+            path: "c1/a.ics".into(),
+            before: Some(task("u1", "before")),
+            after: Some(task("u1", "after")),
+        }],
+    };
+    Journal::open(&state).unwrap().prepare(&entry).unwrap();
+    let sync_dir = state.join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    let lock = twydo_core::sync::lock::LockFile::take(&sync_dir.join("run.lock"), true)
+        .unwrap()
+        .expect("run lock free");
+    let opts = manual();
+    let hold = std::sync::Arc::clone(&opts.hold_queue);
+    let cfg = fx.cfg.clone();
+    let t = std::thread::spawn(move || run(&cfg, &opts, now()).unwrap());
+    // The run waits for the lock; the caller gives up on it, then the lock frees.
+    std::thread::sleep(Duration::from_millis(200));
+    hold.store(true, std::sync::atomic::Ordering::SeqCst);
+    drop(lock);
+    let r = t.join().unwrap();
+    assert!(r.stopped);
+    assert_eq!(r.transient, None);
+    assert!(r.drained.is_empty());
+    assert!(!count.exists(), "vdirsyncer ran");
+    assert_eq!(fs::read_to_string(&file).unwrap(), third, "vdir untouched");
+    let kept = Journal::open(&state)
+        .unwrap()
+        .get(&entry.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(kept.stage, Stage::Prepared, "recovery ran");
+    assert!(
+        ConflictStore::open(&state)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!state.join("sync/status.json").exists(), "status written");
+    assert_eq!(SyncStatus::load(&state).unwrap(), SyncStatus::default());
+    assert!(
+        ended::read(&fx.cfg).unwrap().is_none(),
+        "ended event written"
+    );
 }

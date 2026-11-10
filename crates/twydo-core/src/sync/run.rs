@@ -12,6 +12,8 @@ use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -41,6 +43,12 @@ pub struct RunOptions {
     pub background: bool,
     /// Collection ids to sync with `--force-delete` (the user's confirmation).
     pub force_delete: Vec<String>,
+    /// While set, queued edits stay on disk: the runner's drains are skipped; set before the
+    /// run has the run lock, the run writes nothing at all and returns stopped. Another
+    /// thread may set it during the run; the daemon does when it shuts down during a sync, so
+    /// the edits wait for the next daemon (daemon spec §7.5) and a run it stopped waiting for
+    /// never writes after the daemon let the vdir go.
+    pub hold_queue: Arc<AtomicBool>,
 }
 
 /// Why a run did nothing.
@@ -147,6 +155,17 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Busy));
     };
 
+    // The caller is shutting down: write nothing at all, not even recovery, status or the
+    // ended event. A caller that gave up waiting for this run (a daemon past its shutdown
+    // wait, this run blocked on the run lock) may no longer own the vdir. An ordinary stop
+    // request is not enough: that run still recovers and records its stop (step 4).
+    if opts.hold_queue.load(Ordering::SeqCst) {
+        return Ok(RunReport {
+            stopped: true,
+            ..RunReport::default()
+        });
+    }
+
     // Step 2: backoff.
     let mut status = SyncStatus::load(&state)?;
     if opts.background
@@ -166,6 +185,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     for pass in 0..=MAX_RERUNS {
         one_pass(
             pass == MAX_RERUNS,
+            &opts.hold_queue,
             cfg,
             sync,
             &state,
@@ -203,6 +223,7 @@ impl Drop for EndedGuard<'_> {
 #[allow(clippy::too_many_arguments)]
 fn one_pass(
     last_pass: bool,
+    hold_queue: &AtomicBool,
     cfg: &Config,
     sync: &SyncConfig,
     state: &Path,
@@ -213,7 +234,7 @@ fn one_pass(
     report: &mut RunReport,
 ) -> Result<(), SyncError> {
     // Step 3: recovery under the exclusive lock.
-    recover_and_park(cfg, state, now, report)?;
+    recover_and_park(cfg, state, now, hold_queue, report)?;
 
     // Step 4: vdirsyncer under the shared lock.
     let hook_log = state.join("sync").join("hook.log");
@@ -390,7 +411,7 @@ fn one_pass(
         }
         // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
         // sends them.
-        let drained = drain_into(cfg, &_excl, now, &mut report.warnings);
+        let drained = drain_into(cfg, &_excl, now, hold_queue, &mut report.warnings);
         // Not after a stopped or failed pass: a rerun would stop or fail the same way, and the
         // batch waiter covers those edits.
         let failed =
@@ -610,6 +631,7 @@ fn recover_and_park(
     cfg: &Config,
     state: &Path,
     now: DateTime<Utc>,
+    hold_queue: &AtomicBool,
     out: &mut RunReport,
 ) -> io::Result<()> {
     let vdir = &cfg.vdir;
@@ -620,7 +642,7 @@ fn recover_and_park(
     if report.stuck.is_empty() {
         // Nothing stuck: apply what was queued while no sync held the lock.
         out.drained
-            .extend(drain_into(cfg, &lock, now, &mut out.warnings));
+            .extend(drain_into(cfg, &lock, now, hold_queue, &mut out.warnings));
         return Ok(());
     }
     let conflicts = ConflictStore::open(state)?;
@@ -685,14 +707,19 @@ fn recover_and_park(
     Ok(())
 }
 
-/// Drains the write queue under `held`. An error (a stuck journal, an unreadable queue) is a
-/// warning, never a failed run; the items stay queued.
+/// Drains the write queue under `held`, unless `hold_queue` is set (see
+/// [`RunOptions::hold_queue`]). An error (a stuck journal, an unreadable queue) is a warning,
+/// never a failed run; the items stay queued.
 fn drain_into(
     cfg: &Config,
     held: &VdirLock,
     now: DateTime<Utc>,
+    hold_queue: &AtomicBool,
     warnings: &mut Vec<String>,
 ) -> Vec<Drained> {
+    if hold_queue.load(Ordering::SeqCst) {
+        return Vec::new();
+    }
     match drain_with_lock(cfg, held, now) {
         Ok(d) => d,
         Err(e) => {

@@ -11,11 +11,16 @@ use std::time::{Duration, Instant};
 use twydo_core::edit::{NewTask, Op};
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
-use twydo_daemon::client::{Client, ClientError};
+use twydo_core::sync::running::{Running, process_start};
+use twydo_daemon::client::{Client, ClientError, Notification};
 use twydo_daemon::paths;
+use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::jobs::{JobGetParams, JobStarted, JobState, JobView};
 use twydo_daemon::protocol::methods::{
     BasedOn, HelloParams, OpGetParams, OpState, SubmitParams, WriteOutcome, WriteResult,
 };
+use twydo_daemon::protocol::rpc::ErrorKind;
+use twydo_daemon::protocol::sync::SyncRunParams;
 
 const WAIT: Duration = Duration::from_secs(15);
 
@@ -37,6 +42,27 @@ impl Drop for Proc {
 
 impl Env {
     fn new() -> Env {
+        Env::with_config_tail(|_| String::new())
+    }
+
+    /// An environment whose `[sync]` runs a fake vdirsyncer script with `body` (`$1` is
+    /// `sync` or `metasync`), with automatic sync switched off: only `sync.run` runs it.
+    fn with_sync(body: &str) -> Env {
+        let env = Env::with_config_tail(|root| {
+            let fake = root.join("fake-vdirsyncer");
+            write_script(&fake, body);
+            format!(
+                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                fake.display()
+            )
+        });
+        fs::create_dir_all(env.state().join("sync")).unwrap();
+        fs::write(env.state().join("sync/off"), "").unwrap();
+        env
+    }
+
+    /// `tail` gives the end of `config.toml`, for the environment's root directory.
+    fn with_config_tail(tail: impl FnOnce(&Path) -> String) -> Env {
         let root = tempfile::tempdir().unwrap();
         let sock_dir = tempfile::Builder::new()
             .prefix("td")
@@ -45,10 +71,11 @@ impl Env {
         fs::set_permissions(sock_dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir_all(root.path().join("vdir/inbox")).unwrap();
         fs::create_dir_all(root.path().join("config/twydo")).unwrap();
+        let tail = tail(root.path());
         fs::write(
             root.path().join("config/twydo/config.toml"),
             format!(
-                "vdir = \"{}\"\nstate_dir = \"{}\"\n[writes]\nmode = \"test\"\n",
+                "vdir = \"{}\"\nstate_dir = \"{}\"\n[writes]\nmode = \"test\"\n{tail}",
                 root.path().join("vdir").display(),
                 root.path().join("state").display()
             ),
@@ -109,6 +136,31 @@ impl Env {
                 Err(e) if Instant::now() > deadline => panic!("daemon never answered: {e}"),
                 Err(_) => std::thread::sleep(Duration::from_millis(50)),
             }
+        }
+    }
+}
+
+/// Writes an executable `sh` script and waits until it can be executed: a script written
+/// while another test thread forks can briefly fail with "Text file busy" (ETXTBSY). The
+/// script answers `__probe` by exiting at once.
+fn write_script(path: &Path, body: &str) {
+    fs::write(
+        path,
+        format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n{body}\n"),
+    )
+    .unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match Command::new(path).arg("__probe").status() {
+            Ok(st) => {
+                assert!(st.success(), "probe of {} failed", path.display());
+                return;
+            }
+            Err(e) if e.raw_os_error() == Some(26) && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("cannot run {}: {e}", path.display()),
         }
     }
 }
@@ -337,4 +389,120 @@ fn second_sigint_exits_at_once() {
     // 130 (the second signal); 0 only if teardown beat the second signal, which the held
     // lock rules out.
     assert_eq!(status.code(), Some(130), "{status:?}");
+}
+
+fn job_by_request(c: &Client, request_id: &str) -> Result<JobView, ClientError> {
+    c.call(
+        "job.get",
+        JobGetParams {
+            job_id: None,
+            request_id: Some(request_id.into()),
+        },
+    )
+}
+
+fn sync_run(c: &Client, request_id: &str) -> JobStarted {
+    c.call(
+        "sync.run",
+        SyncRunParams {
+            request_id: request_id.into(),
+            force_delete: Vec::new(),
+        },
+    )
+    .unwrap()
+}
+
+/// The recorded running sync, once it has a vdirsyncer child.
+fn wait_for_child(env: &Env) -> Running {
+    let path = env.state().join("sync/running.json");
+    let deadline = Instant::now() + WAIT;
+    loop {
+        if let Ok(b) = fs::read(&path)
+            && let Ok(r) = serde_json::from_slice::<Running>(&b)
+            && r.child_pgid.is_some()
+        {
+            return r;
+        }
+        assert!(Instant::now() < deadline, "no vdirsyncer child recorded");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn job_cut_short_by_kill_is_interrupted() {
+    let env = Env::with_sync("sleep 30");
+    let mut d = env.spawn(&[]);
+    let c = env.connect(&env.socket());
+    let _: serde_json::Value = c.call("events.subscribe", serde_json::json!({})).unwrap();
+    let id = sync_run(&c, "K").job_id;
+    let deadline = Instant::now() + WAIT;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) if matches!(&ev.event, Event::SyncStarted { job_id: Some(j), .. } if *j == id) =>
+            {
+                break;
+            }
+            Ok(_) => {}
+            Err(e) => panic!("no sync.started: {e}"),
+        }
+    }
+    let rec = wait_for_child(&env);
+    let child = rec.child_pgid.unwrap();
+    d.0.kill().unwrap();
+    wait_exit(&mut d);
+    drop(c);
+    assert!(
+        process_start(child).is_some(),
+        "the vdirsyncer outlives its daemon"
+    );
+
+    let t = Instant::now();
+    let _d2 = env.spawn(&[]);
+    let c2 = env.connect(&env.socket());
+    let view = loop {
+        match job_by_request(&c2, "K") {
+            Ok(v) => break v,
+            Err(ClientError::Rpc(r))
+                if r.data
+                    .as_ref()
+                    .is_some_and(|d| d.kind == ErrorKind::Unavailable) =>
+            {
+                assert!(
+                    t.elapsed() < Duration::from_secs(5),
+                    "not ready: {}",
+                    r.message
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => panic!("{e:?}"),
+        }
+    };
+    assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+    assert_eq!(view.job_id, id);
+    assert_eq!(view.state, JobState::Interrupted);
+    // The orphaned vdirsyncer was reaped.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while process_start(child) == rec.child_start {
+        assert!(
+            Instant::now() < deadline,
+            "the orphaned vdirsyncer survived"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // A resend answers with the same job and starts nothing.
+    let _: serde_json::Value = c2.call("events.subscribe", serde_json::json!({})).unwrap();
+    assert_eq!(sync_run(&c2, "K").job_id, id);
+    let quiet = Instant::now() + Duration::from_millis(500);
+    loop {
+        let left = quiet.saturating_duration_since(Instant::now());
+        match c2.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) => assert!(
+                !matches!(&ev.event, Event::SyncStarted { job_id: Some(j), .. } if *j == id),
+                "the interrupted job ran again"
+            ),
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
 }

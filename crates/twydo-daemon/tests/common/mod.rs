@@ -284,7 +284,7 @@ impl TestDaemon {
         Self::start_unready_cfg(fx, fx.config(), f)
     }
 
-    fn start_unready_cfg(
+    pub fn start_unready_cfg(
         fx: &Fixture,
         cfg: Config,
         f: impl FnOnce(&mut DaemonOptions),

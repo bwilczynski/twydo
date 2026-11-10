@@ -51,6 +51,7 @@ pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete:
     let opts = RunOptions {
         background,
         force_delete: ids,
+        ..RunOptions::default()
     };
     let report = match run(&cfg, &opts, Utc::now()) {
         Ok(r) => r,

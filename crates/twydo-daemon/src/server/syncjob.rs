@@ -60,6 +60,11 @@ pub fn run_sync(
     opts: RunOptions,
 ) -> SyncDone {
     let job_id = job_id.map(str::to_string);
+    // A daemon shutting down leaves the queue on disk (daemon spec §7.5).
+    let opts = RunOptions {
+        hold_queue: Arc::clone(&shared.hold_queue),
+        ..opts
+    };
     shared.publisher.set_sync_state(true, job_id.clone());
     shared.publisher.refresh_status();
     shared.bus.emit(Event::SyncStarted {
@@ -146,6 +151,7 @@ pub fn sync_run(
                 RunOptions {
                     background: false,
                     force_delete,
+                    ..RunOptions::default()
                 },
             );
             let result = done.result.clone();
@@ -170,16 +176,21 @@ fn internal(e: impl std::fmt::Display) -> RpcError {
 /// nothing a client could lose. With no sync running in this daemon it answers
 /// `stopping: false` and leaves `sync/stop` alone, so the next sync is not stopped.
 pub fn sync_stop(shared: &Arc<Shared>) -> Result<Value, RpcError> {
-    let mut stop = shared.runner.stop_gate();
-    let stopping = if shared.publisher.sync_running() {
-        running::request_stop(&shared.cfg).map_err(internal)?;
-        *stop = true;
-        true
-    } else {
-        false
-    };
-    drop(stop);
+    let stopping = stop_running_sync(shared).map_err(internal)?;
     serde_json::to_value(SyncStopResult { stopping }).map_err(internal)
+}
+
+/// Asks the sync running in this daemon to stop, through the stop gate (see
+/// [`super::jobs::JobRunner`]): the sync withdraws the request when it ends. False when no
+/// sync runs (nothing is requested). Used by `sync.stop` and by teardown.
+pub(super) fn stop_running_sync(shared: &Shared) -> std::io::Result<bool> {
+    let mut stop = shared.runner.stop_gate();
+    if !shared.publisher.sync_running() {
+        return Ok(false);
+    }
+    running::request_stop(&shared.cfg)?;
+    *stop = true;
+    Ok(true)
 }
 
 /// `sync.set_auto`: switches automatic sync, replayed from the in-memory request log. The

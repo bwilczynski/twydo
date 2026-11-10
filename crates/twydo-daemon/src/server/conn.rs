@@ -137,7 +137,7 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
             let state = Arc::clone(&state);
             let tx = tx.clone();
             move || {
-                let shutdown = is_shutdown(&req.method);
+                let shutdown = is_shutdown(&req.method, req.params.as_ref());
                 let result = dispatch(&shared, &state, &req.method, req.params);
                 let ok = result.is_ok();
                 if let Some(id) = req.id {
@@ -149,8 +149,10 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
                         },
                     );
                 }
-                if shutdown && ok {
-                    shared.stop_after_reply();
+                match shutdown {
+                    Some(false) if ok => shared.stop_after_reply(),
+                    Some(true) if ok => shared.stop_when_idle(),
+                    _ => {}
                 }
             }
         };

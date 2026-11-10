@@ -9,6 +9,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -230,6 +231,10 @@ struct RunnerState {
     queue: VecDeque<Work>,
     running: bool,
     closed: bool,
+    /// `daemon.shutdown {when_idle: true}`: no new work is taken; queued work still runs.
+    closing: bool,
+    /// The lane the running work holds (a background sync's is [`LongKind::Sync`]).
+    current_kind: Option<LongKind>,
     handle: Option<JoinHandle<()>>,
     /// The end of a sync that a job ran; done after the job lets the lane go
     /// ([`JobRunner::defer_sync_end`]).
@@ -264,21 +269,57 @@ impl JobRunner {
         g.handle = Some(std::thread::spawn(move || run_loop(&shared)));
     }
 
-    /// Adds `w` to the end of the queue. Dropped once the runner is closed.
+    /// Adds `w` to the end of the queue. Dropped once the runner is closed or closing.
     pub fn post(&self, w: Work) {
         let mut g = self.state.lock().unwrap();
-        if g.closed {
+        if g.closed || g.closing {
             return;
         }
         g.queue.push_back(w);
         self.cv.notify_all();
     }
 
+    /// Records a job with `create` and queues it, atomically with [`JobRunner::close`] and
+    /// [`JobRunner::set_closing`]: `None` once the runner takes no new work, and then nothing
+    /// is recorded, so no record waits `queued` for a runner that never comes.
+    pub fn post_job(
+        &self,
+        create: impl FnOnce() -> io::Result<JobView>,
+        run: JobBody,
+        lane: LongKind,
+    ) -> Option<io::Result<JobView>> {
+        let mut g = self.state.lock().unwrap();
+        if g.closed || g.closing {
+            return None;
+        }
+        let view = match create() {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        g.queue.push_back(Work::Job {
+            view: view.clone(),
+            run,
+            lane,
+        });
+        self.cv.notify_all();
+        Some(Ok(view))
+    }
+
+    /// Takes no new work from now on (jobs and background syncs); what is queued still runs.
+    pub fn set_closing(&self) {
+        self.state.lock().unwrap().closing = true;
+    }
+
+    /// Does the runner refuse new work?
+    pub fn is_closing(&self) -> bool {
+        let g = self.state.lock().unwrap();
+        g.closing || g.closed
+    }
     /// Queues a background sync for `reason`, unless one is already queued, or a manual sync
     /// job is (it covers this one). False when deduplicated.
     pub fn background_sync(&self, reason: SyncReason) -> bool {
         let mut g = self.state.lock().unwrap();
-        if g.closed {
+        if g.closed || g.closing {
             return false;
         }
         let covered = g.queue.iter().any(|w| match w {
@@ -300,6 +341,28 @@ impl JobRunner {
     pub fn is_idle(&self) -> bool {
         let g = self.state.lock().unwrap();
         g.queue.is_empty() && !g.running
+    }
+
+    /// Waits up to `limit` until the runner is idle; true if it is.
+    pub fn wait_idle(&self, limit: Duration) -> bool {
+        let deadline = Instant::now() + limit;
+        let mut g = self.state.lock().unwrap();
+        loop {
+            if g.queue.is_empty() && !g.running {
+                return true;
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            g = self.cv.wait_timeout(g, left).unwrap().0;
+        }
+    }
+
+    /// The lane the running work holds; `None` when nothing runs.
+    pub fn current_kind(&self) -> Option<LongKind> {
+        let g = self.state.lock().unwrap();
+        g.running.then_some(g.current_kind).flatten()
     }
 
     /// Stops taking work: the thread ends after what it is running. Returns the views of the
@@ -351,15 +414,22 @@ impl JobRunner {
         let mut g = self.state.lock().unwrap();
         g.running = false;
         g.current = None;
+        g.current_kind = None;
+        // Wakes the waiters of [`JobRunner::wait_idle`].
+        self.cv.notify_all();
         loop {
             if g.closed {
                 return None;
             }
             if let Some(w) = g.queue.pop_front() {
                 g.running = true;
-                if let Work::Job { view, .. } = &w {
-                    g.current = Some(view.job_id.clone());
-                }
+                g.current_kind = Some(match &w {
+                    Work::Job { view, lane, .. } => {
+                        g.current = Some(view.job_id.clone());
+                        *lane
+                    }
+                    Work::Sync { .. } => LongKind::Sync,
+                });
                 return Some(w);
             }
             g = self.cv.wait(g).unwrap();
@@ -437,7 +507,7 @@ fn run_background(shared: &Arc<Shared>, reason: SyncReason, background: bool) {
         reason,
         RunOptions {
             background,
-            force_delete: Vec::new(),
+            ..RunOptions::default()
         },
     );
     drop(guard);
@@ -490,6 +560,11 @@ impl Shared {
             Ok(None) => {}
             Err(e) => return ticket.forget(Err(internal(e))),
         }
+        // A daemon shutting down takes no new job; transient, so not recorded.
+        let closing = || RpcError::refused(ErrorKind::Unavailable, "the daemon is shutting down");
+        if self.runner.is_closing() {
+            return ticket.forget(Err(closing()));
+        }
         let run = match prepare() {
             Ok(run) => run,
             Err(e) => return ticket.finish(Err(e)),
@@ -498,16 +573,12 @@ impl Shared {
             session: session.unwrap_or_default().to_string(),
             request_id: request_id.to_string(),
         };
-        let view = match self.jobs.create(kind, Some(request)) {
-            Ok(v) => v,
-            Err(e) => return ticket.forget(Err(internal(e))),
-        };
-        self.runner.post(Work::Job {
-            view: view.clone(),
-            run,
-            lane,
-        });
-        ticket.finish(started(view))
+        let create = || self.jobs.create(kind, Some(request));
+        match self.runner.post_job(create, run, lane) {
+            None => ticket.forget(Err(closing())),
+            Some(Err(e)) => ticket.forget(Err(internal(e))),
+            Some(Ok(view)) => ticket.finish(started(view)),
+        }
     }
 }
 
