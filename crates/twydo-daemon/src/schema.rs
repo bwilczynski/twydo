@@ -456,7 +456,13 @@ impl Walk<'_> {
         let (rt, ct) = (type_set(self.released, rel), type_set(self.current, cur));
         if !rt.is_empty() && !ct.is_empty() {
             let (what, bad): (&str, Vec<&String>) = match role {
-                Role::Params => ("no longer accepts", rt.difference(&ct).collect()),
+                // `number` accepts every `integer`, so widening in params loses nothing.
+                Role::Params => (
+                    "no longer accepts",
+                    rt.difference(&ct)
+                        .filter(|t| !(t.as_str() == "integer" && ct.contains("number")))
+                        .collect(),
+                ),
                 Role::Other => ("now may also be", ct.difference(&rt).collect()),
             };
             for t in bad {
@@ -531,9 +537,31 @@ impl Walk<'_> {
             r.get("allOf").and_then(Value::as_array),
             c.get("allOf").and_then(Value::as_array),
         ) {
+            // Match parts by content, not position: a part identical in both documents needs
+            // no walk; the rest pair up in order.
+            let norm = |defs: &Map<String, Value>, v: &Value| {
+                strip_descriptions(expand(defs, v, &mut Vec::new()))
+            };
+            let cn: Vec<Value> = ca.iter().map(|v| norm(self.current, v)).collect();
+            let mut taken = vec![false; ca.len()];
+            let mut unmatched = Vec::new();
             for (i, v) in ra.iter().enumerate() {
-                if let Some(cv) = ca.get(i) {
-                    self.walk(&format!("{label}(all#{i})"), v, cv, role);
+                let rn = norm(self.released, v);
+                match (0..ca.len()).find(|&j| !taken[j] && cn[j] == rn) {
+                    Some(j) => taken[j] = true,
+                    None => unmatched.push((i, v)),
+                }
+            }
+            let mut free = (0..ca.len()).filter(|&j| !taken[j]);
+            for (i, v) in unmatched {
+                match free.next() {
+                    Some(j) => self.walk(&format!("{label}(all#{i})"), v, &ca[j], role),
+                    // Dropping a part loosens what clients may receive; for params it only
+                    // loosens what the daemon accepts.
+                    None if role == Role::Other => {
+                        self.out.insert(format!("{label}: allOf part removed"));
+                    }
+                    None => {}
                 }
             }
         }
@@ -567,6 +595,20 @@ fn expand(defs: &Map<String, Value>, v: &Value, stack: &mut Vec<String>) -> Valu
     }
 }
 
+/// Drop every `description` key (documentation, not shape) so schemas compare by content.
+fn strip_descriptions(v: Value) -> Value {
+    match v {
+        Value::Object(o) => Value::Object(
+            o.into_iter()
+                .filter(|(k, x)| !(k == "description" && x.is_string()))
+                .map(|(k, x)| (k, strip_descriptions(x)))
+                .collect(),
+        ),
+        Value::Array(a) => Value::Array(a.into_iter().map(strip_descriptions).collect()),
+        other => other,
+    }
+}
+
 fn method_schema<'a>(m: &'a Value, which: &str) -> Option<&'a Value> {
     match which {
         "params" => m.pointer("/params/0/schema"),
@@ -596,8 +638,8 @@ pub fn breaking_changes(released: &Value, current: &Value) -> Vec<String> {
                 continue;
             };
             if rm["x-lifecycle"] == json!(true) {
-                let a = expand(w.released, rs, &mut Vec::new());
-                let b = expand(w.current, cs, &mut Vec::new());
+                let a = strip_descriptions(expand(w.released, rs, &mut Vec::new()));
+                let b = strip_descriptions(expand(w.current, cs, &mut Vec::new()));
                 if a != b {
                     w.out
                         .insert(format!("{name}: lifecycle method {which} changed (frozen)"));

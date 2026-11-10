@@ -52,7 +52,35 @@ jobs:
           install_args: rust
 
       - uses: release-plz/action@v0.5
+        id: release-plz
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      # release-plz force-updates its branch on every run, so the refresh is re-applied
+      # here each time. `pr` is the action's JSON output for the created or updated PR:
+      # `{}` when there is none (release-plz/action@v0.5 action.yml), otherwise
+      # {"base_branch","head_branch","html_url","number"} (release-plz docs,
+      # website/docs/github/output.md). The commit author stays github-actions[bot]:
+      # release-plz only force-updates a PR whose extra commits are from bots, otherwise it
+      # closes and reopens it.
+      - name: Refresh the released protocol schema on the release PR branch
+        if: ${{ steps.release-plz.outputs.pr != '' && steps.release-plz.outputs.pr != '{}' }}
+        env:
+          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr).head_branch }}
+          TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch origin "$BRANCH"
+          git checkout -B "$BRANCH" "origin/$BRANCH"
+          tools/refresh_released_schema.sh
+          if git diff --quiet schema/released.openrpc.json; then
+            echo "released schema already current"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add schema/released.openrpc.json
+          git commit -m "ci: refresh the released protocol schema"
+          git push origin "$BRANCH"
