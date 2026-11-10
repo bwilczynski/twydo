@@ -4,7 +4,11 @@
 //!
 //! # Lock order
 //!
-//! A write takes, in this order and never the other way round:
+//! The one description of the daemon's lock order; other modules point here. Each path below
+//! takes its locks in the order given and never the other way round. "Then" means the earlier
+//! lock is still held unless it says it was let go.
+//!
+//! ## Task writes (`op.submit`, `op.undo`, `op.redo`, `journal.revert`)
 //!
 //! 1. the [`RequestLog`](super::replay::RequestLog) slot (`begin` may wait for an in-flight
 //!    duplicate; it waits holding no other lock);
@@ -18,34 +22,74 @@
 //!    and nothing waits for the vdir lock while holding `reload_lock`, so a reload stuck
 //!    behind a sync never blocks the queue overlay.
 //!
+//! A queued write (the lane answered `LongBusy`) takes neither the vdir lock nor
+//! `reload_lock` while it holds the session mutex: its reply hands the overlay and the status
+//! to the background refresher ([`Shared::request_overlay_publish`]).
+//!
 //! The session table's mutex is held only for lookups, never while waiting.
 //!
-//! A long job takes only the lane. Its drain hook ([`drain_queue`]) runs while the job still
-//! holds the lane and takes, in order: the commit gate's read side (around the drain passes
+//! ## Writes that wait through a long job
+//!
+//! `conflicts.resolve`, `journal.recover` and `journal.abandon` cannot be queued, so they take the
+//! lane with [`Lane::write_waiting`](super::lane::Lane::write_waiting), which waits for a running
+//! long job: the request log slot (not for `journal.recover`), then the lane, then the commit gate
+//! around the store or core call, then the vdir lock (inside that call), then, with the gate let go
+//! and the lane still held, the publisher (`reload` takes the vdir reader lock and then
+//! `reload_lock`; then `state` and the bus). They take no session mutex: a long job's drain hook
+//! takes session mutexes while it holds the lane, so a session holder must never wait for a long
+//! job. After letting the lane go they may request a drain or a sync (below).
+//!
+//! ## Long jobs (the job runner, [`super::jobs`])
+//!
+//! The runner thread takes the lane long holding nothing; the job's body then takes, under it:
+//!
+//! - a sync ([`super::syncjob::run_sync`]; a `sync.run` job, a background sync, and the sync
+//!   `lists.forget` runs after preserving its list): the publisher (`state` to report the sync
+//!   running, then `reload_lock` and `state` for the status, then the bus), let go before the
+//!   sync runs; the core runner then takes the sync run lock (`<state>/sync/run.lock`), then
+//!   the vdir lock, both released before it returns; then the runner's stop gate, then `state`
+//!   (to report the sync idle), then the stop file (to withdraw a stop request), see the stop
+//!   gate below; then it publishes the items it drained as the drain hook does. Its reload
+//!   and `sync.finished` ([`super::syncjob::SyncDone::finish`]) run after the lane is let
+//!   go, so after the drain hook.
+//! - a list job ([`super::lists`]): the `ListService` takes the vdir lock exclusively
+//!   (released before it returns); then the publisher (`reload`, as above).
+//! - `lists.recover`: the calling session's mutex, then (inside the store) the vdir lock, and
+//!   the publisher's `state` to read the current snapshot; the session mutex is let go before
+//!   the reload. Taking a session mutex under the long lane is safe: a holder of a session
+//!   mutex never waits for a long job (task writes get `LongBusy` at once; the waiting writes
+//!   take no session mutex).
+//! - the job records' `JobStore.lock`: a leaf, held around one record's read-modify-write.
+//!
+//! When the job lets the lane go, its drain hook ([`drain_queue`]) runs while the lane is
+//! still held and takes, in order: the commit gate's read side (around the drain passes
 //! only), the store's vdir file lock (released before `drain` returns), then, with the gate
 //! let go, one session mutex at a time (to prune refused steps), then the publisher
-//! (`reload_lock`, `state`) and the bus. Taking a session mutex while the lane is held long is
-//! safe: a holder of a session mutex never waits for a long job ([`Lane::write`] answers
-//! `LongBusy` at once) and, while queueing, never takes the vdir lock or `reload_lock`
-//! (queued replies hand the publish to the background refresher). The hook never takes the
-//! lane itself.
+//! (`reload_lock`, `state`) and the bus. The hook never takes the lane itself.
 //!
-//! Long jobs run on the job runner's thread ([`super::jobs`]), which takes the lane long
-//! holding nothing. A sync under it ([`super::syncjob::run_sync`]) takes the sync run lock and
-//! the vdir lock inside the core runner (released before it returns), then publishes the items
-//! it drained as the drain hook does. The sync's own reload and `sync.finished`
-//! ([`super::syncjob::SyncDone::finish`]) run after the lane is let go, so after the drain
-//! hook.
+//! ## The stop gate
 //!
-//! The background drainer ([`Shared::request_drain`]) and the startup drain hold nothing when
-//! they start, take the lane as a write ([`Lane::write`]) for the drain passes only
-//! ([`drain_passes`]), and prune, publish and report ([`finish_drain`]) after letting it go: a
-//! session holder may be waiting for that write lane, so the session mutexes must not be
-//! taken under it.
+//! `syncjob::stop_running_sync` (`sync.stop` and teardown) takes the runner's stop gate, then
+//! the publisher's `state` (is a sync running?), then writes the stop file, all holding the
+//! gate. A sync withdrawing its request, and the runner putting
+//! things right after a panic, take the same order.
+//!
+//! ## Background threads
+//!
+//! The background drainer ([`Shared::request_drain`]) and the startup drain hold nothing when they
+//! start, take the lane as a write ([`Lane::write`](super::lane::Lane::write)) for the drain passes
+//! only ([`drain_passes`]), and prune, publish and report ([`finish_drain`]) after letting it go: a
+//! session holder may be waiting for that write lane, so the session mutexes must not be taken
+//! under it.
 //!
 //! The scheduler's poke ([`Shared::poke_scheduler`], after a publish and a sync's end) takes
-//! the scheduler slot and then the scheduler's own mutex, both held only to set a flag. The
-//! scheduler thread holds neither while it reads the journal or posts to the job runner.
+//! the scheduler slot and then the scheduler's own mutex (`core.inner`), both held only to set
+//! a flag. [`Shared::sync_now`] takes the slot, then `core.inner` (let go), then the runner's
+//! `state` (to queue the sync), then `core.inner` again. The scheduler thread holds neither
+//! while it reads the journal or posts to the job runner.
+//!
+//! The configuration reload ([`super::config::changed`]) takes `config_seen` and holds it
+//! throughout; then the publisher: `reload` takes the vdir reader lock, then `reload_lock`.
 //!
 //! Teardown first waits for the job runner to finish its current work item (`stop_jobs`),
 //! holding none of the above and taking only the stop gate (above) to ask a running sync to
@@ -281,7 +325,7 @@ fn withdrawn(
     }
 }
 
-fn unknown_session() -> RpcError {
+pub(super) fn unknown_session() -> RpcError {
     RpcError::refused(ErrorKind::NotFound, "unknown session; reconnect")
 }
 
@@ -449,7 +493,7 @@ fn run_submit(
 ) -> Result<WriteResult, RpcError> {
     let view = planning_view(shared, &p.based_on)?;
     let label = op_title(&view.snap, &p.op);
-    let mut s = session.lock().unwrap();
+    let mut s = super::sessions::lock(&session);
     let Stored {
         lane,
         outcome,
@@ -555,7 +599,7 @@ fn run_undo(
     p: UndoParams,
     redo: bool,
 ) -> Result<WriteResult, RpcError> {
-    let mut s = session.lock().unwrap();
+    let mut s = super::sessions::lock(&session);
     let lane = shared.lane.write();
     let now = Utc::now();
     s.store.set_request(Some(RequestRef {
@@ -972,7 +1016,7 @@ fn prune_refused_steps(shared: &Shared, drained: &[Drained]) {
     let queue = Queue::existing(&shared.state_dir);
     for id in sessions {
         if let Some(s) = shared.sessions.get(id) {
-            s.lock().unwrap().prune_refused(queue.as_ref());
+            super::sessions::lock(&s).prune_refused(queue.as_ref());
         }
     }
 }

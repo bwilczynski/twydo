@@ -741,4 +741,46 @@ mod during_a_job {
         assert!(!td.socket().exists());
         assert!(!vdir_owned(&fx));
     }
+
+    /// Final review: the sync `lists.forget` runs (under a list job's lane) is stopped at
+    /// shutdown like any sync, instead of being waited for.
+    #[test]
+    fn shutdown_stops_the_sync_of_a_forget() {
+        use twydo_daemon::protocol::jobs::JobResult;
+        use twydo_daemon::protocol::lists::{ForgetPreview, ListPreviewForgetParams};
+        let fx = fx();
+        let (td, c) = start(&fx, "sleep 30", Duration::from_millis(200));
+        let p: ForgetPreview = c
+            .call(
+                "lists.preview_forget",
+                ListPreviewForgetParams { name: "c1".into() },
+            )
+            .unwrap();
+        let id = c
+            .call::<_, JobStarted>(
+                "lists.forget",
+                json!({"request_id": c.next_request_id(), "name": "c1", "collection": p.collection}),
+            )
+            .unwrap()
+            .job_id;
+        started(&c, &id);
+        let t = Instant::now();
+        td.handle().shutdown();
+        assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+        assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Stopped);
+        match wait_event(
+            &c,
+            BOUND,
+            |e| matches!(e, Event::JobFinished { job_id, .. } if *job_id == id),
+        ) {
+            Event::JobFinished {
+                state:
+                    JobState::Finished {
+                        result: JobResult::Forgot { sync: Some(r), .. },
+                    },
+                ..
+            } => assert_eq!(r.outcome, SyncOutcome::Stopped),
+            other => panic!("expected forgot with a stopped sync: {other:?}"),
+        }
+    }
 }

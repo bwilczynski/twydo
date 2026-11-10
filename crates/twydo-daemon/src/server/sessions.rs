@@ -6,13 +6,27 @@
 //! (`crates/tdo/src/write.rs`).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::store::queue::{Queue, Queued};
 use twydo_core::store::{Store, Submitted, WriteError};
+
+/// Locks session `m`. A panic while it was held (in a job's body) poisons it; the session is
+/// still sound, apart from the request its store was given, which is withdrawn.
+pub fn lock(m: &Mutex<Session>) -> MutexGuard<'_, Session> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            m.clear_poison();
+            let mut g = poisoned.into_inner();
+            g.store.set_request(None);
+            g
+        }
+    }
+}
 
 /// The message of a queued write, after its success text.
 pub const QUEUED: &str = " · queued (a sync is running)";

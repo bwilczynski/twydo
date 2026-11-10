@@ -63,12 +63,18 @@ pub struct DaemonOptions {
     #[doc(hidden)]
     pub in_commit: Option<TestHook>,
     /// Runs in a queued write's reply path, after its item is on disk and before the reply is
-    /// built; tests block here to end a long job at exactly that point.
+    /// built, holding the session mutex; tests block here to end a long job at exactly that
+    /// point.
     #[doc(hidden)]
     pub before_queued_reply: Option<TestHook>,
     /// Makes the first status refresher run panic, to check later refreshes still happen.
     #[doc(hidden)]
     pub status_panic_once: bool,
+    /// Called with the name of a test point as the daemon passes it (`sync`: a sync has been
+    /// reported started and is about to run; `recover`: `lists.recover` holds its session);
+    /// tests panic here to check the daemon survives it.
+    #[doc(hidden)]
+    pub test_point: Option<TestPoint>,
     /// Runs the scheduler (startup, periodic and batched syncs). Tests turn it off.
     pub schedule: bool,
     /// The interval of the periodic sync.
@@ -88,6 +94,9 @@ pub struct DaemonOptions {
 /// A test hook shared with the daemon's threads.
 pub type TestHook = Arc<dyn Fn() + Send + Sync>;
 
+/// A test hook told which point the daemon passes; see [`DaemonOptions::test_point`].
+pub type TestPoint = Arc<dyn Fn(&str) + Send + Sync>;
+
 impl DaemonOptions {
     pub fn new(socket: PathBuf) -> DaemonOptions {
         DaemonOptions {
@@ -103,6 +112,7 @@ impl DaemonOptions {
             in_commit: None,
             before_queued_reply: None,
             status_panic_once: false,
+            test_point: None,
             schedule: true,
             periodic: Duration::from_secs(60),
             clock: Arc::new(schedule::SystemClock),
@@ -142,6 +152,7 @@ pub struct Shared {
     pub before_queued_reply: Option<TestHook>,
     /// Armed by [`DaemonOptions::status_panic_once`]; the first refresher run takes it.
     status_panic_once: AtomicBool,
+    test_point: Option<TestPoint>,
     /// The commit gate: `true` once closed. Every store call that can commit (submit, undo,
     /// redo, drain) runs under its read side ([`Shared::commit_gate`]); teardown takes the
     /// write side and closes it before the daemon lock is released, so a write in flight
@@ -200,6 +211,13 @@ pub struct Shared {
 }
 
 impl Shared {
+    /// Passes test point `name` ([`DaemonOptions::test_point`]).
+    pub(crate) fn test_point(&self, name: &str) {
+        if let Some(hook) = &self.test_point {
+            hook(name);
+        }
+    }
+
     fn is_ready(&self) -> bool {
         *self.ready.lock().unwrap()
     }
@@ -307,6 +325,7 @@ impl Daemon {
             in_commit: opts.in_commit.take(),
             before_queued_reply: opts.before_queued_reply.take(),
             status_panic_once: AtomicBool::new(opts.status_panic_once),
+            test_point: opts.test_point.take(),
             commits: RwLock::new(false),
             state_dir: state.clone(),
             matrix: opts.matrix.clone(),

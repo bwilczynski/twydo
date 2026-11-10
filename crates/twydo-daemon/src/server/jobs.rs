@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -397,7 +397,7 @@ impl JobRunner {
 
     /// The stop gate; see [`JobRunner`]'s `stop` field.
     pub(super) fn stop_gate(&self) -> std::sync::MutexGuard<'_, bool> {
-        self.stop.lock().unwrap()
+        self.stop.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The id of the job running now (for a job's body, which is built before its id).
@@ -437,12 +437,78 @@ impl JobRunner {
     }
 }
 
+/// Runs the work as it comes. A panic in one piece of work (outside a job's body, which
+/// fails the job itself) is caught here: [`after_panic`] puts things right and the runner
+/// goes on with the next.
 fn run_loop(shared: &Arc<Shared>) {
     while let Some(w) = shared.runner.next() {
-        match w {
+        let job = match &w {
+            Work::Job { view, .. } => Some(view.clone()),
+            Work::Sync { .. } => None,
+        };
+        let ran = catch_unwind(AssertUnwindSafe(|| match w {
             Work::Job { view, run, lane } => run_job(shared, view, run, lane),
             Work::Sync { reason, background } => run_background(shared, reason, background),
+        }));
+        if ran.is_err() {
+            eprintln!("tdo daemon: the job runner caught a panic; going on");
+            // Best effort: a second panic here must not end the runner either.
+            let _ = catch_unwind(AssertUnwindSafe(|| after_panic(shared, job)));
         }
+    }
+}
+
+/// After a panic on the runner: no sync is left reported running (or with a stop request
+/// waiting for it), and a job that was running ends: `failed` (`internal`) unless its record
+/// already says how it ended, with its `job.finished`. The end of a sync it handed over and
+/// did not reach is published first.
+fn after_panic(shared: &Arc<Shared>, job: Option<JobView>) {
+    // A sync the job ran whose end was not reached yet (the drain hook panicked).
+    if let Some(end) = shared.runner.take_sync_end() {
+        let _ = catch_unwind(AssertUnwindSafe(|| end.finish(shared)));
+    }
+    end_sync_after_panic(shared);
+    let Some(view) = job else { return };
+    let id = view.job_id;
+    let state = match shared.jobs.get(&id) {
+        Ok(Some(v)) if v.state.is_final() => v.state,
+        _ => {
+            let state = failed_unexpectedly();
+            if let Err(e) = shared.jobs.set_state(&id, state.clone()) {
+                eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
+            }
+            state
+        }
+    };
+    shared.bus.emit(Event::JobFinished {
+        job_id: id,
+        request_id: view.request_id,
+        state,
+    });
+}
+
+/// A sync that panicked never reported its end: report it idle (withdrawing a stop request
+/// left for it) and refresh the status.
+fn end_sync_after_panic(shared: &Arc<Shared>) {
+    let mut stop = shared.runner.stop_gate();
+    if !shared.publisher.sync_running() {
+        return;
+    }
+    shared.publisher.set_sync_state(false, None);
+    if std::mem::take(&mut *stop)
+        && let Err(e) = twydo_core::sync::running::clear_stop(&shared.cfg)
+    {
+        eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
+    }
+    drop(stop);
+    shared.publisher.refresh_status();
+    shared.poke_scheduler();
+}
+
+fn failed_unexpectedly() -> JobState {
+    JobState::Failed {
+        kind: ErrorKind::Internal,
+        message: "the job failed unexpectedly".into(),
     }
 }
 
@@ -452,18 +518,19 @@ fn run_job(shared: &Arc<Shared>, view: JobView, run: JobBody, lane: LongKind) {
         eprintln!("tdo daemon: cannot record job {id} running: {e}");
     }
     let guard = shared.lane.long(lane);
-    let outcome = catch_unwind(AssertUnwindSafe(|| run(shared))).unwrap_or_else(|_| {
-        Err(RpcError::refused(
-            ErrorKind::Internal,
-            "the job failed unexpectedly",
-        ))
-    });
-    let state = match outcome {
-        Ok(result) => JobState::Finished { result },
-        Err(e) => JobState::Failed {
+    // Caught here, not in the run loop, so the lane guard is dropped (and its drain hook
+    // run) outside the unwind.
+    let state = match catch_unwind(AssertUnwindSafe(|| run(shared))) {
+        Ok(Ok(result)) => JobState::Finished { result },
+        Ok(Err(e)) => JobState::Failed {
             kind: e.data.as_ref().map_or(ErrorKind::Internal, |d| d.kind),
             message: e.message,
         },
+        Err(_) => {
+            eprintln!("tdo daemon: job {id} panicked");
+            end_sync_after_panic(shared);
+            failed_unexpectedly()
+        }
     };
     if let Err(e) = shared.jobs.set_state(&id, state.clone()) {
         eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
@@ -501,22 +568,43 @@ fn run_background(shared: &Arc<Shared>, reason: SyncReason, background: bool) {
         return;
     }
     let guard = shared.lane.long(LongKind::Sync);
-    let done = syncjob::run_sync(
-        shared,
-        None,
-        reason,
-        RunOptions {
-            background,
-            ..RunOptions::default()
-        },
-    );
+    // A panic is passed on to the run loop once the lane is let go (outside the unwind).
+    let done = catch_unwind(AssertUnwindSafe(|| {
+        syncjob::run_sync(
+            shared,
+            None,
+            reason,
+            RunOptions {
+                background,
+                ..RunOptions::default()
+            },
+        )
+    }));
     drop(guard);
-    done.finish(shared);
+    match done {
+        Ok(done) => done.finish(shared),
+        Err(panic) => resume_unwind(panic),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Requests
 // ---------------------------------------------------------------------------------------------
+
+/// Why a job's `prepare` started no job ([`Shared::start_job_with`]).
+pub enum NotStarted {
+    /// The answer to the request, recorded like any other: a resend gets it again.
+    Refused(RpcError),
+    /// An answer that holds only for now (an unknown session): not recorded, so a resend is
+    /// decided afresh, as `writes.rs`'s `replayed` does for task writes.
+    Unrecorded(RpcError),
+}
+
+impl From<RpcError> for NotStarted {
+    fn from(e: RpcError) -> NotStarted {
+        NotStarted::Refused(e)
+    }
+}
 
 impl Shared {
     /// Starts a job for request `request_id`: a resent request (this epoch's log, then the
@@ -535,14 +623,15 @@ impl Shared {
 
     /// [`Shared::start_job`] with a body built by `prepare`, which runs only when the request
     /// is not a resend (a replay answers without it: it may check params that changed since,
-    /// or read the vdir). Its refusal is the answer, recorded like any other.
+    /// or read the vdir). Its refusal is the answer, recorded like any other unless it is
+    /// [`NotStarted::Unrecorded`].
     pub fn start_job_with(
         self: &Arc<Self>,
         request_id: &str,
         session: Option<&str>,
         kind: JobKind,
         lane: LongKind,
-        prepare: impl FnOnce() -> Result<JobBody, RpcError>,
+        prepare: impl FnOnce() -> Result<JobBody, NotStarted>,
     ) -> Result<Value, RpcError> {
         super::writes::require_request_id(request_id)?;
         let ticket = match self.requests.begin(request_id) {
@@ -567,7 +656,8 @@ impl Shared {
         }
         let run = match prepare() {
             Ok(run) => run,
-            Err(e) => return ticket.finish(Err(e)),
+            Err(NotStarted::Refused(e)) => return ticket.finish(Err(e)),
+            Err(NotStarted::Unrecorded(e)) => return ticket.forget(Err(e)),
         };
         let request = RequestRef {
             session: session.unwrap_or_default().to_string(),

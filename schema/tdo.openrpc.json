@@ -63,6 +63,40 @@
         ],
         "type": "object"
       },
+      "BackupPreviewParams": {
+        "description": "Params of `lists.backup_preview`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "Backups": {
+        "description": "The answer of `lists.backups`.",
+        "properties": {
+          "deleted": {
+            "items": {
+              "$ref": "#/components/schemas/DeletedBackupView"
+            },
+            "type": "array"
+          },
+          "retired": {
+            "items": {
+              "$ref": "#/components/schemas/RetiredBackupView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "retired",
+          "deleted"
+        ],
+        "type": "object"
+      },
       "BasedOn": {
         "description": "The snapshot a client planned against.",
         "properties": {
@@ -499,6 +533,31 @@
         ],
         "type": "object"
       },
+      "DeletedBackupView": {
+        "description": "A backup a list deletion kept.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "name",
+          "created"
+        ],
+        "type": "object"
+      },
       "Due": {
         "description": "A due date. `Time` is floating local time (`DUE:YYYYMMDDTHHMMSS`, no `TZID`), as 2Do\nwrites it (H8).",
         "oneOf": [
@@ -757,6 +816,36 @@
         ],
         "type": "object",
         "x-open": true
+      },
+      "ForgetPreview": {
+        "description": "What forgetting a list would preserve.",
+        "properties": {
+          "collection": {
+            "description": "The list's directory name.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "Edits of the list that are not yet synced.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tasks": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collection",
+          "name",
+          "tasks",
+          "pending"
+        ],
+        "type": "object"
       },
       "Freq": {
         "enum": [
@@ -1132,6 +1221,68 @@
               "destination"
             ],
             "type": "object"
+          },
+          {
+            "description": "`lists.forget` preserved list `name` as `backup`; `message` is what the TUI shows\n(with the sync's problems appended), `sync` the sync that followed.",
+            "properties": {
+              "backup": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sync": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SyncResult"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "const": "forgot",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "backup",
+              "name",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`lists.recover` copied a backup into a list (`applied`), or found it already copied.",
+            "properties": {
+              "applied": {
+                "type": "boolean"
+              },
+              "message": {
+                "type": "string"
+              },
+              "op_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "recovered",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "applied",
+              "message"
+            ],
+            "type": "object"
           }
         ],
         "x-open": true
@@ -1445,6 +1596,26 @@
         ],
         "type": "object"
       },
+      "ListForgetParams": {
+        "description": "Params of `lists.forget`: the list `name` as the preview showed it; the job fails when\n`name` now resolves to another directory than `collection`.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "name",
+          "collection"
+        ],
+        "type": "object"
+      },
       "ListPrefs": {
         "additionalProperties": false,
         "properties": {
@@ -1498,6 +1669,18 @@
         ],
         "type": "object"
       },
+      "ListPreviewForgetParams": {
+        "description": "Params of `lists.preview_forget`: the list to forget, by directory or display name.",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "ListReconcileParams": {
         "description": "Params of `lists.reconcile`: finish the unfinished list operation `operation`, or, with\n`keep_server`, adopt what the server holds.",
         "properties": {
@@ -1515,6 +1698,30 @@
           "request_id",
           "operation",
           "keep_server"
+        ],
+        "type": "object"
+      },
+      "ListRecoverParams": {
+        "description": "Params of `lists.recover`: copy the tasks of retired-list backup `backup` into the\nexisting list `to`.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id",
+          "backup",
+          "to"
         ],
         "type": "object"
       },
@@ -2258,6 +2465,47 @@
         "required": [
           "resolution",
           "message"
+        ],
+        "type": "object"
+      },
+      "RetiredBackupView": {
+        "description": "A preserved (forgotten) list.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retired": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "name",
+          "created",
+          "tasks",
+          "pending",
+          "retired"
         ],
         "type": "object"
       },
@@ -3752,6 +4000,101 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.preview_forget",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListPreviewForgetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ForgetPreview"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.forget",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListForgetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.recover",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListRecoverParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.backups",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Backups"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.backup_preview",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BackupPreviewParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WireSnapshot"
         }
       },
       "x-lifecycle": false

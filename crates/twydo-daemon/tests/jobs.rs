@@ -3,17 +3,21 @@
 
 mod common;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use common::{Fixture, TestDaemon, empty, kind, wait_event};
+use common::{Fixture, TestDaemon, edit_title, empty, kind, submit, wait_event};
 use twydo_daemon::client::{Client, Notification};
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::jobs::{
     JobGetParams, JobKind, JobResult, JobStarted, JobState, JobView,
 };
+use twydo_daemon::protocol::methods::{StatusView, SyncState, WriteOutcome};
 use twydo_daemon::protocol::rpc::ErrorKind;
-use twydo_daemon::protocol::sync::{SyncOutcome, SyncRunParams};
+use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason, SyncRunParams};
+use twydo_daemon::server::DaemonOptions;
 
 const BOUND: Duration = Duration::from_secs(10);
 const BODY: &str = "echo 'Syncing twydo/c1' >&2\nexit 0";
@@ -190,4 +194,114 @@ fn job_get_unknown_is_not_found() {
             .unwrap_err();
         assert_eq!(kind(&e), ErrorKind::Invalid);
     }
+}
+
+// ---- a panic on the runner thread (final review) ----
+
+/// A daemon (as [`start`]) whose options `f` sets, given a one-shot flag: a hook that panics
+/// takes it, so it panics once.
+fn start_armed(
+    fx: &Fixture,
+    f: impl FnOnce(&mut DaemonOptions, Arc<AtomicBool>),
+) -> (TestDaemon, Client, Arc<AtomicBool>) {
+    let armed = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&armed);
+    let td = TestDaemon::start_cfg(fx, fx.with_sync(BODY), |o| f(o, flag));
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    (td, c, armed)
+}
+
+/// Panics at test point `point` once `armed` is set (and clears it).
+fn panic_at(o: &mut DaemonOptions, point: &'static str, armed: Arc<AtomicBool>) {
+    o.test_point = Some(Arc::new(move |p: &str| {
+        if p == point && armed.swap(false, Ordering::SeqCst) {
+            panic!("test panic at {p}");
+        }
+    }));
+}
+
+/// Waits until the status no longer says a sync runs.
+fn sync_idle(c: &Client) {
+    let deadline = Instant::now() + BOUND;
+    loop {
+        let st: StatusView = c.call("status.get", empty()).unwrap();
+        if st.sync.as_ref().is_some_and(|s| s.state == SyncState::Idle) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "the sync state is stuck: {st:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// The runner still works: a new `sync.run` runs and finishes ok, and a shutdown when idle
+/// stops the daemon.
+fn runner_still_works(td: &TestDaemon, c: &Client) {
+    sync_idle(c);
+    let id = sync_run(c, &c.next_request_id()).job_id;
+    let state = job_finished(c, &id);
+    assert!(
+        matches!(&state, JobState::Finished { result: JobResult::Sync(r) } if r.outcome == SyncOutcome::Ok),
+        "{state:?}"
+    );
+    sync_idle(c);
+    let w = submit(c, edit_title("u1", "After")).unwrap();
+    assert_eq!(w.outcome, WriteOutcome::Applied);
+    let _: serde_json::Value = c
+        .call("daemon.shutdown", serde_json::json!({"when_idle": true}))
+        .unwrap();
+    let deadline = Instant::now() + BOUND;
+    while !td.handle().is_stopped() {
+        assert!(
+            Instant::now() < deadline,
+            "shutdown when idle never stopped"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_panic_in_a_background_sync_keeps_the_runner() {
+    let fx = fx();
+    let (td, c, armed) = start_armed(&fx, |o, a| panic_at(o, "sync", a));
+    armed.store(true, Ordering::SeqCst);
+    td.handle().post_sync_for_test(SyncReason::Periodic);
+    wait_event(&c, BOUND, |e| {
+        matches!(e, Event::SyncStarted { job_id: None, .. })
+    });
+    runner_still_works(&td, &c);
+}
+
+#[test]
+fn a_panic_in_a_sync_job_fails_it_and_clears_the_sync_state() {
+    let fx = fx();
+    let (td, c, armed) = start_armed(&fx, |o, a| panic_at(o, "sync", a));
+    armed.store(true, Ordering::SeqCst);
+    let id = sync_run(&c, "r-panic").job_id;
+    match job_finished(&c, &id) {
+        JobState::Failed { kind, .. } => assert_eq!(kind, ErrorKind::Internal),
+        other => panic!("expected failed: {other:?}"),
+    }
+    assert!(job_get(&c, Some(&id), None).state.is_final());
+    runner_still_works(&td, &c);
+}
+
+#[test]
+fn a_panic_in_the_drain_after_a_job_keeps_the_runner() {
+    let fx = fx();
+    let (td, c, armed) = start_armed(&fx, |o, a| {
+        o.before_drain_passes = Some(Arc::new(move || {
+            if a.swap(false, Ordering::SeqCst) {
+                panic!("test panic in the drain hook");
+            }
+        }));
+    });
+    armed.store(true, Ordering::SeqCst);
+    let id = sync_run(&c, "r-drain-panic").job_id;
+    // The job's own work was done and recorded before its drain hook panicked.
+    let state = job_finished(&c, &id);
+    assert!(state.is_final(), "{state:?}");
+    assert_eq!(job_get(&c, Some(&id), None).state, state);
+    assert!(!armed.load(Ordering::SeqCst), "the hook never ran");
+    runner_still_works(&td, &c);
 }

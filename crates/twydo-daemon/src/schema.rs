@@ -16,8 +16,9 @@ use crate::protocol::admin::{
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
 use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
 use crate::protocol::lists::{
-    ListArchiveParams, ListCreateParams, ListDeleteParams, ListExportParams,
-    ListPreviewDeleteParams, ListReconcileParams, ListUpdateParams,
+    BackupPreviewParams, Backups, ForgetPreview, ListArchiveParams, ListCreateParams,
+    ListDeleteParams, ListExportParams, ListForgetParams, ListPreviewDeleteParams,
+    ListPreviewForgetParams, ListReconcileParams, ListRecoverParams, ListUpdateParams,
 };
 use crate::protocol::methods::*;
 use crate::protocol::rpc::ErrorKind;
@@ -136,6 +137,31 @@ pub const METHODS: &[MethodSpec] = &[
         false,
         of::<ListExportParams>,
         of::<JobStarted>,
+    ),
+    m(
+        "lists.preview_forget",
+        false,
+        of::<ListPreviewForgetParams>,
+        of::<ForgetPreview>,
+    ),
+    m(
+        "lists.forget",
+        false,
+        of::<ListForgetParams>,
+        of::<JobStarted>,
+    ),
+    m(
+        "lists.recover",
+        false,
+        of::<ListRecoverParams>,
+        of::<JobStarted>,
+    ),
+    m("lists.backups", false, of::<Empty>, of::<Backups>),
+    m(
+        "lists.backup_preview",
+        false,
+        of::<BackupPreviewParams>,
+        of::<WireSnapshot>,
     ),
     m("conflicts.list", false, of::<Empty>, of::<ConflictList>),
     m(
