@@ -4,6 +4,7 @@
 use std::io::{BufReader, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::mpsc::{SyncSender, sync_channel};
 
@@ -11,7 +12,7 @@ use serde_json::Value;
 
 use super::{ConnState, Shared, dispatch, is_shutdown};
 use crate::protocol::rpc::{
-    INVALID_REQUEST, LineError, PARSE_ERROR, Request, Response, RpcError, read_line,
+    ErrorKind, INVALID_REQUEST, LineError, PARSE_ERROR, Request, Response, RpcError, read_line,
 };
 
 /// Only the daemon's own user may talk to it.
@@ -59,6 +60,20 @@ pub fn peer_uid(s: &UnixStream) -> std::io::Result<u32> {
     }
 }
 
+/// The text a panic carried.
+fn panic_text(p: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+/// How long a write to a client may block before the client is dropped.
+const WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 fn send_response(tx: &SyncSender<String>, r: Response) {
     if let Ok(line) = serde_json::to_string(&r) {
         let _ = tx.send(line);
@@ -83,6 +98,7 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
     let (tx, rx) = sync_channel::<String>(shared.event_buffer.max(1));
     let writer = std::thread::spawn(move || {
         let mut w = write_half;
+        let _ = w.set_write_timeout(Some(WRITE_TIMEOUT));
         for line in rx {
             if w.write_all(line.as_bytes()).is_err() || w.write_all(b"\n").is_err() {
                 break;
@@ -138,7 +154,18 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
             let tx = tx.clone();
             move || {
                 let shutdown = is_shutdown(&req.method, req.params.as_ref());
-                let result = dispatch(&shared, &state, &req.method, req.params);
+                // A panicking handler answers `internal`; the connection goes on.
+                let method = req.method.clone();
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    shared.test_point(&format!("request:{method}"));
+                    dispatch(&shared, &state, &method, req.params)
+                }))
+                .unwrap_or_else(|p| {
+                    Err(RpcError::refused(
+                        ErrorKind::Internal,
+                        format!("internal error: {}", panic_text(p.as_ref())),
+                    ))
+                });
                 let ok = result.is_ok();
                 if let Some(id) = req.id {
                     send_response(

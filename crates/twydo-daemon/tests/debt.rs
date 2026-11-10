@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use common::{Fixture, TestDaemon, edit_title, empty, submit, submit_at, todo_ics};
+use common::{Fixture, TestDaemon, create, edit_title, empty, submit, submit_at, todo_ics};
 use twydo_core::compat::Matrix;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, FromQueue, Journal, RequestRef, Stage, Write};
@@ -325,4 +325,162 @@ fn an_unreadable_queue_item_is_named_in_the_status() {
     let st = status_until(&c, "not reported", |s| !s.queue_unreadable.is_empty());
     assert_eq!(st.queue_unreadable, vec![path.display().to_string()]);
     assert_eq!(queue.unreadable().unwrap(), vec![path]);
+}
+
+/// Runs `f` on a thread and waits at most `limit` for its result.
+fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(limit).expect("the call never answered")
+}
+
+#[test]
+fn a_panicking_handler_answers_internal() {
+    let fx = fx();
+    let td = TestDaemon::start_with(&fx, |o| {
+        o.test_point = Some(Arc::new(|p: &str| {
+            if p == "request:status.get" {
+                panic!("synthetic handler panic");
+            }
+        }));
+    });
+    let c = td.client();
+    let caller = c.caller();
+    let r = within(Duration::from_secs(5), move || {
+        caller.call::<_, StatusView>("status.get", empty())
+    });
+    let e = r.unwrap_err();
+    assert_eq!(
+        common::kind(&e),
+        twydo_daemon::protocol::rpc::ErrorKind::Internal
+    );
+    assert_eq!(
+        common::err_data(&e).kind,
+        twydo_daemon::protocol::rpc::ErrorKind::Internal
+    );
+    assert!(
+        e.to_string()
+            .contains("internal error: synthetic handler panic"),
+        "{e}"
+    );
+    // The connection is still usable.
+    let caller = c.caller();
+    within(Duration::from_secs(5), move || {
+        caller
+            .call::<_, serde_json::Value>("daemon.info", empty())
+            .unwrap()
+    });
+}
+
+#[test]
+fn a_poisoned_session_table_keeps_serving() {
+    let fx = fx();
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook = Arc::clone(&armed);
+    let td = TestDaemon::start_with(&fx, |o| {
+        o.test_point = Some(Arc::new(move |p: &str| {
+            if p == "sessions_locked" && hook.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                panic!("synthetic panic holding the session table");
+            }
+        }));
+    });
+    armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    let socket = td.socket().to_path_buf();
+    let p = td.hello_params();
+    let first = within(Duration::from_secs(5), move || {
+        Client::connect(&socket, p).map(|_| ())
+    });
+    assert!(first.is_err());
+    let socket = td.socket().to_path_buf();
+    let p = td.hello_params();
+    let c = within(Duration::from_secs(5), move || {
+        Client::connect(&socket, p)
+            .expect("hello after poisoning")
+            .0
+    });
+    let r = within(Duration::from_secs(5), move || {
+        submit(&c, create("After poisoning")).unwrap()
+    });
+    assert_eq!(r.outcome, WriteOutcome::Applied);
+}
+
+#[test]
+fn a_client_that_stops_reading_does_not_pin_the_daemon() {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let mut raw = UnixStream::connect(td.socket()).unwrap();
+    let hello = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "hello",
+        "params": td.hello_params()});
+    let sub = serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "events.subscribe",
+        "params": {}});
+    writeln!(raw, "{hello}").unwrap();
+    writeln!(raw, "{sub}").unwrap();
+    // Each touch changes a title, so each reload publishes an event.
+    for i in 0..10_000 {
+        td.touch_outside("inbox/u1.ics", &todo_ics("u1", &format!("Title {i}"), None));
+    }
+    let started = Instant::now();
+    let other = td.client();
+    let t = Instant::now();
+    let caller = other.caller();
+    within(Duration::from_secs(5), move || {
+        caller
+            .call::<_, serde_json::Value>("daemon.info", empty())
+            .unwrap()
+    });
+    assert!(t.elapsed() < Duration::from_secs(1), "{:?}", t.elapsed());
+    // Not reading for longer than the write timeout (5 s), the client is dropped; reading now
+    // drains what was sent and then meets the close, within 10 s of the burst.
+    std::thread::sleep(Duration::from_secs(6));
+    raw.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+    let mut buf = [0u8; 65536];
+    loop {
+        match raw.read(&mut buf) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => assert!(
+                e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut,
+                "{e}"
+            ),
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the daemon never closed the connection"
+        );
+    }
+}
+
+#[test]
+fn session_recovery_io_runs_outside_the_table_lock() {
+    let fx = fx();
+    let slow = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook = Arc::clone(&slow);
+    let td = TestDaemon::start_with(&fx, |o| {
+        o.test_point = Some(Arc::new(move |p: &str| {
+            if p == "without_recovery" && hook.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }));
+    });
+    // The first open is slow; the second, on another session, must not wait for it.
+    slow.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (socket, p) = (td.socket().to_path_buf(), td.hello_params());
+    let first = std::thread::spawn(move || Client::connect(&socket, p).map(|_| ()));
+    std::thread::sleep(Duration::from_millis(300));
+    let (socket, p) = (td.socket().to_path_buf(), td.hello_params());
+    let t = Instant::now();
+    within(Duration::from_secs(5), move || {
+        Client::connect(&socket, p).expect("second hello").0
+    });
+    assert!(
+        t.elapsed() < Duration::from_millis(500),
+        "{:?}",
+        t.elapsed()
+    );
+    first.join().unwrap().unwrap();
 }
