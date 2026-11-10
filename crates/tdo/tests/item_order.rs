@@ -1,17 +1,20 @@
-//! Exercise item moves through real key handling, writer, queue and reload.
+//! Exercise item moves through real key handling, the daemon's write path, queue and reload.
+mod common;
+
 use chrono::{TimeZone, Utc};
+use common::WriteDaemon;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::{fs, path::Path};
 use tdo::{
     app::{App, Outcome, Pane},
-    write::{Request, Writer},
+    write::Request,
 };
 use twydo_core::{
     compat::{Matrix, OperationEntry, Verdict},
     config::Config,
     edit::{Op, Placement},
     model::TaskKind,
-    store::{fsio::VdirLock, queue},
+    store::queue,
     views::Snapshot,
 };
 
@@ -99,8 +102,8 @@ impl Env {
         a.expanded.insert(self.parent.clone());
         a
     }
-    fn writer(&self) -> Writer {
-        Writer::open_with(&self.cfg, matrix(), Box::new(|_, _| {}))
+    fn writer(&self) -> WriteDaemon {
+        WriteDaemon::start(self.cfg.clone(), matrix())
     }
 }
 fn select(a: &mut App, title: &str) {
@@ -117,12 +120,12 @@ fn titles(a: &App) -> Vec<String> {
         .map(|r| a.snapshot.tasks[r.task].summary.clone())
         .collect()
 }
-fn apply(env: &Env, a: &mut App, w: &mut Writer, out: Outcome) {
+fn apply(_env: &Env, a: &mut App, w: &WriteDaemon, out: Outcome) {
     let Outcome::Write(req) = out else {
         panic!("expected write: {out:?}")
     };
-    let result = w.run(&a.snapshot, &req, now()).map_err(|e| e.message());
-    a.reload(env.snap());
+    let result = w.run(&req);
+    a.reload(w.snapshot());
     a.write_finished(result);
 }
 
@@ -131,18 +134,18 @@ fn keys_reorder_and_preserve_selection_with_undo_redo() {
     for kind in [TaskKind::Checklist, TaskKind::Project] {
         let env = Env::new(kind);
         let mut a = env.app();
-        let mut w = env.writer();
+        let w = env.writer();
         select(&mut a, "Mike");
         let uid = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
         let out = a.handle_key(key('K'));
-        apply(&env, &mut a, &mut w, out);
+        apply(&env, &mut a, &w, out);
         assert_eq!(titles(&a), ["Zulu", "Mike", "Alpha"]);
         assert_eq!(a.snapshot.tasks[a.selected().unwrap()].uid, uid);
         let out = a.handle_key(key('u'));
-        apply(&env, &mut a, &mut w, out);
+        apply(&env, &mut a, &w, out);
         assert_eq!(titles(&a), ["Zulu", "Alpha", "Mike"]);
         let out = a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
-        apply(&env, &mut a, &mut w, out);
+        apply(&env, &mut a, &w, out);
         assert_eq!(titles(&a), ["Zulu", "Mike", "Alpha"]);
     }
 }
@@ -151,7 +154,7 @@ fn keys_reorder_and_preserve_selection_with_undo_redo() {
 fn filtered_move_skips_hidden_siblings_and_contexts_do_not_write() {
     let env = Env::new(TaskKind::Checklist);
     let mut a = env.app();
-    let mut w = env.writer();
+    let w = env.writer();
     // Search notes shared by Zulu/Mike only, so Alpha is hidden.
     let mut s = env.snap();
     for t in &mut s.tasks {
@@ -181,9 +184,9 @@ fn filtered_move_skips_hidden_siblings_and_contexts_do_not_write() {
         anchor,
         placement,
     });
-    w.run(&env.snap(), &req, now()).unwrap();
+    w.run(&req).unwrap();
     a.search = None;
-    a.reload(env.snap());
+    a.reload(w.snapshot());
     assert_eq!(titles(&a), ["Alpha", "Mike", "Zulu"]);
     for pane in [Pane::Sidebar, Pane::Details] {
         a.focus = pane;
@@ -206,7 +209,7 @@ fn insertion_position_survives_row_and_card_and_chain_appends() {
             ] {
                 let env = Env::new(kind);
                 let mut a = env.app();
-                let mut w = env.writer();
+                let w = env.writer();
                 select(&mut a, "Alpha");
                 a.handle_key(key(c));
                 for c in "Inserted".chars() {
@@ -220,14 +223,14 @@ fn insertion_position_survives_row_and_card_and_chain_appends() {
                 } else {
                     code(KeyCode::Enter)
                 });
-                apply(&env, &mut a, &mut w, out);
+                apply(&env, &mut a, &w, out);
                 assert_eq!(titles(&a), want);
                 if !card {
                     for c in "Append".chars() {
                         a.handle_key(key(c));
                     }
                     let out = a.handle_key(code(KeyCode::Enter));
-                    apply(&env, &mut a, &mut w, out);
+                    apply(&env, &mut a, &w, out);
                     assert_eq!(titles(&a).last().unwrap(), "Append");
                 }
             }
@@ -239,17 +242,26 @@ fn insertion_position_survives_row_and_card_and_chain_appends() {
 fn queued_move_displays_immediately_and_commits_after_sync() {
     let env = Env::new(TaskKind::Project);
     let mut a = env.app();
-    let mut w = env.writer();
+    let w = env.writer();
     let state = twydo_core::store::bind_vdir_state(&env.cfg.state_dir(), &env.cfg.vdir).unwrap();
-    let lock = VdirLock::exclusive(&state).unwrap();
+    let lock = w
+        .handle
+        .hold_long(twydo_daemon::server::lane::LongKind::Test);
     select(&mut a, "Mike");
     let out = a.handle_key(key('K'));
-    apply(&env, &mut a, &mut w, out);
+    apply(&env, &mut a, &w, out);
     assert_eq!(titles(&a), ["Zulu", "Mike", "Alpha"]);
     assert!(a.message.as_deref().unwrap().contains("queued"));
     drop(lock);
-    w.drain(now());
-    a.reload(env.snap());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !queue::Queue::existing(&state).is_none_or(|q| q.is_empty().unwrap()) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the queue did not drain"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    a.reload(w.snapshot());
     assert_eq!(titles(&a), ["Zulu", "Mike", "Alpha"]);
 }
 
@@ -258,7 +270,7 @@ fn stale_insertion_anchor_keeps_typed_text_in_row_or_card() {
     for card in [false, true] {
         let env = Env::new(TaskKind::Checklist);
         let mut a = env.app();
-        let mut w = env.writer();
+        let w = env.writer();
         select(&mut a, "Alpha");
         let uid = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
         a.handle_key(key('O'));
@@ -269,13 +281,13 @@ fn stale_insertion_anchor_keeps_typed_text_in_row_or_card() {
             a.handle_key(code(KeyCode::Tab));
         }
         fs::remove_file(env.cfg.vdir.join(format!("list1/{uid}.ics"))).unwrap();
-        a.reload(env.snap());
+        a.reload(w.snapshot());
         let out = a.handle_key(if card {
             KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
         } else {
             code(KeyCode::Enter)
         });
-        apply(&env, &mut a, &mut w, out);
+        apply(&env, &mut a, &w, out);
         if card {
             let f = a.form.as_ref().unwrap();
             assert_eq!(f.title, "Keep typed");
@@ -331,11 +343,11 @@ fn tasks_and_details_render_the_same_reordered_sequence_and_counts() {
     use ratatui::{Terminal, backend::TestBackend};
     let env = Env::new(TaskKind::Project);
     let mut a = env.app();
-    let mut w = env.writer();
+    let w = env.writer();
     let counts = twydo_core::views::counts(&a.snapshot, &twydo_core::views::View::All, a.now);
     select(&mut a, "Mike");
     let out = a.handle_key(key('K'));
-    apply(&env, &mut a, &mut w, out);
+    apply(&env, &mut a, &w, out);
     assert_eq!(
         twydo_core::views::counts(&a.snapshot, &twydo_core::views::View::All, a.now),
         counts
@@ -407,9 +419,9 @@ fn normal_verified_tui_can_reorder_items_of_a_recurring_checklist() {
     let mut want: Vec<_> = nested.iter().map(|(_, uid)| uid.clone()).collect();
     let last = want.len() - 1;
     want.swap(last, last - 1);
-    let mut writer = Writer::open_with(&env.cfg, Matrix::embedded().clone(), Box::new(|_, _| {}));
+    let writer = WriteDaemon::start(env.cfg.clone(), Matrix::embedded().clone());
     let out = a.handle_key(key('K'));
-    apply(&env, &mut a, &mut writer, out);
+    apply(&env, &mut a, &writer, out);
     let actual: Vec<_> = a
         .visible_rows()
         .iter()

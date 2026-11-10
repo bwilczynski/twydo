@@ -26,12 +26,11 @@ use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
 use twydo_daemon::protocol::lists::{
     ListArchiveParams, ListCreateParams, ListDeleteParams, ListExportParams, ListForgetParams,
-    ListPreviewDeleteParams, ListReconcileParams, ListRecoverParams, ListUpdateParams,
-    PendingListOp, WireListState, color_hex,
+    ListPreviewDeleteParams, ListReconcileParams, ListUpdateParams, PendingListOp, WireListState,
+    color_hex,
 };
 use twydo_daemon::protocol::methods::{
-    AckParams, BasedOn, HelloResult, StatusView, SubmitParams, SubscribeResult, UndoParams,
-    WriteResult,
+    AckParams, BasedOn, HelloResult, StatusView, SubscribeResult,
 };
 use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
 use twydo_daemon::protocol::sync::{
@@ -41,6 +40,7 @@ use twydo_daemon::protocol::wire::{WireSnapshot, from_wire};
 
 use crate::app::{ClientSync, ListAction, ListCompletion, SYNC_DONE};
 use crate::client::{self, ConnectError, Target};
+use crate::write;
 use crate::write::Request;
 
 const CLIENT: &str = "tdo-tui";
@@ -262,6 +262,8 @@ struct Held {
     revision: u64,
     status_rev: u64,
     epoch: String,
+    /// Task titles by uid, from the last snapshot: they name a stale refusal.
+    titles: HashMap<String, String>,
 }
 
 impl Thread {
@@ -366,6 +368,7 @@ impl Thread {
             revision: 0,
             status_rev: 0,
             epoch: hello.epoch.clone(),
+            titles: HashMap::new(),
         };
         if let Err(e) = self.start_up(&caller, &mut held) {
             return Lost::Failed(e);
@@ -433,13 +436,19 @@ impl Thread {
         let wire: WireSnapshot = ready(caller, "snapshot.get", &serde_json::json!({}))?;
         held.revision = wire.revision;
         let revision = wire.revision;
+        let snapshot = from_wire(wire);
+        held.titles = snapshot
+            .tasks
+            .iter()
+            .map(|t| (t.uid.clone(), t.summary.clone()))
+            .collect();
         *self.based_on.lock().unwrap() = Some(BasedOn {
             epoch: held.epoch.clone(),
             revision,
         });
         self.send(Update::Snapshot {
             revision,
-            snapshot: from_wire(wire),
+            snapshot,
             cause,
             uids,
         });
@@ -642,45 +651,23 @@ impl Thread {
         let seq = i.seq;
         let session = caller.session().unwrap_or_default();
         if let Request::Recover { backup, to } = &i.write.request {
-            let params = ListRecoverParams {
-                session,
-                request_id: i.request_id.clone(),
-                backup: backup.clone(),
-                to: to.clone(),
-            };
+            let params = write::recover_params(&session, &i.request_id, backup, to);
             return match call::<_, JobStarted>(caller, "lists.recover", &params) {
                 Ok(s) => {
                     self.jobs.insert(s.job_id.clone(), Job::Recover(seq));
                     self.check_job(caller, &s.job_id).map_err(Lost::Failed)
                 }
-                Err(e) => self.write_failed(i, e),
+                Err(e) => self.write_failed(i, e, held),
             };
         }
-        let sent: Result<WriteResult, ClientError> = match &i.write.request {
-            Request::Apply(op) => call(
-                caller,
-                "op.submit",
-                &SubmitParams {
-                    session,
-                    request_id: i.request_id.clone(),
-                    based_on: i.write.based_on.clone(),
-                    op: op.clone(),
-                },
-            ),
-            Request::Undo | Request::Redo => call(
-                caller,
-                if i.write.request == Request::Undo {
-                    "op.undo"
-                } else {
-                    "op.redo"
-                },
-                &UndoParams {
-                    session,
-                    request_id: i.request_id.clone(),
-                },
-            ),
-            Request::Recover { .. } => unreachable!("handled above"),
-        };
+        let sent = write::submit(
+            caller,
+            &session,
+            &i.write.based_on,
+            &i.write.request,
+            &i.request_id,
+            CALL,
+        );
         match sent {
             Ok(r) => {
                 self.send(Update::Written {
@@ -700,19 +687,19 @@ impl Thread {
                 }
                 Ok(())
             }
-            Err(e) => self.write_failed(i, e),
+            Err(e) => self.write_failed(i, e, held),
         }
     }
 
     /// A write call that failed: an answer of the daemon (an error, or a reply that does not
     /// parse) is reported; anything else (a lost connection, a timeout) keeps the write in
     /// flight and ends this connection.
-    fn write_failed(&mut self, i: Inflight, e: ClientError) -> Result<(), Lost> {
+    fn write_failed(&mut self, i: Inflight, e: ClientError, held: &Held) -> Result<(), Lost> {
         match e {
             ClientError::Rpc(e) => {
                 self.send(Update::Written {
                     seq: i.seq,
-                    result: Err(e.message),
+                    result: Err(write::refusal_text(&e, |uid| held.titles.get(uid).cloned())),
                 });
                 Ok(())
             }
@@ -822,12 +809,7 @@ impl Thread {
             })),
             Job::Recover(seq) => self.send(Update::Written {
                 seq,
-                result: match state {
-                    JobState::Finished {
-                        result: JobResult::Recovered { message, .. },
-                    } => Ok(message),
-                    other => Err(problem(&other)),
-                },
+                result: write::recover_outcome(state),
             }),
             Job::List(action) => {
                 let result = list_result(state);

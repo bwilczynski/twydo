@@ -296,6 +296,107 @@ pub fn wait_exit(p: &mut Proc) -> std::process::ExitStatus {
     }
 }
 
+/// A daemon in this test process and a client of it, for tests of the write path. It plans
+/// every write on the snapshot it last handed out, as the TUI plans on the view it shows.
+pub struct WriteDaemon {
+    pub handle: DaemonHandle,
+    pub client: Client,
+    pub epoch: String,
+    _dir: tempfile::TempDir,
+    revision: std::cell::Cell<u64>,
+    view: std::cell::RefCell<twydo_core::views::Snapshot>,
+}
+
+impl WriteDaemon {
+    pub fn start(cfg: Config, matrix: Matrix) -> WriteDaemon {
+        let (handle, dir) = in_process_daemon(cfg.clone(), matrix);
+        let hello = HelloParams {
+            client: "test".into(),
+            version: "0".into(),
+            protocol: twydo_daemon::PROTOCOL,
+            session: None,
+            instance: Instance {
+                config: dir.path().join("config.toml"),
+                vdir: Some(cfg.vdir.clone()),
+            },
+        };
+        let (client, result) = Client::connect(handle.socket(), hello).expect("connect");
+        let d = WriteDaemon {
+            handle,
+            client,
+            epoch: result.epoch,
+            _dir: dir,
+            revision: std::cell::Cell::new(0),
+            view: std::cell::RefCell::new(twydo_core::views::Snapshot::new(
+                twydo_core::vdir::load(&cfg.vdir).unwrap(),
+                cfg,
+            )),
+        };
+        d.fetch();
+        d
+    }
+
+    /// Fetches the daemon's current snapshot and plans the next writes on it.
+    pub fn fetch(&self) -> twydo_core::views::Snapshot {
+        let wire: twydo_daemon::protocol::wire::WireSnapshot = self
+            .client
+            .call("snapshot.get", serde_json::json!({}))
+            .expect("snapshot.get");
+        self.revision.set(wire.revision);
+        let snap = twydo_daemon::protocol::wire::from_wire(wire);
+        *self.view.borrow_mut() = snap.clone();
+        snap
+    }
+
+    /// Reads the files again (as the watcher will after an outside change), then
+    /// [`WriteDaemon::fetch`].
+    pub fn snapshot(&self) -> twydo_core::views::Snapshot {
+        self.handle
+            .reload_for_test(twydo_daemon::protocol::events::Cause::Unknown)
+            .expect("reload");
+        self.fetch()
+    }
+
+    /// The revision of the snapshot writes are planned on.
+    pub fn revision(&self) -> u64 {
+        self.revision.get()
+    }
+
+    /// A write planned on the snapshot last fetched.
+    pub fn run(&self, req: &tdo::write::Request) -> Result<String, String> {
+        self.run_at(self.revision.get(), req)
+    }
+
+    /// A write planned on `revision` of this daemon.
+    pub fn run_at(&self, revision: u64, req: &tdo::write::Request) -> Result<String, String> {
+        let caller = self.client.caller();
+        let session = self.client.session().expect("session");
+        let based_on = twydo_daemon::protocol::methods::BasedOn {
+            epoch: self.epoch.clone(),
+            revision,
+        };
+        let done = tdo::write::execute(
+            &caller,
+            &session,
+            &based_on,
+            &self.view.borrow(),
+            req,
+            &self.client.next_request_id(),
+        );
+        if done.is_ok() {
+            // The daemon published the change before it answered; the TUI takes that snapshot.
+            self.fetch();
+        }
+        done
+    }
+
+    /// Reads the files again, then writes on the new snapshot.
+    pub fn run_fresh(&self, req: &tdo::write::Request) -> Result<String, String> {
+        self.snapshot();
+        self.run(req)
+    }
+}
+
 /// Which answers to `op.submit` a [`lossy_proxy`] swallows.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Lose {
