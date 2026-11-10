@@ -82,10 +82,16 @@ pub struct UndoParams {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum WriteOutcome {
     Applied,
     Queued,
     Satisfied,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -123,12 +129,25 @@ pub struct OpGetParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "state", rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum OpState {
     Pending,
-    Applied { op_id: String },
-    Refused { kind: ErrorKind, message: String },
+    Applied {
+        op_id: String,
+    },
+    Refused {
+        kind: ErrorKind,
+        message: String,
+    },
     Cancelled,
-    Satisfied { op_id: String },
+    Satisfied {
+        op_id: String,
+    },
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -189,9 +208,15 @@ pub struct RefusalView {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum SyncState {
     Idle,
     Running,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

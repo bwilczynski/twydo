@@ -104,6 +104,7 @@ impl ErrorData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum ErrorKind {
     Blocked,
     Stale,
@@ -114,6 +115,11 @@ pub enum ErrorKind {
     Protocol,
     WrongInstance,
     Internal,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, thiserror::Error)]

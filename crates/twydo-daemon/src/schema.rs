@@ -340,9 +340,20 @@ impl Walk<'_> {
                 .insert(format!("{label}: additional properties no longer allowed"));
         }
 
+        // What clients receive (results, events) may gain values only where released clients
+        // read an unknown value as `Unknown` (`x-open` in the released schema: opening an enum
+        // now does not help the clients already out); params may always gain them.
+        let closed_output = role == Role::Other && r.get("x-open") != Some(&json!(true));
         if let (Some(re), Some(ce)) = (enum_values(rel), enum_values(cur)) {
             for v in re.iter().filter(|v| !ce.contains(v)) {
                 self.out.insert(format!("{label}: enum value {v} removed"));
+            }
+            if closed_output {
+                for v in ce.iter().filter(|v| !re.contains(v)) {
+                    self.out.insert(format!(
+                        "{label}: enum value {v} added (clients cannot read it)"
+                    ));
+                }
             }
         }
 
@@ -362,6 +373,7 @@ impl Walk<'_> {
             .enumerate()
             .map(|(i, v)| variant_key(self.current, v, i))
             .collect();
+        let mut rkeys = Vec::new();
         for (i, v) in rv.iter().enumerate() {
             let key = variant_key(self.released, v, i);
             match ckeys.iter().position(|k| *k == key) {
@@ -369,6 +381,17 @@ impl Walk<'_> {
                     self.out.insert(format!("{label}: variant {key} removed"));
                 }
                 Some(j) => self.walk(&format!("{label}({key})"), v, cv[j], role),
+            }
+            rkeys.push(key);
+        }
+        // Gained `null` is reported as a type change above.
+        if closed_output && !rv.is_empty() {
+            for key in ckeys.iter().filter(|k| !rkeys.contains(k)) {
+                if key != "type:\"null\"" {
+                    self.out.insert(format!(
+                        "{label}: variant {key} added (clients cannot read it)"
+                    ));
+                }
             }
         }
 

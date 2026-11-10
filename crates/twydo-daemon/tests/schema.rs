@@ -92,8 +92,13 @@ fn a_lost_error_kind_is_a_break() {
 }
 
 #[test]
-fn a_gained_enum_value_is_not_a_break() {
+fn a_gained_value_of_an_open_enum_is_not_a_break() {
+    // ErrorKind is open: clients read a value they do not know as `unknown`.
     let released = schema::document();
+    assert_eq!(
+        def_mut(&mut released.clone(), "ErrorKind")["x-open"],
+        json!(true)
+    );
     let mut current = released.clone();
     def_mut(&mut current, "ErrorKind")["enum"]
         .as_array_mut()
@@ -103,6 +108,139 @@ fn a_gained_enum_value_is_not_a_break() {
         schema::breaking_changes(&released, &current),
         Vec::<String>::new()
     );
+}
+
+#[test]
+fn a_gained_value_of_a_closed_enum_in_a_reply_is_a_break() {
+    // WriteMode reaches clients in the snapshot's config and is not open.
+    let released = schema::document();
+    let mut current = released.clone();
+    let def = def_mut(&mut current, "WriteMode");
+    assert!(def.get("x-open").is_none());
+    def["enum"].as_array_mut().unwrap().push(json!("brand_new"));
+    let b = schema::breaking_changes(&released, &current);
+    assert!(
+        b.iter()
+            .any(|l| l.contains("WriteMode") && l.contains("\"brand_new\" added")),
+        "{b:?}"
+    );
+}
+
+#[test]
+fn a_gained_variant_of_a_closed_tagged_enum_in_a_reply_is_a_break() {
+    let mut released = schema::document();
+    def_mut(&mut released, "OpState")
+        .as_object_mut()
+        .unwrap()
+        .remove("x-open");
+    let mut current = released.clone();
+    def_mut(&mut current, "OpState")["oneOf"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "type": "object",
+            "properties": {"state": {"type": "string", "const": "brand_new"}},
+            "required": ["state"]
+        }));
+    let b = schema::breaking_changes(&released, &current);
+    assert!(
+        b.iter()
+            .any(|l| l.contains("OpState") && l.contains("added")),
+        "{b:?}"
+    );
+    // The same variant in the open OpState is fine.
+    let released = schema::document();
+    let mut current = released.clone();
+    def_mut(&mut current, "OpState")["oneOf"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "type": "object",
+            "properties": {"state": {"type": "string", "const": "brand_new"}},
+            "required": ["state"]
+        }));
+    assert_eq!(
+        schema::breaking_changes(&released, &current),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn a_gained_value_of_a_closed_enum_in_params_is_not_a_break() {
+    let doc = |values: Value| {
+        json!({
+            "methods": [{
+                "name": "m",
+                "params": [{"name": "params", "schema": {"$ref": "#/components/schemas/Mode"}}],
+                "result": {"name": "result", "schema": {"type": "object"}}
+            }],
+            "components": {"schemas": {"Mode": {"type": "string", "enum": values}}}
+        })
+    };
+    let released = doc(json!(["a"]));
+    assert_eq!(
+        schema::breaking_changes(&released, &doc(json!(["a", "b"]))),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        schema::breaking_changes(&released, &doc(json!([]))),
+        vec!["Mode: enum value \"a\" removed".to_string()]
+    );
+}
+
+#[test]
+fn every_open_enum_reads_an_unknown_value() {
+    use twydo_daemon::protocol::events::{Cause, Event, EventEnvelope};
+    use twydo_daemon::protocol::methods::{OpState, SyncState, WriteOutcome};
+    use twydo_daemon::protocol::rpc::ErrorKind;
+    let doc = schema::document();
+    let open: Vec<&str> = doc["components"]["schemas"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, d)| d["x-open"] == json!(true))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    assert_eq!(
+        open,
+        [
+            "Cause",
+            "ErrorKind",
+            "EventEnvelope",
+            "OpState",
+            "SyncState",
+            "WriteOutcome"
+        ]
+    );
+    assert_eq!(
+        serde_json::from_value::<WriteOutcome>(json!("brand_new")).unwrap(),
+        WriteOutcome::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<ErrorKind>(json!("brand_new")).unwrap(),
+        ErrorKind::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<Cause>(json!("brand_new")).unwrap(),
+        Cause::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<SyncState>(json!("brand_new")).unwrap(),
+        SyncState::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<OpState>(json!({"state": "brand_new", "x": 1})).unwrap(),
+        OpState::Unknown
+    );
+    let ev: EventEnvelope =
+        serde_json::from_value(json!({"seq": 3, "type": "brand.new", "x": 1})).unwrap();
+    assert_eq!(ev.event, Event::Unknown);
+    assert_eq!(ev.seq, 3);
+    // The schema never offers `unknown`: the daemon does not send it.
+    for name in open {
+        let def = doc["components"]["schemas"][name].to_string();
+        assert!(!def.contains("\"unknown\""), "{name}: {def}");
+    }
 }
 
 #[test]
@@ -274,5 +412,37 @@ fn dropping_all_variants_reports_them() {
             .iter()
             .any(|l| l.contains("OpState") && l.contains("removed")),
         "{lines:?}"
+    );
+}
+
+#[test]
+fn opening_an_enum_and_adding_a_value_at_once_is_a_break() {
+    let doc = |values: Value, open: bool| {
+        let mut mode = json!({"type": "string", "enum": values});
+        if open {
+            mode["x-open"] = json!(true);
+        }
+        json!({
+            "methods": [{
+                "name": "m",
+                "params": [{"name": "params", "schema": {"type": "object"}}],
+                "result": {"name": "result", "schema": {"$ref": "#/components/schemas/Mode"}}
+            }],
+            "components": {"schemas": {"Mode": mode}}
+        })
+    };
+    let b = schema::breaking_changes(&doc(json!(["a"]), false), &doc(json!(["a", "b"]), true));
+    assert_eq!(
+        b,
+        vec!["Mode: enum value \"b\" added (clients cannot read it)".to_string()]
+    );
+    // Opening it alone is fine, and once released open, it may gain values.
+    assert_eq!(
+        schema::breaking_changes(&doc(json!(["a"]), false), &doc(json!(["a"]), true)),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        schema::breaking_changes(&doc(json!(["a"]), true), &doc(json!(["a", "b"]), true)),
+        Vec::<String>::new()
     );
 }

@@ -77,7 +77,8 @@
           "recovery",
           "config"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "Change": {
         "description": "One field change of an existing task.",
@@ -452,7 +453,8 @@
           "wrong_instance",
           "internal"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "EventEnvelope": {
         "description": "Params of the `event` notification.",
@@ -541,7 +543,8 @@
         "required": [
           "seq"
         ],
-        "type": "object"
+        "type": "object",
+        "x-open": true
       },
       "Freq": {
         "enum": [
@@ -1269,7 +1272,8 @@
             ],
             "type": "object"
           }
-        ]
+        ],
+        "x-open": true
       },
       "Placement": {
         "description": "A write operation on the task store.",
@@ -1659,7 +1663,8 @@
           "idle",
           "running"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "SyncView": {
         "properties": {
@@ -2029,7 +2034,8 @@
           "queued",
           "satisfied"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "WriteResult": {
         "properties": {
