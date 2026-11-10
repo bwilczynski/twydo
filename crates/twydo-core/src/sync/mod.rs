@@ -8,6 +8,7 @@ pub mod lock;
 pub mod manifest;
 pub mod output;
 pub mod reconcile;
+pub mod report;
 pub mod resolve;
 pub mod run;
 pub mod running;
