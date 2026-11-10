@@ -1019,18 +1019,25 @@
         ]
       },
       "InputField": {
-        "description": "Which field `input.parse` reads text for.",
+        "description": "Which field `input.parse` reads text for.\n\nClients send this value and the daemon reads it, so it is a closed enum: a daemon that\ndoes not know a field answers `invalid` through the ordinary params check.",
         "enum": [
           "due",
           "start",
           "repeat"
         ],
-        "type": "string",
-        "x-open": true
+        "type": "string"
       },
       "InputParseParams": {
         "description": "Params of `input.parse`: typed text of a date or repeat field, read with the grammar the\nTUI uses.",
         "properties": {
+          "anchor": {
+            "description": "The date a repeat description follows (the task's due date, else today); defaults to\nnone. Only the repeat field reads it.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "field": {
             "$ref": "#/components/schemas/InputField"
           },
@@ -2265,6 +2272,56 @@
         ],
         "type": "object"
       },
+      "PendingListOp": {
+        "description": "An unfinished list save (`lists.pending`), as the TUI's reconcile card needs it.",
+        "properties": {
+          "action": {
+            "description": "`create`, `update`, and so on.",
+            "type": "string"
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_color": {
+            "description": "The colour the server reported, when the record has it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_name": {
+            "description": "The name the server reported, when the record has it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "description": "The operation record's id (`lists.reconcile` takes it).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "action"
+        ],
+        "type": "object"
+      },
       "Placement": {
         "description": "A write operation on the task store.",
         "enum": [
@@ -2887,7 +2944,7 @@
         "description": "Result of `sync.set_auto`.",
         "properties": {
           "auto": {
-            "description": "The switch as it is now.",
+            "description": "The switch the call set: `true` is automatic sync on. It repeats the request's `on`;\nit is not read back from the switch file.",
             "type": "boolean"
           },
           "message": {
@@ -2927,6 +2984,14 @@
           "auto": {
             "type": "boolean"
           },
+          "collections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WireCollState"
+            },
+            "default": {},
+            "description": "The last reported state of each list, by directory name.",
+            "type": "object"
+          },
           "failures": {
             "format": "uint32",
             "minimum": 0,
@@ -2954,6 +3019,13 @@
           },
           "last_success": {
             "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metasync_error": {
+            "description": "Why the last list-metadata sync failed, when it did.",
             "type": [
               "string",
               "null"
@@ -3060,6 +3132,76 @@
           "request_id"
         ],
         "type": "object"
+      },
+      "WireCollState": {
+        "description": "The last reported sync result of one list.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "ok",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "conflict",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "emptied_local",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "emptied_remote",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "const": "error",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "message"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
       },
       "WireCollection": {
         "properties": {
@@ -4057,6 +4199,32 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.pending",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/PendingListOp"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "x-lifecycle": false

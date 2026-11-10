@@ -162,6 +162,22 @@ pub fn active(cfg: &Config) -> io::Result<Option<ListOperation>> {
     Ok((record.phase != Phase::Complete).then_some(record))
 }
 
+/// The `(name, colour)` the server reported for an unfinished operation, when its receipt
+/// carries them.
+pub fn observed(record: &ListOperation) -> Option<(Option<String>, Option<String>)> {
+    let value = record.receipt.as_ref()?.get("observed")?;
+    Some((
+        value
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        value
+            .get("color")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    ))
+}
+
 pub fn snapshot(path: &Path) -> io::Result<Option<BTreeMap<String, Vec<u8>>>> {
     if fs::symlink_metadata(path).is_ok_and(|m| m.is_symlink()) {
         return Err(invalid("collection is a symlink"));

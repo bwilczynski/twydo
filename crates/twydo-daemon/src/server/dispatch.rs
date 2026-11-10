@@ -142,6 +142,7 @@ pub fn dispatch(
         "lists.forget" => super::lists::forget(shared, conn, parse(params)?),
         "lists.recover" => super::lists::recover(shared, conn, parse(params)?),
         "lists.preview_forget" => super::lists::preview_forget(shared, parse(params)?),
+        "lists.pending" => super::lists::pending(shared),
         "lists.backups" => super::lists::backups(shared),
         "lists.backup_preview" => super::lists::backup_preview(shared, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),

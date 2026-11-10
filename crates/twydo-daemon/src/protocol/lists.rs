@@ -71,6 +71,19 @@ pub struct WireDeletePreview {
     pub local_files: usize,
 }
 
+impl WireDeletePreview {
+    /// The preview a deletion backup `b` stands for.
+    pub fn of(b: &twydo_core::lists::backup::Backup) -> WireDeletePreview {
+        WireDeletePreview {
+            backup: b.id.clone(),
+            collection: b.collection.clone(),
+            name: b.name.clone(),
+            resources: b.remote.resources.len(),
+            local_files: b.local.len(),
+        }
+    }
+}
+
 impl From<DeletePreview> for WireDeletePreview {
     fn from(p: DeletePreview) -> Self {
         WireDeletePreview {
@@ -174,6 +187,17 @@ pub struct ForgetPreview {
     pub pending: usize,
 }
 
+impl ForgetPreview {
+    pub fn of(p: &twydo_core::retired::Preview) -> ForgetPreview {
+        ForgetPreview {
+            collection: p.collection.clone(),
+            name: p.name.clone(),
+            tasks: p.tasks,
+            pending: p.pending,
+        }
+    }
+}
+
 /// Params of `lists.forget`: the list `name` as the preview showed it; the job fails when
 /// `name` now resolves to another directory than `collection`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -205,6 +229,20 @@ pub struct RetiredBackupView {
     pub retired: bool,
 }
 
+impl RetiredBackupView {
+    pub fn of(b: &twydo_core::retired::Backup) -> RetiredBackupView {
+        RetiredBackupView {
+            id: b.id.clone(),
+            collection: b.collection.clone(),
+            name: b.name.clone(),
+            created: b.created,
+            tasks: b.tasks,
+            pending: b.pending,
+            retired: b.retired,
+        }
+    }
+}
+
 /// A backup a list deletion kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DeletedBackupView {
@@ -225,4 +263,36 @@ pub struct Backups {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BackupPreviewParams {
     pub id: String,
+}
+
+/// An unfinished list save (`lists.pending`), as the TUI's reconcile card needs it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PendingListOp {
+    /// The operation record's id (`lists.reconcile` takes it).
+    pub operation: String,
+    /// `create`, `update`, and so on.
+    pub action: String,
+    pub collection: Option<String>,
+    pub name: Option<String>,
+    pub color: Option<String>,
+    /// The name the server reported, when the record has it.
+    pub observed_name: Option<String>,
+    /// The colour the server reported, when the record has it.
+    pub observed_color: Option<String>,
+}
+
+impl PendingListOp {
+    pub fn of(record: &twydo_core::lists::operation::ListOperation) -> PendingListOp {
+        let (observed_name, observed_color) =
+            twydo_core::lists::operation::observed(record).unwrap_or_default();
+        PendingListOp {
+            operation: record.id.clone(),
+            action: record.request.action.clone(),
+            collection: record.request.collection.clone(),
+            name: record.request.name.clone(),
+            color: record.request.color.clone(),
+            observed_name,
+            observed_color,
+        }
+    }
 }

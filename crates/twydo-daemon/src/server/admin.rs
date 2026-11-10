@@ -353,12 +353,11 @@ pub fn input_parse(shared: &Arc<Shared>, p: InputParseParams) -> Result<Value, R
                         spec: spec.clone(),
                     }),
                     cleared: false,
-                    description: repeatinput::describe(&spec, None),
+                    description: repeatinput::describe(&spec, p.anchor),
                 },
                 None => cleared(),
             }
         }
-        InputField::Unknown => return Err(invalid("unknown field".into())),
     };
     to_value(out)
 }

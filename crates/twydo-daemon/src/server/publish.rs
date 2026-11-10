@@ -386,6 +386,13 @@ impl Publisher {
                     failures: m.status.failures,
                     last_error: m.status.last_error.clone(),
                     job_id: sync_running.flatten(),
+                    collections: m
+                        .status
+                        .collections
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.into()))
+                        .collect(),
+                    metasync_error: m.status.metasync_error.clone(),
                 }),
                 m.queued,
                 m.conflicts.len(),

@@ -299,18 +299,15 @@ pub struct AbandonResult {
 }
 
 /// Which field `input.parse` reads text for.
+///
+/// Clients send this value and the daemon reads it, so it is a closed enum: a daemon that
+/// does not know a field answers `invalid` through the ordinary params check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(transform = super::open_enum)]
 pub enum InputField {
     Due,
     Start,
     Repeat,
-    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
-    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
-    #[serde(other)]
-    #[schemars(skip)]
-    Unknown,
 }
 
 /// Params of `input.parse`: typed text of a date or repeat field, read with the grammar the
@@ -322,6 +319,10 @@ pub struct InputParseParams {
     /// The day "today" means; defaults to today in the configured time zone.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub today: Option<chrono::NaiveDate>,
+    /// The date a repeat description follows (the task's due date, else today); defaults to
+    /// none. Only the repeat field reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<chrono::NaiveDate>,
 }
 
 /// A parsed repeat rule.

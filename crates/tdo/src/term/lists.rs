@@ -50,7 +50,9 @@ pub fn perform_list_action(
     })()
     .map_err(|e| e.to_string());
     let active = operation::active(cfg).ok().flatten();
-    let server_values = active.as_ref().and_then(crate::app::observed);
+    let server_values = active
+        .as_ref()
+        .and_then(twydo_core::lists::operation::observed);
     let pending = active.and_then(|r| r.request.collection.map(|id| (r.id, id)));
     ListCompletion {
         action,

@@ -80,7 +80,8 @@ pub struct SyncSetAutoParams {
 /// Result of `sync.set_auto`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SyncSetAutoResult {
-    /// The switch as it is now.
+    /// The switch the call set: `true` is automatic sync on. It repeats the request's `on`;
+    /// it is not read back from the switch file.
     pub auto: bool,
     /// The confirmation, in the words `tdo sync on|off` uses.
     pub message: String,
