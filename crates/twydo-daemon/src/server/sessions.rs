@@ -6,7 +6,7 @@
 //! (`crates/tdo/src/write.rs`).
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use twydo_core::compat::Matrix;
@@ -130,6 +130,7 @@ pub struct Sessions {
     matrix: Matrix,
     ttl: Duration,
     slots: Mutex<HashMap<String, Slot>>,
+    test_point: Option<super::TestPoint>,
 }
 
 impl Sessions {
@@ -139,7 +140,26 @@ impl Sessions {
             matrix,
             ttl,
             slots: Mutex::new(HashMap::new()),
+            test_point: None,
         }
+    }
+
+    /// Passes the daemon's test point to the table (`sessions_locked`, `without_recovery`).
+    pub fn with_test_point(mut self, hook: Option<super::TestPoint>) -> Sessions {
+        self.test_point = hook;
+        self
+    }
+
+    fn point(&self, name: &str) {
+        if let Some(hook) = &self.test_point {
+            hook(name);
+        }
+    }
+
+    /// The table, even if a panic poisoned it: its entries stay sound whatever a holder was
+    /// doing when it panicked.
+    fn table(&self) -> MutexGuard<'_, HashMap<String, Slot>> {
+        self.slots.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Resumes `resume` if it is alive, else creates a new session; returns its id, attached
@@ -147,21 +167,27 @@ impl Sessions {
     /// caller [detaches](Sessions::detach) it when the connection closes). Expired sessions
     /// are dropped.
     pub fn open(&self, resume: Option<&str>) -> Result<String, WriteError> {
-        let mut slots = self.slots.lock().unwrap();
-        let now = Instant::now();
-        slots.retain(|_, s| !s.expired(now, self.ttl));
-        if let Some(id) = resume
-            && let Some(s) = slots.get_mut(id)
         {
-            s.conns += 1;
-            s.detached = None;
-            return Ok(id.to_string());
+            let mut slots = self.table();
+            self.point("sessions_locked");
+            let now = Instant::now();
+            slots.retain(|_, s| !s.expired(now, self.ttl));
+            if let Some(id) = resume
+                && let Some(s) = slots.get_mut(id)
+            {
+                s.conns += 1;
+                s.detached = None;
+                return Ok(id.to_string());
+            }
         }
+        // The store is opened (disk I/O) without the table lock, so a slow open does not hold
+        // up other connections.
+        self.point("without_recovery");
         let mut store = Store::without_recovery(&self.cfg, self.matrix.clone())?;
         // Writes hand the items they drained on their way to `op.finished`.
         store.set_collect_drained(true);
         let id = format!("s-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
-        slots.insert(
+        self.table().insert(
             id.clone(),
             Slot {
                 session: Arc::new(Mutex::new(Session {
@@ -178,7 +204,7 @@ impl Sessions {
 
     /// The session `id`, unless it is unknown or expired.
     pub fn get(&self, id: &str) -> Option<Arc<Mutex<Session>>> {
-        let mut slots = self.slots.lock().unwrap();
+        let mut slots = self.table();
         if slots
             .get(id)
             .is_some_and(|s| s.expired(Instant::now(), self.ttl))
@@ -191,7 +217,7 @@ impl Sessions {
 
     /// A connection holds `id`.
     pub fn attach(&self, id: &str) {
-        if let Some(s) = self.slots.lock().unwrap().get_mut(id) {
+        if let Some(s) = self.table().get_mut(id) {
             s.conns += 1;
             s.detached = None;
         }
@@ -199,7 +225,7 @@ impl Sessions {
 
     /// A connection let go of `id`; the ttl starts when the last one does.
     pub fn detach(&self, id: &str) {
-        if let Some(s) = self.slots.lock().unwrap().get_mut(id) {
+        if let Some(s) = self.table().get_mut(id) {
             s.conns = s.conns.saturating_sub(1);
             if s.conns == 0 {
                 s.detached = Some(Instant::now());

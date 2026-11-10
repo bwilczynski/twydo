@@ -306,7 +306,8 @@ impl Daemon {
         let (wake_r, wake_w) = wake_pipe()?;
         let bus = bus::EventBus::new();
         let publisher = publish::Publisher::new(cfg.clone(), state.clone(), Arc::clone(&bus));
-        let sessions = sessions::Sessions::new(cfg.clone(), opts.matrix.clone(), opts.session_ttl);
+        let sessions = sessions::Sessions::new(cfg.clone(), opts.matrix.clone(), opts.session_ttl)
+            .with_test_point(opts.test_point.clone());
         let shared = Arc::new(Shared {
             cfg,
             bus,

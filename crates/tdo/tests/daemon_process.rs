@@ -385,7 +385,11 @@ fn second_sigint_exits_at_once() {
     let started = Instant::now();
     let status = wait_exit(&mut d);
     drop(lock);
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "{:?}",
+        started.elapsed()
+    );
     // 130 (the second signal); 0 only if teardown beat the second signal, which the held
     // lock rules out.
     assert_eq!(status.code(), Some(130), "{status:?}");
