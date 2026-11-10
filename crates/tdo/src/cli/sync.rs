@@ -2,107 +2,242 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use twydo_core::config::Config;
-use twydo_core::store::DrainOutcome;
-use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::sync::batch::{self, Due, Trigger};
-use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, describe, messages, switch_message};
-use twydo_core::sync::run::{RunOptions, run};
-use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
+use twydo_core::sync::report::{NOT_CONFIGURED, describe};
 use twydo_core::sync::{summary, switch};
+use twydo_daemon::client::{Client, ClientError, Notification};
+use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
+use twydo_daemon::protocol::methods::SubscribeResult;
+use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
+use twydo_daemon::protocol::sync::{
+    SyncOutcome, SyncResult, SyncRunParams, SyncSetAutoParams, SyncSetAutoResult,
+};
+use twydo_daemon::protocol::wire::WireSnapshot;
 
-use super::{EXIT_ERROR, resolve_config};
+use super::{EXIT_ERROR, op, resolve_config};
+use crate::client::{self, CLI_TIMEOUT, Target};
 
-/// `tdo sync`: exit 0 when every collection is fine, 1 when the run had conflicts, emptied
-/// lists or a failure, 2 on a configuration or IO error. `background` prints nothing on
-/// success. `when_due` (with `background`) runs the batch waiter instead: it exits 0 unless
-/// an IO error stops it.
-pub fn sync(vdir: Option<&Path>, background: bool, when_due: bool, force_delete: &[String]) -> i32 {
-    let cfg = match resolve_config(vdir) {
-        Ok(c) => c,
-        Err(e) => return error(&e),
-    };
-    if !background {
-        print_warnings(&cfg);
-    }
-    if cfg.sync.is_none() {
-        return error(&NOT_CONFIGURED);
-    }
-    if when_due {
-        let opts = RunOptions {
-            background: true,
-            ..RunOptions::default()
-        };
-        let mut sync = || run(&cfg, &opts, Utc::now());
-        return match wait_and_sync(&cfg, &mut SystemClock, &mut sync) {
-            Ok(_) => 0,
-            Err(e) => error(&e),
-        };
-    }
-    let mut ids = Vec::with_capacity(force_delete.len());
-    for name in force_delete {
-        match collection_id(&cfg, name) {
-            Ok(id) => ids.push(id),
-            Err(msg) => return error(&msg),
-        }
-    }
-    let opts = RunOptions {
-        background,
-        force_delete: ids,
-        ..RunOptions::default()
-    };
-    let report = match run(&cfg, &opts, Utc::now()) {
-        Ok(r) => r,
-        Err(e) => return error(&e),
-    };
-    if report.skipped.is_some() {
-        return 0;
-    }
-    if report
-        .drained
-        .iter()
-        .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))
-        && let Some(trigger) = batch::after_write(&cfg, Utc::now())
-    {
-        spawn(&cfg, vdir, trigger);
-    }
-    if !background {
-        print_refusals(&cfg);
-    }
-    let m = messages(&cfg, &report);
-    for p in &m.problems {
-        eprintln!("tdo: {p}");
-    }
-    for w in &m.warnings {
-        eprintln!("tdo: warning: {w}");
-    }
-    if m.problems.is_empty() {
-        if !background {
-            for n in &m.notes {
-                println!("{n}");
-            }
-            println!("synced");
-        }
-        0
-    } else {
-        1
+const CLIENT: &str = "tdo-sync";
+/// How often the wait for a sync asks `job.get` when no event arrives.
+const JOB_POLL: Duration = Duration::from_secs(5);
+/// How long a call waits for a daemon that is still starting.
+const STARTUP_WAIT: Duration = Duration::from_secs(30);
+/// How long the wait for a sync keeps trying to reach a daemon that went away.
+const RECONNECT_FOR: Duration = Duration::from_secs(60);
+
+/// Prints why a call to the daemon failed and returns the exit code (2).
+pub(super) fn client_error(e: &ClientError) -> i32 {
+    match e {
+        ClientError::Rpc(_) => error(e),
+        ClientError::TimedOut(_) => error(&"daemon did not answer"),
+        _ => error(&format_args!("daemon not running: {e}")),
     }
 }
 
-/// Tells the user about queued edits that were refused and not yet shown, once.
-pub(super) fn print_refusals(cfg: &Config) {
-    let Ok(Some(state)) = twydo_core::store::existing_vdir_state(&cfg.state_dir(), &cfg.vdir)
-    else {
-        return;
+/// A changing call, resent with the same request id until answered; when the window ends
+/// the outcome is reported as unknown (`unknown` says what may have happened) and the exit code is 2.
+pub(super) fn change<P: serde::Serialize + Clone, R: serde::de::DeserializeOwned>(
+    target: &Target,
+    client: &mut Client,
+    method: &str,
+    request_id: &str,
+    params: &P,
+    unknown: client::Unknown,
+) -> Result<R, i32> {
+    match client::call_changing(
+        target,
+        CLIENT,
+        client,
+        method,
+        |_| params.clone(),
+        client::reconnect_for(),
+    ) {
+        Ok(r) => Ok(r),
+        Err(client::ChangeError::Failed(e)) => Err(client_error(&e)),
+        Err(client::ChangeError::NoAnswer) => {
+            Err(error(&client::no_answer_message(unknown, request_id)))
+        }
+    }
+}
+
+/// Connects to the daemon (starting it when none runs), or prints why not.
+pub(super) fn connect(target: &Target) -> Result<Client, i32> {
+    match client::connect(target, CLIENT, None) {
+        Ok((c, _)) => Ok(c),
+        Err(e) => Err(error(&e)),
+    }
+}
+
+/// Prints the daemon's configuration warnings as `warning: <w>` on stderr.
+fn print_config_warnings(client: &Client) -> Result<(), i32> {
+    let snap: WireSnapshot = client::call_ready(
+        &client.caller(),
+        "snapshot.get",
+        &serde_json::json!({}),
+        CLI_TIMEOUT,
+        STARTUP_WAIT,
+    )
+    .map_err(|e| client_error(&e))?;
+    for w in &snap.config_warnings {
+        eprintln!("warning: {w}");
+    }
+    Ok(())
+}
+
+/// `tdo sync`: the daemon runs it (behind any sync already running) and this waits for the
+/// outcome. Exit 0 when every collection is fine, 1 when the run had conflicts, emptied
+/// lists, a failure or was stopped, 2 when the daemon refused the call or is out of reach.
+/// `--background` and `--when-due` only connect, so the installed timer keeps the daemon
+/// alive; they print nothing.
+pub fn sync(target: &Target, background: bool, _when_due: bool, force_delete: &[String]) -> i32 {
+    let client = match connect(target) {
+        Ok(c) => c,
+        Err(code) => return code,
     };
-    let Some(queue) = Queue::existing(&state) else {
-        return;
-    };
-    for r in queue.unshown().unwrap_or_default() {
-        eprintln!("tdo: {}", refusal_message(&r));
-        let _ = queue.mark_shown(&r.item.id);
+    if background {
+        return 0;
+    }
+    if let Err(code) = print_config_warnings(&client) {
+        return code;
+    }
+    match run_and_wait(target, client, force_delete) {
+        Ok(code) => code,
+        Err(code) => code,
+    }
+}
+
+fn run_and_wait(target: &Target, mut client: Client, force_delete: &[String]) -> Result<i32, i32> {
+    let _: SubscribeResult = client
+        .caller()
+        .call_timeout("events.subscribe", serde_json::json!({}), CLI_TIMEOUT)
+        .map_err(|e| client_error(&e))?;
+    let rid = format!("sync-{}", client.next_request_id());
+    let started: JobStarted = change(
+        target,
+        &mut client,
+        "sync.run",
+        &rid,
+        &SyncRunParams {
+            request_id: rid.clone(),
+            force_delete: force_delete.to_vec(),
+        },
+        client::Unknown::SyncStarted,
+    )?;
+    let (client, state) = await_job(target, client, &started.job_id)?;
+    match state {
+        JobState::Finished {
+            result: JobResult::Sync(r),
+        } => {
+            let _ = op::print_refusals(&client);
+            Ok(report(&r))
+        }
+        JobState::Failed { message, .. } => Err(error(&message)),
+        _ => Err(error(&"the daemon stopped before the sync ended")),
+    }
+}
+
+/// Prints what the sync reported; the exit code.
+fn report(r: &SyncResult) -> i32 {
+    for p in &r.problems {
+        eprintln!("tdo: {p}");
+    }
+    for w in &r.warnings {
+        eprintln!("tdo: warning: {w}");
+    }
+    let failed = matches!(
+        r.outcome,
+        SyncOutcome::Failed | SyncOutcome::Stopped | SyncOutcome::Unknown
+    );
+    if !r.problems.is_empty() || failed {
+        if r.problems.is_empty() {
+            eprintln!(
+                "tdo: sync {}",
+                if r.outcome == SyncOutcome::Failed {
+                    "failed"
+                } else {
+                    "stopped"
+                }
+            );
+        }
+        return 1;
+    }
+    if r.outcome == SyncOutcome::Ok {
+        for n in &r.notes {
+            println!("{n}");
+        }
+        println!("synced");
+    }
+    0
+}
+
+/// Waits for job `id` by `job.finished` events, asking `job.get` every 5 s, after `missed`
+/// and after a lost connection (which is re-made, starting the daemon when nobody has).
+/// Returns the connection it ended on with the job's final state.
+fn await_job(target: &Target, client: Client, id: &str) -> Result<(Client, JobState), i32> {
+    let mut client = client;
+    let mut gone_since: Option<Instant> = None;
+    let mut check_now = false;
+    loop {
+        if check_now {
+            check_now = false;
+            let got: Result<JobView, ClientError> = client.caller().call_timeout(
+                "job.get",
+                JobGetParams {
+                    job_id: Some(id.to_string()),
+                    request_id: None,
+                },
+                CLI_TIMEOUT,
+            );
+            match got {
+                Ok(v) if v.state.is_final() => return Ok((client, v.state)),
+                Ok(_) => gone_since = None,
+                Err(ClientError::Rpc(e))
+                    if e.data.as_ref().map(|d| d.kind) == Some(RpcKind::Unavailable) =>
+                {
+                    // Connected, but the daemon is not ready: ask again shortly.
+                    std::thread::sleep(Duration::from_millis(200));
+                    check_now = true;
+                    continue;
+                }
+                Err(ClientError::Rpc(e)) => return Err(client_error(&ClientError::Rpc(e))),
+                Err(_) => {
+                    let since = *gone_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() > RECONNECT_FOR {
+                        return Err(error(&"daemon not running: it did not come back"));
+                    }
+                    match client::connect(target, CLIENT, None) {
+                        Ok((c, _)) => {
+                            client = c;
+                            let _: Result<SubscribeResult, _> = client.caller().call_timeout(
+                                "events.subscribe",
+                                serde_json::json!({}),
+                                CLI_TIMEOUT,
+                            );
+                        }
+                        Err(_) => std::thread::sleep(Duration::from_millis(500)),
+                    }
+                    check_now = true;
+                    continue;
+                }
+            }
+        }
+        match client.notifications().recv_timeout(JOB_POLL) {
+            Ok(Notification::Event(env)) => {
+                if let Event::JobFinished { job_id, state, .. } = env.event
+                    && job_id == id
+                {
+                    return Ok((client, state));
+                }
+            }
+            Ok(Notification::Missed(_)) => check_now = true,
+            Ok(Notification::Heartbeat(_)) => {}
+            Err(_) => check_now = true,
+        }
     }
 }
 
@@ -117,25 +252,38 @@ fn print_warnings(cfg: &Config) {
     }
 }
 
-/// `tdo sync on|off`: switches automatic sync. Turning it on with unsynced edits starts a
-/// background sync. Exit 0, or 2 when sync is not configured or on an IO error.
-pub fn switch_command(vdir: Option<&Path>, on: bool) -> i32 {
-    let cfg = match resolve_config(vdir) {
+/// `tdo sync on|off`: the daemon switches automatic sync (turning it on with unsynced edits
+/// starts a sync). Exit 0, or 2 when sync is not configured or the daemon is out of reach.
+pub fn switch_command(target: &Target, on: bool) -> i32 {
+    let mut client = match connect(target) {
         Ok(c) => c,
-        Err(e) => return error(&e),
+        Err(code) => return code,
     };
-    print_warnings(&cfg);
-    if cfg.sync.is_none() {
-        return error(&NOT_CONFIGURED);
+    if let Err(code) = print_config_warnings(&client) {
+        return code;
     }
-    if let Err(e) = set_switch(&cfg, vdir, on) {
-        return error(&e);
+    let rid = format!("sync-{}", client.next_request_id());
+    let params = SyncSetAutoParams {
+        request_id: rid.clone(),
+        on,
+    };
+    match change::<_, SyncSetAutoResult>(
+        target,
+        &mut client,
+        "sync.set_auto",
+        &rid,
+        &params,
+        client::Unknown::AutoSwitch { on },
+    ) {
+        Ok(r) => {
+            println!("{}", r.message);
+            0
+        }
+        Err(code) => code,
     }
-    println!("{}", switch_message(on));
-    0
 }
 
-/// Switches automatic sync (`tdo sync on|off`, `:sync on|off`). Turning it on with unsynced
+/// Switches automatic sync for the old TUI (`:sync on|off`; goes with it). Turning it on with unsynced
 /// edits starts a background sync at once. Once the switch is set, the call succeeds: an
 /// error reading the unsynced edits starts a sync too, which checks again itself.
 pub fn set_switch(cfg: &Config, vdir_flag: Option<&Path>, on: bool) -> std::io::Result<()> {

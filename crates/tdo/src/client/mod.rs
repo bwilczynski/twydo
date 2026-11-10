@@ -13,18 +13,16 @@ use twydo_daemon::client::{Client, ClientError, HELLO_TIMEOUT};
 use twydo_daemon::paths;
 use twydo_daemon::protocol::methods::{DaemonInfo, HelloParams, HelloResult, ShutdownParams};
 use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
+use twydo_daemon::protocol::rpc::STARTING;
 
 /// How long a CLI call may take before the client gives up on the daemon.
 pub const CLI_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long a freshly started daemon has to answer.
-const START_WAIT: Duration = Duration::from_secs(2);
+const START_WAIT: Duration = Duration::from_secs(5);
 /// How long an old daemon has to finish its jobs and go after being asked to.
 pub const STOP_WAIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(100);
-
-/// The message of the `unavailable` error a daemon answers with while it loads its data.
-const STARTING: &str = "the daemon is starting";
 
 /// Calls `method`, retrying (about every 100 ms, for up to `limit`) while the daemon answers
 /// that it is still starting: it says hello before it is ready for requests.
@@ -46,6 +44,118 @@ pub fn call_ready<P: serde::Serialize, R: serde::de::DeserializeOwned>(
                 std::thread::sleep(POLL);
             }
             other => return other,
+        }
+    }
+}
+
+/// How long a changing call keeps asking (reconnecting as needed) before its outcome is
+/// reported as unknown. `TDO_RECONNECT_FOR_MS` shortens it for tests.
+pub fn reconnect_for() -> Duration {
+    std::env::var("TDO_RECONNECT_FOR_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(Duration::from_secs(60), Duration::from_millis)
+}
+
+/// Why a changing call ended without a reply it can show.
+#[derive(Debug)]
+pub enum ChangeError {
+    /// The daemon answered with an error, or the reply could not be read: nothing more to try.
+    Failed(ClientError),
+    /// No answer within the window: the change may or may not have been applied.
+    NoAnswer,
+}
+
+/// What a changing call left unknown when it got no answer; each kind names the check that
+/// tells, and says whether running the command again is safe.
+#[derive(Debug, Clone, Copy)]
+pub enum Unknown<'a> {
+    /// A task write or a revert: `tdo op status` shows what happened to the request.
+    Change,
+    /// A sync run: `tdo op status` shows the job.
+    SyncStarted,
+    /// `tdo sync on|off`: setting the same value again changes nothing.
+    AutoSwitch { on: bool },
+    /// `tdo conflicts resolve`: choosing the same side again is harmless.
+    Choice,
+    /// `tdo op abandon`: abandoning an abandoned entry answers `abandoned: false`.
+    Abandon { op_id: &'a str },
+}
+
+/// The message for [`ChangeError::NoAnswer`].
+pub fn no_answer_message(unknown: Unknown, request_id: &str) -> String {
+    let status = |what: &str| {
+        format!(
+            "the daemon did not answer; the {what} (request {request_id}) \u{2014} check with tdo op status {request_id} before retrying"
+        )
+    };
+    match unknown {
+        Unknown::Change => status("change may have been applied"),
+        Unknown::SyncStarted => status("sync may have started"),
+        Unknown::AutoSwitch { on } => format!(
+            "the daemon did not answer; automatic sync may already be {} (request {request_id}) \u{2014} check with tdo status; running it again is safe",
+            if on { "on" } else { "off" }
+        ),
+        Unknown::Choice => format!(
+            "the daemon did not answer; the choice may have been recorded (request {request_id}) \u{2014} check with tdo conflicts; choosing again is safe"
+        ),
+        Unknown::Abandon { op_id } => format!(
+            "the daemon did not answer; {op_id} may already be abandoned (request {request_id}) \u{2014} check with tdo op journal; running it again is safe"
+        ),
+    }
+}
+
+/// Sends a changing `method` and, when the answer is lost (timeout, closed or broken
+/// connection), reconnects (resuming the session and starting the daemon if needed) and sends
+/// the same params again, so the same `request_id` makes the daemon apply it once. `params`
+/// builds them from the session of the current connection (a restarted daemon opens a new
+/// one; it replays a known request id before checking the session, and a write that never
+/// became durable must not meet the old session). Gives up
+/// when `window` has passed since the first send: the outcome is then unknown. A daemon that
+/// is starting or still applying the request (`unavailable`) is asked again shortly; any other
+/// error reply is the answer. `client` is replaced by the new connection after a reconnect.
+pub fn call_changing<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    target: &Target,
+    client_name: &str,
+    client: &mut Client,
+    method: &str,
+    params: impl Fn(&str) -> P,
+    window: Duration,
+) -> Result<R, ChangeError> {
+    let begun = Instant::now();
+    let mut session = client.session();
+    loop {
+        let left = window.saturating_sub(begun.elapsed());
+        if left.is_zero() {
+            return Err(ChangeError::NoAnswer);
+        }
+        let current = params(session.as_deref().unwrap_or_default());
+        match client
+            .caller()
+            .call_timeout(method, &current, left.min(CLI_TIMEOUT))
+        {
+            Ok(r) => return Ok(r),
+            Err(ClientError::Rpc(e))
+                if e.data.as_ref().map(|d| d.kind) == Some(RpcKind::Unavailable) =>
+            {
+                std::thread::sleep(POLL);
+            }
+            Err(e @ (ClientError::Rpc(_) | ClientError::Decode(_))) => {
+                return Err(ChangeError::Failed(e));
+            }
+            Err(ClientError::TimedOut(_) | ClientError::Closed | ClientError::Io(_)) => loop {
+                if begun.elapsed() >= window {
+                    return Err(ChangeError::NoAnswer);
+                }
+                match connect(target, client_name, session.clone()) {
+                    Ok((c, hello)) => {
+                        session = Some(hello.session);
+                        *client = c;
+                        break;
+                    }
+                    Err(_) => std::thread::sleep(Duration::from_millis(500)),
+                }
+            },
         }
     }
 }
@@ -264,7 +374,11 @@ fn wait_for_daemon(
                     "the daemon did not answer".into(),
                 ));
             }
-            let mut msg = format!("no daemon answered on {} within 2 s", t.socket.display());
+            let mut msg = format!(
+                "no daemon answered on {} within {} s",
+                t.socket.display(),
+                START_WAIT.as_secs()
+            );
             if let Some(line) = log.last_line() {
                 msg.push_str(&format!(": {line}"));
             }

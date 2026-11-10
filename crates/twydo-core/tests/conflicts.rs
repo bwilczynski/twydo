@@ -203,3 +203,25 @@ fn old_conflict_files_still_load() {
     assert!(got.earlier.is_empty());
     assert!(s.by_request("anything").unwrap().is_none());
 }
+
+/// A file written with the single optional `resolved_by` (before `earlier`) loads, and its
+/// request still answers a resend.
+#[test]
+fn an_old_single_resolved_by_still_loads() {
+    let d = tempfile::tempdir().unwrap();
+    let s = ConflictStore::open(d.path()).unwrap();
+    let c = s.record(new("inbox/a.ics", None, Some("R")), t(0)).unwrap();
+    let file = d.path().join("conflicts").join(&c.id).join("conflict.json");
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    json["resolved_by"] = serde_json::json!({
+        "request": {"session": "s", "request_id": "old"},
+        "resolution": "recorded"
+    });
+    json.as_object_mut().unwrap().remove("earlier");
+    std::fs::write(&file, json.to_string()).unwrap();
+    let got = s.get(&c.id).unwrap().unwrap();
+    assert!(got.earlier.is_empty());
+    assert_eq!(got.resolved_by.unwrap().request.request_id, "old");
+    assert!(s.by_request("old").unwrap().is_some());
+}

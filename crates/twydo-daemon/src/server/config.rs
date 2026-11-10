@@ -2,8 +2,8 @@
 //! at run time. The binding fields (`vdir`, `state_dir`, `writes`, `sync`, `timezone`,
 //! `work_days`) never change in a running daemon; a file that names them differently is
 //! reported in `status.config.restart_needed` and not applied. An unreadable or invalid file
-//! keeps the last good configuration and sets `status.config.error`. The comparisons mirror the TUI's
-//! (`tdo/src/term/preferences.rs`): canonical vdir, absolute state directory.
+//! keeps the last good configuration and sets `status.config.error`. The comparisons mirror
+//! the TUI's (`tdo/src/term/preferences.rs`): canonical vdir, absolute state directory.
 
 use std::fs;
 use std::io;

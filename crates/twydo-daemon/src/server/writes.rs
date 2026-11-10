@@ -903,10 +903,14 @@ pub fn get(shared: &Arc<Shared>, p: OpGetParams) -> Result<Value, RpcError> {
         (None, Some(rid)) => {
             let recorded = match shared.requests.peek(&rid) {
                 Some(None) => Some(Ok(None)),
+                // A recorded answer that is no write result belongs to another kind of
+                // request (a sync's job): this is not a write.
                 Some(Some(Ok(v))) => Some(
                     serde_json::from_value::<WriteResult>(v)
                         .map(Some)
-                        .map_err(|e| RpcError::refused(ErrorKind::Internal, e.to_string())),
+                        .map_err(|_| {
+                            RpcError::refused(ErrorKind::NotFound, format!("no request {rid}"))
+                        }),
                 ),
                 Some(Some(Err(e))) => Some(Err(e)),
                 None => durable(shared, &rid).map(|r| r.map(Some)),

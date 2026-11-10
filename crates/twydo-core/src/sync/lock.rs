@@ -1,4 +1,4 @@
-//! Exclusive lock files under `<state>/sync/` (the run lock, the waiter lock).
+//! Exclusive lock files under `<state>/sync/` (the run lock).
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;

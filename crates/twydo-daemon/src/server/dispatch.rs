@@ -110,7 +110,7 @@ pub fn dispatch(
     if !shared.is_ready() {
         return Err(RpcError::refused(
             ErrorKind::Unavailable,
-            "the daemon is starting",
+            crate::protocol::rpc::STARTING,
         ));
     }
     match method {
@@ -155,7 +155,7 @@ pub fn dispatch(
             Some(v) => to_result(v),
             None => Err(RpcError::refused(
                 ErrorKind::Unavailable,
-                "the daemon is starting",
+                crate::protocol::rpc::STARTING,
             )),
         },
         _ => Err(RpcError {

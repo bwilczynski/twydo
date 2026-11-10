@@ -160,31 +160,7 @@ impl TestEnv {
     /// Stops the daemon answering on this environment's socket (however it was started) and
     /// waits until the socket is gone; kills it if it does not go.
     pub fn stop_daemon(&self) {
-        let Ok(raw) = Client::connect_raw(&self.socket()) else {
-            return;
-        };
-        let pid = raw
-            .caller()
-            .call_timeout::<_, DaemonInfo>("daemon.info", serde_json::json!({}), WAIT)
-            .map(|i| i.pid)
-            .ok();
-        let _ = raw.caller().call_timeout::<_, serde_json::Value>(
-            "daemon.shutdown",
-            ShutdownParams { when_idle: false },
-            WAIT,
-        );
-        drop(raw);
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Client::connect_raw(&self.socket()).is_ok() {
-            if Instant::now() > deadline {
-                if let Some(pid) = pid {
-                    // SAFETY: signals the daemon this environment started, by pid.
-                    unsafe { libc::kill(pid as i32, libc::SIGKILL) };
-                }
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
+        stop_daemon_at(&self.socket());
     }
 
     /// `daemon.info` of the daemon on this socket.
@@ -234,6 +210,36 @@ impl TestEnv {
 impl Drop for TestEnv {
     fn drop(&mut self) {
         self.stop_daemon();
+    }
+}
+
+/// Stops the daemon answering on `socket` and waits until the socket is gone; kills it if it
+/// does not go. Nothing happens when none answers.
+pub fn stop_daemon_at(socket: &Path) {
+    let Ok(raw) = Client::connect_raw(socket) else {
+        return;
+    };
+    let pid = raw
+        .caller()
+        .call_timeout::<_, DaemonInfo>("daemon.info", serde_json::json!({}), WAIT)
+        .map(|i| i.pid)
+        .ok();
+    let _ = raw.caller().call_timeout::<_, serde_json::Value>(
+        "daemon.shutdown",
+        ShutdownParams { when_idle: false },
+        WAIT,
+    );
+    drop(raw);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Client::connect_raw(socket).is_ok() {
+        if Instant::now() > deadline {
+            if let Some(pid) = pid {
+                // SAFETY: signals the daemon this test started, by pid.
+                unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            }
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -288,4 +294,169 @@ pub fn wait_exit(p: &mut Proc) -> std::process::ExitStatus {
         assert!(Instant::now() < deadline, "process did not exit");
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+/// Which answers to `op.submit` a [`lossy_proxy`] swallows.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Lose {
+    /// The first one, closing the connection (a connection lost after the daemon committed).
+    First,
+    /// Every one, leaving the connection open (a daemon that never answers).
+    All,
+}
+
+/// A proxy to `target` that swallows answers to `op.submit` as `lose` says; it records the
+/// request id of every `op.submit` that passes.
+pub fn lossy_proxy(
+    target: PathBuf,
+    dir: &Path,
+    lose: Lose,
+) -> (PathBuf, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    lossy_proxy_for(target, dir, lose, "op.submit")
+}
+
+/// [`lossy_proxy`] for another changing `method`.
+pub fn lossy_proxy_for(
+    target: PathBuf,
+    dir: &Path,
+    lose: Lose,
+    method: &'static str,
+) -> (PathBuf, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::collections::HashSet;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::Shutdown;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    let path = dir.join("proxy.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let dropped = Arc::new(AtomicBool::new(false));
+    let record = Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for client in listener.incoming() {
+            let Ok(client) = client else { return };
+            let Ok(daemon) = UnixStream::connect(&target) else {
+                continue;
+            };
+            let (mut to_daemon, from_client) =
+                (daemon.try_clone().unwrap(), client.try_clone().unwrap());
+            let record = Arc::clone(&record);
+            // JSON-RPC ids of the `op.submit` requests on this connection.
+            let submits = Arc::new(Mutex::new(HashSet::<u64>::new()));
+            let submit_ids = Arc::clone(&submits);
+            std::thread::spawn(move || {
+                for line in BufReader::new(from_client).lines() {
+                    let Ok(line) = line else { break };
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
+                        && v["method"] == method
+                    {
+                        record
+                            .lock()
+                            .unwrap()
+                            .push(v["params"]["request_id"].as_str().unwrap().to_string());
+                        submit_ids.lock().unwrap().insert(v["id"].as_u64().unwrap());
+                    }
+                    if writeln!(to_daemon, "{line}").is_err() {
+                        break;
+                    }
+                }
+            });
+            let dropped = Arc::clone(&dropped);
+            std::thread::spawn(move || {
+                let mut to_client = client.try_clone().unwrap();
+                for line in BufReader::new(daemon.try_clone().unwrap()).lines() {
+                    let Ok(line) = line else { break };
+                    let is_submit = serde_json::from_str::<serde_json::Value>(&line)
+                        .ok()
+                        .and_then(|v| v["id"].as_u64())
+                        .is_some_and(|id| submits.lock().unwrap().contains(&id));
+                    if is_submit {
+                        match lose {
+                            Lose::First if !dropped.swap(true, Ordering::SeqCst) => break,
+                            Lose::All => continue,
+                            Lose::First => {}
+                        }
+                    }
+                    if writeln!(to_client, "{line}").is_err() {
+                        break;
+                    }
+                }
+                let _ = client.shutdown(Shutdown::Both);
+                let _ = daemon.shutdown(Shutdown::Both);
+            });
+        }
+    });
+    (path, seen)
+}
+
+/// A proxy to `target` that drops the first `op.submit` before forwarding it, closes the
+/// connection and then refuses every connection until the returned gate is set (the daemon
+/// can be restarted meanwhile). Records the request id of every `op.submit` it sees.
+pub fn dropping_proxy(
+    target: PathBuf,
+    dir: &Path,
+) -> (
+    PathBuf,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::Shutdown;
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    let path = dir.join("drop.sock");
+    let listener = UnixListener::bind(&path).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let open = Arc::new(AtomicBool::new(true));
+    let (record, gate) = (Arc::clone(&seen), Arc::clone(&open));
+    std::thread::spawn(move || {
+        for client in listener.incoming() {
+            let Ok(client) = client else { return };
+            if !gate.load(Ordering::SeqCst) {
+                continue;
+            }
+            let Ok(daemon) = UnixStream::connect(&target) else {
+                continue;
+            };
+            let (mut to_daemon, from_client) =
+                (daemon.try_clone().unwrap(), client.try_clone().unwrap());
+            let (record, gate) = (Arc::clone(&record), Arc::clone(&gate));
+            std::thread::spawn(move || {
+                for line in BufReader::new(from_client).lines() {
+                    let Ok(line) = line else { break };
+                    let v = serde_json::from_str::<serde_json::Value>(&line).ok();
+                    if let Some(v) = v
+                        && v["method"] == "op.submit"
+                    {
+                        let first = {
+                            let mut r = record.lock().unwrap();
+                            r.push(v["params"]["request_id"].as_str().unwrap().to_string());
+                            r.len() == 1
+                        };
+                        if first {
+                            gate.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                    }
+                    if writeln!(to_daemon, "{line}").is_err() {
+                        break;
+                    }
+                }
+                let _ = to_daemon.shutdown(Shutdown::Both);
+            });
+            std::thread::spawn(move || {
+                let mut to_client = client.try_clone().unwrap();
+                for line in BufReader::new(daemon.try_clone().unwrap()).lines() {
+                    let Ok(line) = line else { break };
+                    if writeln!(to_client, "{line}").is_err() {
+                        break;
+                    }
+                }
+                let _ = client.shutdown(Shutdown::Both);
+            });
+        }
+    });
+    (path, seen, open)
 }

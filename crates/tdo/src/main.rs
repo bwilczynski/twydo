@@ -41,10 +41,10 @@ enum Command {
         /// Switch automatic sync (timer, startup, after edits) on or off instead of syncing
         #[arg(value_enum, conflicts_with_all = ["background", "force_delete"])]
         switch: Option<Switch>,
-        /// For the timer: no waiting for a running sync, honour backoff, quiet on success
-        #[arg(long)]
+        // Only keeps the daemon alive, silently (what the installed timer runs).
+        #[arg(long, hide = true)]
         background: bool,
-        /// With --background: wait until unsynced edits are due, then sync (the batch waiter)
+        // With --background: the same (kept for the installed timer).
         #[arg(long, hide = true, requires = "background")]
         when_due: bool,
         /// Apply an emptied list to both sides (collection id or display name)
@@ -122,26 +122,36 @@ fn main() {
             ),
         }),
         Command::Conflicts { command } => {
-            std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::conflicts::run(&target, command))
         }
         Command::Sync {
             switch: Some(switch),
             ..
-        } => std::process::exit(cli::sync::switch_command(
-            cli.vdir.as_deref(),
-            matches!(switch, Switch::On),
-        )),
+        } => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::sync::switch_command(
+                &target,
+                matches!(switch, Switch::On),
+            ))
+        }
         Command::Sync {
             switch: None,
             background,
             when_due,
             force_delete,
-        } => std::process::exit(cli::sync::sync(
-            cli.vdir.as_deref(),
-            background,
-            when_due,
-            &force_delete,
-        )),
+        } => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::sync::sync(
+                &target,
+                background,
+                when_due,
+                &force_delete,
+            ))
+        }
         Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),
         Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
         Command::Check { matrix, verbose } => {
