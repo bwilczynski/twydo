@@ -440,7 +440,7 @@ fn revert_by_id_from_another_session_keeps_stacks() {
     submit(&a, edit_title("u2", "Two!")).unwrap();
     let r = revert(&b, "rv1", &first.op_id).unwrap();
     assert_eq!(r.outcome, WriteOutcome::Applied);
-    assert_eq!(r.message, "undone: One!");
+    assert_eq!(r.message, "undone: One");
     assert!(r.undid.is_none());
     assert_eq!(task(&snapshot(&b), "u1").task.summary, "One");
     // A resend replays; the revert is not on B's stack, so B has nothing to undo.

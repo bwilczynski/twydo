@@ -339,3 +339,79 @@ fn a_store_collects_nothing_drained_unless_asked() {
     assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
     assert!(store.take_drained().is_empty());
 }
+
+#[test]
+fn a_miss_on_an_indexed_journal_does_not_scan() {
+    let env = env();
+    let mut store = env.store(matrix());
+    store.set_request(Some(req("r7")));
+    let Submitted::Applied(id) = store
+        .submit(&env.snap(), &title(A, "x"), "x", "op", now())
+        .unwrap()
+    else {
+        panic!("applied")
+    };
+    let j = journal(&env);
+    // A scan would stop at the unreadable file.
+    fs::write(
+        env.state.join("journal/20200101T000000Z-bad00000.json"),
+        "{",
+    )
+    .unwrap();
+    assert!(j.list().is_err());
+    assert_eq!(j.by_request("r7").unwrap().unwrap().id, id);
+    assert!(j.by_request("unknown").unwrap().is_none());
+}
+
+#[test]
+fn an_unindexed_journal_is_indexed_once() {
+    let env = env();
+    let mut store = env.store(matrix());
+    store.set_request(Some(req("r8")));
+    let Submitted::Applied(id) = store
+        .submit(&env.snap(), &title(A, "x"), "x", "op", now())
+        .unwrap()
+    else {
+        panic!("applied")
+    };
+    let j = journal(&env);
+    let dir = env.state.join("journal");
+    // A journal from before the index.
+    fs::remove_dir_all(dir.join("by-request")).unwrap();
+    assert_eq!(j.by_request("r8").unwrap().unwrap().id, id);
+    assert!(dir.join("by-request/.complete").is_file());
+    // Built: no scan now, not even for a miss, and the entry is found through the index.
+    fs::write(dir.join("20200101T000000Z-bad00000.json"), "{").unwrap();
+    assert_eq!(j.by_request("r8").unwrap().unwrap().id, id);
+    assert!(j.by_request("unknown").unwrap().is_none());
+}
+
+#[test]
+fn a_journal_write_fails_when_its_request_index_cannot_be_written() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = env();
+    let mut store = env.store(matrix());
+    store.set_request(Some(req("r9")));
+    store
+        .submit(&env.snap(), &title(A, "x"), "x", "op", now())
+        .unwrap();
+    let dir = env.state.join("journal/by-request");
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let probe = dir.join("probe");
+    if fs::write(&probe, "").is_ok() {
+        // Running as root: permissions do not bind.
+        fs::remove_file(probe).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+        return;
+    }
+    let j = journal(&env);
+    let before = j.list().unwrap().len();
+    let mut e = j.list().unwrap().remove(0);
+    e.id = "20261101T120000Z-0000000f".into();
+    e.request = Some(req("r10"));
+    let r = j.prepare(&e);
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(r.is_err());
+    assert_eq!(j.list().unwrap().len(), before);
+    assert!(j.by_request("r10").unwrap().is_none());
+}

@@ -161,8 +161,14 @@ pub fn refusal(e: WriteError, view: &CoreSnapshot, current: &CoreSnapshot) -> Rp
         WriteError::Busy => ErrorKind::Unavailable,
         WriteError::Io(_) => ErrorKind::Internal,
     };
+    // A file the client's view does not hold (it joined a family after the view) is named
+    // through the latest snapshot.
     if let WriteError::Stale(path) = &e
-        && let Some(t) = view.tasks.iter().find(|t| &t.path == path)
+        && let Some(t) = view
+            .tasks
+            .iter()
+            .find(|t| &t.path == path)
+            .or_else(|| current.tasks.iter().find(|t| &t.path == path))
     {
         let mut data = ErrorData::new(kind);
         data.uid = Some(t.uid.clone());
@@ -284,18 +290,40 @@ fn durable(shared: &Shared, request_id: &str) -> Option<Result<WriteResult, RpcE
         Ok(Some(e)) => Some(match e.stage {
             Stage::Applied => Ok(WriteResult {
                 outcome: WriteOutcome::Applied,
+                created: replayed_created(shared, &e),
                 op_id: e.id,
                 revision,
                 message: "already applied".into(),
-                created: None,
                 undid: None,
             }),
-            Stage::Prepared => Err(stuck_entry(&e.id)),
+            // Recovery left it stuck; else a commit is in progress (the same state `op.get`
+            // calls pending). The id is not waited for: a transient refusal is not recorded,
+            // so the client's next resend finds the entry applied.
+            Stage::Prepared if shared.publisher.is_stuck(&e.id) => Err(stuck_entry(&e.id)),
+            Stage::Prepared => Err(RpcError::refused(
+                ErrorKind::Unavailable,
+                "the write is still being applied; try again",
+            )),
             Stage::Abandoned => Err(RpcError::refused(ErrorKind::Blocked, ABANDONED)),
         }),
         Ok(None) => None,
         Err(e) => Some(Err(RpcError::refused(ErrorKind::Internal, e.to_string()))),
     }
+}
+
+/// The task a replayed create made: the uid the journal entry names and the file's current
+/// rev (it may have changed since the create).
+fn replayed_created(shared: &Shared, e: &Entry) -> Option<Created> {
+    if !matches!(e.kind.as_str(), "create" | "insert") || e.inverse_of.is_some() {
+        return None;
+    }
+    let uid = e.uids.first()?;
+    let (_, snap) = shared.publisher.current();
+    let t = snap.wire.tasks.iter().find(|t| &t.task.uid == uid)?;
+    Some(Created {
+        uid: uid.clone(),
+        rev: t.rev.clone(),
+    })
 }
 
 /// The answer to a resent undo that withdrew queued item `item_id`: applied if the item is
@@ -696,8 +724,10 @@ fn run_revert(shared: &Arc<Shared>, p: &JournalRevertParams) -> Result<WriteResu
             format!("no operation {}", p.op_id),
         ));
     };
-    // The task's title as it is before the revert (a reverted create removes the task).
-    let title = {
+    // The label `op.undo` would give: the task's title before the edit being undone (for a
+    // create, the title it made), from the entry; the current title if it holds no readable
+    // task.
+    let title = entry_title(&entry).unwrap_or_else(|| {
         let snap = shared.publisher.current().1;
         entry
             .uids
@@ -708,7 +738,7 @@ fn run_revert(shared: &Arc<Shared>, p: &JournalRevertParams) -> Result<WriteResu
                     .map_or_else(|| u.clone(), |i| snap.snap.tasks[i].summary.clone())
             })
             .unwrap_or_default()
-    };
+    });
     let mut store = Store::without_recovery(&shared.cfg, shared.matrix.clone())
         .map_err(|e| refusal_of(e, shared))?;
     store.set_collect_drained(true);
@@ -752,6 +782,21 @@ fn run_revert(shared: &Arc<Shared>, p: &JournalRevertParams) -> Result<WriteResu
     Ok(result)
 }
 
+/// The title of the task `entry` is about, as the entry's write for it held before the edit
+/// (or, for a create, after it).
+fn entry_title(entry: &Entry) -> Option<String> {
+    let uid = entry.uids.first()?;
+    entry.writes.iter().find_map(|w| {
+        let text = w.before.as_ref().or(w.after.as_ref())?;
+        let cal = twydo_core::ical::parse(text.as_bytes()).ok()?;
+        cal.root
+            .children_named("VTODO")
+            .find(|t| t.prop("UID").is_some_and(|p| p.value.trim() == uid))
+            .and_then(|t| t.prop("SUMMARY"))
+            .map(|p| twydo_core::ical::value::unescape_text(&p.value))
+    })
+}
+
 /// A store error from a journal method, against the latest published snapshot. A missing
 /// entry is `not_found` and an entry in the wrong stage `invalid`.
 pub(super) fn refusal_of(e: WriteError, shared: &Shared) -> RpcError {
@@ -789,10 +834,12 @@ fn is_queue_id(id: &str) -> bool {
         && digits(pid)
 }
 
-/// What a journal entry says about its operation: applied only once `Applied`.
-fn entry_state(e: Entry) -> Result<OpState, RpcError> {
+/// What a journal entry says about its operation: applied only once `Applied`. A `Prepared`
+/// entry is stuck only once recovery has left it so; any other is mid-commit, so pending.
+fn entry_state(shared: &Shared, e: Entry) -> Result<OpState, RpcError> {
     match e.stage {
         Stage::Applied => Ok(OpState::Applied { op_id: e.id }),
+        Stage::Prepared if !shared.publisher.is_stuck(&e.id) => Ok(OpState::Pending),
         Stage::Prepared => Err(stuck_entry(&e.id)),
         Stage::Abandoned => Ok(OpState::Refused {
             kind: ErrorKind::Blocked,
@@ -806,10 +853,10 @@ fn state_of(shared: &Shared, op_id: &str) -> Result<OpState, RpcError> {
     let internal = |e: std::io::Error| RpcError::refused(ErrorKind::Internal, e.to_string());
     let journal = Journal::open(&shared.state_dir).map_err(internal)?;
     if let Ok(Some(e)) = journal.get(op_id) {
-        return entry_state(e);
+        return entry_state(shared, e);
     }
     if let Some(e) = journal.by_queue_id(op_id).map_err(internal)? {
-        return entry_state(e);
+        return entry_state(shared, e);
     }
     if let Some(q) = Queue::existing(&shared.state_dir)
         && let Ok(Some(found)) = q.state(op_id)
@@ -856,6 +903,8 @@ pub fn get(shared: &Arc<Shared>, p: OpGetParams) -> Result<Value, RpcError> {
                         kind,
                         message: e.message,
                     },
+                    // The entry is mid-commit.
+                    Some(ErrorKind::Unavailable) => OpState::Pending,
                     _ => return Err(e),
                 },
                 None => {
