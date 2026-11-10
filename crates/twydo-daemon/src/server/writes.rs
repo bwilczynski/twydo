@@ -14,6 +14,9 @@
 //! 4. the commit gate's read side ([`Shared::commit_gate`]), held around the store call only;
 //! 5. the store's vdir file lock (inside `Store`, released before it returns);
 //! 6. the publisher's `reload_lock`, then its `state`, then the bus (after the gate is let go).
+//!    `Publisher::reload` takes the shared vdir lock *before* `reload_lock` (step 5 before 6),
+//!    and nothing waits for the vdir lock while holding `reload_lock`, so a reload stuck
+//!    behind a sync never blocks the queue overlay.
 //!
 //! The session table's mutex is held only for lookups, never while waiting.
 //!

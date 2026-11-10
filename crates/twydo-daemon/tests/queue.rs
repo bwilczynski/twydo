@@ -16,7 +16,7 @@ use twydo_core::store::journal::RequestRef;
 use twydo_core::store::queue::Queue;
 use twydo_core::store::{Store, Submitted, bind_vdir_state};
 use twydo_daemon::client::{Client, Notification};
-use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::methods::{
     AckParams, AckResult, OpGetParams, OpState, StatusView, WriteOutcome,
 };
@@ -119,6 +119,70 @@ fn an_edit_during_a_long_job_is_queued_at_once_and_shown_pending() {
     assert_eq!(u1.task.summary, "Renamed");
     assert!(!task(&snap, "u2").pending);
     assert!(!fx.read("inbox/u1.ics").contains("Renamed"));
+    drop(job);
+}
+
+#[test]
+fn queued_row_is_pending_while_the_vdir_lock_is_held() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let job = td.handle().hold_long(LongKind::Test);
+    // As a sync's reconcile step does: no reader gets the vdir while this is held.
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) if matches!(ev.event, Event::DataChanged { .. }) => break,
+            Ok(_) => {}
+            Err(e) => panic!("no data.changed while the vdir lock is held: {e}"),
+        }
+    }
+    let snap = snapshot(&c);
+    assert!(task(&snap, "u1").pending);
+    assert_eq!(task(&snap, "u1").task.summary, "Renamed");
+    assert!(!task(&snap, "u2").pending);
+    drop(lock);
+    drop(job);
+}
+
+#[test]
+fn overlay_is_not_blocked_by_a_waiting_watcher_reload() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let job = td.handle().hold_long(LongKind::Test);
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    std::thread::scope(|scope| {
+        let publisher = td.handle().publisher_for_test();
+        let reload = scope.spawn(move || publisher.reload(Cause::Op, Vec::new()));
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !reload.is_finished(),
+            "the reload must wait for the vdir lock"
+        );
+        let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+        assert_eq!(r.outcome, WriteOutcome::Queued);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match c.notifications().recv_timeout(left) {
+                Ok(Notification::Event(ev)) if matches!(ev.event, Event::DataChanged { .. }) => {
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("overlay blocked behind a waiting reload: {e}"),
+            }
+        }
+        assert!(task(&snapshot(&c), "u1").pending);
+        drop(lock);
+        reload.join().unwrap().unwrap();
+    });
     drop(job);
 }
 
@@ -587,4 +651,34 @@ fn an_undo_names_the_step_it_reverted_when_a_drain_refuses_one_meanwhile() {
         Some(undone.op_id.clone())
     );
     assert_eq!(task(&snapshot(&c), "u1").task.summary, "First");
+}
+
+/// Final review: with no long job, an outside holder of the vdir lock leaves the overlay
+/// refresher waiting in a reload (`request_overlay_publish`'s reload path). Shutdown still
+/// finishes within its bound, and nothing is published after it.
+#[test]
+fn shutdown_does_not_wait_for_a_reload_stuck_behind_an_outside_lock() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    // No long job: the edit is queued (the vdir is busy) and its overlay reloads the vdir,
+    // which waits for the lock.
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    assert!(
+        !td.handle()
+            .refresher_idle_for_test(Duration::from_millis(300)),
+        "the refresher must be waiting for the vdir lock"
+    );
+    let publisher = td.handle().publisher_for_test();
+    let before = publisher.current().0;
+    let t = Instant::now();
+    td.handle().shutdown();
+    assert!(t.elapsed() < BOUND, "shutdown took {:?}", t.elapsed());
+    drop(lock);
+    // The refresher gets the lock now; the closed publisher must publish nothing.
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(publisher.current().0, before);
+    assert!(fx.read("inbox/u1.ics").contains("SUMMARY:One"));
 }

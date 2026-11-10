@@ -806,10 +806,17 @@ impl Shared {
                 g.dirty = false;
                 std::mem::take(&mut g.reload).then(|| std::mem::take(&mut g.uids))
             };
-            if let Some(uids) = reload
-                && let Err(e) = self.publisher.reload(Cause::Op, uids)
-            {
-                eprintln!("tdo daemon: publishing the queue overlay failed: {e}");
+            if let Some(uids) = reload {
+                // A long job may hold the vdir lock for minutes: lay the queue over the last
+                // load instead of waiting to read the vdir.
+                let r = if self.lane.current_long().is_some() {
+                    self.publisher.overlay(Cause::Op, uids)
+                } else {
+                    self.publisher.reload(Cause::Op, uids)
+                };
+                if let Err(e) = r {
+                    eprintln!("tdo daemon: publishing the queue overlay failed: {e}");
+                }
             }
             self.publisher.refresh_status();
         }

@@ -623,18 +623,22 @@ fn shutdown_is_bounded_and_no_status_refresh_runs_after_it() {
     let cfg = fx.config();
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let publisher = td.handle().publisher_for_test();
-    let status_before = publisher.status().unwrap();
-    let revision_before = publisher.current().0;
     let vdir_lock = VdirLock::exclusive(&state).unwrap();
-    std::thread::scope(|scope| {
-        // A reload waits for the vdir lock holding the publisher's reload lock, so the
-        // refresher the queued write starts waits behind it.
+    let (status_before, revision_before) = std::thread::scope(|scope| {
+        // A reload waits for the vdir lock (it takes it before the publisher's reload lock).
+        // The queued write's refresher publishes the pending overlay without the vdir lock,
+        // so it finishes before shutdown starts; after `close()` nothing publishes.
         let reload = scope.spawn(|| td.handle().reload_for_test(Cause::Outside).unwrap());
         std::thread::sleep(Duration::from_millis(100));
         let long = td.handle().lane_for_test().long(LongKind::Test);
         let r = submit_at(&c, b, &id, edit_title("u1", "One queued")).unwrap();
         assert_eq!(r.outcome, WriteOutcome::Queued);
-        assert!(!td.handle().refresher_idle_for_test(Duration::ZERO));
+        assert!(
+            td.handle().refresher_idle_for_test(Duration::from_secs(5)),
+            "the overlay was never published"
+        );
+        let status_before = publisher.status().unwrap();
+        let revision_before = publisher.current().0;
 
         let (tx, rx) = std::sync::mpsc::channel();
         let handle = td.handle();
@@ -649,6 +653,7 @@ fn shutdown_is_bounded_and_no_status_refresh_runs_after_it() {
         drop(long);
         let took = took.expect("shutdown hung behind the blocked refresher");
         assert!(took < Duration::from_secs(3), "shutdown took {took:?}");
+        (status_before, revision_before)
     });
     assert!(
         td.handle().refresher_idle_for_test(Duration::from_secs(5)),
