@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -28,6 +29,8 @@ pub enum ClientError {
     Closed,
     #[error("unexpected reply: {0}")]
     Decode(String),
+    #[error("the daemon did not answer within {} s", .0.as_secs_f64())]
+    TimedOut(Duration),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,21 +68,34 @@ pub struct Client {
     notes: Receiver<Notification>,
 }
 
+/// How long the daemon has to answer hello (and other calls made while connecting).
+pub const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+
 impl Client {
-    /// Connects and says hello.
+    /// Connects and says hello; a daemon that does not answer within [`HELLO_TIMEOUT`] is
+    /// [`ClientError::TimedOut`].
     pub fn connect(
         socket: &Path,
         hello: HelloParams,
     ) -> Result<(Client, HelloResult), ClientError> {
         let c = Client::connect_raw(socket)?;
-        let r: HelloResult = c.call("hello", hello)?;
-        *c.caller.inner.prefix.lock().unwrap() = format!(
+        let r = c.hello_on(hello)?;
+        Ok((c, r))
+    }
+
+    /// Says hello on this connection (within [`HELLO_TIMEOUT`]). A refusal comes back as
+    /// [`ClientError::Rpc`] and leaves the connection usable for lifecycle calls
+    /// (`daemon.info`, `daemon.shutdown`), so a caller that wants them on the very connection
+    /// that was checked connects with [`Client::connect_raw`] and calls this.
+    pub fn hello_on(&self, hello: HelloParams) -> Result<HelloResult, ClientError> {
+        let r: HelloResult = self.caller.call_timeout("hello", hello, HELLO_TIMEOUT)?;
+        *self.caller.inner.prefix.lock().unwrap() = format!(
             "{}-{}",
             r.session,
             &uuid::Uuid::new_v4().simple().to_string()[..6]
         );
-        *c.caller.inner.hello.lock().unwrap() = Some(r.clone());
-        Ok((c, r))
+        *self.caller.inner.hello.lock().unwrap() = Some(r.clone());
+        Ok(r)
     }
 
     /// Connects without saying hello (for lifecycle calls and tests).
@@ -161,6 +177,26 @@ impl Caller {
         method: &str,
         params: P,
     ) -> Result<R, ClientError> {
+        self.call_inner(method, params, None)
+    }
+
+    /// Like [`Caller::call`], but gives up after `limit` with [`ClientError::TimedOut`]. The
+    /// request may still be carried out; a late reply is dropped.
+    pub fn call_timeout<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: P,
+        limit: Duration,
+    ) -> Result<R, ClientError> {
+        self.call_inner(method, params, Some(limit))
+    }
+
+    fn call_inner<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: P,
+        limit: Option<Duration>,
+    ) -> Result<R, ClientError> {
         let params =
             serde_json::to_value(params).map_err(|e| ClientError::Decode(e.to_string()))?;
         let inner = &self.inner;
@@ -180,10 +216,21 @@ impl Caller {
             }
             return Err(e.into());
         }
-        match rx.recv() {
-            Ok(Ok(v)) => serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string())),
-            Ok(Err(e)) => Err(ClientError::Rpc(e)),
-            Err(_) => Err(ClientError::Closed),
+        let reply = match limit {
+            None => rx.recv().map_err(|_| ClientError::Closed),
+            Some(limit) => rx.recv_timeout(limit).map_err(|e| match e {
+                mpsc::RecvTimeoutError::Timeout => {
+                    if let Some(map) = inner.pending.lock().unwrap().as_mut() {
+                        map.remove(&id);
+                    }
+                    ClientError::TimedOut(limit)
+                }
+                mpsc::RecvTimeoutError::Disconnected => ClientError::Closed,
+            }),
+        };
+        match reply? {
+            Ok(v) => serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string())),
+            Err(e) => Err(ClientError::Rpc(e)),
         }
     }
 

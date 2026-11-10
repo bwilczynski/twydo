@@ -2,179 +2,28 @@
 //! instance, signals, and what survives a crash. Synthetic content; the user's real config,
 //! state and socket are never touched (every path is inside a tempdir).
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use common::*;
+
 use twydo_core::edit::{NewTask, Op};
-use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::sync::running::{Running, process_start};
 use twydo_daemon::client::{Client, ClientError, Notification};
-use twydo_daemon::paths;
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::jobs::{JobGetParams, JobStarted, JobState, JobView};
 use twydo_daemon::protocol::methods::{
-    BasedOn, HelloParams, OpGetParams, OpState, SubmitParams, WriteOutcome, WriteResult,
+    BasedOn, OpGetParams, OpState, SubmitParams, WriteOutcome, WriteResult,
 };
 use twydo_daemon::protocol::rpc::ErrorKind;
 use twydo_daemon::protocol::sync::SyncRunParams;
 
-const WAIT: Duration = Duration::from_secs(15);
-
-struct Env {
-    root: tempfile::TempDir,
-    /// A short directory (Unix socket paths are limited to ~104 bytes), mode 0700.
-    sock_dir: tempfile::TempDir,
-}
-
-/// A spawned daemon, killed and reaped on drop.
-struct Proc(Child);
-
-impl Drop for Proc {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-impl Env {
-    fn new() -> Env {
-        Env::with_config_tail(|_| String::new())
-    }
-
-    /// An environment whose `[sync]` runs a fake vdirsyncer script with `body` (`$1` is
-    /// `sync` or `metasync`), with automatic sync switched off: only `sync.run` runs it.
-    fn with_sync(body: &str) -> Env {
-        let env = Env::with_config_tail(|root| {
-            let fake = root.join("fake-vdirsyncer");
-            write_script(&fake, body);
-            format!(
-                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
-                fake.display()
-            )
-        });
-        fs::create_dir_all(env.state().join("sync")).unwrap();
-        fs::write(env.state().join("sync/off"), "").unwrap();
-        env
-    }
-
-    /// `tail` gives the end of `config.toml`, for the environment's root directory.
-    fn with_config_tail(tail: impl FnOnce(&Path) -> String) -> Env {
-        let root = tempfile::tempdir().unwrap();
-        let sock_dir = tempfile::Builder::new()
-            .prefix("td")
-            .tempdir_in("/tmp")
-            .unwrap();
-        fs::set_permissions(sock_dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
-        fs::create_dir_all(root.path().join("vdir/inbox")).unwrap();
-        fs::create_dir_all(root.path().join("config/twydo")).unwrap();
-        let tail = tail(root.path());
-        fs::write(
-            root.path().join("config/twydo/config.toml"),
-            format!(
-                "vdir = \"{}\"\nstate_dir = \"{}\"\n[writes]\nmode = \"test\"\n{tail}",
-                root.path().join("vdir").display(),
-                root.path().join("state").display()
-            ),
-        )
-        .unwrap();
-        Env { root, sock_dir }
-    }
-
-    fn vdir(&self) -> PathBuf {
-        self.root.path().join("vdir")
-    }
-
-    fn socket(&self) -> PathBuf {
-        self.sock_dir.path().join("tdo.sock")
-    }
-
-    fn state(&self) -> PathBuf {
-        bind_vdir_state(&self.root.path().join("state"), &self.vdir()).unwrap()
-    }
-
-    fn command(&self) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
-        c.env("TWYDO_SOCKET", self.socket())
-            .env("XDG_CONFIG_HOME", self.root.path().join("config"))
-            .env("XDG_STATE_HOME", self.root.path().join("xdg-state"))
-            .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
-            .env("HOME", self.root.path())
-            .arg("--vdir")
-            .arg(self.vdir())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        c
-    }
-
-    fn spawn(&self, extra: &[&str]) -> Proc {
-        let mut c = self.command();
-        c.arg("daemon").args(extra);
-        Proc(c.spawn().unwrap())
-    }
-
-    fn hello(&self) -> HelloParams {
-        let cfg = self.root.path().join("config/twydo/config.toml");
-        HelloParams {
-            client: "test".into(),
-            version: "0".into(),
-            protocol: twydo_daemon::PROTOCOL,
-            session: None,
-            instance: paths::instance_for(&cfg, Some(&self.vdir())).unwrap(),
-        }
-    }
-
-    /// Connects once the daemon answers `hello`, within [`WAIT`].
-    fn connect(&self, socket: &Path) -> Client {
-        let deadline = Instant::now() + WAIT;
-        loop {
-            match Client::connect(socket, self.hello()) {
-                Ok((c, _)) => return c,
-                Err(e) if Instant::now() > deadline => panic!("daemon never answered: {e}"),
-                Err(_) => std::thread::sleep(Duration::from_millis(50)),
-            }
-        }
-    }
-}
-
-/// Writes an executable `sh` script and waits until it can be executed: a script written
-/// while another test thread forks can briefly fail with "Text file busy" (ETXTBSY). The
-/// script answers `__probe` by exiting at once.
-fn write_script(path: &Path, body: &str) {
-    fs::write(
-        path,
-        format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n{body}\n"),
-    )
-    .unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match Command::new(path).arg("__probe").status() {
-            Ok(st) => {
-                assert!(st.success(), "probe of {} failed", path.display());
-                return;
-            }
-            Err(e) if e.raw_os_error() == Some(26) && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(e) => panic!("cannot run {}: {e}", path.display()),
-        }
-    }
-}
-
-fn wait_exit(p: &mut Proc) -> std::process::ExitStatus {
-    let deadline = Instant::now() + WAIT;
-    loop {
-        if let Some(s) = p.0.try_wait().unwrap() {
-            return s;
-        }
-        assert!(Instant::now() < deadline, "process did not exit");
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
+type Env = TestEnv;
 
 fn submit(c: &Client, request_id: &str, title: &str) -> Result<WriteResult, ClientError> {
     let snap: serde_json::Value = c.call("snapshot.get", serde_json::json!({})).unwrap();
@@ -207,7 +56,7 @@ fn count_titled(env: &Env, title: &str) -> usize {
 
 #[test]
 fn the_daemon_listens_on_twydo_socket() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let _d = env.spawn(&[]);
     env.connect(&env.socket());
     assert!(env.socket().exists());
@@ -215,9 +64,9 @@ fn the_daemon_listens_on_twydo_socket() {
 
 #[test]
 fn the_socket_flag_wins_over_twydo_socket() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let other = env.sock_dir.path().join("flag.sock");
-    let mut c = env.command();
+    let mut c = env.quiet_cmd();
     c.arg("--socket").arg(&other).arg("daemon");
     let _d = Proc(c.spawn().unwrap());
     env.connect(&other);
@@ -226,7 +75,7 @@ fn the_socket_flag_wins_over_twydo_socket() {
 
 #[test]
 fn a_second_daemon_exits_with_the_already_running_code() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let _first = env.spawn(&[]);
     env.connect(&env.socket());
     let mut second = env.spawn(&[]);
@@ -235,7 +84,7 @@ fn a_second_daemon_exits_with_the_already_running_code() {
 
 #[test]
 fn sigterm_shuts_down_and_removes_the_socket() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut d = env.spawn(&[]);
     env.connect(&env.socket());
     // SAFETY: signals our own child by pid.
@@ -246,7 +95,7 @@ fn sigterm_shuts_down_and_removes_the_socket() {
 
 #[test]
 fn a_missing_config_exits_with_the_error_code() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
     c.env("TWYDO_SOCKET", env.socket())
         .env("XDG_CONFIG_HOME", env.root.path().join("none"))
@@ -260,7 +109,7 @@ fn a_missing_config_exits_with_the_error_code() {
 
 #[test]
 fn a_resend_after_a_crash_between_commit_and_reply_returns_the_first_outcome() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut d = env.spawn(&["--test-crash-after-commit"]);
     let c = env.connect(&env.socket());
     let err = submit(&c, "R", "Synthetic crash").unwrap_err();
@@ -295,7 +144,7 @@ fn a_resend_after_a_crash_between_commit_and_reply_returns_the_first_outcome() {
 
 #[test]
 fn a_queued_item_survives_kill_and_is_applied_once_after_restart() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut d = env.spawn(&[]);
     let c = env.connect(&env.socket());
     // An external sync holds the vdir: the daemon's 250 ms try fails and the write queues.
@@ -331,7 +180,7 @@ fn a_queued_item_survives_kill_and_is_applied_once_after_restart() {
 
 #[test]
 fn daemon_shutdown_ends_the_process_with_success() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut d = env.spawn(&[]);
     let c = env.connect(&env.socket());
     let _: serde_json::Value = c
@@ -343,13 +192,13 @@ fn daemon_shutdown_ends_the_process_with_success() {
 
 #[test]
 fn a_relative_socket_in_a_shared_directory_is_refused() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let shared = tempfile::Builder::new()
         .prefix("td")
         .tempdir_in("/tmp")
         .unwrap();
     fs::set_permissions(shared.path(), fs::Permissions::from_mode(0o777)).unwrap();
-    let mut c = env.command();
+    let mut c = env.quiet_cmd();
     c.current_dir(shared.path())
         .arg("daemon")
         .args(["--socket", "rel.sock"]);
@@ -358,7 +207,7 @@ fn a_relative_socket_in_a_shared_directory_is_refused() {
     assert!(!shared.path().join("rel.sock").exists());
     // The same relative path in a private directory is fine.
     fs::set_permissions(shared.path(), fs::Permissions::from_mode(0o700)).unwrap();
-    let mut c = env.command();
+    let mut c = env.quiet_cmd();
     c.current_dir(shared.path())
         .arg("daemon")
         .args(["--socket", "rel.sock"]);
@@ -368,7 +217,7 @@ fn a_relative_socket_in_a_shared_directory_is_refused() {
 
 #[test]
 fn second_sigint_exits_at_once() {
-    let env = Env::new();
+    let env = TestEnv::new("");
     let mut d = env.spawn(&[]);
     let c = env.connect(&env.socket());
     // An outside holder of the vdir lock stalls the daemon's teardown: the queued write's
@@ -434,7 +283,7 @@ fn wait_for_child(env: &Env) -> Running {
 
 #[test]
 fn job_cut_short_by_kill_is_interrupted() {
-    let env = Env::with_sync("sleep 30");
+    let env = TestEnv::with_sync("sleep 30");
     let mut d = env.spawn(&[]);
     let c = env.connect(&env.socket());
     let _: serde_json::Value = c.call("events.subscribe", serde_json::json!({})).unwrap();
@@ -509,4 +358,426 @@ fn job_cut_short_by_kill_is_interrupted() {
             Err(_) => break,
         }
     }
+}
+
+// ---- connecting from a client: on-demand start and the upgrade rule ----
+
+fn log_of(env: &TestEnv) -> std::path::PathBuf {
+    env.xdg_state().join("twydo").join(format!(
+        "daemon-{}.log",
+        twydo_daemon::paths::socket_id(&env.socket())
+    ))
+}
+
+/// Runs `tdo daemon ping` (a client that starts the daemon on demand); returns the exit
+/// code, stdout and stderr.
+fn ping(cmd: &mut Command) -> (Option<i32>, String, String) {
+    let out = cmd.args(["daemon", "ping"]).output().unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
+}
+
+#[test]
+fn a_client_starts_the_daemon_on_demand() {
+    let env = TestEnv::new("");
+    assert!(!env.socket().exists());
+    let (code, epoch, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(0), "{err}");
+    let info = env.info();
+    assert_eq!(info.epoch, epoch);
+    assert_eq!(info.vdir, fs::canonicalize(env.vdir()).unwrap());
+    let log = fs::read_to_string(log_of(&env)).unwrap();
+    assert!(log.contains("tdo daemon: serving"), "{log}");
+    // A second client finds it running and starts nothing.
+    let (code, again, _) = ping(&mut env.tdo_cmd());
+    assert_eq!((code, again), (Some(0), epoch));
+}
+
+#[test]
+fn two_clients_starting_at_once_leave_one_daemon() {
+    let env = TestEnv::new("");
+    let run = |env: &TestEnv| {
+        let mut c = env.tdo_cmd();
+        std::thread::spawn(move || ping(&mut c))
+    };
+    let (a, b) = (run(&env), run(&env));
+    let (a, b) = (a.join().unwrap(), b.join().unwrap());
+    assert_eq!((a.0, b.0), (Some(0), Some(0)), "{} {}", a.2, b.2);
+    assert_eq!(a.1, b.1, "both clients reached the same daemon");
+    let pids: std::collections::HashSet<u32> = (0..3).map(|_| env.info().pid).collect();
+    assert_eq!(pids.len(), 1, "{pids:?}");
+    // A second daemon, if one was started, lost the lock and said so in the log instead of
+    // serving.
+    let log = fs::read_to_string(log_of(&env)).unwrap();
+    let starts = log.matches("tdo daemon: serving").count();
+    assert_eq!(starts, 1, "{log}");
+}
+
+#[test]
+fn wrong_instance_never_restarts_the_daemon() {
+    let a = TestEnv::new("");
+    let _d = a.spawn(&[]);
+    a.connect(&a.socket());
+    let epoch = a.info().epoch;
+    let b = TestEnv::new("");
+    let (code, _, err) = ping(b.tdo_cmd().env("TWYDO_SOCKET", a.socket()));
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("not the instance"), "{err}");
+    assert_eq!(a.info().epoch, epoch);
+}
+
+#[test]
+fn no_config_fails_without_starting_anything() {
+    let env = TestEnv::new("");
+    fs::remove_file(env.config_path()).unwrap();
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("no config at"), "{err}");
+    assert!(!env.socket().exists());
+    assert!(!log_of(&env).exists());
+}
+
+#[test]
+fn a_newer_client_restarts_an_older_daemon_when_idle() {
+    let env = TestEnv::new("");
+    let old = env.in_process_daemon(Some("0.0.1"));
+    let before = old.epoch().to_string();
+    let (code, epoch, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(0), "{err}");
+    assert_ne!(epoch, before, "the old daemon was replaced");
+    let info = env.info();
+    assert_eq!(info.epoch, epoch);
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn an_older_client_never_restarts_a_newer_daemon() {
+    let env = TestEnv::new("");
+    // The same protocol: the newer daemon serves the older client as it is.
+    let new = env.in_process_daemon(Some("99.0.0"));
+    let before = new.epoch().to_string();
+    let (code, epoch, err) = ping(&mut env.tdo_cmd());
+    assert_eq!((code, epoch), (Some(0), before.clone()), "{err}");
+    new.shutdown();
+    drop(new);
+
+    // A daemon of another protocol and a higher version is refused, not stopped.
+    let fake = FakeProtocolDaemon::start(&env, serde_json::json!("99.0.0"));
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("tdo was upgraded; restart it"), "{err}");
+    assert_eq!(fake.finish(), vec!["hello".to_string()]);
+}
+
+/// A socket that answers every request with a `protocol` refusal naming `daemon` (JSON null:
+/// no version given), and records the methods it was asked.
+struct FakeProtocolDaemon {
+    seen: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: std::thread::JoinHandle<()>,
+    socket: std::path::PathBuf,
+}
+
+impl FakeProtocolDaemon {
+    fn start(env: &TestEnv, daemon: serde_json::Value) -> FakeProtocolDaemon {
+        let mut data = serde_json::json!({"kind": "protocol", "protocol": 2});
+        if !daemon.is_null() {
+            data["daemon"] = daemon;
+        }
+        Self::start_refusing(env, data, "protocol 1 is not supported")
+    }
+
+    /// A socket that refuses every request with `data` as the error data.
+    fn start_refusing(
+        env: &TestEnv,
+        data: serde_json::Value,
+        message: &'static str,
+    ) -> FakeProtocolDaemon {
+        let listener = std::os::unix::net::UnixListener::bind(env.socket()).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let thread = {
+            let (seen, stop) = (seen.clone(), stop.clone());
+            let data = data.clone();
+            std::thread::spawn(move || {
+                use std::io::{BufRead, BufReader, Write};
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let Ok((s, _)) = listener.accept() else {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    };
+                    s.set_nonblocking(false).unwrap();
+                    let mut line = String::new();
+                    if BufReader::new(&s).read_line(&mut line).unwrap_or(0) == 0 {
+                        continue;
+                    }
+                    let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    seen.lock()
+                        .unwrap()
+                        .push(v["method"].as_str().unwrap().to_string());
+                    let reply = serde_json::json!({"jsonrpc": "2.0", "id": v["id"], "error": {
+                        "code": -32000, "message": message, "data": data}});
+                    let _ = writeln!(&s, "{reply}");
+                }
+            })
+        };
+        FakeProtocolDaemon {
+            seen,
+            stop,
+            thread,
+            socket: env.socket(),
+        }
+    }
+
+    /// Stops the server and returns the methods it saw.
+    #[allow(clippy::let_and_return)]
+    fn finish(self) -> Vec<String> {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.thread.join().unwrap();
+        let _ = fs::remove_file(&self.socket);
+        let seen = self.seen.lock().unwrap().clone();
+        seen
+    }
+}
+
+#[test]
+fn an_unknown_daemon_version_is_refused_never_stopped() {
+    let env = TestEnv::new("");
+    let fake = FakeProtocolDaemon::start(&env, serde_json::Value::Null);
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("tdo was upgraded; restart it"), "{err}");
+    assert_eq!(fake.finish(), vec!["hello".to_string()]);
+}
+
+#[test]
+fn a_second_upgrader_does_not_restart_the_upgraded_daemon() {
+    let env = TestEnv::new("");
+    // The daemon that answers now is already at this client's version (another client
+    // upgraded it); this client still believes it saw an older one.
+    let current = env.in_process_daemon(None);
+    let epoch = current.epoch().to_string();
+    let target = tdo::client::Target {
+        socket: env.socket(),
+        vdir: None,
+    };
+    let hello = env.hello();
+    let mark = tdo::client::start::LogMark::take(&env.socket());
+    let (_c, r) = tdo::client::restart(&target, &hello, &mark, Some("d-stale")).unwrap();
+    assert_eq!(r.epoch, epoch);
+    // The same holds for an equal version seen under the same epoch, and with no epoch.
+    let (_c, r) = tdo::client::restart(&target, &hello, &mark, Some(&epoch)).unwrap();
+    assert_eq!(r.epoch, epoch);
+    let (_c, r) = tdo::client::restart(&target, &hello, &mark, None).unwrap();
+    assert_eq!(r.epoch, epoch);
+    assert_eq!(env.info().epoch, epoch);
+}
+
+#[test]
+fn a_live_socket_of_another_vdir_is_not_taken_over() {
+    let a = TestEnv::new("");
+    let _d = a.spawn(&[]);
+    a.connect(&a.socket());
+    let epoch = a.info().epoch;
+    let b = TestEnv::new("");
+    let mut c = b.quiet_cmd();
+    c.stderr(Stdio::piped())
+        .args(["--socket"])
+        .arg(a.socket())
+        .arg("daemon");
+    let out = c.output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("is served by a daemon for"), "{err}");
+    assert!(err.contains("use another --socket"), "{err}");
+    assert_eq!(a.info().epoch, epoch);
+}
+
+#[test]
+fn daemon_stop_waits_for_the_socket_to_go() {
+    let env = TestEnv::new("");
+    let out = env.tdo_cmd().args(["daemon", "stop"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "no daemon is running"
+    );
+    assert!(!env.socket().exists(), "stop must not start a daemon");
+
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(0), "{err}");
+    let out = env.tdo_cmd().args(["daemon", "stop"]).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The socket is gone the moment stop returns: nothing answers and the file is removed.
+    assert!(!env.socket().exists());
+    assert!(twydo_daemon::client::Client::connect_raw(&env.socket()).is_err());
+}
+
+#[test]
+fn daemon_stop_refuses_another_instance() {
+    let a = TestEnv::new("");
+    let _d = a.spawn(&[]);
+    a.connect(&a.socket());
+    let epoch = a.info().epoch;
+    let b = TestEnv::new("");
+    let out = b
+        .tdo_cmd()
+        .env("TWYDO_SOCKET", a.socket())
+        .args(["daemon", "stop"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("not the instance"), "{err}");
+    assert_eq!(a.info().epoch, epoch, "the daemon was left alone");
+}
+
+#[test]
+fn a_client_of_another_instance_with_another_protocol_never_stops_it() {
+    let env = TestEnv::new("");
+    // What a new daemon answers a hello that is wrong twice: wrong_instance, which says
+    // nothing of its version.
+    let fake = FakeProtocolDaemon::start_refusing(
+        &env,
+        serde_json::json!({"kind": "wrong_instance"}),
+        "this daemon serves another vdir, not the instance you asked for",
+    );
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("not the instance"), "{err}");
+    let out = env.tdo_cmd().args(["daemon", "stop"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(
+        fake.finish(),
+        vec!["hello".to_string(), "hello".to_string()],
+        "no shutdown or info was sent"
+    );
+}
+
+#[test]
+fn a_daemon_that_never_answers_hello_does_not_hang_the_cli() {
+    let env = TestEnv::new("");
+    let listener = std::os::unix::net::UnixListener::bind(env.socket()).unwrap();
+    let held = std::thread::spawn(move || {
+        let mut keep = Vec::new();
+        while let Ok((s, _)) = listener.accept() {
+            keep.push(s);
+        }
+    });
+    let begun = std::time::Instant::now();
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(2), "{err}");
+    assert!(err.contains("did not answer"), "{err}");
+    assert!(
+        begun.elapsed() < Duration::from_secs(15),
+        "{:?}",
+        begun.elapsed()
+    );
+    // Nothing answers there for the teardown to stop.
+    let _ = fs::remove_file(env.socket());
+    drop(held);
+}
+
+type Seen = std::sync::Arc<std::sync::Mutex<Vec<(usize, String)>>>;
+
+/// A socket of an older daemon of another protocol: it refuses `hello` with `protocol`,
+/// answers `daemon.info` (reporting version 0.0.1) and `daemon.shutdown`, and records every
+/// method with the number of the connection it arrived on. After `daemon.shutdown` it goes
+/// away (removes its socket) the way a stopping daemon does.
+fn serve_old_protocol_daemon(env: &TestEnv) -> (Seen, std::thread::JoinHandle<()>) {
+    use std::io::{BufRead, BufReader, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    let listener = std::os::unix::net::UnixListener::bind(env.socket()).unwrap();
+    let seen = Arc::new(Mutex::new(Vec::<(usize, String)>::new()));
+    let gone = Arc::new(AtomicBool::new(false));
+    let socket = env.socket();
+    let recorded = Arc::clone(&seen);
+    let thread = std::thread::spawn(move || {
+        let mut conns = 0;
+        listener.set_nonblocking(true).unwrap();
+        while !gone.load(Ordering::SeqCst) {
+            let Ok((s, _)) = listener.accept() else {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            };
+            s.set_nonblocking(false).unwrap();
+            let n = conns;
+            conns += 1;
+            let (seen, gone, socket) = (Arc::clone(&recorded), Arc::clone(&gone), socket.clone());
+            std::thread::spawn(move || {
+                let mut w = &s;
+                for line in BufReader::new(&s).lines() {
+                    let Ok(line) = line else { break };
+                    let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    let method = v["method"].as_str().unwrap().to_string();
+                    seen.lock().unwrap().push((n, method.clone()));
+                    let reply = match method.as_str() {
+                        "daemon.info" => serde_json::json!({"jsonrpc": "2.0", "id": v["id"],
+                            "result": {"version": "0.0.1", "protocol": 1, "pid": 1,
+                                "uptime_secs": 1, "vdir": "/synthetic", "epoch": "d-old"}}),
+                        "daemon.shutdown" => {
+                            let _ = std::fs::remove_file(&socket);
+                            gone.store(true, Ordering::SeqCst);
+                            serde_json::json!({"jsonrpc": "2.0", "id": v["id"], "result": {}})
+                        }
+                        _ => serde_json::json!({"jsonrpc": "2.0", "id": v["id"], "error": {
+                            "code": -32000, "message": "protocol 1 is not supported",
+                            "data": {"kind": "protocol", "protocol": 2, "daemon": "0.0.1"}}}),
+                    };
+                    let _ = writeln!(w, "{reply}");
+                }
+            });
+        }
+    });
+    (seen, thread)
+}
+
+#[test]
+fn an_upgrade_sends_its_lifecycle_calls_on_the_checked_connection() {
+    let env = TestEnv::new("");
+    let (seen, thread) = serve_old_protocol_daemon(&env);
+    let (code, _, err) = ping(&mut env.tdo_cmd());
+    assert_eq!(code, Some(0), "{err}");
+    thread.join().unwrap();
+    let seen = seen.lock().unwrap().clone();
+    let first: Vec<_> = seen.iter().take(3).cloned().collect();
+    assert_eq!(
+        first,
+        vec![
+            (0, "hello".to_string()),
+            (0, "daemon.info".to_string()),
+            (0, "daemon.shutdown".to_string())
+        ],
+        "{seen:?}"
+    );
+    assert_eq!(seen.len(), 3, "no other connection was made: {seen:?}");
+}
+
+#[test]
+fn stop_sends_shutdown_on_the_connection_whose_hello_was_refused() {
+    let env = TestEnv::new("");
+    let (seen, thread) = serve_old_protocol_daemon(&env);
+    let out = env.tdo_cmd().args(["daemon", "stop"]).output().unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    thread.join().unwrap();
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![(0, "hello".to_string()), (0, "daemon.shutdown".to_string())]
+    );
 }

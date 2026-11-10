@@ -56,7 +56,7 @@ enum Command {
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
-    /// Run the daemon in the foreground (it owns the data; clients talk to it over a socket)
+    /// Run the daemon (it owns the data; clients talk to it over a socket), or stop it
     #[command(hide = true)]
     Daemon {
         /// Compatibility matrix file (test hook)
@@ -65,6 +65,11 @@ enum Command {
         /// Abort after committing a write, before replying (crash tests)
         #[arg(long, hide = true)]
         test_crash_after_commit: bool,
+        /// Run in a session of its own, logging to a file, and return at once
+        #[arg(long)]
+        detach: bool,
+        #[command(subcommand)]
+        command: Option<cli::daemon::DaemonCommand>,
     },
     /// Report data health, recurrence evidence and operation permissions
     Check {
@@ -105,12 +110,18 @@ fn main() {
         Command::Daemon {
             matrix,
             test_crash_after_commit,
-        } => std::process::exit(cli::daemon::run(
-            cli.vdir.as_deref(),
-            cli.socket.as_deref(),
-            matrix.as_ref(),
-            test_crash_after_commit,
-        )),
+            detach,
+            command,
+        } => std::process::exit(match command {
+            Some(c) => cli::daemon::client_command(cli.vdir.as_deref(), cli.socket.as_deref(), c),
+            None => cli::daemon::run(
+                cli.vdir.as_deref(),
+                cli.socket.as_deref(),
+                matrix.as_ref(),
+                test_crash_after_commit,
+                detach,
+            ),
+        }),
         Command::Conflicts { command } => {
             std::process::exit(cli::conflicts::run(cli.vdir.as_deref(), command))
         }

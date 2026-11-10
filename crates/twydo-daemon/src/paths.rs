@@ -56,6 +56,15 @@ pub fn socket_path_from(
     }
 }
 
+/// A short stable id of a socket path: the first 12 hex digits of the SHA-256 of its absolute
+/// path. It names the daemon's log file.
+pub fn socket_id(socket: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let abs = std::path::absolute(socket).unwrap_or_else(|_| socket.to_path_buf());
+    let digest = Sha256::digest(abs.as_os_str().as_encoded_bytes());
+    digest.iter().take(6).map(|b| format!("{b:02x}")).collect()
+}
+
 /// The single-instance lock of a vdir's state directory, released on drop (or by the OS when
 /// the process dies).
 pub struct DaemonLock(#[allow(dead_code)] LockFile);

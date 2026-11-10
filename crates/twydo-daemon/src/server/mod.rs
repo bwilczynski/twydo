@@ -89,6 +89,10 @@ pub struct DaemonOptions {
     /// still waiting; tests shorten it.
     #[doc(hidden)]
     pub stop_wait: Duration,
+    /// Replaces the package version in `hello` and `daemon.info`; tests present an older or
+    /// newer daemon with it.
+    #[doc(hidden)]
+    pub version_for_test: Option<String>,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -118,6 +122,7 @@ impl DaemonOptions {
             clock: Arc::new(schedule::SystemClock),
             shutdown_grace: Duration::from_secs(10),
             stop_wait: STOP_WAIT,
+            version_for_test: None,
         }
     }
 }
@@ -140,6 +145,8 @@ pub struct Shared {
     /// The canonical vdir.
     pub vdir: PathBuf,
     pub epoch: String,
+    /// What `hello` and `daemon.info` report as the daemon's version.
+    pub version: String,
     pub started: Instant,
     pub socket: PathBuf,
     pub heartbeat: Duration,
@@ -301,7 +308,7 @@ impl Daemon {
         let lock = DaemonLock::take(&state)?.ok_or(StartError::AlreadyRunning)?;
         let job_store = jobs::JobStore::open(&state)?;
 
-        let listener = bind_socket(&opts.socket)?;
+        let listener = bind_socket(&opts.socket, &vdir)?;
         listener.set_nonblocking(true)?;
         let (wake_r, wake_w) = wake_pipe()?;
         let bus = bus::EventBus::new();
@@ -315,6 +322,10 @@ impl Daemon {
             instance,
             vdir,
             epoch: format!("d-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
+            version: opts
+                .version_for_test
+                .take()
+                .unwrap_or_else(|| env!("CARGO_PKG_VERSION").into()),
             started: Instant::now(),
             socket: opts.socket.clone(),
             heartbeat: opts.heartbeat,
@@ -411,7 +422,7 @@ impl Daemon {
 ///
 /// A bare relative name (`tdo.sock`) lives in the working directory, which is checked like any
 /// other: it must be private too.
-fn bind_socket(path: &Path) -> Result<UnixListener, StartError> {
+fn bind_socket(path: &Path, vdir: &Path) -> Result<UnixListener, StartError> {
     let dir = match path.parent() {
         Some(d) if !d.as_os_str().is_empty() => d,
         _ => Path::new("."),
@@ -426,6 +437,17 @@ fn bind_socket(path: &Path) -> Result<UnixListener, StartError> {
     }
     if let Ok(md) = fs::symlink_metadata(path) {
         if UnixStream::connect(path).is_ok() {
+            // Something answers. A daemon of another vdir is a configuration mistake (exit 2
+            // with the reason), not a second instance of ours.
+            if let Some(other) = served_vdir(path)
+                && other != vdir
+            {
+                return Err(StartError::Io(io::Error::other(format!(
+                    "{} is served by a daemon for {}; use another --socket",
+                    path.display(),
+                    other.display()
+                ))));
+            }
             return Err(StartError::AlreadyRunning);
         }
         if !md.file_type().is_socket() {
@@ -439,6 +461,16 @@ fn bind_socket(path: &Path) -> Result<UnixListener, StartError> {
     let listener = UnixListener::bind(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(listener)
+}
+
+/// The vdir of the daemon answering on `path`, if it answers `daemon.info` promptly.
+fn served_vdir(path: &Path) -> Option<PathBuf> {
+    let c = crate::client::Client::connect_raw(path).ok()?;
+    let info: crate::protocol::methods::DaemonInfo = c
+        .caller()
+        .call_timeout("daemon.info", serde_json::json!({}), Duration::from_secs(2))
+        .ok()?;
+    Some(info.vdir)
 }
 
 /// An existing socket directory must belong to us and be closed to group and others.
