@@ -316,11 +316,13 @@ impl Queue {
         self.dir.join("cancelled")
     }
 
-    /// Writes `item` durably.
+    /// Writes `item` durably. The collection fence is not checked here: an edit saved while
+    /// a list operation runs is queued, and the drain refuses it if the operation is left
+    /// unfinished ([`crate::lists::operation::ensure_idle`]). The coordination lock still
+    /// orders the push against a list operation checking the queue as it begins.
     pub fn push(&self, item: &Item) -> io::Result<()> {
         let state = self.dir.parent().expect("queue state directory");
         let _coord = crate::lists::operation::coordinate(state)?;
-        crate::lists::operation::ensure_idle(state)?;
         let bytes = serde_json::to_vec_pretty(item).map_err(io::Error::other)?;
         write_atomic(&self.json(&item.id)?, &bytes)
     }

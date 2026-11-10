@@ -186,6 +186,9 @@ pub struct Store {
     request: Option<RequestRef>,
     /// Plan and queue at once, never trying the vdir lock (a sync is known to be running).
     vdir_busy: bool,
+    /// Leave the collection fence to the drain: a list job runs, so an edit is queued even
+    /// while its operation is active ([`Store::set_fence_at_drain`]).
+    fence_at_drain: bool,
     /// Items this store's drains dealt with, until [`Store::take_drained`]; collected only
     /// while [`Store::set_collect_drained`] is on.
     drained: Vec<Drained>,
@@ -369,6 +372,7 @@ impl Store {
             lock_wait: None,
             request: None,
             vdir_busy: false,
+            fence_at_drain: false,
             drained: Vec::new(),
             collect_drained: false,
         };
@@ -399,6 +403,7 @@ impl Store {
             lock_wait: None,
             request: None,
             vdir_busy: false,
+            fence_at_drain: false,
             drained: Vec::new(),
             collect_drained: false,
         })
@@ -413,6 +418,15 @@ impl Store {
     /// they gate, plan and queue at once.
     pub fn set_vdir_busy(&mut self, busy: bool) {
         self.vdir_busy = busy;
+    }
+
+    /// While on, planning a write skips the collection fence
+    /// ([`crate::lists::operation::ensure_idle`]) and the drain checks it instead: for the
+    /// daemon while a list job holds the vdir, so an edit saved during the job is queued and
+    /// refused at drain only if the job leaves its operation unfinished. Use with
+    /// [`Store::set_vdir_busy`], so nothing commits before the drain.
+    pub fn set_fence_at_drain(&mut self, on: bool) {
+        self.fence_at_drain = on;
     }
 
     /// Collect the items this store's drains deal with, for [`Store::take_drained`]. Off by
@@ -490,7 +504,9 @@ impl Store {
         op: &Op,
         now: DateTime<Utc>,
     ) -> Result<Prepared, WriteError> {
-        crate::lists::operation::ensure_idle(&self.state)?;
+        if !self.fence_at_drain {
+            crate::lists::operation::ensure_idle(&self.state)?;
+        }
         let today = now.with_timezone(&snap.tz()).date_naive();
         gate::check(snap, &self.matrix, self.mode, op, today).map_err(WriteError::Blocked)?;
         let mut plan = self.plan(snap, op, now)?;
@@ -713,6 +729,12 @@ impl Store {
         now: DateTime<Utc>,
         after_push: &mut dyn FnMut(),
     ) -> Result<Submitted, WriteError> {
+        // `Queue::push` does not check the collection fence; undo and redo never plan
+        // through `prepare`, so this is their save-time fence (left to the drain during a
+        // daemon's list job, as in `prepare`).
+        if !self.fence_at_drain {
+            crate::lists::operation::ensure_idle(&self.state)?;
+        }
         let queue = Queue::open(&self.state)?;
         queue.push(&item)?;
         after_push();
@@ -783,7 +805,9 @@ impl Store {
         _held: &VdirLock,
         now: DateTime<Utc>,
     ) -> Result<Vec<DrainStep>, WriteError> {
-        crate::lists::operation::ensure_idle(&self.state)?;
+        if let Err(fence) = crate::lists::operation::ensure_idle(&self.state) {
+            return self.refuse_fenced(fence, now);
+        }
         let queue = Queue::open(&self.state)?;
         let mut report = crate::vdir::load(&self.vdir)?;
         let mut steps: Vec<DrainStep> = Vec::new();
@@ -860,6 +884,44 @@ impl Store {
                     });
                 }
             }
+        }
+        Ok(steps)
+    }
+
+    /// The drain while an unfinished collection operation fences writes: the queued items
+    /// that write in its list are refused with the fence's message (they were queued during
+    /// the list job: one beginning refuses while its list has queued edits), the others wait
+    /// for the operation to be reconciled. The fence's error when nothing was refused.
+    fn refuse_fenced(
+        &mut self,
+        fence: io::Error,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<DrainStep>, WriteError> {
+        let Ok(Some(collection)) = crate::lists::operation::fenced_collection(&self.state) else {
+            return Err(fence.into());
+        };
+        let reason = fence.to_string();
+        let queue = Queue::open(&self.state)?;
+        let mut steps = Vec::new();
+        for item in queue.list()? {
+            let in_list = item.writes().iter().any(|w| {
+                Path::new(&w.path)
+                    .components()
+                    .next()
+                    .is_some_and(|c| c.as_os_str() == collection.as_str())
+            });
+            // An item a journal entry names was committed: the next drain finishes it.
+            if !in_list || self.journal.by_queue_id(&item.id)?.is_some() {
+                continue;
+            }
+            if !queue.claim(&item.id)? {
+                continue;
+            }
+            queue.refuse(&item, &reason, false, now)?;
+            steps.push(DrainStep::new(item, DrainOutcome::Refused(reason.clone())));
+        }
+        if steps.is_empty() {
+            return Err(fence.into());
         }
         Ok(steps)
     }

@@ -8,6 +8,7 @@ pub mod conn;
 pub mod dispatch;
 pub mod jobs;
 pub mod lane;
+pub mod lists;
 pub mod publish;
 pub mod replay;
 pub mod schedule;
@@ -74,8 +75,14 @@ pub struct DaemonOptions {
     pub periodic: Duration,
     /// The scheduler's clock.
     pub clock: Arc<dyn schedule::Clock>,
-    /// How long a sync running at shutdown may go on before it is stopped.
+    /// How long a sync running at shutdown may go on before it is stopped. Shutdown waits
+    /// for the running job however long it takes (see `stop_jobs`): a job that never ends is
+    /// ended by the service manager's stop timeout.
     pub shutdown_grace: Duration,
+    /// How long past the grace teardown waits for the running job before it logs that it is
+    /// still waiting; tests shorten it.
+    #[doc(hidden)]
+    pub stop_wait: Duration,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -100,6 +107,7 @@ impl DaemonOptions {
             periodic: Duration::from_secs(60),
             clock: Arc::new(schedule::SystemClock),
             shutdown_grace: Duration::from_secs(10),
+            stop_wait: STOP_WAIT,
         }
     }
 }
@@ -157,6 +165,8 @@ pub struct Shared {
     pub hold_queue: Arc<AtomicBool>,
     /// How long a sync running at shutdown may go on before it is stopped.
     shutdown_grace: Duration,
+    /// See [`DaemonOptions::stop_wait`].
+    stop_wait: Duration,
     /// The background status refresher; see [`Shared::request_status_refresh`].
     status_refresh: Mutex<Refresher>,
     status_refresh_cv: Condvar,
@@ -307,6 +317,7 @@ impl Daemon {
             runner: jobs::JobRunner::new(),
             hold_queue: Arc::new(AtomicBool::new(false)),
             shutdown_grace: opts.shutdown_grace,
+            stop_wait: opts.stop_wait,
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
             scheduler: Mutex::new(None),
@@ -702,17 +713,21 @@ struct Drainer {
     handle: Option<JoinHandle<()>>,
 }
 
-/// How long teardown waits for a sync after asking it to stop.
+/// How long past the grace teardown waits for the running job before it logs that it is
+/// still waiting (it goes on waiting).
 const STOP_WAIT: Duration = Duration::from_secs(10);
 
 /// How often teardown looks at the running work while it waits.
 const STOP_POLL: Duration = Duration::from_millis(50);
 
 /// Ends the job runner before the connections close, so clients get the ends: queued jobs
-/// become `interrupted` (with `job.finished`); a running sync gets the grace period, is then
-/// stopped and waited for [`STOP_WAIT`] more; a list job is waited for. A sync that does not
-/// stop (one waiting for a run lock another process holds cannot be interrupted) is left
-/// behind and logged: the daemon always exits.
+/// become `interrupted` (with `job.finished`); the running job is waited for until its work
+/// item has finished, however long that takes. Once the grace is over a running sync is
+/// asked to stop, again at every poll (one that has not begun yet, or is still waiting for
+/// a lock, cannot take the request; whatever job runs it, `lists.forget`'s included). A list
+/// job's own work cannot be stopped at all. Past the grace and the stop wait, the wait is
+/// logged once. Teardown never lets the vdir go while a job may still write it: a job that
+/// never ends is ended by the service manager's stop timeout, killing the process.
 fn stop_jobs(shared: &Shared) {
     use crate::protocol::events::Event;
     use crate::protocol::jobs::JobState;
@@ -733,26 +748,34 @@ fn stop_jobs(shared: &Shared) {
         });
     }
     let grace_end = Instant::now() + shared.shutdown_grace;
-    let mut give_up: Option<Instant> = None;
-    let mut asked = false;
+    let log_at = grace_end + shared.stop_wait;
+    let mut logged = false;
+    let mut stop_failed = false;
     while !shared.runner.wait_idle(STOP_POLL) {
-        if shared.runner.current_kind() != Some(lane::LongKind::Sync) {
-            continue;
-        }
         let now = Instant::now();
         if now < grace_end {
             continue;
         }
-        let limit = *give_up.get_or_insert(now + STOP_WAIT);
-        if now >= limit {
-            eprintln!("tdo daemon: the sync did not stop within {STOP_WAIT:?}; not waiting for it");
-            return;
+        // A sync runs: a sync job's, a background one, or the one `lists.forget` runs under
+        // its list job's lane.
+        let kind = shared.runner.current_kind();
+        if (kind == Some(lane::LongKind::Sync) || shared.publisher.sync_running())
+            && let Err(e) = syncjob::stop_running_sync(shared)
+            && !stop_failed
+        {
+            stop_failed = true;
+            eprintln!("tdo daemon: cannot stop the running sync: {e}");
         }
-        // Asked until the sync takes it: one that has not begun yet has nothing to stop.
-        if !asked {
-            match syncjob::stop_running_sync(shared) {
-                Ok(a) => asked = a,
-                Err(e) => eprintln!("tdo daemon: cannot stop the running sync: {e}"),
+        if !logged && now >= log_at {
+            logged = true;
+            let kind = match kind {
+                Some(lane::LongKind::List) => "list",
+                Some(lane::LongKind::Test) => "test",
+                _ => "sync",
+            };
+            match shared.runner.current_job() {
+                Some(id) => eprintln!("tdo daemon: still waiting for {kind} job {id} to finish"),
+                None => eprintln!("tdo daemon: still waiting for the background sync to finish"),
             }
         }
     }

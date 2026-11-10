@@ -196,36 +196,44 @@ fn helper_retains_locks_after_its_launcher_exits() {
     }
 }
 
+/// The fence moved from `Queue::push` to the drain (daemon plan 2): an edit queued while a
+/// list operation runs is written to the queue, and a drain during the operation refuses an
+/// item of the fenced list with the fence's message; unrelated queued work waits.
 #[test]
-fn active_marker_blocks_new_queue_inserts_and_preserves_unrelated_queued_work() {
+fn active_marker_fences_queued_edits_at_drain_and_preserves_unrelated_queued_work() {
     use twydo_core::edit::{NewTask, Op};
-    use twydo_core::store::{Submitted, fsio::VdirLock, queue::Queue};
+    use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock, queue::Queue};
     use twydo_core::views::Snapshot;
     let (_root, cfg, request) = setup();
     fs::create_dir(cfg.vdir.join("other")).unwrap();
     let view = Snapshot::new(twydo_core::vdir::load(&cfg.vdir).unwrap(), cfg.clone());
     let (mut store, _) = Store::open(&cfg).unwrap();
     let state = store.state_dir().to_path_buf();
+    let queue = Queue::open(&state).unwrap();
     let lock = VdirLock::exclusive(&state).unwrap();
-    let submitted = store
-        .submit(
-            &view,
-            &Op::Create(NewTask::plain("other", "Synthetic other task")),
-            "create",
-            "test",
-            Utc::now(),
-        )
-        .unwrap();
-    let Submitted::Queued(item) = submitted else {
-        panic!("expected queued create")
+    let mut queued = |list: &str| {
+        let submitted = store
+            .submit(
+                &view,
+                &Op::Create(NewTask::plain(list, "Synthetic task")),
+                "create",
+                "test",
+                Utc::now(),
+            )
+            .unwrap();
+        let Submitted::Queued(item) = submitted else {
+            panic!("expected queued create")
+        };
+        item
     };
+    let item = queued("other");
+    // An edit of the fenced list, as one saved during the list job: planned before the
+    // operation, queued after it began.
+    let fenced = queued("synthetic");
+    assert!(queue.cancel(&fenced.id).unwrap());
     drop(lock);
     let mut operation = operation::prepare(&cfg, request, Utc::now()).unwrap();
-    let queue = Queue::open(&state).unwrap();
-    let mut extra = item.clone();
-    extra.id.push_str("-second");
-    assert!(queue.push(&extra).is_err());
-    assert_eq!(queue.list().unwrap(), vec![item.clone()]);
+    queue.push(&fenced).unwrap();
     assert!(
         store
             .submit(
@@ -235,8 +243,22 @@ fn active_marker_blocks_new_queue_inserts_and_preserves_unrelated_queued_work() 
                 "test",
                 Utc::now()
             )
-            .is_err()
+            .is_err(),
+        "an edit saved outside a list job is still fenced at once"
     );
+    let drained = store.drain(Utc::now()).unwrap();
+    assert_eq!(drained.len(), 1);
+    assert_eq!(drained[0].item.id, fenced.id);
+    let DrainOutcome::Refused(reason) = &drained[0].outcome else {
+        panic!("expected a refusal: {:?}", drained[0].outcome)
+    };
+    assert!(
+        reason.contains("is unfinished; reconcile it before writing or syncing"),
+        "{reason}"
+    );
+    assert_eq!(queue.list().unwrap(), vec![item.clone()]);
+    let error = store.drain(Utc::now()).unwrap_err().to_string();
+    assert!(error.contains("is unfinished"), "{error}");
     operation::set_phase(&cfg, &mut operation, Phase::RemoteStarted).unwrap();
     operation::set_phase(&cfg, &mut operation, Phase::RemoteConfirmed).unwrap();
     operation::set_phase(&cfg, &mut operation, Phase::LocalConfirmed).unwrap();
@@ -244,6 +266,57 @@ fn active_marker_blocks_new_queue_inserts_and_preserves_unrelated_queued_work() 
     assert_eq!(queue.list().unwrap(), vec![item]);
     assert_eq!(store.drain(Utc::now()).unwrap().len(), 1);
     assert_eq!(Journal::open(&state).unwrap().pending().unwrap().len(), 1);
+}
+
+/// Undo and redo never plan through the gate, so a queued one is fenced when it is saved:
+/// with an operation active and the vdir held, both are refused at once.
+#[test]
+fn queued_undo_and_redo_keep_the_save_time_fence() {
+    use twydo_core::edit::{NewTask, Op};
+    use twydo_core::store::{Submitted, fsio::VdirLock};
+    use twydo_core::views::Snapshot;
+    let (_root, cfg, request) = setup();
+    fs::create_dir(cfg.vdir.join("other")).unwrap();
+    let view = Snapshot::new(twydo_core::vdir::load(&cfg.vdir).unwrap(), cfg.clone());
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    let state = store.state_dir().to_path_buf();
+    let create = |title: &str| Op::Create(NewTask::plain("other", title));
+    // An undo of an applied step.
+    let applied = store
+        .submit(&view, &create("Applied"), "create", "test", Utc::now())
+        .unwrap();
+    assert!(matches!(applied, Submitted::Applied(_)));
+    // A redo of a cancelled step: queued while the vdir is held, then undone (cancelled).
+    let lock = VdirLock::exclusive(&state).unwrap();
+    let queued = store
+        .submit(&view, &create("Queued"), "create", "test", Utc::now())
+        .unwrap();
+    assert!(matches!(queued, Submitted::Queued(_)));
+    assert!(matches!(
+        store.undo_last(Utc::now()).unwrap(),
+        Submitted::Cancelled
+    ));
+    drop(lock);
+    let _operation = operation::prepare(&cfg, request, Utc::now()).unwrap();
+    let _lock = VdirLock::exclusive(&state).unwrap();
+    for (what, got) in [
+        ("undo", store.undo_last(Utc::now())),
+        // The redo stack holds the cancelled create.
+        ("redo", store.redo_last(Utc::now())),
+    ] {
+        let error = got.unwrap_err().to_string();
+        assert!(
+            error.contains("is unfinished; reconcile it before writing or syncing"),
+            "{what}: {error}"
+        );
+    }
+    assert!(
+        twydo_core::store::queue::Queue::open(&state)
+            .unwrap()
+            .list()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

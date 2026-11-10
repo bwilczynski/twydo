@@ -131,6 +131,14 @@ pub fn dispatch(
         "journal.abandon" => super::admin::journal_abandon(shared, parse(params)?),
         "input.parse" => super::admin::input_parse(shared, parse(params)?),
         "job.get" => super::jobs::get(shared, parse(params)?),
+        "lists.create" => super::lists::create(shared, conn, parse(params)?),
+        "lists.update" => super::lists::update(shared, conn, parse(params)?),
+        "lists.archive" => super::lists::archive(shared, conn, parse(params)?, true),
+        "lists.unarchive" => super::lists::archive(shared, conn, parse(params)?, false),
+        "lists.preview_delete" => super::lists::preview_delete(shared, conn, parse(params)?),
+        "lists.delete" => super::lists::delete(shared, conn, parse(params)?),
+        "lists.reconcile" => super::lists::reconcile(shared, conn, parse(params)?),
+        "lists.export" => super::lists::export(shared, conn, parse(params)?),
         "events.subscribe" => to_result(shared.publisher.subscribe(conn.id, conn.out.clone())),
         "events.unsubscribe" => {
             shared.bus.unsubscribe(conn.id);

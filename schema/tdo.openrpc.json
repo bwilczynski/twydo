@@ -1072,6 +1072,66 @@
               "type"
             ],
             "type": "object"
+          },
+          {
+            "description": "A list was created, changed, archived, unarchived or reconciled; `operation` is the\nlist operation's id (empty for a local archive change).",
+            "properties": {
+              "operation": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/WireListState"
+              },
+              "type": {
+                "const": "list_saved",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "operation",
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WireDeletePreview"
+              }
+            ],
+            "description": "`lists.preview_delete` saved a backup.",
+            "properties": {
+              "type": {
+                "const": "delete_preview",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`lists.export` copied backup `backup` to `destination`.",
+            "properties": {
+              "backup": {
+                "type": "string"
+              },
+              "destination": {
+                "type": "string"
+              },
+              "type": {
+                "const": "exported",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "backup",
+              "destination"
+            ],
+            "type": "object"
           }
         ],
         "x-open": true
@@ -1307,6 +1367,84 @@
         ],
         "type": "object"
       },
+      "ListArchiveParams": {
+        "description": "Params of `lists.archive` and `lists.unarchive`: the list as the client saw it.",
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/WireListState"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "expected"
+        ],
+        "type": "object"
+      },
+      "ListCreateParams": {
+        "description": "Params of `lists.create`.",
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The new list's directory name.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "name",
+          "color"
+        ],
+        "type": "object"
+      },
+      "ListDeleteParams": {
+        "description": "Params of `lists.delete`: the preview the client showed.",
+        "properties": {
+          "preview": {
+            "$ref": "#/components/schemas/WireDeletePreview"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "ListExportParams": {
+        "description": "Params of `lists.export`: copy backup `backup` to the new directory `destination`.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "backup",
+          "destination"
+        ],
+        "type": "object"
+      },
       "ListPrefs": {
         "additionalProperties": false,
         "properties": {
@@ -1342,6 +1480,73 @@
             }
           }
         },
+        "type": "object"
+      },
+      "ListPreviewDeleteParams": {
+        "description": "Params of `lists.preview_delete`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id"
+        ],
+        "type": "object"
+      },
+      "ListReconcileParams": {
+        "description": "Params of `lists.reconcile`: finish the unfinished list operation `operation`, or, with\n`keep_server`, adopt what the server holds.",
+        "properties": {
+          "keep_server": {
+            "type": "boolean"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "operation",
+          "keep_server"
+        ],
+        "type": "object"
+      },
+      "ListUpdateParams": {
+        "description": "Params of `lists.update`: the new name and colour of the list `expected` describes as the\nclient saw it.",
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`; absent for no colour.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected": {
+            "$ref": "#/components/schemas/WireListState"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "name",
+          "expected"
+        ],
         "type": "object"
       },
       "MetaFormat": {
@@ -2654,6 +2859,38 @@
         "type": "string",
         "x-open": true
       },
+      "WireDeletePreview": {
+        "description": "What `lists.preview_delete` saved: the backup that a deletion would keep.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "local_files": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "resources": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backup",
+          "collection",
+          "name",
+          "resources",
+          "local_files"
+        ],
+        "type": "object"
+      },
       "WireError": {
         "properties": {
           "message": {
@@ -2686,6 +2923,34 @@
             "type": "string"
           }
         ]
+      },
+      "WireListState": {
+        "description": "A list as the list methods see it: its name, colour and local archive flag.",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "color": {
+            "description": "`#rrggbb`; absent when the list has no colour.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "The list's directory name in the vdir.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "archived"
+        ],
+        "type": "object"
       },
       "WireResolution": {
         "description": "What a resolution did (mirrors the core's `Resolution`).",
@@ -3335,6 +3600,158 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/JobView"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.create",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListCreateParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.update",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListUpdateParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.archive",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListArchiveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.unarchive",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListArchiveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.preview_delete",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListPreviewDeleteParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.delete",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListDeleteParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.reconcile",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListReconcileParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.export",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListExportParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
         }
       },
       "x-lifecycle": false

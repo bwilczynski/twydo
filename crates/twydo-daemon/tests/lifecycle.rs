@@ -624,17 +624,38 @@ mod during_a_job {
         assert!(!td.socket().exists());
     }
 
-    /// Task 3 review: a manual sync waiting for a run lock another process holds cannot be
-    /// stopped, and must not hold the daemon up for longer than the grace and the stop wait.
+    /// Is the daemon lock of `fx`'s vdir still held (a second daemon cannot start)?
+    fn vdir_owned(fx: &Fixture) -> bool {
+        use twydo_daemon::server::{Daemon, DaemonOptions, StartError};
+        let dir = short_socket_dir();
+        let opts = DaemonOptions::new(dir.path().join("other.sock"));
+        match Daemon::start(fx.config(), fx.instance(), opts) {
+            Err(StartError::AlreadyRunning) => true,
+            Ok(h) => {
+                h.shutdown();
+                false
+            }
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    /// Codex review (was task 3's give-up): a manual sync waiting for a run lock another
+    /// process holds cannot be stopped. Shutdown keeps the vdir until it ends; once the lock
+    /// frees, the sync ends writing nothing, and shutdown completes.
     #[test]
-    fn shutdown_does_not_hang_on_a_sync_waiting_for_the_run_lock() {
+    fn shutdown_waits_for_a_sync_waiting_for_the_run_lock() {
         let fx = fx();
         let ran = fx.state().parent().unwrap().join("ran");
-        let (td, c) = start(
+        let td = TestDaemon::start_cfg(
             &fx,
-            &format!("echo run >> '{}'", ran.display()),
-            Duration::from_millis(200),
+            fx.with_sync(&format!("echo run >> '{}'", ran.display())),
+            |o| {
+                o.shutdown_grace = Duration::from_millis(100);
+                o.stop_wait = Duration::from_millis(100);
+            },
         );
+        let c = td.client();
+        let _: Value = c.call("events.subscribe", empty()).unwrap();
         let sync_dir = fx.state().join("sync");
         std::fs::create_dir_all(&sync_dir).unwrap();
         let lock = LockFile::take(&sync_dir.join("run.lock"), true)
@@ -642,20 +663,82 @@ mod during_a_job {
             .expect("run lock free");
         let id = sync_run(&c).unwrap().job_id;
         started(&c, &id);
-        let t = Instant::now();
-        td.handle().shutdown();
-        assert!(t.elapsed() < Duration::from_secs(13), "{:?}", t.elapsed());
-        assert!(!td.socket().exists());
-        // The sync left behind gets the lock now; the daemon has let the vdir go, so it must
-        // write nothing.
         let status = std::fs::read(sync_dir.join("status.json")).ok();
         let ended = std::fs::read(sync_dir.join("ended")).ok();
         let task = fx.read("c1/u1.ics");
-        drop(lock);
-        std::thread::sleep(Duration::from_millis(500));
-        assert!(!ran.exists(), "vdirsyncer ran after the daemon stopped");
+        std::thread::scope(|s| {
+            s.spawn(|| td.handle().shutdown());
+            // Well past the grace and the stop wait: still waiting, still the vdir's owner.
+            std::thread::sleep(Duration::from_millis(700));
+            assert!(!td.handle().is_stopped(), "shutdown gave up on the sync");
+            assert!(
+                vdir_owned(&fx),
+                "the vdir was let go while the sync could still write"
+            );
+            drop(lock);
+            assert!(stopped_within(&td, BOUND), "the daemon never stopped");
+        });
+        assert!(!td.socket().exists());
+        assert!(!ran.exists(), "vdirsyncer ran during shutdown");
         assert_eq!(std::fs::read(sync_dir.join("status.json")).ok(), status);
         assert_eq!(std::fs::read(sync_dir.join("ended")).ok(), ended);
         assert_eq!(fx.read("c1/u1.ics"), task);
+    }
+
+    /// Codex review (was task 6's give-up): a list job cannot be stopped, and its helper
+    /// writes the server and the vdir. Shutdown keeps the vdir until the job ends, however
+    /// long past the grace and the stop wait, then completes.
+    #[test]
+    fn shutdown_waits_for_a_long_list_job() {
+        let fx = fx();
+        let helper_dir = fx.state().parent().unwrap().join("helper");
+        std::fs::create_dir_all(&helper_dir).unwrap();
+        let done = helper_dir.join("done");
+        let mut cfg = fx.with_sync("exit 0");
+        cfg.sync.as_mut().unwrap().list_python = fake_vdirsyncer(
+            &helper_dir,
+            &format!("sleep 1.5\ntouch '{}'", done.display()),
+        )
+        .to_str()
+        .unwrap()
+        .to_string();
+        let td = TestDaemon::start_cfg(&fx, cfg, |o| {
+            o.shutdown_grace = Duration::from_millis(100);
+            o.stop_wait = Duration::from_millis(100);
+        });
+        let c = td.client();
+        let id = c
+            .call::<_, JobStarted>(
+                "lists.preview_delete",
+                json!({"request_id": c.next_request_id(), "id": "c1"}),
+            )
+            .unwrap()
+            .job_id;
+        let deadline = Instant::now() + BOUND;
+        loop {
+            let view: JobView = c.call("job.get", json!({"job_id": id})).unwrap();
+            if view.state == JobState::Running {
+                break;
+            }
+            assert!(!view.state.is_final(), "the job ended: {view:?}");
+            assert!(Instant::now() < deadline, "the job never ran");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::scope(|s| {
+            s.spawn(|| td.handle().shutdown());
+            std::thread::sleep(Duration::from_millis(500));
+            assert!(
+                !td.handle().is_stopped(),
+                "shutdown gave up on the list job"
+            );
+            assert!(
+                vdir_owned(&fx),
+                "the vdir was let go while the job could still write"
+            );
+            assert!(stopped_within(&td, BOUND), "the daemon never stopped");
+            assert!(done.exists(), "shutdown returned before the list job ended");
+        });
+        assert!(!td.socket().exists());
+        assert!(!vdir_owned(&fx));
     }
 }
