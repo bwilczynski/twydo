@@ -313,3 +313,28 @@ fn a_relative_socket_in_a_shared_directory_is_refused() {
     let _p = Proc(c.spawn().unwrap());
     env.connect(&shared.path().join("rel.sock"));
 }
+
+#[test]
+fn second_sigint_exits_at_once() {
+    let env = Env::new();
+    let mut d = env.spawn(&[]);
+    let c = env.connect(&env.socket());
+    // An outside holder of the vdir lock stalls the daemon's teardown: the queued write's
+    // status refresh waits for the lock, and teardown waits (about a second) for it.
+    let lock = VdirLock::exclusive(&env.state()).unwrap();
+    let r = submit(&c, "S", "Synthetic slow stop").unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    let pid = d.0.id() as i32;
+    // SAFETY: signals our own child by pid.
+    unsafe { libc::kill(pid, libc::SIGINT) };
+    std::thread::sleep(Duration::from_millis(10));
+    // SAFETY: as above.
+    unsafe { libc::kill(pid, libc::SIGINT) };
+    let started = Instant::now();
+    let status = wait_exit(&mut d);
+    drop(lock);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    // 130 (the second signal); 0 only if teardown beat the second signal, which the held
+    // lock rules out.
+    assert_eq!(status.code(), Some(130), "{status:?}");
+}

@@ -20,7 +20,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock, RwLockReadGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -54,6 +54,13 @@ pub struct DaemonOptions {
     /// block here to hold a write in flight while the daemon is asked to stop.
     #[doc(hidden)]
     pub in_commit: Option<TestHook>,
+    /// Runs in a queued write's reply path, after its item is on disk and before the reply is
+    /// built; tests block here to end a long job at exactly that point.
+    #[doc(hidden)]
+    pub before_queued_reply: Option<TestHook>,
+    /// Makes the first status refresher run panic, to check later refreshes still happen.
+    #[doc(hidden)]
+    pub status_panic_once: bool,
 }
 
 /// A test hook shared with the daemon's threads.
@@ -72,6 +79,8 @@ impl DaemonOptions {
             before_drain_passes: None,
             after_drain_passes: None,
             in_commit: None,
+            before_queued_reply: None,
+            status_panic_once: false,
         }
     }
 }
@@ -103,6 +112,9 @@ pub struct Shared {
     pub before_drain_passes: Option<TestHook>,
     pub after_drain_passes: Option<TestHook>,
     pub in_commit: Option<TestHook>,
+    pub before_queued_reply: Option<TestHook>,
+    /// Armed by [`DaemonOptions::status_panic_once`]; the first refresher run takes it.
+    status_panic_once: AtomicBool,
     /// The commit gate: `true` once closed. Every store call that can commit (submit, undo,
     /// redo, drain) runs under its read side ([`Shared::commit_gate`]); teardown takes the
     /// write side and closes it before the daemon lock is released, so a write in flight
@@ -247,6 +259,8 @@ impl Daemon {
             before_drain_passes: opts.before_drain_passes.take(),
             after_drain_passes: opts.after_drain_passes.take(),
             in_commit: opts.in_commit.take(),
+            before_queued_reply: opts.before_queued_reply.take(),
+            status_panic_once: AtomicBool::new(opts.status_panic_once),
             commits: RwLock::new(false),
             state_dir: state.clone(),
             matrix: opts.matrix.clone(),
@@ -498,6 +512,8 @@ fn outside_change(shared: &Shared) {
 fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
     // SAFETY: geteuid has no preconditions and cannot fail.
     let own = unsafe { libc::geteuid() };
+    // Error kinds already logged: a persistent failure (no descriptors left) logs once.
+    let mut logged: Vec<io::ErrorKind> = Vec::new();
     loop {
         let mut fds = [
             libc::pollfd {
@@ -519,8 +535,25 @@ fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
         if rc < 0 || fds[0].revents == 0 {
             continue;
         }
-        let Ok((stream, _)) = listener.accept() else {
-            continue;
+        let stream = match listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                continue;
+            }
+            Err(e) => {
+                if !logged.contains(&e.kind()) {
+                    logged.push(e.kind());
+                    eprintln!("tdo daemon: accept failed: {e}; retrying");
+                }
+                // The listener stays readable while the error lasts: back off, not spin.
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
         };
         // Accepted sockets may inherit the listener's non-blocking mode on some systems.
         if stream.set_nonblocking(false).is_err() {
@@ -759,6 +792,9 @@ impl Shared {
             armed: true,
         };
         loop {
+            if self.status_panic_once.swap(false, Ordering::SeqCst) {
+                panic!("status refresher panic requested by a test");
+            }
             let reload = {
                 let mut g = self.status_refresh.lock().unwrap();
                 if !g.dirty || self.is_stopping() {

@@ -454,6 +454,9 @@ fn item_uids(shared: &Shared, item: &Item) -> Vec<String> {
 }
 
 fn queued(shared: &Arc<Shared>, item: &Item, message: String, undid: Option<Undid>) -> WriteResult {
+    if let Some(hook) = &shared.before_queued_reply {
+        hook();
+    }
     // The overlay (the row pending) and the status are published in the background: a queued
     // reply never waits on `reload_lock` or the vdir lock, which a reload blocked behind an
     // outside lock holder may hold for minutes. The reply carries the revision before it.

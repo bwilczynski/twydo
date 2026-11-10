@@ -1500,6 +1500,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "queue_unreadable": {
+            "description": "Queue item files that do not parse (paths): they are not drained and not shown as\npending; the user decides what to do with them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "refusals": {
             "items": {
               "$ref": "#/components/schemas/RefusalView"

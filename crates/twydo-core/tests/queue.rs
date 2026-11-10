@@ -308,3 +308,24 @@ fn a_cancel_cut_short_leaves_the_item_pending() {
     assert_eq!(q.list().unwrap().len(), 1);
     assert!(q.cancelled_by("undo-1").unwrap().is_some());
 }
+
+#[test]
+fn unreadable_item_is_reported_not_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let q = Queue::open(dir.path()).unwrap();
+    let good = simple(t0());
+    q.push(&good).unwrap();
+    let id = "20261106T120000000000Z-00000099-0000000001";
+    let path = dir.path().join("queue").join(format!("{id}.json"));
+    std::fs::write(&path, "{").unwrap();
+
+    let e = q.state(id).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+    let msg = e.to_string();
+    assert!(msg.starts_with("unreadable queue item "), "{msg}");
+    assert!(msg.contains(&path.display().to_string()), "{msg}");
+    assert_eq!(q.unreadable().unwrap(), vec![path]);
+    // The other items still answer.
+    assert!(q.by_request("x").unwrap().is_none());
+    assert!(q.state(&good.id).unwrap().is_some());
+}

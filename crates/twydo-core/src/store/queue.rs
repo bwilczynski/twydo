@@ -264,6 +264,22 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
     serde_json::from_slice(&fs::read(path).ok()?).ok()
 }
 
+/// The item file at `path`: `None` if it does not exist, an `InvalidData` error naming the
+/// path if it exists and does not parse.
+fn read_item(path: &Path) -> io::Result<Option<Item>> {
+    let bytes = match fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    serde_json::from_slice(&bytes).map(Some).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unreadable queue item {}: {e}", path.display()),
+        )
+    })
+}
+
 impl Queue {
     /// Opens the queue under `state`, creating `queue/` and `queue/refused/`.
     pub fn open(state: &Path) -> io::Result<Queue> {
@@ -344,6 +360,25 @@ impl Queue {
             }
         }
         out.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(out)
+    }
+
+    /// The pending and claimed item files that do not parse. [`Queue::list`] skips them and
+    /// [`Queue::state`] answers an error for their id, so the caller can report them.
+    pub fn unreadable(&self) -> io::Result<Vec<PathBuf>> {
+        let mut out = Vec::new();
+        for dent in fs::read_dir(&self.dir)? {
+            let dent = dent?;
+            let name = dent.file_name();
+            let Some(name) = name.to_str() else { continue };
+            if name.starts_with('.') || !(name.ends_with(".json") || name.ends_with(".claim")) {
+                continue;
+            }
+            if read_item(&dent.path()).is_err() {
+                out.push(dent.path());
+            }
+        }
+        out.sort();
         Ok(out)
     }
 
@@ -459,12 +494,13 @@ impl Queue {
     }
 
     /// Where item `id` stands: pending, claimed, refused or cancelled (checked in that
-    /// order), else `None` (never queued, or committed and gone).
+    /// order), else `None` (never queued, or committed and gone). An error of kind
+    /// `InvalidData` if the item's own file does not parse: it is not "gone".
     pub fn state(&self, id: &str) -> io::Result<Option<Queued>> {
-        if let Some(i) = read_json::<Item>(&self.json(id)?) {
+        if let Some(i) = read_item(&self.json(id)?)? {
             return Ok(Some(Queued::Pending(i)));
         }
-        if let Some(i) = read_json::<Item>(&self.claimed(id)?) {
+        if let Some(i) = read_item(&self.claimed(id)?)? {
             return Ok(Some(Queued::Claimed(i)));
         }
         valid_id(id)?;
@@ -507,7 +543,11 @@ impl Queue {
                 Some(_) => {}
                 None if pending && !path.exists() => {
                     let id = name.trim_end_matches(".json");
-                    let found = self.state(id)?;
+                    // An item that cannot be read cannot be the one asked for.
+                    let found = match self.state(id) {
+                        Err(e) if e.kind() == io::ErrorKind::InvalidData => None,
+                        other => other?,
+                    };
                     let hit = match &found {
                         Some(Queued::Pending(i) | Queued::Claimed(i)) => is(&i.request),
                         Some(Queued::Refused(r)) => is(&r.item.request),

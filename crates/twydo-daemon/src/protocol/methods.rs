@@ -187,6 +187,10 @@ pub struct StatusView {
     /// or only found the vdir held by another process.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drain_error: Option<String>,
+    /// Queue item files that do not parse (paths): they are not drained and not shown as
+    /// pending; the user decides what to do with them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub queue_unreadable: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
