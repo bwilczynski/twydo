@@ -6,8 +6,10 @@ mod newrow;
 mod recovery;
 mod structure;
 mod sync_activity;
+mod sync_state;
 pub use recovery::{Confirmation, RecoveryPanel};
 pub use sync_activity::SyncActivity;
+pub use sync_state::ClientSync;
 
 pub use lists::{CollectionBackups, ListAction, ListCompletion};
 pub use newrow::{NewRow, default_list};
@@ -21,13 +23,12 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::form::{EditForm, Field, FormAction, NO_CHANGES};
 use crate::write::Request;
-use twydo_core::conflicts::Conflict;
 use twydo_core::dateinput::{DueShift, shift_due};
 use twydo_core::edit::{Change, Op};
 use twydo_core::model::{Status, TaskKind};
-use twydo_core::sync::SyncSummary;
 use twydo_core::sync::resolve::Keep;
 use twydo_core::views::{Row, Snapshot, View, build_view};
+use twydo_daemon::protocol::admin::ConflictView;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pane {
@@ -183,7 +184,7 @@ pub struct App {
     pub show_errors: bool,
     pub errors_scroll: u16,
     /// Sync state for the status line and conflict markers; `None` without `[sync]`.
-    pub sync: Option<SyncSummary>,
+    pub sync: Option<ClientSync>,
     pub sync_activity: SyncActivity,
     /// The `:conflicts` overlay.
     pub show_conflicts: bool,
@@ -518,7 +519,7 @@ impl App {
     }
 
     /// Store a freshly read sync summary and keep the overlay cursor in range.
-    pub fn set_sync(&mut self, s: Option<SyncSummary>) {
+    pub fn set_sync(&mut self, s: Option<ClientSync>) {
         self.sync = s;
         let n = self.conflicts().len();
         self.conflict_cursor = self.conflict_cursor.min(n.saturating_sub(1));
@@ -545,12 +546,12 @@ impl App {
     }
 
     /// The unresolved conflicts, as of the last summary.
-    pub fn conflicts(&self) -> &[Conflict] {
+    pub fn conflicts(&self) -> &[ConflictView] {
         self.sync.as_ref().map_or(&[], |s| &s.conflicts)
     }
 
     /// The unresolved conflict on the task `uid`, if any.
-    pub fn conflict_for(&self, uid: &str) -> Option<&Conflict> {
+    pub fn conflict_for(&self, uid: &str) -> Option<&ConflictView> {
         self.conflicts().iter().find(|c| c.uid == uid)
     }
 

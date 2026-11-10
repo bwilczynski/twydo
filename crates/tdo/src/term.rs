@@ -1,5 +1,6 @@
 //! Terminal loop: raw mode, key events, live reload of the vdir and the minute tick.
 
+pub mod link;
 mod lists;
 mod preferences;
 pub use lists::perform_list_action;
@@ -345,7 +346,7 @@ fn drain_and_reload(app: &mut App, writer: &mut Writer, root: &Path) {
 /// Re-read the sync summary; on a read error keep what is shown.
 fn refresh_sync(app: &mut App) {
     if let Ok(s) = twydo_core::sync::summary(&app.snapshot.config) {
-        app.set_sync(s);
+        app.set_sync(s.as_ref().map(crate::app::ClientSync::from_summary));
     }
 }
 

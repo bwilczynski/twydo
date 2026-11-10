@@ -5,19 +5,31 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
-use twydo_core::conflicts::{Conflict, ConflictState};
+use twydo_daemon::protocol::admin::{ConflictView, WireConflictKind, WireConflictState};
 
 use super::{dim, list_name, overlay_rect, truncate};
 use crate::app::App;
 
 /// The task's title, or its file name when the task is gone from the vdir (deleted here).
-fn title(app: &App, c: &Conflict) -> String {
+fn title(app: &App, c: &ConflictView) -> String {
     app.snapshot
         .tasks
         .iter()
         .find(|t| t.uid == c.uid)
         .map(|t| t.summary.clone())
+        .or_else(|| c.title.clone())
         .unwrap_or_else(|| c.path.rsplit('/').next().unwrap_or(&c.path).to_string())
+}
+
+/// The kind in words, for people.
+pub fn kind_words(kind: WireConflictKind) -> &'static str {
+    match kind {
+        WireConflictKind::BothChanged => "changed here and on another device",
+        WireConflictKind::LocalDeleteRemoteEdit => "deleted here, edited on another device",
+        WireConflictKind::RemoteDeleteLocalEdit => "edited here, deleted on another device",
+        WireConflictKind::Journal => "an interrupted change here meets another device's version",
+        WireConflictKind::Unknown => "in conflict with another device",
+    }
 }
 
 pub fn render(f: &mut Frame, area: Rect, app: &App) {
@@ -41,10 +53,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         );
         lines.push(Line::from(Span::styled(truncate(&head, w), sel)));
         let mut spans = vec![Span::styled(
-            format!("  {}", truncate(c.kind.words(), w.saturating_sub(2))),
+            format!("  {}", truncate(kind_words(c.kind), w.saturating_sub(2))),
             Style::new().fg(Color::Yellow),
         )];
-        if c.state == ConflictState::Chosen {
+        if c.state == WireConflictState::Chosen {
             spans.push(Span::styled("  waiting for sync", dim()));
         }
         lines.push(Line::from(spans));

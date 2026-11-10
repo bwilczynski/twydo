@@ -524,14 +524,14 @@ fn summary(
     status: twydo_core::sync::status::SyncStatus,
     pending: usize,
     conflicts: Vec<twydo_core::conflicts::Conflict>,
-) -> twydo_core::sync::SyncSummary {
-    twydo_core::sync::SyncSummary {
+) -> tdo::app::ClientSync {
+    tdo::app::ClientSync::from_summary(&twydo_core::sync::SyncSummary {
         status,
         pending,
         conflicts,
         off: false,
         queued: 0,
-    }
+    })
 }
 
 fn conflict_on(uid: &str) -> twydo_core::conflicts::Conflict {
@@ -603,7 +603,7 @@ fn status_shows_sync_off_with_the_pending_count() {
         ..Default::default()
     };
     let mut s = summary(st, 3, vec![]);
-    s.off = true;
+    s.sync.as_mut().unwrap().auto = false;
     a.set_sync(Some(s.clone()));
     let buf = render(&mut a, 140, 20);
     let l = status_line(&buf);
@@ -612,7 +612,7 @@ fn status_shows_sync_off_with_the_pending_count() {
     let x = l[..x].chars().count() as u16;
     assert_eq!(buf[(x, buf.area.height - 1)].fg, Color::Yellow);
 
-    s.pending = 0;
+    s.unsynced = 0;
     a.set_sync(Some(s));
     assert!(status_line(&render(&mut a, 140, 20)).contains("sync off"));
     a.set_sync(Some(summary(Default::default(), 0, vec![])));
@@ -1383,8 +1383,8 @@ fn syncing_replaces_last_sync_age_and_preserves_diagnostics() {
     use std::time::{Duration, Instant};
     let mut a = app();
     let mut s = summary(Default::default(), 2, vec![conflict_on("nope")]);
-    s.off = true;
-    s.status.last_error = Some("connection refused".into());
+    s.sync.as_mut().unwrap().auto = false;
+    s.sync.as_mut().unwrap().last_error = Some("connection refused".into());
     a.set_sync(Some(s));
     let t = Instant::now();
     a.sync_activity.observe(true, t);

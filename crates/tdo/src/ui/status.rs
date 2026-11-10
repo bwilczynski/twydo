@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
-use twydo_core::sync::status::CollState;
+use twydo_daemon::protocol::methods::WireCollState;
 
 use super::{dim, list_name, theme, view_name};
 use crate::app::{App, Mode};
@@ -122,13 +122,16 @@ fn ago(secs: i64) -> String {
 
 /// The sync part of the line, styled; empty without `[sync]`.
 fn sync_segment(app: &App) -> Vec<(String, Style)> {
-    let Some(s) = &app.sync else {
+    let Some(cs) = &app.sync else {
+        return Vec::new();
+    };
+    let Some(s) = &cs.sync else {
         return Vec::new();
     };
     let yellow = theme::warning();
     let mut out = Vec::new();
     // While switched off, always first, so local-only edits are not forgotten.
-    if s.off {
+    if !s.auto {
         out.push(("sync off".into(), yellow));
         out.push((" · ".into(), Style::new()));
     }
@@ -136,11 +139,11 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
     if let Some(label) = &activity {
         out.push((label.clone(), theme::accent()));
     }
-    let missing = s.status.collections.iter().find(|(_, state)| {
+    let missing = s.collections.iter().find(|(_, state)| {
         matches!(state,
-        CollState::Error { message } if message.trim_end_matches(';').ends_with("Not Found"))
+        WireCollState::Error { message } if message.trim_end_matches(';').ends_with("Not Found"))
     });
-    if activity.is_some() && (missing.is_some() || s.status.last_error.is_some()) {
+    if activity.is_some() && (missing.is_some() || s.last_error.is_some()) {
         out.push((" · ".into(), Style::new()));
     }
     if let Some((id, _)) = missing {
@@ -151,8 +154,8 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
             ),
             theme::overdue(),
         ));
-    } else if let Some(err) = &s.status.last_error {
-        let retry = s.status.next_attempt.map(|t| {
+    } else if let Some(err) = &s.last_error {
+        let retry = s.next_attempt.map(|t| {
             format!(
                 "; retry {}",
                 t.with_timezone(&app.snapshot.tz()).format("%H:%M")
@@ -169,7 +172,7 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
         ));
     } else if activity.is_none() {
         out.push((
-            match s.status.last_success {
+            match s.last_success {
                 Some(t) => format!(
                     "synced {}",
                     ago((app.now.with_timezone(&chrono::Utc) - t).num_seconds())
@@ -179,18 +182,21 @@ fn sync_segment(app: &App) -> Vec<(String, Style)> {
             Style::new(),
         ));
     }
-    if s.pending + s.queued > 0 {
-        out.push((format!(" · {} pending", s.pending + s.queued), Style::new()));
+    if cs.unsynced + cs.queued > 0 {
+        out.push((
+            format!(" · {} pending", cs.unsynced + cs.queued),
+            Style::new(),
+        ));
     }
-    match s.conflicts.len() {
+    match cs.conflicts.len() {
         0 => {}
         1 => out.push((" · 1 conflict".into(), yellow)),
         n => out.push((format!(" · {n} conflicts"), yellow)),
     }
-    for (coll, state) in &s.status.collections {
+    for (coll, state) in &s.collections {
         let where_ = match state {
-            CollState::EmptiedRemote => "on server",
-            CollState::EmptiedLocal => "here",
+            WireCollState::EmptiedRemote => "on server",
+            WireCollState::EmptiedLocal => "here",
             _ => continue,
         };
         let name = list_name(&app.snapshot, coll);

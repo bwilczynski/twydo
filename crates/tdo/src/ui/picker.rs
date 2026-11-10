@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
-use twydo_core::sync::status::CollState;
+use twydo_daemon::protocol::methods::WireCollState;
 
 use super::{bar_color, dim, overlay_rect, theme, truncate};
 use crate::app::{App, ListPicker, ListPickerAction};
@@ -23,36 +23,37 @@ pub fn render(f: &mut Frame, area: Rect, app: &App, p: &ListPicker) {
         .iter()
         .map(|target| target.label(&app.snapshot))
         .collect();
-    let suffixes: Vec<_> = targets
-        .iter()
-        .zip(&names)
-        .map(|(target, name)| {
-            let id = target.collection();
-            let mut suffix = if names.iter().filter(|other| *other == name).count() > 1 {
-                format!(" ({id})")
-            } else {
-                String::new()
-            };
-            if p.action == ListPickerAction::Forget
-                && app.sync.as_ref().is_some_and(|sync| {
-                    matches!(sync.status.collections.get(id), Some(CollState::Error { message })
+    let suffixes: Vec<_> =
+        targets
+            .iter()
+            .zip(&names)
+            .map(|(target, name)| {
+                let id = target.collection();
+                let mut suffix = if names.iter().filter(|other| *other == name).count() > 1 {
+                    format!(" ({id})")
+                } else {
+                    String::new()
+                };
+                if p.action == ListPickerAction::Forget
+                && app.sync.as_ref().and_then(|cs| cs.sync.as_ref()).is_some_and(|sync| {
+                    matches!(sync.collections.get(id), Some(WireCollState::Error { message })
                         if message.trim_end_matches(';').ends_with("Not Found"))
                 })
             {
                 suffix.push_str(" · Not Found");
             }
-            if p.action == ListPickerAction::Manage {
-                let prefs = app.snapshot.config.list_prefs(id);
-                if prefs.archived {
-                    suffix.push_str(" · archived");
+                if p.action == ListPickerAction::Manage {
+                    let prefs = app.snapshot.config.list_prefs(id);
+                    if prefs.archived {
+                        suffix.push_str(" · archived");
+                    }
+                    if prefs.hidden {
+                        suffix.push_str(" · hidden");
+                    }
                 }
-                if prefs.hidden {
-                    suffix.push_str(" · hidden");
-                }
-            }
-            suffix
-        })
-        .collect();
+                suffix
+            })
+            .collect();
     let width = names
         .iter()
         .zip(&suffixes)
