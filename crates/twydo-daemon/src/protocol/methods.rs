@@ -232,4 +232,7 @@ pub struct SyncView {
     pub next_attempt: Option<DateTime<Utc>>,
     pub failures: u32,
     pub last_error: Option<String>,
+    /// The job of the running sync (a `sync.run`); absent for a background sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
 }

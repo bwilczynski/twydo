@@ -191,8 +191,10 @@ fn a_gained_value_of_a_closed_enum_in_params_is_not_a_break() {
 #[test]
 fn every_open_enum_reads_an_unknown_value() {
     use twydo_daemon::protocol::events::{Cause, Event, EventEnvelope};
+    use twydo_daemon::protocol::jobs::{JobKind, JobResult, JobState};
     use twydo_daemon::protocol::methods::{OpState, SyncState, WriteOutcome};
     use twydo_daemon::protocol::rpc::ErrorKind;
+    use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason};
     let doc = schema::document();
     let open: Vec<&str> = doc["components"]["schemas"]
         .as_object()
@@ -207,7 +209,12 @@ fn every_open_enum_reads_an_unknown_value() {
             "Cause",
             "ErrorKind",
             "EventEnvelope",
+            "JobKind",
+            "JobResult",
+            "JobState",
             "OpState",
+            "SyncOutcome",
+            "SyncReason",
             "SyncState",
             "WriteOutcome"
         ]
@@ -231,6 +238,26 @@ fn every_open_enum_reads_an_unknown_value() {
     assert_eq!(
         serde_json::from_value::<OpState>(json!({"state": "brand_new", "x": 1})).unwrap(),
         OpState::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<JobKind>(json!("brand_new")).unwrap(),
+        JobKind::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<SyncOutcome>(json!("brand_new")).unwrap(),
+        SyncOutcome::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<SyncReason>(json!("brand_new")).unwrap(),
+        SyncReason::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<JobState>(json!({"state": "brand_new", "x": 1})).unwrap(),
+        JobState::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<JobResult>(json!({"type": "brand_new", "x": 1})).unwrap(),
+        JobResult::Unknown
     );
     let ev: EventEnvelope =
         serde_json::from_value(json!({"seq": 3, "type": "brand.new", "x": 1})).unwrap();

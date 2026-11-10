@@ -12,6 +12,9 @@ use crate::store::existing_vdir_state;
 use crate::store::fsio::VdirLock;
 use crate::vdir::{self, LoadReport};
 
+/// Why a sync cannot run: no `[sync]` table.
+pub const NOT_CONFIGURED: &str = "sync is not configured: add a [sync] table (docs/sync.md)";
+
 /// The lines about one run, without any prefix (`tdo sync` adds `tdo: ` and
 /// `tdo: warning: `).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

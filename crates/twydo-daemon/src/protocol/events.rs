@@ -3,7 +3,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::jobs::JobState;
 use super::methods::OpState;
+use super::sync::{SyncReason, SyncResult};
 
 /// Params of the `event` notification.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -31,6 +33,31 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         request_id: Option<String>,
         state: OpState,
+    },
+    /// A sync began (a `sync.run` job's, or a background one without a `job_id`).
+    #[serde(rename = "sync.started")]
+    SyncStarted {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        job_id: Option<String>,
+        reason: SyncReason,
+    },
+    /// A sync ended; sent after its changes are published (`status_rev` is the status after
+    /// it).
+    #[serde(rename = "sync.finished")]
+    SyncFinished {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        job_id: Option<String>,
+        reason: SyncReason,
+        result: SyncResult,
+        status_rev: u64,
+    },
+    /// A job ended; `job.get` returns the same state later.
+    #[serde(rename = "job.finished")]
+    JobFinished {
+        job_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+        state: JobState,
     },
     /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
     /// this client was built with; see "Unknown values" in the daemon spec §6.2.

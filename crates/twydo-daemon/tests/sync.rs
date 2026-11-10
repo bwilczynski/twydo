@@ -1,0 +1,355 @@
+//! Syncs run by the daemon as jobs on the vdir lane: `sync.run`, the `sync.*` and
+//! `job.finished` events, edits queued during a sync, and a run lock held by another process.
+//! The vdirsyncer is a fake script; synthetic fixture content.
+
+mod common;
+
+use std::time::{Duration, Instant};
+
+use common::{Fixture, TestDaemon, edit_title, empty, kind, submit, wait_event};
+use twydo_core::sync::lock::LockFile;
+use twydo_daemon::client::{Client, Notification};
+use twydo_daemon::protocol::events::Event;
+use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
+use twydo_daemon::protocol::methods::{OpState, StatusView, SyncState, WriteOutcome};
+use twydo_daemon::protocol::rpc::ErrorKind;
+use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason, SyncResult, SyncRunParams};
+
+const BOUND: Duration = Duration::from_secs(10);
+
+/// A fake vdirsyncer that sleeps `secs`, reports `twydo/c1` and succeeds.
+fn sleeps(secs: &str) -> String {
+    format!("sleep {secs}\necho 'Syncing twydo/c1' >&2\nexit 0")
+}
+
+fn fx() -> Fixture {
+    Fixture::new(&[("c1", "u1", "One", None)])
+}
+
+/// A daemon whose fake vdirsyncer runs `body`, and a subscribed client.
+fn start(fx: &Fixture, body: &str) -> (TestDaemon, Client) {
+    let td = TestDaemon::start_cfg(fx, fx.with_sync(body), |_| {});
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    (td, c)
+}
+
+fn sync_run(c: &Client) -> JobStarted {
+    c.call(
+        "sync.run",
+        SyncRunParams {
+            request_id: c.next_request_id(),
+            force_delete: Vec::new(),
+        },
+    )
+    .unwrap()
+}
+
+/// The `sync.finished` of job `id`: its result.
+fn sync_finished(c: &Client, id: &str) -> SyncResult {
+    match wait_event(
+        c,
+        BOUND,
+        |e| matches!(e, Event::SyncFinished { job_id: Some(j), .. } if j == id),
+    ) {
+        Event::SyncFinished { result, .. } => result,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn sync_run_answers_at_once_and_reports_finished() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0.5"));
+    let t = Instant::now();
+    let started = sync_run(&c);
+    assert!(
+        t.elapsed() < Duration::from_millis(200),
+        "sync.run took {:?}",
+        t.elapsed()
+    );
+    let id = started.job_id;
+    // The order of the three outcome events, and nothing of this job before its start.
+    let mut seen = Vec::new();
+    let finished_state = loop {
+        let left = BOUND.saturating_sub(t.elapsed());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) => match ev.event {
+                Event::SyncStarted { job_id, reason } if job_id.as_deref() == Some(&id) => {
+                    assert_eq!(reason, SyncReason::Manual);
+                    seen.push("started");
+                }
+                Event::SyncFinished {
+                    job_id,
+                    reason,
+                    result,
+                    ..
+                } if job_id.as_deref() == Some(&id) => {
+                    assert_eq!(reason, SyncReason::Manual);
+                    assert_eq!(result.outcome, SyncOutcome::Ok, "{result:?}");
+                    seen.push("finished");
+                }
+                Event::JobFinished { job_id, state, .. } if job_id == id => {
+                    seen.push("job");
+                    break state;
+                }
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(e) => panic!("no job.finished: {e}; saw {seen:?}"),
+        }
+    };
+    assert_eq!(seen, ["started", "finished", "job"]);
+    match &finished_state {
+        JobState::Finished {
+            result: JobResult::Sync(r),
+        } => assert_eq!(r.outcome, SyncOutcome::Ok),
+        other => panic!("{other:?}"),
+    }
+    let got: JobView = c
+        .call(
+            "job.get",
+            JobGetParams {
+                job_id: Some(id.clone()),
+                request_id: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(got.state, finished_state);
+    assert_eq!(got.job_id, id);
+    assert!(got.ended.is_some());
+}
+
+#[test]
+fn edit_during_a_sync_is_queued_then_applied() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("1"));
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued, "{r:?}");
+    // Every op.finished for the item until the job's end, and for a while after it.
+    let mut finished = Vec::new();
+    let mut drained = None;
+    let mut job_done: Option<Instant> = None;
+    let deadline = Instant::now() + BOUND;
+    loop {
+        let wait = match job_done {
+            Some(at) => (at + Duration::from_millis(500)).saturating_duration_since(Instant::now()),
+            None => deadline.saturating_duration_since(Instant::now()),
+        };
+        match c.notifications().recv_timeout(wait) {
+            Ok(Notification::Event(ev)) => match ev.event {
+                Event::OpFinished { op_id, state, .. } if op_id == r.op_id => finished.push(state),
+                Event::SyncFinished {
+                    job_id: Some(j),
+                    result,
+                    ..
+                } if j == id => drained = Some(result.drained),
+                Event::JobFinished { job_id, .. } if job_id == id => {
+                    job_done = Some(Instant::now())
+                }
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(_) if job_done.is_some() => break,
+            Err(e) => panic!("no job.finished: {e}"),
+        }
+    }
+    assert_eq!(finished.len(), 1, "{finished:?}");
+    assert!(
+        matches!(finished[0], OpState::Applied { .. }),
+        "{finished:?}"
+    );
+    assert_eq!(drained, Some(1), "the runner's own drain applied it");
+    assert!(fx.read("c1/u1.ics").contains("SUMMARY:Renamed"));
+}
+
+#[test]
+fn manual_sync_waits_behind_a_running_one() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0.3"));
+    let a = sync_run(&c).job_id;
+    let b = sync_run(&c).job_id;
+    assert_ne!(a, b);
+    let mut order = Vec::new();
+    let t = Instant::now();
+    while order.len() < 4 {
+        let left = BOUND.saturating_sub(t.elapsed());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) => match ev.event {
+                Event::SyncStarted {
+                    job_id: Some(j), ..
+                } => order.push(format!("started {j}")),
+                Event::SyncFinished {
+                    job_id: Some(j),
+                    result,
+                    ..
+                } => {
+                    assert_eq!(result.outcome, SyncOutcome::Ok, "{result:?}");
+                    order.push(format!("finished {j}"));
+                }
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(e) => panic!("{e}; saw {order:?}"),
+        }
+    }
+    assert_eq!(
+        order,
+        [
+            format!("started {a}"),
+            format!("finished {a}"),
+            format!("started {b}"),
+            format!("finished {b}"),
+        ]
+    );
+}
+
+#[test]
+fn sync_problem_lines_match_tdo_sync() {
+    let fx = fx();
+    let (_td, c) = start(&fx, "echo 'error: synthetic failure' >&2\nexit 1");
+    let id = sync_run(&c).job_id;
+    let r = sync_finished(&c, &id);
+    assert_eq!(r.outcome, SyncOutcome::Failed);
+    // `tdo sync` prints this as `tdo: sync failed: <first error line>` (cli/sync.rs, now
+    // `twydo_core::sync::report`).
+    assert_eq!(r.problems, ["sync failed: synthetic failure"]);
+}
+
+#[test]
+fn another_runner_holding_run_lock_is_skipped() {
+    let fx = fx();
+    let (td, c) = start(&fx, &sleeps("0"));
+    let sync_dir = fx.state().join("sync");
+    std::fs::create_dir_all(&sync_dir).unwrap();
+    let lock = LockFile::take(&sync_dir.join("run.lock"), true)
+        .unwrap()
+        .expect("run lock free");
+    td.handle().post_sync_for_test(SyncReason::Periodic);
+    let ev = wait_event(&c, BOUND, |e| {
+        matches!(
+            e,
+            Event::SyncFinished {
+                reason: SyncReason::Periodic,
+                ..
+            }
+        )
+    });
+    let Event::SyncFinished { job_id, result, .. } = ev else {
+        unreachable!()
+    };
+    assert_eq!(job_id, None, "a background sync is not a job");
+    assert_eq!(result.outcome, SyncOutcome::Skipped);
+    assert!(result.problems.is_empty(), "{result:?}");
+    assert!(result.warnings.is_empty(), "{result:?}");
+
+    // A manual sync waits for the lock, then runs.
+    let id = sync_run(&c).job_id;
+    wait_event(
+        &c,
+        BOUND,
+        |e| matches!(e, Event::SyncStarted { job_id: Some(j), .. } if *j == id),
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    let v: JobView = c
+        .call(
+            "job.get",
+            JobGetParams {
+                job_id: Some(id.clone()),
+                request_id: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(v.state, JobState::Running, "waits for the run lock");
+    let st: StatusView = c.call("status.get", empty()).unwrap();
+    let sync = st.sync.expect("sync configured");
+    assert_eq!(sync.state, SyncState::Running);
+    assert_eq!(sync.job_id.as_deref(), Some(id.as_str()));
+    drop(lock);
+    assert_eq!(sync_finished(&c, &id).outcome, SyncOutcome::Ok);
+    let st: StatusView = c.call("status.get", empty()).unwrap();
+    let sync = st.sync.expect("sync configured");
+    assert_eq!(sync.state, SyncState::Idle);
+    assert_eq!(sync.job_id, None);
+}
+
+fn sync_run_with(
+    c: &Client,
+    request_id: &str,
+    force_delete: &[&str],
+) -> Result<JobStarted, twydo_daemon::client::ClientError> {
+    c.call(
+        "sync.run",
+        SyncRunParams {
+            request_id: request_id.into(),
+            force_delete: force_delete.iter().map(|s| s.to_string()).collect(),
+        },
+    )
+}
+
+#[test]
+fn sync_run_without_sync_config_is_refused() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let e = sync_run_with(&c, "r-1", &[]).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid);
+    let twydo_daemon::client::ClientError::Rpc(r) = &e else {
+        unreachable!()
+    };
+    assert_eq!(
+        r.message,
+        "sync is not configured: add a [sync] table (docs/sync.md)"
+    );
+    // No job was started for it.
+    let e = c
+        .call::<_, JobView>(
+            "job.get",
+            JobGetParams {
+                job_id: None,
+                request_id: Some("r-1".into()),
+            },
+        )
+        .unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::NotFound);
+}
+
+/// A fake vdirsyncer that records its arguments in `args` next to itself.
+const LOGS_ARGS: &str =
+    "echo \"$@\" >> \"$(dirname \"$0\")/args\"\necho 'Syncing twydo/c1' >&2\nexit 0";
+
+#[test]
+fn force_delete_maps_a_display_name_to_its_collection() {
+    let fx = fx();
+    fx.write("c1/displayname", "Groceries\n");
+    let (_td, c) = start(&fx, LOGS_ARGS);
+    let id = sync_run_with(&c, "r-fd", &["Groceries"]).unwrap().job_id;
+    sync_finished(&c, &id);
+    let args = std::fs::read_to_string(fx.vdir().parent().unwrap().join("args")).unwrap();
+    assert!(
+        args.lines().any(|l| l == "sync --force-delete twydo/c1"),
+        "{args}"
+    );
+}
+
+#[test]
+fn force_delete_of_an_unknown_list_is_invalid() {
+    let fx = fx();
+    let (_td, c) = start(&fx, LOGS_ARGS);
+    let e = sync_run_with(&c, "r-unknown", &["Nope"]).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid);
+}
+
+#[test]
+fn a_resend_replays_before_mapping_force_delete() {
+    let fx = fx();
+    let (_td, c) = start(&fx, LOGS_ARGS);
+    let id = sync_run_with(&c, "r-fd", &["c1"]).unwrap().job_id;
+    sync_finished(&c, &id);
+    // The list is gone since: the resend still answers with its job.
+    std::fs::remove_dir_all(fx.vdir().join("c1")).unwrap();
+    assert_eq!(sync_run_with(&c, "r-fd", &["c1"]).unwrap().job_id, id);
+    assert_eq!(sync_run_with(&c, "r-fd", &["Nope"]).unwrap().job_id, id);
+}

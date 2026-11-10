@@ -3,11 +3,12 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use twydo_core::edit::{Change, NewTask, Op};
-use twydo_daemon::client::{Client, ClientError};
+use twydo_daemon::client::{Client, ClientError, Notification};
+use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::methods::{
     BasedOn, HelloParams, Instance, SubmitParams, UndoParams, WriteResult,
 };
@@ -71,6 +72,24 @@ impl Fixture {
         c
     }
 
+    /// [`Fixture::config`] with `[sync]` whose command is a fake vdirsyncer running `body`
+    /// (see [`fake_vdirsyncer`]); metasync off.
+    pub fn with_sync(&self, body: &str) -> Config {
+        let fake = fake_vdirsyncer(self.tmp.path(), body);
+        let mut c = self.config();
+        c.sync = Some(SyncConfig {
+            command: fake.to_str().unwrap().to_string(),
+            metasync: false,
+            ..SyncConfig::default()
+        });
+        c
+    }
+
+    /// The per-vdir state directory.
+    pub fn state(&self) -> PathBuf {
+        twydo_core::store::bind_vdir_state(&self.config().state_dir(), &self.vdir()).unwrap()
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         Snapshot::new(vdir::load(&self.vdir()).unwrap(), self.config())
     }
@@ -89,6 +108,48 @@ impl Fixture {
 
     pub fn remove(&self, rel: &str) {
         fs::remove_file(self.vdir().join(rel)).unwrap();
+    }
+}
+
+/// Writes `dir/fake-vdirsyncer`, an executable `sh` script running `body` (`$1` is `sync`,
+/// `discover` or `metasync`), and waits until it can be executed. A script written while
+/// another test thread forks can briefly fail with "Text file busy" (ETXTBSY): the forked
+/// child holds a copy of the write descriptor until it execs. The script answers `__probe`
+/// by exiting at once, so probing has no side effects.
+pub fn fake_vdirsyncer(dir: &Path, body: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let path = dir.join("fake-vdirsyncer");
+    fs::write(
+        &path,
+        format!("#!/bin/sh\n[ \"$1\" = __probe ] && exit 0\n{body}\n"),
+    )
+    .unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match std::process::Command::new(&path).arg("__probe").status() {
+            Ok(st) => {
+                assert!(st.success(), "probe of {} failed", path.display());
+                return path;
+            }
+            Err(e) if e.raw_os_error() == Some(26) && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("cannot run {}: {e}", path.display()),
+        }
+    }
+}
+
+/// The next event matching `pred` (others are skipped), within `limit`.
+pub fn wait_event(c: &Client, limit: Duration, pred: impl Fn(&Event) -> bool) -> Event {
+    let deadline = Instant::now() + limit;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) if pred(&ev.event) => return ev.event,
+            Ok(_) => {}
+            Err(e) => panic!("no matching event within {limit:?}: {e}"),
+        }
     }
 }
 

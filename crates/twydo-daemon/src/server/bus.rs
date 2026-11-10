@@ -86,7 +86,11 @@ impl EventBus {
         match &event {
             Event::DataChanged { revision, .. } => g.revision = *revision,
             Event::StatusChanged { status_rev } => g.status_rev = *status_rev,
-            Event::OpFinished { .. } | Event::Unknown => {}
+            Event::OpFinished { .. }
+            | Event::SyncStarted { .. }
+            | Event::SyncFinished { .. }
+            | Event::JobFinished { .. }
+            | Event::Unknown => {}
         }
         let seq = g.seq;
         let ev = line("event", &EventEnvelope { seq, event });

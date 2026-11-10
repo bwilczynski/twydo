@@ -531,6 +531,89 @@
               "state"
             ],
             "type": "object"
+          },
+          {
+            "description": "A sync began (a `sync.run` job's, or a background one without a `job_id`).",
+            "properties": {
+              "job_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/SyncReason"
+              },
+              "type": {
+                "const": "sync.started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A sync ended; sent after its changes are published (`status_rev` is the status after\nit).",
+            "properties": {
+              "job_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/SyncReason"
+              },
+              "result": {
+                "$ref": "#/components/schemas/SyncResult"
+              },
+              "status_rev": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "sync.finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "result",
+              "status_rev"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A job ended; `job.get` returns the same state later.",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/components/schemas/JobState"
+              },
+              "type": {
+                "const": "job.finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "job_id",
+              "state"
+            ],
+            "type": "object"
           }
         ],
         "properties": {
@@ -732,6 +815,192 @@
         },
         "required": [
           "config"
+        ],
+        "type": "object"
+      },
+      "JobGetParams": {
+        "description": "Params of `job.get`: exactly one of the two.",
+        "properties": {
+          "job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "JobKind": {
+        "enum": [
+          "sync",
+          "list_create",
+          "list_update",
+          "list_archive",
+          "list_unarchive",
+          "list_preview_delete",
+          "list_delete",
+          "list_reconcile",
+          "list_export",
+          "list_forget",
+          "list_recover"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "JobResult": {
+        "description": "What a finished job produced.",
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SyncResult"
+              }
+            ],
+            "properties": {
+              "type": {
+                "const": "sync",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
+      },
+      "JobStarted": {
+        "description": "The answer of a job method.",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "JobState": {
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "queued",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "result": {
+                "$ref": "#/components/schemas/JobResult"
+              },
+              "state": {
+                "const": "finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "result"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/ErrorKind"
+              },
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "const": "failed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The daemon stopped before the job ended (it was queued or running).",
+            "properties": {
+              "state": {
+                "const": "interrupted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
+      },
+      "JobView": {
+        "description": "A job as `job.get` returns it.",
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ended": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "state",
+          "created"
         ],
         "type": "object"
       },
@@ -1665,6 +1934,107 @@
         },
         "type": "object"
       },
+      "SyncOutcome": {
+        "oneOf": [
+          {
+            "enum": [
+              "ok",
+              "failed",
+              "stopped"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "skipped",
+            "description": "The run did nothing (another runner held the run lock, sync is not configured, ...).",
+            "type": "string"
+          }
+        ],
+        "x-open": true
+      },
+      "SyncReason": {
+        "description": "Why a sync ran.",
+        "enum": [
+          "manual",
+          "startup",
+          "periodic",
+          "batch",
+          "resolve",
+          "switch_on",
+          "list"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "SyncResult": {
+        "description": "What a sync did, in the words `tdo sync` uses.",
+        "properties": {
+          "drained": {
+            "description": "Queued edits the sync dealt with (each also gets its `op.finished`).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "new_conflicts": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes": {
+            "description": "What the runner did on its own.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/SyncOutcome"
+          },
+          "problems": {
+            "description": "What the user should act on (`tdo sync` prints them after `tdo: `).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "description": "What did not fail the run (`tdo sync` prints them after `tdo: warning: `).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcome",
+          "problems",
+          "warnings",
+          "notes",
+          "new_conflicts",
+          "drained"
+        ],
+        "type": "object"
+      },
+      "SyncRunParams": {
+        "description": "Params of `sync.run`.",
+        "properties": {
+          "force_delete": {
+            "default": [],
+            "description": "Lists to sync with `--force-delete` (directory or display names), as\n`tdo sync --force-delete`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
       "SyncState": {
         "enum": [
           "idle",
@@ -1682,6 +2052,13 @@
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "job_id": {
+            "description": "The job of the running sync (a `sync.run`); absent for a background sync.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "last_attempt": {
             "format": "date-time",
@@ -2372,6 +2749,44 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/AckResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.run",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SyncRunParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "job.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JobGetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobView"
         }
       },
       "x-lifecycle": false

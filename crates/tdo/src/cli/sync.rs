@@ -8,14 +8,12 @@ use twydo_core::config::Config;
 use twydo_core::store::DrainOutcome;
 use twydo_core::store::queue::{Queue, refusal_message};
 use twydo_core::sync::batch::{self, Due, Trigger};
-use twydo_core::sync::report::{collection_id, describe, messages};
+use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, describe, messages};
 use twydo_core::sync::run::{RunOptions, run};
 use twydo_core::sync::waiter::{SystemClock, wait_and_sync};
 use twydo_core::sync::{summary, switch};
 
 use super::{EXIT_ERROR, resolve_config};
-
-const NOT_CONFIGURED: &str = "sync is not configured: add a [sync] table (docs/sync.md)";
 
 /// `tdo sync`: exit 0 when every collection is fine, 1 when the run had conflicts, emptied
 /// lists or a failure, 2 on a configuration or IO error. `background` prints nothing on

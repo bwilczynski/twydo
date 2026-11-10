@@ -1,6 +1,8 @@
 pub mod events;
+pub mod jobs;
 pub mod methods;
 pub mod rpc;
+pub mod sync;
 pub mod wire;
 
 /// Marks an enum open (`x-open`): clients read a value they do not know as its `Unknown`

@@ -30,6 +30,13 @@
 //! (queued replies hand the publish to the background refresher). The hook never takes the
 //! lane itself.
 //!
+//! Long jobs run on the job runner's thread ([`super::jobs`]), which takes the lane long
+//! holding nothing. A sync under it ([`super::syncjob::run_sync`]) takes the sync run lock and
+//! the vdir lock inside the core runner (released before it returns), then publishes the items
+//! it drained as the drain hook does. The sync's own reload and `sync.finished`
+//! ([`super::syncjob::SyncDone::finish`]) run after the lane is let go, so after the drain
+//! hook.
+//!
 //! The background drainer ([`Shared::request_drain`]) and the startup drain hold nothing when
 //! they start, take the lane as a write ([`Lane::write`]) for the drain passes only
 //! ([`drain_passes`]), and prune, publish and report ([`finish_drain`]) after letting it go: a
@@ -128,7 +135,7 @@ fn planning_view(shared: &Shared, b: &BasedOn) -> Result<Arc<Snapshot>, RpcError
         .ok_or_else(|| RpcError::refused(ErrorKind::Stale, RELOAD))
 }
 
-fn require_request_id(id: &str) -> Result<(), RpcError> {
+pub(super) fn require_request_id(id: &str) -> Result<(), RpcError> {
     if id.trim().is_empty() {
         return Err(RpcError::refused(
             ErrorKind::Invalid,
