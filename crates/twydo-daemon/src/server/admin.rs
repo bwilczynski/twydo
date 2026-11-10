@@ -1,4 +1,6 @@
-//! The conflict methods (daemon spec §6.8): `conflicts.list` and `conflicts.resolve`.
+//! The conflict methods (daemon spec §6.8): `conflicts.list` and `conflicts.resolve`, and the
+//! journal methods that are not task writes: `journal.list`, `journal.recover` and
+//! `journal.abandon` (`journal.revert` lives with the writes, in `writes.rs`).
 //!
 //! A resolution is a write the queue cannot hold, so it waits behind a running job
 //! ([`Lane::write_waiting`](super::lane::Lane::write_waiting)); it takes no session mutex (the
@@ -12,21 +14,26 @@ use chrono::Utc;
 use serde_json::Value;
 use twydo_core::conflicts::ConflictStore;
 use twydo_core::retired;
+use twydo_core::store::Store;
 use twydo_core::store::existing_vdir_state;
-use twydo_core::store::journal::RequestRef;
+use twydo_core::store::journal::{Journal, RequestRef, try_recover};
 use twydo_core::sync::resolve::{Keep, Resolution, ResolveError, resolve_with};
 use twydo_core::sync::switch;
 
 use super::Shared;
 use super::dispatch::ConnState;
 use super::replay::Begin;
-use super::writes::require_request_id;
+use super::writes::{refusal_of, require_request_id};
 use crate::protocol::admin::{
-    ConflictList, ConflictView, ConflictsResolveParams, ResolveResult, WireKeep,
+    AbandonResult, ConflictList, ConflictView, ConflictsResolveParams, JournalAbandonParams,
+    JournalEntryView, RecoverResult, ResolveResult, WireKeep,
 };
 use crate::protocol::events::Cause;
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::sync::SyncReason;
+
+/// How long `journal.recover` waits for the vdir lock before answering `unavailable`.
+const RECOVER_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 fn internal(e: impl std::fmt::Display) -> RpcError {
     RpcError::refused(ErrorKind::Internal, e.to_string())
@@ -153,4 +160,99 @@ fn run_resolve(
         shared.poke_scheduler();
     }
     Ok(ResolveResult::of(&resolution))
+}
+
+/// `journal.list`: every journal entry, oldest first, as `tdo op journal` lists them.
+pub fn journal_list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let entries = (|| -> std::io::Result<Vec<JournalEntryView>> {
+        let Some(state) = existing_vdir_state(&shared.cfg.state_dir(), &shared.cfg.vdir)? else {
+            return Ok(Vec::new());
+        };
+        Ok(Journal::open(&state)?
+            .list()?
+            .iter()
+            .map(JournalEntryView::of)
+            .collect())
+    })()
+    .map_err(internal)?;
+    to_value(entries)
+}
+
+/// `journal.recover`: rolls every unfinished entry forward, as a daemon start does. Waits for
+/// a running job (recovery needs the vdir), publishes with cause `recovery` when something
+/// resumed and keeps the stuck ids for the status.
+pub fn journal_recover(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let lane = shared.lane.write_waiting();
+    let report = {
+        let Some(_gate) = shared.commit_gate() else {
+            return Err(RpcError::refused(
+                ErrorKind::Unavailable,
+                "the daemon is shutting down",
+            ));
+        };
+        // Not `Store::open_with`: it reports a busy vdir as an empty report, which would
+        // wipe the stuck list. A reload or an outside `tdo` may hold the lock briefly.
+        let state = shared.state_dir.as_path();
+        let deadline = std::time::Instant::now() + RECOVER_WAIT;
+        loop {
+            match try_recover(&shared.cfg.vdir, state).map_err(internal)? {
+                Some(report) => break report,
+                None if std::time::Instant::now() >= deadline => {
+                    return Err(RpcError::refused(
+                        ErrorKind::Unavailable,
+                        "the vdir is busy; try again",
+                    ));
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(25)),
+            }
+        }
+    };
+    shared
+        .publisher
+        .set_stuck(report.stuck.iter().map(|(id, _)| id.clone()).collect());
+    if !report.resumed.is_empty()
+        && let Err(e) = shared.publisher.reload(Cause::Recovery, Vec::new())
+    {
+        eprintln!("tdo daemon: reload after a recovery failed: {e}");
+    }
+    shared.publisher.refresh_status();
+    drop(lane);
+    if !report.resumed.is_empty() {
+        // Writes the unfinished entries held back may now go through (as after abandon).
+        shared.request_drain();
+        shared.poke_scheduler();
+    }
+    to_value(RecoverResult::of(&report))
+}
+
+/// `journal.abandon`: gives up on an unfinished entry so writes can continue. Idempotent (an
+/// entry already abandoned answers `abandoned: false`), so the request log's replay is enough.
+pub fn journal_abandon(shared: &Arc<Shared>, p: JournalAbandonParams) -> Result<Value, RpcError> {
+    require_request_id(&p.request_id)?;
+    let ticket = match shared.requests.begin(&p.request_id) {
+        Begin::Done(r) => return r,
+        Begin::New(t) => t,
+    };
+    ticket.finish(run_abandon(shared, &p).and_then(to_value))
+}
+
+fn run_abandon(shared: &Arc<Shared>, p: &JournalAbandonParams) -> Result<AbandonResult, RpcError> {
+    let lane = shared.lane.write_waiting();
+    let abandoned = {
+        let Some(_gate) = shared.commit_gate() else {
+            return Err(RpcError::refused(
+                ErrorKind::Unavailable,
+                "the daemon is shutting down",
+            ));
+        };
+        let mut store = Store::without_recovery(&shared.cfg, shared.matrix.clone())
+            .map_err(|e| refusal_of(e, shared))?;
+        store.abandon(&p.op_id).map_err(|e| refusal_of(e, shared))?
+    };
+    shared.publisher.unstick(&p.op_id);
+    shared.publisher.refresh_status();
+    drop(lane);
+    // Writes the stuck entry held back may now go through.
+    shared.request_drain();
+    Ok(AbandonResult { abandoned })
 }

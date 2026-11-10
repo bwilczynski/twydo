@@ -1,9 +1,11 @@
-//! Params and results of the conflict methods (`conflicts.list`, `conflicts.resolve`).
+//! Params and results of the conflict methods (`conflicts.list`, `conflicts.resolve`) and the
+//! journal methods (`journal.list`, `journal.recover`, `journal.revert`, `journal.abandon`).
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use twydo_core::conflicts::{Conflict, ConflictKind, ConflictState, Side};
+use twydo_core::store::journal::{Entry, RecoveryReport, Stage};
 use twydo_core::sync::resolve::Resolution;
 
 /// What kind of disagreement a conflict is (mirrors the core's `ConflictKind`).
@@ -187,4 +189,111 @@ impl ResolveResult {
             message: r.message().to_string(),
         }
     }
+}
+
+/// Where a journal entry is in its life (mirrors the core's `Stage`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
+pub enum WireStage {
+    Prepared,
+    Applied,
+    Abandoned,
+    /// A value this client does not know: a newer daemon sent it. Never sent by the daemon
+    /// this client was built with; see "Unknown values" in the daemon spec §6.2.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
+}
+
+impl From<Stage> for WireStage {
+    fn from(s: Stage) -> Self {
+        match s {
+            Stage::Prepared => WireStage::Prepared,
+            Stage::Applied => WireStage::Applied,
+            Stage::Abandoned => WireStage::Abandoned,
+        }
+    }
+}
+
+/// One journal entry, as `tdo op journal` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct JournalEntryView {
+    pub id: String,
+    pub created: DateTime<Utc>,
+    pub kind: String,
+    pub stage: WireStage,
+    pub uids: Vec<String>,
+    /// When a sync confirmed the server holds the entry's result.
+    pub synced: Option<DateTime<Utc>>,
+    /// The client request behind the entry, if one made it.
+    pub request_id: Option<String>,
+}
+
+impl JournalEntryView {
+    pub fn of(e: &Entry) -> JournalEntryView {
+        JournalEntryView {
+            id: e.id.clone(),
+            created: e.created,
+            kind: e.kind.clone(),
+            stage: e.stage.into(),
+            uids: e.uids.clone(),
+            synced: e.synced,
+            request_id: e.request.as_ref().map(|r| r.request_id.clone()),
+        }
+    }
+}
+
+/// An entry recovery could not finish.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StuckView {
+    pub id: String,
+    pub reason: String,
+}
+
+/// Result of `journal.recover`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecoverResult {
+    /// Ids of the entries rolled forward to applied.
+    pub resumed: Vec<String>,
+    pub stuck: Vec<StuckView>,
+}
+
+impl RecoverResult {
+    pub fn of(r: &RecoveryReport) -> RecoverResult {
+        RecoverResult {
+            resumed: r.resumed.clone(),
+            stuck: r
+                .stuck
+                .iter()
+                .map(|(id, reason)| StuckView {
+                    id: id.clone(),
+                    reason: reason.clone(),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Params of `journal.revert`: undoes the applied entry `op_id`, whoever wrote it. The revert
+/// is not on any session's undo stack.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct JournalRevertParams {
+    pub session: String,
+    pub request_id: String,
+    pub op_id: String,
+}
+
+/// Params of `journal.abandon`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct JournalAbandonParams {
+    pub request_id: String,
+    pub op_id: String,
+}
+
+/// Result of `journal.abandon`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AbandonResult {
+    /// False when the entry was already abandoned.
+    pub abandoned: bool,
 }

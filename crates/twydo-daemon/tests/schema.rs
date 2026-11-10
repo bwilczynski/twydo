@@ -191,7 +191,7 @@ fn a_gained_value_of_a_closed_enum_in_params_is_not_a_break() {
 #[test]
 fn every_open_enum_reads_an_unknown_value() {
     use twydo_daemon::protocol::admin::{
-        WireConflictKind, WireConflictState, WireResolution, WireSide,
+        WireConflictKind, WireConflictState, WireResolution, WireSide, WireStage,
     };
     use twydo_daemon::protocol::events::{Cause, Event, EventEnvelope};
     use twydo_daemon::protocol::jobs::{JobKind, JobResult, JobState};
@@ -223,6 +223,7 @@ fn every_open_enum_reads_an_unknown_value() {
             "WireConflictState",
             "WireResolution",
             "WireSide",
+            "WireStage",
             "WriteOutcome"
         ]
     );
@@ -265,6 +266,10 @@ fn every_open_enum_reads_an_unknown_value() {
     assert_eq!(
         serde_json::from_value::<JobResult>(json!({"type": "brand_new", "x": 1})).unwrap(),
         JobResult::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<WireStage>(json!("brand_new")).unwrap(),
+        WireStage::Unknown
     );
     assert_eq!(
         serde_json::from_value::<WireConflictKind>(json!("brand_new")).unwrap(),

@@ -107,6 +107,12 @@ impl Publisher {
         self.state.lock().unwrap().stuck = ids;
     }
 
+    /// Takes `id` off the stuck list (the entry was abandoned). Takes effect at the next
+    /// [`Publisher::refresh_status`].
+    pub fn unstick(&self, id: &str) {
+        self.state.lock().unwrap().stuck.retain(|s| s != id);
+    }
+
     /// Records the outcome of a queue drain for the status (`None`: nothing left behind).
     /// Takes effect at the next [`Publisher::refresh_status`].
     pub fn set_drain_error(&self, e: Option<String>) {

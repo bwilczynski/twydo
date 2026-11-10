@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::PROTOCOL;
-use crate::protocol::admin::{ConflictList, ConflictsResolveParams, ResolveResult};
+use crate::protocol::admin::{
+    AbandonResult, ConflictList, ConflictsResolveParams, JournalAbandonParams, JournalEntryView,
+    JournalRevertParams, RecoverResult, ResolveResult,
+};
 use crate::protocol::events::{EventEnvelope, Heartbeat, Missed};
 use crate::protocol::jobs::{JobGetParams, JobStarted, JobView};
 use crate::protocol::methods::*;
@@ -88,6 +91,25 @@ pub const METHODS: &[MethodSpec] = &[
         false,
         of::<ConflictsResolveParams>,
         of::<ResolveResult>,
+    ),
+    m(
+        "journal.list",
+        false,
+        of::<Empty>,
+        of::<Vec<JournalEntryView>>,
+    ),
+    m("journal.recover", false, of::<Empty>, of::<RecoverResult>),
+    m(
+        "journal.revert",
+        false,
+        of::<JournalRevertParams>,
+        of::<WriteResult>,
+    ),
+    m(
+        "journal.abandon",
+        false,
+        of::<JournalAbandonParams>,
+        of::<AbandonResult>,
     ),
 ];
 

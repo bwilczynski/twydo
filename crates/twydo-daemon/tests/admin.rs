@@ -1,4 +1,5 @@
-//! `conflicts.list` and `conflicts.resolve`: the unresolved conflicts with their titles, a
+//! The journal methods (`journal.list`, `journal.recover`, `journal.revert`, `journal.abandon`)
+//! and `conflicts.list` and `conflicts.resolve`: the unresolved conflicts with their titles, a
 //! resolution that publishes (or records a choice and starts a sync), the replay of a resent
 //! resolution even after a restart, and a resolution waiting for a running sync. Synthetic
 //! fixture content; the vdirsyncer is a fake script.
@@ -9,17 +10,25 @@ use std::fs;
 use std::time::Duration;
 
 use chrono::Utc;
-use common::{FakeClock, Fixture, TestDaemon, empty, kind, todo_ics, wait_event};
+use common::{
+    FakeClock, Fixture, TestDaemon, based, edit_title, empty, kind, snapshot, submit, task,
+    todo_ics, undo, wait_event,
+};
 use twydo_core::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
+use twydo_core::store::bind_vdir_state;
+use twydo_core::store::journal::{Entry, Journal, Stage, Write};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::admin::{
-    ConflictList, ConflictsResolveParams, ResolveResult, WireConflictKind, WireConflictState,
-    WireKeep, WireResolution, WireSide,
+    AbandonResult, ConflictList, ConflictsResolveParams, JournalAbandonParams, JournalEntryView,
+    JournalRevertParams, RecoverResult, ResolveResult, WireConflictKind, WireConflictState,
+    WireKeep, WireResolution, WireSide, WireStage,
 };
 use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::jobs::JobStarted;
+use twydo_daemon::protocol::methods::{StatusView, WriteOutcome, WriteResult};
 use twydo_daemon::protocol::rpc::ErrorKind;
 use twydo_daemon::protocol::sync::{SyncReason, SyncRunParams};
+use twydo_daemon::server::lane::LongKind;
 
 const BOUND: Duration = Duration::from_secs(10);
 
@@ -260,4 +269,294 @@ fn keep_current_on_a_held_conflict_is_invalid() {
     assert_eq!(kind(&e), ErrorKind::Invalid);
     let e = resolve(&c, "", &id, WireKeep::Local).unwrap_err();
     assert_eq!(kind(&e), ErrorKind::Invalid);
+}
+
+// ---- journal methods ----
+
+fn journal_list(c: &Client) -> Vec<JournalEntryView> {
+    c.call("journal.list", empty()).unwrap()
+}
+
+fn status(c: &Client) -> StatusView {
+    c.call("status.get", empty()).unwrap()
+}
+
+fn revert(
+    c: &Client,
+    request_id: &str,
+    op_id: &str,
+) -> Result<WriteResult, twydo_daemon::client::ClientError> {
+    c.call(
+        "journal.revert",
+        JournalRevertParams {
+            session: c.session().expect("hello"),
+            request_id: request_id.into(),
+            op_id: op_id.into(),
+        },
+    )
+}
+
+fn abandon(
+    c: &Client,
+    request_id: &str,
+    op_id: &str,
+) -> Result<AbandonResult, twydo_daemon::client::ClientError> {
+    c.call(
+        "journal.abandon",
+        JournalAbandonParams {
+            request_id: request_id.into(),
+            op_id: op_id.into(),
+        },
+    )
+}
+
+fn jfx() -> Fixture {
+    Fixture::new(&[("c1", "u1", "One", None), ("c1", "u2", "Two", None)])
+}
+
+/// Leaves a `Prepared` entry in the journal that creates `rel` (so recovery can finish it
+/// unless `rel` already holds other content).
+fn prepare(fx: &Fixture, id: &str, rel: &str) {
+    let cfg = fx.config();
+    let journal = Journal::open(&bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()).unwrap();
+    journal
+        .prepare(&Entry {
+            format: 1,
+            id: id.into(),
+            created: Utc::now(),
+            kind: "edit".into(),
+            uids: vec!["zz".into()],
+            stage: Stage::Prepared,
+            inverse_of: None,
+            from_queue: None,
+            request: None,
+            synced: None,
+            holds: Vec::new(),
+            family: None,
+            families: Vec::new(),
+            writes: vec![Write {
+                path: rel.into(),
+                before: None,
+                after: Some(todo_ics("zz", "Made by recovery", None)),
+            }],
+        })
+        .unwrap();
+}
+
+#[test]
+fn journal_list_matches_the_store() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    assert!(journal_list(&c).is_empty());
+    let a = submit(&c, edit_title("u1", "One!")).unwrap();
+    let b = submit(&c, edit_title("u2", "Two!")).unwrap();
+    let l = journal_list(&c);
+    assert_eq!(l.len(), 2);
+    // Ids end in random hex, so two entries of one second may list in either order: the
+    // daemon's list is the store's list, whatever its order.
+    let cfg = fx.config();
+    let journal = Journal::open(&bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()).unwrap();
+    let ids: Vec<_> = journal.list().unwrap().into_iter().map(|e| e.id).collect();
+    assert_eq!(l.iter().map(|e| e.id.clone()).collect::<Vec<_>>(), ids);
+    let find = |id: &str| l.iter().find(|e| e.id == id).unwrap();
+    assert!(
+        l.iter()
+            .all(|e| e.stage == WireStage::Applied && e.synced.is_none())
+    );
+    assert_eq!(find(&a.op_id).uids, vec!["u1".to_string()]);
+    assert_eq!(find(&b.op_id).uids, vec!["u2".to_string()]);
+    assert!(find(&a.op_id).request_id.is_some());
+    assert_ne!(find(&a.op_id).request_id, find(&b.op_id).request_id);
+    assert_eq!(find(&a.op_id).kind, "edit");
+}
+
+#[test]
+fn journal_recover_resumes_and_reports_stuck() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    subscribe(&c);
+    // One entry recovery can finish, one it cannot (its file holds other content).
+    prepare(&fx, "20261101T120000Z-0000000a", "c1/made.ics");
+    fx.write("c1/blocked.ics", &todo_ics("other", "Other", None));
+    prepare(&fx, "20261101T120001Z-0000000b", "c1/blocked.ics");
+    let r: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert_eq!(r.resumed, vec!["20261101T120000Z-0000000a".to_string()]);
+    assert_eq!(r.stuck.len(), 1);
+    assert_eq!(r.stuck[0].id, "20261101T120001Z-0000000b");
+    assert!(!r.stuck[0].reason.is_empty());
+    assert_eq!(
+        status(&c).journal.stuck,
+        vec!["20261101T120001Z-0000000b".to_string()]
+    );
+    assert!(fx.read("c1/made.ics").contains("Made by recovery"));
+    wait_event(&c, BOUND, |e| {
+        matches!(
+            e,
+            Event::DataChanged {
+                cause: Cause::Recovery,
+                ..
+            }
+        )
+    });
+    // Nothing left to resume: the same stuck entry, and no resumed ones.
+    let again: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert!(again.resumed.is_empty());
+    assert_eq!(again.stuck, r.stuck);
+}
+
+#[test]
+fn journal_recover_with_a_busy_vdir_is_unavailable_and_keeps_stuck() {
+    use twydo_core::store::fsio::VdirLock;
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    fx.write("c1/blocked.ics", &todo_ics("other", "Other", None));
+    prepare(&fx, "20261101T120001Z-0000000b", "c1/blocked.ics");
+    let r: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert_eq!(r.stuck.len(), 1);
+    let lock = VdirLock::shared(&fx.state()).unwrap();
+    let e = c
+        .call::<_, RecoverResult>("journal.recover", empty())
+        .unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Unavailable, "{e}");
+    assert_eq!(
+        status(&c).journal.stuck,
+        vec!["20261101T120001Z-0000000b".to_string()]
+    );
+    drop(lock);
+    let again: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert_eq!(again.stuck, r.stuck);
+}
+
+#[test]
+fn revert_by_id_from_another_session_keeps_stacks() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let a = td.client();
+    let b = td.client();
+    let first = submit(&a, edit_title("u1", "One!")).unwrap();
+    submit(&a, edit_title("u2", "Two!")).unwrap();
+    let r = revert(&b, "rv1", &first.op_id).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Applied);
+    assert_eq!(r.message, "undone: One!");
+    assert!(r.undid.is_none());
+    assert_eq!(task(&snapshot(&b), "u1").task.summary, "One");
+    // A resend replays; the revert is not on B's stack, so B has nothing to undo.
+    assert_eq!(revert(&b, "rv1", &first.op_id).unwrap().op_id, r.op_id);
+    assert_eq!(journal_list(&b).len(), 3);
+    let e = undo(&b).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid, "{e}");
+    // A's undo still takes back A's own last edit, not the revert.
+    let u = undo(&a).unwrap();
+    assert_eq!(u.outcome, WriteOutcome::Applied);
+    let snap = snapshot(&a);
+    assert_eq!(task(&snap, "u2").task.summary, "Two");
+    assert_eq!(task(&snap, "u1").task.summary, "One");
+}
+
+#[test]
+fn revert_of_an_unknown_entry_is_not_found() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let e = revert(&c, "rv1", "nope").unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::NotFound, "{e}");
+}
+
+#[test]
+fn revert_during_a_sync_is_queued() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let a = submit(&c, edit_title("u1", "One!")).unwrap();
+    let _ = based(&c);
+    let job = td.handle().hold_long(LongKind::Test);
+    let r = revert(&c, "rv1", &a.op_id).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    assert!(fx.read("c1/u1.ics").contains("One!"));
+    drop(job);
+    // The drain after the job applies it.
+    let deadline = std::time::Instant::now() + BOUND;
+    while !fx.read("c1/u1.ics").contains("SUMMARY:One\r") && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(fx.read("c1/u1.ics").contains("SUMMARY:One\r\n"));
+}
+
+#[test]
+fn abandon_is_idempotent_and_clears_stuck() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    fx.write("c1/blocked.ics", &todo_ics("other", "Other", None));
+    prepare(&fx, "20261101T120001Z-0000000b", "c1/blocked.ics");
+    let r: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert_eq!(r.stuck.len(), 1);
+    assert_eq!(status(&c).journal.stuck.len(), 1);
+    assert_eq!(
+        abandon(&c, "ab1", "20261101T120001Z-0000000b").unwrap(),
+        AbandonResult { abandoned: true }
+    );
+    assert!(status(&c).journal.stuck.is_empty());
+    let l = journal_list(&c);
+    assert_eq!(l[0].stage, WireStage::Abandoned);
+    // A resend replays; a new request finds it already abandoned.
+    assert!(
+        abandon(&c, "ab1", "20261101T120001Z-0000000b")
+            .unwrap()
+            .abandoned
+    );
+    assert!(
+        !abandon(&c, "ab2", "20261101T120001Z-0000000b")
+            .unwrap()
+            .abandoned
+    );
+    // Writes continue.
+    submit(&c, edit_title("u1", "One!")).unwrap();
+    // An applied entry cannot be abandoned.
+    let applied = journal_list(&c).last().unwrap().id.clone();
+    let e = abandon(&c, "ab3", &applied).unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::Invalid, "{e}");
+    let e = abandon(&c, "ab4", "missing").unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::NotFound, "{e}");
+}
+
+/// Final review: writes a stuck entry held back drain once `journal.recover` resumes it (as
+/// after `journal.abandon`), with no other trigger.
+#[test]
+fn journal_recover_drains_what_the_stuck_entry_held_back() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let job = td.handle().hold_long(LongKind::Test);
+    let q = submit(&c, edit_title("u1", "One!")).unwrap();
+    assert_eq!(q.outcome, WriteOutcome::Queued);
+    // An unfinished entry recovery cannot finish yet: the drains after the job stop on it.
+    fx.write("c1/blocked.ics", &todo_ics("other", "Other", None));
+    prepare(&fx, "20261101T120001Z-0000000b", "c1/blocked.ics");
+    drop(job);
+    let deadline = std::time::Instant::now() + BOUND;
+    while status(&c).drain_error.is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the drain never stopped"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Let the drainer started after the job finish its (failing) try.
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(fx.read("c1/u1.ics").contains("SUMMARY:One\r\n"));
+    // The blocking file goes; recovery can now finish the entry.
+    fx.remove("c1/blocked.ics");
+    let r: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    assert_eq!(r.resumed, vec!["20261101T120001Z-0000000b".to_string()]);
+    while !fx.read("c1/u1.ics").contains("SUMMARY:One!") {
+        assert!(
+            std::time::Instant::now() < deadline + BOUND,
+            "the held-back write never drained"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

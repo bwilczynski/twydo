@@ -1044,10 +1044,14 @@ impl Store {
     }
 
     /// Mark the unfinished entry `id` Abandoned so writes can continue. Its files are left
-    /// as they are; the entry stays in the journal for manual recovery.
-    pub fn abandon(&mut self, id: &str) -> Result<(), WriteError> {
+    /// as they are; the entry stays in the journal for manual recovery. Returns `false` when
+    /// the entry was already `Abandoned` (nothing changed), `true` when this call abandoned it.
+    pub fn abandon(&mut self, id: &str) -> Result<bool, WriteError> {
         let _lock = self.lock()?;
         let e = self.journal.get(id)?.ok_or_else(|| no_entry(id))?;
+        if e.stage == Stage::Abandoned {
+            return Ok(false);
+        }
         if e.stage != Stage::Prepared {
             return Err(io_error(
                 io::ErrorKind::InvalidInput,
@@ -1055,7 +1059,7 @@ impl Store {
             ));
         }
         self.journal.set_stage(id, Stage::Abandoned)?;
-        Ok(())
+        Ok(true)
     }
 
     /// A revert's work under the held lock; `from_queue` names the queued item it

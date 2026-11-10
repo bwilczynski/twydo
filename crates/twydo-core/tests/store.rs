@@ -647,6 +647,49 @@ fn stuck_journal_blocks_writes() {
     );
 }
 
+#[test]
+fn abandon_twice_is_not_an_error() {
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let journal = Journal::open(&env.state).unwrap();
+    let stuck = Entry {
+        format: 1,
+        id: "20261101T120000Z-deadbeef".into(),
+        created: Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap(),
+        kind: "edit".into(),
+        uids: vec![A.into()],
+        stage: Stage::Prepared,
+        inverse_of: None,
+        from_queue: None,
+        request: None,
+        synced: None,
+        holds: Vec::new(),
+        family: None,
+        families: Vec::new(),
+        writes: vec![Write {
+            path: format!("list1/{A}.ics"),
+            before: Some("neither".into()),
+            after: Some("nor".into()),
+        }],
+    };
+    journal.prepare(&stuck).unwrap();
+    let (mut store, _) = Store::open_with(&env.cfg, matrix("unverified", "pass")).unwrap();
+    assert!(store.abandon(&stuck.id).unwrap());
+    assert!(!store.abandon(&stuck.id).unwrap());
+    assert_eq!(
+        journal.get(&stuck.id).unwrap().unwrap().stage,
+        Stage::Abandoned
+    );
+    // An applied entry is still refused.
+    let applied = Entry {
+        id: "20261101T120001Z-deadbeef".into(),
+        stage: Stage::Applied,
+        ..stuck
+    };
+    journal.prepare(&applied).unwrap();
+    journal.set_stage(&applied.id, Stage::Applied).unwrap();
+    assert!(store.abandon(&applied.id).is_err());
+}
+
 /// Moving a repeat's history copy keeps its `RUID` pointing at the series: only a live
 /// task's self-reference follows the new UID (H5).
 #[test]

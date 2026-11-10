@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AbandonResult": {
+        "description": "Result of `journal.abandon`.",
+        "properties": {
+          "abandoned": {
+            "description": "False when the entry was already abandoned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "abandoned"
+        ],
+        "type": "object"
+      },
       "AckParams": {
         "properties": {
           "ids": {
@@ -1100,6 +1113,89 @@
         ],
         "type": "object"
       },
+      "JournalAbandonParams": {
+        "description": "Params of `journal.abandon`.",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "op_id"
+        ],
+        "type": "object"
+      },
+      "JournalEntryView": {
+        "description": "One journal entry, as `tdo op journal` lists it.",
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The client request behind the entry, if one made it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stage": {
+            "$ref": "#/components/schemas/WireStage"
+          },
+          "synced": {
+            "description": "When a sync confirmed the server holds the entry's result.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "created",
+          "kind",
+          "stage",
+          "uids"
+        ],
+        "type": "object"
+      },
+      "JournalRevertParams": {
+        "description": "Params of `journal.revert`: undoes the applied entry `op_id`, whoever wrote it. The revert\nis not on any session's undo stack.",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id",
+          "op_id"
+        ],
+        "type": "object"
+      },
       "JournalView": {
         "properties": {
           "stuck": {
@@ -1749,6 +1845,29 @@
         ],
         "type": "object"
       },
+      "RecoverResult": {
+        "description": "Result of `journal.recover`.",
+        "properties": {
+          "resumed": {
+            "description": "Ids of the entries rolled forward to applied.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stuck": {
+            "items": {
+              "$ref": "#/components/schemas/StuckView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "resumed",
+          "stuck"
+        ],
+        "type": "object"
+      },
       "RefusalView": {
         "properties": {
           "at": {
@@ -1923,6 +2042,22 @@
           "conflicts",
           "journal",
           "refusals"
+        ],
+        "type": "object"
+      },
+      "StuckView": {
+        "description": "An entry recovery could not finish.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
         ],
         "type": "object"
       },
@@ -2506,6 +2641,16 @@
           "errors"
         ],
         "type": "object"
+      },
+      "WireStage": {
+        "description": "Where a journal entry is in its life (mirrors the core's `Stage`).",
+        "enum": [
+          "prepared",
+          "applied",
+          "abandoned"
+        ],
+        "type": "string",
+        "x-open": true
       },
       "WireTask": {
         "properties": {
@@ -3103,6 +3248,85 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ResolveResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "items": {
+            "$ref": "#/components/schemas/JournalEntryView"
+          },
+          "type": "array"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.recover",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/RecoverResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.revert",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JournalRevertParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WriteResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.abandon",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JournalAbandonParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/AbandonResult"
         }
       },
       "x-lifecycle": false
