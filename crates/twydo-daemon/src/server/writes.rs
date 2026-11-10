@@ -54,7 +54,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use twydo_core::edit::Op;
 use twydo_core::edit::describe::{op_title, success_message};
@@ -66,9 +66,11 @@ use twydo_core::store::{DrainOutcome, Drained, Submitted, WriteError};
 use twydo_core::views::Snapshot as CoreSnapshot;
 
 use super::Shared;
+use super::lane::{LongBusy, WriteGuard};
 use super::publish::Snapshot;
 use super::replay::Begin;
 use super::sessions::{QUEUED, Session, queued_note, step};
+use crate::protocol::admin::JournalRevertParams;
 use crate::protocol::events::{Cause, Event};
 use crate::protocol::methods::{
     AckParams, AckResult, BasedOn, CheckParams, CheckResult, Created, OpGetParams, OpState,
@@ -384,6 +386,49 @@ fn crash_point(shared: &Shared) {
     }
 }
 
+/// What [`run_store_write`] left: the lane (held until the caller has published), the store's
+/// verdict and the queued items its drains dealt with.
+struct Stored<'a> {
+    lane: Result<WriteGuard<'a>, LongBusy>,
+    outcome: Result<Submitted, WriteError>,
+    drained: Vec<Drained>,
+}
+
+/// The lane-or-queue part of a task write: takes the lane (a long job holding it means the
+/// store plans and queues without trying the vdir lock), tags `store` with the request, runs
+/// `f` inside the commit gate and hands back the verdict with the lane still held. Shared by
+/// `op.submit` and `journal.revert`. The caller holds the session mutex, if it uses one, and
+/// publishes (`publish_applied`, `queued`) before dropping the lane.
+fn run_store_write<'a>(
+    shared: &'a Shared,
+    store: &mut Store,
+    session: &str,
+    request_id: &str,
+    f: impl FnOnce(&mut Store, DateTime<Utc>) -> Result<Submitted, WriteError>,
+) -> Result<Stored<'a>, RpcError> {
+    let lane = shared.lane.write();
+    let now = Utc::now();
+    store.set_request(Some(RequestRef {
+        session: session.to_string(),
+        request_id: request_id.to_string(),
+    }));
+    // A long job holds the vdir: plan and queue at once, without trying the lock.
+    store.set_vdir_busy(lane.is_err());
+    let r = match shared.commit_gate() {
+        Some(_gate) => Ok(f(store, now)),
+        None => Err(stopping()),
+    };
+    store.set_vdir_busy(false);
+    store.set_request(None);
+    let outcome = r?;
+    let drained = store.take_drained();
+    Ok(Stored {
+        lane,
+        outcome,
+        drained,
+    })
+}
+
 pub fn submit(shared: &Arc<Shared>, p: SubmitParams) -> Result<Value, RpcError> {
     let (rid, sid) = (p.request_id.clone(), p.session.clone());
     replayed(shared, &rid, &sid, |session| run_submit(shared, session, p))
@@ -397,28 +442,23 @@ fn run_submit(
     let view = planning_view(shared, &p.based_on)?;
     let label = op_title(&view.snap, &p.op);
     let mut s = session.lock().unwrap();
-    let lane = shared.lane.write();
-    let now = Utc::now();
-    s.store.set_request(Some(RequestRef {
-        session: p.session.clone(),
-        request_id: p.request_id.clone(),
-    }));
-    // A long job holds the vdir: plan and queue at once, without trying the lock.
-    s.store.set_vdir_busy(lane.is_err());
-    let r = match shared.commit_gate() {
-        Some(_gate) => {
+    let Stored {
+        lane,
+        outcome,
+        drained,
+    } = run_store_write(
+        shared,
+        &mut s.store,
+        &p.session,
+        &p.request_id,
+        |store, now| {
             if let Some(hook) = &shared.in_commit {
                 hook();
             }
-            Ok(s.store.submit(&view.snap, &p.op, &label, "daemon", now))
-        }
-        None => Err(stopping()),
-    };
-    s.store.set_vdir_busy(false);
-    s.store.set_request(None);
-    let r = r?;
-    let drained = s.store.take_drained();
-    let submitted = match r {
+            store.submit(&view.snap, &p.op, &label, "daemon", now)
+        },
+    )?;
+    let submitted = match outcome {
         Ok(x) => x,
         Err(e) => {
             finish_drained(shared, drained);
@@ -579,6 +619,99 @@ fn run_undo(
     drop(s);
     finish_drained(shared, drained);
     Ok(result)
+}
+
+/// `journal.revert`: undoes the applied entry `op_id` whoever wrote it. It runs on a fresh
+/// store, not the session's, so it is on nobody's undo or redo stack (D7). Replays from the
+/// request log, then the journal and the queue, like `op.submit`; during a long job it queues.
+pub fn journal_revert(shared: &Arc<Shared>, p: JournalRevertParams) -> Result<Value, RpcError> {
+    let (rid, sid) = (p.request_id.clone(), p.session.clone());
+    replayed(shared, &rid, &sid, |_session| run_revert(shared, &p))
+}
+
+fn run_revert(shared: &Arc<Shared>, p: &JournalRevertParams) -> Result<WriteResult, RpcError> {
+    let internal = |e: std::io::Error| RpcError::refused(ErrorKind::Internal, e.to_string());
+    let entry = Journal::open(&shared.state_dir)
+        .and_then(|j| j.get(&p.op_id))
+        .map_err(internal)?;
+    let Some(entry) = entry else {
+        return Err(RpcError::refused(
+            ErrorKind::NotFound,
+            format!("no operation {}", p.op_id),
+        ));
+    };
+    // The task's title as it is before the revert (a reverted create removes the task).
+    let title = {
+        let snap = shared.publisher.current().1;
+        entry
+            .uids
+            .first()
+            .map(|u| {
+                snap.snap
+                    .find(u)
+                    .map_or_else(|| u.clone(), |i| snap.snap.tasks[i].summary.clone())
+            })
+            .unwrap_or_default()
+    };
+    let mut store = Store::without_recovery(&shared.cfg, shared.matrix.clone())
+        .map_err(|e| refusal_of(e, shared))?;
+    store.set_collect_drained(true);
+    let Stored {
+        lane,
+        outcome,
+        drained,
+    } = run_store_write(
+        shared,
+        &mut store,
+        &p.session,
+        &p.request_id,
+        |store, now| store.undo(&p.op_id, now),
+    )?;
+    let submitted = match outcome {
+        Ok(x) => x,
+        Err(e) => {
+            finish_drained(shared, drained);
+            return Err(refusal_of(e, shared));
+        }
+    };
+    let message = format!("undone: {title}{}", queued_note(&submitted));
+    let result = match &submitted {
+        Submitted::Applied(id) => {
+            crash_point(shared);
+            let revision = publish_applied(shared, Some(id), &drained);
+            WriteResult {
+                outcome: WriteOutcome::Applied,
+                op_id: id.clone(),
+                revision,
+                message,
+                created: None,
+                undid: None,
+            }
+        }
+        Submitted::Queued(item) => queued(shared, item, message, None),
+        Submitted::Cancelled => unreachable!("a revert never cancels"),
+    };
+    drop(lane);
+    finish_drained(shared, drained);
+    Ok(result)
+}
+
+/// A store error from a journal method, against the latest published snapshot. A missing
+/// entry is `not_found` and an entry in the wrong stage `invalid`.
+pub(super) fn refusal_of(e: WriteError, shared: &Shared) -> RpcError {
+    if let WriteError::Io(io) = &e {
+        match io.kind() {
+            std::io::ErrorKind::NotFound => {
+                return RpcError::refused(ErrorKind::NotFound, io.to_string());
+            }
+            std::io::ErrorKind::InvalidInput => {
+                return RpcError::refused(ErrorKind::Invalid, io.to_string());
+            }
+            _ => {}
+        }
+    }
+    let cur = shared.publisher.current().1;
+    refusal(e, &cur.snap, &cur.snap)
 }
 
 /// Is `id` shaped like a queue item id (`<YYYYMMDDTHHMMSS%6fZ>-<8 digits>-<pid>`)?
