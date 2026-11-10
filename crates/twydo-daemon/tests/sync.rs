@@ -490,3 +490,134 @@ fn writes_during_a_stopped_sync_drain_after_it() {
     assert_eq!(done.drained, 1, "{done:?}");
     assert!(fx.read("c1/u1.ics").contains("SUMMARY:Renamed"));
 }
+
+/// Every notification already delivered on `c`.
+fn pending(c: &Client) -> Vec<Event> {
+    c.notifications()
+        .try_iter()
+        .filter_map(|n| match n {
+            Notification::Event(ev) => Some(ev.event),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_sync_that_drains_then_fails_finishes_each_drained_item() {
+    let fx = Fixture::new(&[("c1", "u1", "One", None), ("c1", "u2", "Two", None)]);
+    // After vdirsyncer is done, the status file becomes a directory: the run fails when it
+    // records its status, after it drained the queued edits.
+    let status = fx.state().join("sync").join("status.json");
+    let body = format!(
+        "sleep 1\necho 'Syncing twydo/c1' >&2\nrm -rf '{p}'\nmkdir '{p}'\nexit 0",
+        p = status.display()
+    );
+    let (_td, c) = start(&fx, &body);
+    let id = sync_run(&c).job_id;
+    wait_event(&c, BOUND, |e| matches!(e, Event::SyncStarted { .. }));
+    let a = submit(&c, edit_title("u1", "First")).unwrap();
+    let b = submit(&c, edit_title("u2", "Second")).unwrap();
+    assert_eq!(a.outcome, WriteOutcome::Queued, "{a:?}");
+    assert_eq!(b.outcome, WriteOutcome::Queued, "{b:?}");
+    let mut finished = Vec::new();
+    let mut result = None;
+    let deadline = Instant::now() + BOUND;
+    loop {
+        match c
+            .notifications()
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
+            Ok(Notification::Event(ev)) => match ev.event {
+                Event::OpFinished { op_id, state, .. } => finished.push((op_id, state)),
+                Event::SyncFinished {
+                    job_id: Some(j),
+                    result: r,
+                    ..
+                } if j == id => result = Some(r),
+                Event::JobFinished { job_id, .. } if job_id == id => break,
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(e) => panic!("no job.finished: {e}"),
+        }
+    }
+    let r = result.expect("sync.finished came before job.finished");
+    assert_eq!(r.outcome, SyncOutcome::Failed, "{r:?}");
+    assert!(!r.problems.is_empty(), "{r:?}");
+    assert_eq!(r.drained, 2, "{r:?}");
+    assert_eq!(finished.len(), 2, "{finished:?}");
+    for (op_id, state) in &finished {
+        assert!(
+            matches!(state, OpState::Applied { .. }),
+            "{op_id}: {state:?}"
+        );
+    }
+    assert!(fx.read("c1/u1.ics").contains("SUMMARY:First"));
+    assert!(fx.read("c1/u2.ics").contains("SUMMARY:Second"));
+}
+
+#[test]
+fn job_get_is_final_only_after_job_finished() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0.3"));
+    let id = sync_run(&c).job_id;
+    // One connection: events sent before a reply are delivered before it.
+    let deadline = Instant::now() + BOUND;
+    let mut seen = Vec::new();
+    loop {
+        let v: JobView = c
+            .call(
+                "job.get",
+                JobGetParams {
+                    job_id: Some(id.clone()),
+                    request_id: None,
+                },
+            )
+            .unwrap();
+        seen.extend(pending(&c));
+        if v.state.is_final() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "never final");
+    }
+    let names: Vec<&str> = seen
+        .iter()
+        .filter_map(|e| match e {
+            Event::SyncFinished { .. } => Some("sync.finished"),
+            Event::JobFinished { .. } => Some("job.finished"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["sync.finished", "job.finished"], "{seen:?}");
+}
+
+#[test]
+fn status_reports_running_until_sync_finished() {
+    let fx = fx();
+    let (_td, c) = start(&fx, &sleeps("0.4"));
+    let _ = sync_run(&c);
+    let deadline = Instant::now() + BOUND;
+    let mut seen = Vec::new();
+    let mut running = 0;
+    loop {
+        seen.extend(pending(&c));
+        let st: StatusView = c.call("status.get", empty()).unwrap();
+        let started = seen.iter().any(|e| matches!(e, Event::SyncStarted { .. }));
+        if started {
+            match st.sync.as_ref().map(|s| s.state) {
+                Some(SyncState::Running) => running += 1,
+                _ => {
+                    // The reply came after every event sent before it was readable.
+                    seen.extend(pending(&c));
+                    assert!(
+                        seen.iter().any(|e| matches!(e, Event::SyncFinished { .. })),
+                        "idle before sync.finished: {seen:?}"
+                    );
+                    break;
+                }
+            }
+        }
+        assert!(Instant::now() < deadline, "never idle");
+    }
+    assert!(running > 0, "never saw the sync running");
+}

@@ -96,6 +96,10 @@ pub struct RunReport {
     pub stopped: bool,
     /// Problems that did not stop the run (an unreadable or unwritable manifest).
     pub warnings: Vec<String>,
+    /// The error that ended the run after it had drained queued edits. Without drained edits
+    /// the error is returned as `Err` instead; with them it rides here so the caller can still
+    /// finish each drained item.
+    pub error: Option<String>,
 }
 
 /// Grace for the stderr reader threads after the child is gone (a grandchild may still
@@ -184,7 +188,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
     let mut report = RunReport::default();
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
-        let ran = one_pass(
+        let ran = match one_pass(
             pass == MAX_RERUNS,
             &opts.hold_queue,
             cfg,
@@ -195,7 +199,15 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
             started,
             &mut status,
             &mut report,
-        )?;
+        ) {
+            Ok(ran) => ran,
+            // Edits already drained were applied to the vdir: report them with the error.
+            Err(e) if !report.drained.is_empty() => {
+                report.error = Some(e.to_string());
+                break;
+            }
+            Err(e) => return Err(e),
+        };
         if !ran {
             // Held at the first recovery: this run wrote nothing, not even its end.
             if pass == 0 {

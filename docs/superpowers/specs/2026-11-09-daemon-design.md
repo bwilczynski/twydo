@@ -331,6 +331,15 @@ the live previews of the date and repeat grammars, and computing views.
   `reminder.due` (§9). A client never needs them to stay in step with the data.
 - **Ordering:** `seq` rises by one per event and restarts with the epoch. Events go to every
   subscriber, including the connection that caused them.
+- **Outcome-event contract:**
+  - every queued item gets exactly one `op.finished`, also when the sync that drained it
+    failed afterwards (that sync is `failed`, with the error among its `problems`);
+  - `sync.finished` comes after the reload the sync's end publishes (`data.changed`);
+  - `job.finished` comes after `sync.finished` of the sync the job ran;
+  - a job record reads final (`job.get`) only once its `job.finished` has been sent;
+  - `status.sync.state` stays `running` until `sync.finished` has been sent;
+  - a sync that panics ends its job `failed` (kind `internal`), is reported idle and sends
+    `sync.finished` with outcome `failed`.
 - **Falling behind:** each subscriber has a bounded buffer. A subscriber that overflows it
   gets one `missed` with the current versions and must re-fetch both snapshot and status;
   events with a `seq` at or below the `missed` one are discarded.

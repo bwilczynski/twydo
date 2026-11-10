@@ -662,6 +662,60 @@ fn forget_preserves_and_syncs() {
 }
 
 #[test]
+fn forget_without_a_sync_table_runs_no_sync() {
+    let e = env_with(|cfg| cfg.sync = None);
+    let (state, events) = forget(&e);
+    let (_, _, synced) = forgot(state);
+    assert!(!synced);
+    assert!(
+        events
+            .iter()
+            .all(|ev| !matches!(ev, Event::SyncStarted { .. } | Event::SyncFinished { .. })),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn forget_sends_sync_finished_before_job_finished() {
+    let e = env();
+    let p: ForgetPreview =
+        e.c.call(
+            "lists.preview_forget",
+            ListPreviewForgetParams { name: "c1".into() },
+        )
+        .unwrap();
+    let job = call(
+        &e.c,
+        "lists.forget",
+        ListForgetParams {
+            request_id: e.c.next_request_id(),
+            name: "c1".into(),
+            collection: p.collection,
+        },
+    );
+    let (_, mut events) = until_finished(&e.c, &job);
+    // `until_finished` stops at `job.finished`: it comes after every event it returned.
+    events.push(Event::JobFinished {
+        job_id: job.clone(),
+        request_id: None,
+        state: JobState::Interrupted,
+    });
+    let at = |f: &dyn Fn(&Event) -> bool| events.iter().position(f);
+    let sync = at(&|ev| {
+        matches!(
+            ev,
+            Event::SyncFinished {
+                reason: SyncReason::List,
+                ..
+            }
+        )
+    });
+    let end = at(&|ev| matches!(ev, Event::JobFinished { .. }));
+    assert!(sync.is_some(), "{events:?}");
+    assert!(sync < end, "{events:?}");
+}
+
+#[test]
 fn forget_with_a_changed_list_fails() {
     let e = env();
     let job = call(

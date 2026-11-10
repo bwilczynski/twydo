@@ -738,7 +738,7 @@ struct Drainer {
 const STOP_WAIT: Duration = Duration::from_secs(10);
 
 /// How often teardown looks at the running work while it waits.
-const STOP_POLL: Duration = Duration::from_millis(50);
+const STOP_POLL: Duration = Duration::from_millis(100);
 
 /// Ends the job runner before the connections close, so clients get the ends: queued jobs
 /// become `interrupted` (with `job.finished`); the running job is waited for until its work
@@ -772,6 +772,12 @@ fn stop_jobs(shared: &Shared) {
     let mut logged = false;
     let mut stop_failed = false;
     while !shared.runner.wait_idle(STOP_POLL) {
+        // The runner thread is gone (it cannot be, short of a panic outside its catch): there
+        // is nothing left to wait for.
+        if shared.runner.is_finished() {
+            eprintln!("tdo daemon: the job runner ended; not waiting for it");
+            break;
+        }
         let now = Instant::now();
         if now < grace_end {
             continue;

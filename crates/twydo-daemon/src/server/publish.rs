@@ -1,6 +1,6 @@
 //! The publisher: loads the vdir, keeps the last published revisions and the status, and
-//! emits `data.changed` and `status.changed`. One mutex serialises every publish, so
-//! revisions and the `seq` of their events rise together.
+//! emits `data.changed` and `status.changed`. Publishes are serialised (`reload_lock`, then
+//! `state` around the emit), so revisions and the `seq` of their events rise together.
 
 use std::collections::{HashSet, VecDeque};
 use std::io;
@@ -115,6 +115,9 @@ impl Publisher {
     /// Replaces the live configuration. Takes effect at the next reload, overlay or status
     /// refresh; the caller reloads.
     pub fn set_config(&self, cfg: Config) {
+        // Behind `reload_lock`, so a reload or overlay that has begun building its snapshot
+        // never mixes the old configuration with the new one half way.
+        let _order = self.reload_lock.lock().unwrap();
         *self.cfg.lock().unwrap() = cfg;
     }
 
@@ -182,7 +185,7 @@ impl Publisher {
     pub fn reload(&self, cause: Cause, uids: Vec<String>) -> io::Result<u64> {
         let _lock = VdirLock::reader(&self.state_dir)?;
         let _order = self.reload_lock.lock().unwrap();
-        // The vdir-lock wait above may have outlasted the daemon.
+        // Waiting for the vdir lock may have outlasted the daemon.
         if self.is_closed() {
             return Ok(self.current().0);
         }
@@ -259,15 +262,36 @@ impl Publisher {
     /// Rebuilds the status; bumps `status_rev` and emits `status.changed` only when the
     /// content changed. Returns the current `status_rev`.
     pub fn refresh_status(&self) -> u64 {
+        self.refresh_inner(false, |_| None)
+    }
+
+    /// Reports the sync idle and rebuilds the status, then emits the event `then` makes from
+    /// the resulting `status_rev` while the new status is still not readable (`state` is
+    /// held): `status.sync.state` stays `running`, for every reader and every refresh, until
+    /// `sync.finished` has been sent.
+    pub fn finish_sync(&self, then: impl FnOnce(u64) -> Event) -> u64 {
+        self.refresh_inner(true, |rev| Some(then(rev)))
+    }
+
+    fn refresh_inner(&self, end_sync: bool, then: impl FnOnce(u64) -> Option<Event>) -> u64 {
         let _order = self.reload_lock.lock().unwrap();
+        if end_sync {
+            // Behind `reload_lock` and before anything is stored: the status that readers see
+            // keeps saying `running` until this call replaces it.
+            self.state.lock().unwrap().sync_running = None;
+        }
         if self.is_closed() {
-            return self
+            let rev = self
                 .state
                 .lock()
                 .unwrap()
                 .status
                 .as_ref()
                 .map_or(0, |v| v.status_rev);
+            if let Some(ev) = then(rev) {
+                self.bus.emit(ev);
+            }
+            return rev;
         }
         let (stuck, drain_error, sync_running, config_status, old_rev) = {
             let s = self.state.lock().unwrap();
@@ -279,25 +303,31 @@ impl Publisher {
                 s.status.as_ref().map_or(0, |v| v.status_rev),
             )
         };
-        let mut next =
-            match self.build_status(&stuck, drain_error, sync_running, config_status, old_rev) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("tdo daemon: status unavailable: {e}");
-                    return old_rev;
+        let built = self.build_status(&stuck, drain_error, sync_running, config_status, old_rev);
+        let mut next = match built {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("tdo daemon: status unavailable: {e}");
+                if let Some(ev) = then(old_rev) {
+                    self.bus.emit(ev);
                 }
-            };
+                return old_rev;
+            }
+        };
         let mut s = self.state.lock().unwrap();
-        if self.is_closed() {
-            return old_rev;
-        }
-        if s.status.as_ref() == Some(&next) {
+        if self.is_closed() || s.status.as_ref() == Some(&next) {
+            if let Some(ev) = then(old_rev) {
+                self.bus.emit(ev);
+            }
             return old_rev;
         }
         next.status_rev = old_rev + 1;
         let rev = next.status_rev;
         s.status = Some(next);
         self.bus.emit(Event::StatusChanged { status_rev: rev });
+        if let Some(ev) = then(rev) {
+            self.bus.emit(ev);
+        }
         rev
     }
 

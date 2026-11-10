@@ -192,17 +192,24 @@ fn resend_after_restart_replays_the_resolution() {
     assert_eq!(resolve(&c, "r1", "other", WireKeep::Local).unwrap(), first);
 }
 
-/// Codex review: A chooses local, B remote on a held conflict; after a restart A's resend is
-/// answered from A's record and the choice stays remote.
+/// A chooses local, B asks for remote on a held conflict: refused, so A's resend (also after
+/// a restart) is answered from A's record and the choice stays local.
 #[test]
-fn resend_of_an_earlier_choice_after_restart_keeps_the_later_one() {
+fn a_differing_rechoice_is_refused() {
     let fx = fx();
     let id = seed(&fx, true);
     let first = {
         let td = TestDaemon::start(&fx);
         let c = td.client();
         let a = resolve(&c, "a", &id, WireKeep::Local).unwrap();
-        resolve(&c, "b", &id, WireKeep::Remote).unwrap();
+        let e = resolve(&c, "b", &id, WireKeep::Remote).unwrap_err();
+        assert_eq!(kind(&e), ErrorKind::Invalid);
+        assert!(
+            e.to_string()
+                .contains(&format!("conflict {id} already resolved as local")),
+            "{e}"
+        );
+        assert_eq!(resolve(&c, "a", &id, WireKeep::Local).unwrap(), a);
         a
     };
     assert_eq!(first.resolution, WireResolution::Recorded);
@@ -212,7 +219,41 @@ fn resend_of_an_earlier_choice_after_restart_keeps_the_later_one() {
     let l = list(&c);
     assert_eq!(l.conflicts.len(), 1);
     assert_eq!(l.conflicts[0].state, WireConflictState::Chosen);
-    assert_eq!(l.conflicts[0].choice, Some(WireSide::Remote));
+    assert_eq!(l.conflicts[0].choice, Some(WireSide::Local));
+}
+
+/// A crash between the restore and recording the resolution: the resend finds the journal
+/// entry its request wrote, answers `written` with its id and closes the conflict.
+#[test]
+fn resend_after_a_crash_between_restore_and_the_record_answers_written() {
+    use twydo_core::store::Store;
+    use twydo_core::store::journal::RequestRef;
+    let fx = fx();
+    let id = seed(&fx, false);
+    let remote = todo_ics("u1", "Remote title", None);
+    let local = todo_ics("u1", "Local title", None);
+    let (mut store, _) = Store::open(&fx.config()).unwrap();
+    store.set_request(Some(RequestRef {
+        session: "s".into(),
+        request_id: "r-crash".into(),
+    }));
+    let op = store
+        .restore(
+            "c1/u1.ics",
+            Some(&remote),
+            Some(&local),
+            vec!["u1".into()],
+            Utc::now(),
+        )
+        .unwrap();
+    drop(store);
+    assert_eq!(list(&TestDaemon::start(&fx).client()).conflicts.len(), 1);
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let r = resolve(&c, "r-crash", &id, WireKeep::Local).unwrap();
+    assert_eq!(r.resolution, WireResolution::Written);
+    assert_eq!(r.op_id.as_deref(), Some(op.as_str()));
+    assert!(list(&c).conflicts.is_empty());
 }
 
 #[test]
@@ -559,6 +600,42 @@ fn journal_recover_drains_what_the_stuck_entry_held_back() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn journal_recover_finishes_the_queued_items_it_frees() {
+    let fx = jfx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    subscribe(&c);
+    let job = td.handle().hold_long(LongKind::Test);
+    let q = submit(&c, edit_title("u1", "One!")).unwrap();
+    assert_eq!(q.outcome, WriteOutcome::Queued);
+    fx.write("c1/blocked.ics", &todo_ics("other", "Other", None));
+    prepare(&fx, "20261101T120001Z-0000000b", "c1/blocked.ics");
+    drop(job);
+    let deadline = std::time::Instant::now() + BOUND;
+    while status(&c).drain_error.is_none() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the drain never stopped"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    fx.remove("c1/blocked.ics");
+    let _: RecoverResult = c.call("journal.recover", empty()).unwrap();
+    let ev = wait_event(
+        &c,
+        BOUND,
+        |e| matches!(e, Event::OpFinished { op_id, .. } if *op_id == q.op_id),
+    );
+    assert!(matches!(
+        ev,
+        Event::OpFinished {
+            state: twydo_daemon::protocol::methods::OpState::Applied { .. },
+            ..
+        }
+    ));
 }
 
 // ---- input.parse ----

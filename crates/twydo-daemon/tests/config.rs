@@ -225,3 +225,30 @@ fn a_symlinked_config_follows_its_target() {
     fs::write(&other, config_text(&fx, "test", "week_start = \"thu\"\n")).unwrap();
     wait_week_start(&c, Weekday::Thu, "an edit of the new target was not seen");
 }
+
+#[test]
+fn timezone_change_needs_a_restart() {
+    let fx = fx();
+    write_config(&fx, &config_text(&fx, "test", ""));
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    write_config(
+        &fx,
+        &format!(
+            "work_days = [\"mon\"]
+{}",
+            config_text(
+                &fx,
+                "test",
+                "timezone = \"Europe/Berlin\"
+"
+            )
+        ),
+    );
+    let st = wait_status(&c, |s| s.config.restart_needed.len() == 2);
+    assert_eq!(st.config.restart_needed, ["timezone", "work_days"]);
+    assert_eq!(st.config.error, None);
+    let cfg = snapshot(&c).config;
+    assert_eq!(cfg.timezone, None);
+    assert_ne!(cfg.work_days, vec![Weekday::Mon]);
+}

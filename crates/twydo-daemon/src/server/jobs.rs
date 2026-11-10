@@ -27,7 +27,7 @@ use super::syncjob::{self, SyncDone};
 use crate::protocol::events::Event;
 use crate::protocol::jobs::{JobGetParams, JobKind, JobResult, JobStarted, JobState, JobView};
 use crate::protocol::rpc::{ErrorKind, RpcError};
-use crate::protocol::sync::SyncReason;
+use crate::protocol::sync::{SyncOutcome, SyncReason, SyncResult};
 
 fn internal(e: impl std::fmt::Display) -> RpcError {
     RpcError::refused(ErrorKind::Internal, e.to_string())
@@ -148,12 +148,18 @@ impl JobStore {
         Ok(r.view)
     }
 
-    /// Moves job `id` to `state`; a final state sets `ended`.
+    /// Moves job `id` to `state`; a final state sets `ended`. A record that already ended is
+    /// left as it is and returned: a daemon that took over the vdir marks what an earlier one
+    /// left unfinished `interrupted`, and a late write from that earlier daemon must not
+    /// overwrite it (nor may one end overwrite another).
     pub fn set_state(&self, id: &str, state: JobState) -> io::Result<JobView> {
         let _g = self.lock.lock().unwrap();
         let mut r = self.read(id)?.ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotFound, format!("no job record {id}"))
         })?;
+        if r.view.state.is_final() {
+            return Ok(r.view);
+        }
         if state.is_final() {
             r.view.ended = Some(Utc::now());
         }
@@ -181,8 +187,14 @@ impl JobStore {
         let mut n = 0;
         for r in self.all()? {
             if !r.view.state.is_final() {
-                self.set_state(&r.view.job_id, JobState::Interrupted)?;
-                n += 1;
+                // A record that cannot be rewritten is logged; the others are still marked.
+                match self.set_state(&r.view.job_id, JobState::Interrupted) {
+                    Ok(_) => n += 1,
+                    Err(e) => eprintln!(
+                        "tdo daemon: cannot mark job {} interrupted: {e}",
+                        r.view.job_id
+                    ),
+                }
             }
         }
         Ok(n)
@@ -195,8 +207,15 @@ impl JobStore {
         let mut n = 0;
         for r in self.all()? {
             if r.view.state.is_final() && r.view.ended.unwrap_or(r.view.created) < before {
-                fs::remove_file(self.path(&r.view.job_id))?;
-                n += 1;
+                // A record that cannot be removed is logged; the others are still pruned.
+                match fs::remove_file(self.path(&r.view.job_id)) {
+                    Ok(()) => n += 1,
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => eprintln!(
+                        "tdo daemon: cannot remove job record {}: {e}",
+                        r.view.job_id
+                    ),
+                }
             }
         }
         Ok(n)
@@ -248,10 +267,29 @@ struct RunnerState {
 pub struct JobRunner {
     state: Mutex<RunnerState>,
     cv: Condvar,
-    /// Whether `sync.stop` left a stop request for the running sync. Held across the check
-    /// that a sync runs and writing the request, and by the sync when it withdraws it, so a
-    /// request never outlives the sync it was meant for.
-    stop: Mutex<bool>,
+    /// The stop gate: whether a sync is active and whether `sync.stop` left a stop request for
+    /// it. Held across the check that a sync is active and writing the request, and by the
+    /// sync's end when it withdraws it, so a request never outlives the sync it was meant for.
+    stop: Mutex<StopGate>,
+    /// Held by a job's end while it records the final state and sends `job.finished`, and by
+    /// `job.get` while it reads: a record reads final only once `job.finished` is sent.
+    end_gate: Mutex<()>,
+}
+
+/// A sync that began and whose end ([`SyncDone::finish`]) has not been sent yet.
+#[derive(Debug, Clone)]
+pub struct ActiveSync {
+    pub job_id: Option<String>,
+    pub reason: SyncReason,
+}
+
+/// What the stop gate guards.
+#[derive(Default)]
+pub struct StopGate {
+    /// From the start of a sync's run until its `sync.finished` is sent.
+    pub active: Option<ActiveSync>,
+    /// A stop request file written for the active sync, not yet withdrawn.
+    pub requested: bool,
 }
 
 impl JobRunner {
@@ -396,8 +434,23 @@ impl JobRunner {
     }
 
     /// The stop gate; see [`JobRunner`]'s `stop` field.
-    pub(super) fn stop_gate(&self) -> std::sync::MutexGuard<'_, bool> {
+    pub(super) fn stop_gate(&self) -> std::sync::MutexGuard<'_, StopGate> {
         self.stop.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The end gate; see [`JobRunner`]'s `end_gate` field.
+    pub(super) fn end_gate(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.end_gate.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Has the runner thread ended (or never started)?
+    pub(super) fn is_finished(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .handle
+            .as_ref()
+            .is_none_or(JoinHandle::is_finished)
     }
 
     /// The id of the job running now (for a job's body, which is built before its id).
@@ -470,14 +523,18 @@ fn after_panic(shared: &Arc<Shared>, job: Option<JobView>) {
     end_sync_after_panic(shared);
     let Some(view) = job else { return };
     let id = view.job_id;
+    let _end = shared.runner.end_gate();
     let state = match shared.jobs.get(&id) {
         Ok(Some(v)) if v.state.is_final() => v.state,
         _ => {
             let state = failed_unexpectedly();
-            if let Err(e) = shared.jobs.set_state(&id, state.clone()) {
-                eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
+            match shared.jobs.set_state(&id, state.clone()) {
+                Ok(view) => view.state,
+                Err(e) => {
+                    eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
+                    state
+                }
             }
-            state
         }
     };
     shared.bus.emit(Event::JobFinished {
@@ -487,21 +544,36 @@ fn after_panic(shared: &Arc<Shared>, job: Option<JobView>) {
     });
 }
 
-/// A sync that panicked never reported its end: report it idle (withdrawing a stop request
-/// left for it) and refresh the status.
+/// A sync that panicked never reported its end: withdraw a stop request left for it, report
+/// it idle and send `sync.finished` with outcome `failed`.
 fn end_sync_after_panic(shared: &Arc<Shared>) {
-    let mut stop = shared.runner.stop_gate();
-    if !shared.publisher.sync_running() {
-        return;
-    }
-    shared.publisher.set_sync_state(false, None);
-    if std::mem::take(&mut *stop)
-        && let Err(e) = twydo_core::sync::running::clear_stop(&shared.cfg)
-    {
-        eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
-    }
-    drop(stop);
-    shared.publisher.refresh_status();
+    let active = {
+        let mut gate = shared.runner.stop_gate();
+        let Some(active) = gate.active.take() else {
+            return;
+        };
+        if std::mem::take(&mut gate.requested)
+            && let Err(e) = twydo_core::sync::running::clear_stop(&shared.cfg)
+        {
+            eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
+        }
+        active
+    };
+    shared
+        .publisher
+        .finish_sync(|status_rev| Event::SyncFinished {
+            job_id: active.job_id,
+            reason: active.reason,
+            result: SyncResult {
+                outcome: SyncOutcome::Failed,
+                problems: vec!["the sync failed unexpectedly".into()],
+                warnings: Vec::new(),
+                notes: Vec::new(),
+                new_conflicts: 0,
+                drained: 0,
+            },
+            status_rev,
+        });
     shared.poke_scheduler();
 }
 
@@ -528,18 +600,28 @@ fn run_job(shared: &Arc<Shared>, view: JobView, run: JobBody, lane: LongKind) {
         },
         Err(_) => {
             eprintln!("tdo daemon: job {id} panicked");
-            end_sync_after_panic(shared);
             failed_unexpectedly()
         }
     };
-    if let Err(e) = shared.jobs.set_state(&id, state.clone()) {
-        eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
-    }
     // The drain hook runs here, before the sync's reload.
     drop(guard);
-    if let Some(end) = shared.runner.take_sync_end() {
-        end.finish(shared);
+    // The outcome events in order: the end of the sync the job ran (a panicked one is
+    // reported failed), then the job's own end. The record reads final only once its
+    // `job.finished` is sent (the end gate).
+    match shared.runner.take_sync_end() {
+        Some(end) => end.finish(shared),
+        None => end_sync_after_panic(shared),
     }
+    let _end = shared.runner.end_gate();
+    // The event carries what the record says: a record that already ended (a newer daemon
+    // marked it `interrupted`) keeps its state, so `job.finished` and `job.get` agree.
+    let state = match shared.jobs.set_state(&id, state.clone()) {
+        Ok(view) => view.state,
+        Err(e) => {
+            eprintln!("tdo daemon: cannot record the end of job {id}: {e}");
+            state
+        }
+    };
     shared.bus.emit(Event::JobFinished {
         job_id: id,
         request_id: view.request_id,
@@ -674,6 +756,8 @@ impl Shared {
 
 /// `job.get`: by `job_id` or by `request_id`, exactly one.
 pub fn get(shared: &Arc<Shared>, p: JobGetParams) -> Result<Value, RpcError> {
+    // Behind a job's end: a record that reads final has had its `job.finished` sent.
+    let _end = shared.runner.end_gate();
     let found = match (p.job_id, p.request_id) {
         (Some(id), None) => shared
             .jobs
@@ -688,7 +772,7 @@ pub fn get(shared: &Arc<Shared>, p: JobGetParams) -> Result<Value, RpcError> {
         _ => {
             return Err(RpcError::refused(
                 ErrorKind::Invalid,
-                "give job_id or request_id, not both",
+                "give exactly one of job_id or request_id",
             ));
         }
     };
