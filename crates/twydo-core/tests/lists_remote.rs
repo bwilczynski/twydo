@@ -18,26 +18,31 @@ fn setup() -> (tempfile::TempDir, Config) {
 }
 
 #[test]
-fn shipping_gate_refuses_unverified_remote_create_and_edit_before_preparing() {
+fn shipping_gate_admits_verified_create_and_refuses_unverified_edit_before_preparing() {
     let (_d, cfg) = setup();
     let mut service = ListService::open(&cfg, None).unwrap();
     let expected = service.state("synthetic").unwrap();
-    for request in [
-        ListRequest::Create {
+    // Creation passed both device directions; it fails later here only because this
+    // fixture has no usable helper or vdirsyncer pair.
+    let create = service
+        .execute(ListRequest::Create {
             id: "new-id".into(),
             name: "New".into(),
             color: (55, 148, 23),
-        },
-        ListRequest::Edit {
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(!create.contains("not verified"), "{create}");
+    let edit = service
+        .execute(ListRequest::Edit {
             id: "synthetic".into(),
             name: "After".into(),
             color: Some((50, 137, 210)),
             expected,
-        },
-    ] {
-        let message = service.execute(request).unwrap_err().to_string();
-        assert!(message.contains("not verified"), "{message}");
-    }
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(edit.contains("not verified"), "{edit}");
     assert!(!cfg.vdir.join("new-id").exists());
     assert_eq!(
         fs::read_to_string(cfg.vdir.join("synthetic/displayname")).unwrap(),

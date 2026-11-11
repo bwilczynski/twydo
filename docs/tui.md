@@ -127,7 +127,7 @@ On a checklist or project, a write acts on the whole family; see
 In the sidebar, `o` opens a new list card and `i` edits the selected ordinary list.
 Use Tab to move between name, color and actions. Color accepts `#RRGGBB`; Left/Right
 cycles the 11 preset colors. **Save to CalDAV** applies immediately, even when automatic
-sync is off. Create/edit remain compatibility-gated until their device checks pass.
+sync is off. Creating a list is verified in both directions.
 Name/color editing is currently refused in every write mode: its prototype cannot
 protect against a concurrent phone edit. Enabling it requires a demonstrated atomic
 server precondition as well as interoperability checks.

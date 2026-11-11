@@ -47,7 +47,7 @@ default way to make a test task.
 | Move | [Standalone destination](../../fixtures/move/standalone-destination/case.toml), [family round trips](../../fixtures/move/family-roundtrip/case.toml) | Whole resource/family identity maps; foreign series identities remain unchanged |
 | Delete | [Family items](../../fixtures/delete/family-items/case.toml), [mixed families](../../fixtures/complete/family-lifecycle/case.toml) | Standalone, whole-family and individual-item removal; open, completed and last items |
 | Insert/reorder | [Checklist append](../../fixtures/insert/checklist-items/case.toml), [project append](../../fixtures/insert/project-items/case.toml), [saved ranks](../../fixtures/reorder/family-items/case.toml) | DisplayOrder-only changes; phone must select **Manually** to display saved ranks |
-| Collections | [Creation confirmation](../../fixtures/list-create/phone-confirmation/case.toml), [archive observation](../../fixtures/list-metadata/archive-observation/case.toml), [server preconditions](../../fixtures/list-metadata/server-preconditions/case.toml) | Archive is local; successful round trips alone do not establish atomic writes |
+| Collections | [Creation confirmation](../../fixtures/list-create/phone-confirmation/case.toml), [phone-created discovery](../../fixtures/list-create/phone-created-discovery/case.toml), [archive observation](../../fixtures/list-metadata/archive-observation/case.toml), [server preconditions](../../fixtures/list-metadata/server-preconditions/case.toml) | Archive is local; successful round trips alone do not establish atomic writes |
 
 ## Remaining restrictions and consent
 
@@ -64,7 +64,8 @@ shapes. This list records useful unresolved questions, not permission to run the
   unresolved question before any additional device scope is proposed.
 - Project repeat changes, some conversions, independently recurring child creation
   and membership changes retain their unverified boundaries. Reparenting is a candidate.
-- List creation lacks reverse phone creation evidence. Metadata edits remain refused
+- List creation passes both directions; a phone-created list was adopted by local-only
+  discovery with its identity, name, color and tasks. Metadata edits remain refused
   in every mode: a tokenless PROPPATCH succeeded while the server reported an exclusive
   lock. An obsolete calendar-export ETag also failed to protect collection DELETE,
   despite changing with task membership/content. Product list deletion remains unavailable.
