@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9](https://github.com/bwilczynski/twydo/compare/v0.1.8...v0.1.9) - 2026-11-11
+
+### Added
+
+- *(tdo)* warn while no service unit is installed
+- *(tdo)* the daemon's service unit: install, status, start, stop and upgrade
+- *(tdo)* service unit naming, rendering and manager commands
+- *(tdo)* tdo status asks the daemon; no client reads the vdir
+- *(daemon)* conflicts.show; tdo conflicts reads through the daemon
+- *(daemon)* export; tdo export-json asks the daemon
+- *(daemon)* check.report; tdo check and op check ask the daemon
+- *(tdo)* list and recovery panels read through the daemon
+- *(tdo)* the TUI runs on the daemon; remove the file and preference watchers
+- *(tdo)* a link thread that feeds the TUI from the daemon
+- *(tdo)* tdo sync and conflict resolution through the daemon; remove the batch waiter
+- *(tdo)* tdo op talks to the daemon
+- *(tdo)* connect to the daemon, starting it on demand
+- *(daemon)* per-list sync state, lists.pending and an input.parse anchor
+- *(daemon)* list and resolve conflicts with replayable resolutions
+- *(daemon)* reap an orphaned vdirsyncer and stop cleanly during a sync
+- *(daemon)* stop a running sync and switch automatic sync
+- *(daemon)* run syncs as jobs on the vdir lane with job.get
+- *(daemon)* watch the vdir and add the hidden tdo daemon command
+- *(core)* record requests on journal entries and queue items
+- manage lists and recovery from the TUI
+- gate title and notes edits by preserved fields
+- *(daemon)* run list create, update, archive and delete as jobs
+- *(daemon)* reload config.toml live and parse typed dates and repeats
+- *(daemon)* journal list, recover, revert and abandon
+- *(daemon)* serve lifecycle methods on a private Unix socket
+- *(daemon)* add wire types for tasks and snapshots
+- preserve and export raw collection deletion backups
+- manage CalDAV lists through a durable vdirsyncer adapter
+- persist local list archiving
+- *(daemon)* forget and recover lists as jobs and list their backups
+- *(daemon)* schedule startup, periodic and batched syncs
+- *(daemon)* let clients read enum values they do not know
+- *(daemon)* queue writes during long jobs and drain them after
+- *(daemon)* apply task writes with sessions, replay and based_on
+- *(daemon)* publish snapshots, status and change events
+- *(daemon)* generate the OpenRPC schema and guard breaking changes
+- *(daemon)* define the JSON-RPC protocol types
+
+### Fixed
+
+- *(daemon)* answer panicking requests and drop clients that stop reading
+- *(daemon)* back off on accept errors, exit on a second signal, report unreadable queue items
+- *(daemon)* keep the outcome-event order and finish drained items of a failed sync
+- *(daemon)* replay creates and cancelled undos exactly, index requests
+- recover interrupted list metadata writes
+- *(daemon)* show queued edits as pending while a sync holds the vdir
+
 ## [0.1.8](https://github.com/bwilczynski/twydo/compare/v0.1.7...v0.1.8) - 2026-11-08
 
 ### Fixed

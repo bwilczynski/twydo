@@ -4,7 +4,7 @@ members = ["crates/twydo-core", "crates/twydo-daemon", "crates/tdo"]
 
 [workspace.package]
 edition = "2024"
-version = "0.1.8"
+version = "0.1.9"
 rust-version = "1.99"
 license = "MIT"
 repository = "https://github.com/bwilczynski/twydo"
