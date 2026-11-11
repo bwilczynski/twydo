@@ -269,7 +269,10 @@ fn custom_color_is_validated_and_a_refused_save_retains_input() {
     let form = app.list_form.as_ref().unwrap();
     assert_eq!(form.name, "Synthetic new");
     assert_eq!(form.color, "#Ab12Cd");
-    assert!(form.error.as_ref().unwrap().contains("not verified"));
+    // List creation is verified now; this save is refused later, by the collection
+    // helper, because the fixture has no usable helper or vdirsyncer pair. The reason
+    // depends on the machine's Python, so only the refusal itself is asserted.
+    assert!(form.error.as_ref().is_some_and(|e| !e.is_empty()));
 }
 
 #[test]

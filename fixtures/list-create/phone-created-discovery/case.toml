@@ -1,0 +1,19 @@
+claim = "A list created on the iPhone is adopted by Twydo's local-only discovery with its identity, name, color and tasks."
+origin = "device"
+observed = "The user created list 'Twydo discovery probe' with a non-default color and one open and one completed synthetic task in 2Do on the iPhone, then synced the phone. Twydo (feat/list-create build, tdo 0.2.0) ran tdo sync --discover. The local folder equals the server collection id in vdirsyncer's discovery cache; name, color and both tasks are present; the 13 existing lists stayed ok. The phone still showed the list, its color and both tasks after another sync."
+tests = ["crates/twydo-core/tests/sync_discover.rs::discover_adopts_a_remote_only_list", "crates/twydo-core/tests/sync_run.rs::discover_option_adopts_before_sync"]
+supports = ["list-create.collection"]
+[provenance]
+source_revision = "215090d2ee455972f3e5a5fbd2e98ea97366c7da"
+source_path = "device round for issue #76: only the synthetic probe list, captured from the user's production account at the user's direction; no server URL or account details"
+[environment]
+client_version = "2Do 3.8 (iPhone, from PRODID); tdo 0.2.0 at 215090d"
+server_version = "unknown (NAS CalDAV; version not recorded)"
+
+[states."after-discovery"]
+path = "after-discovery"
+collections = ["695F13C2-7C6B-4754-811C-EAC8B3A7060F"]
+members = ["695F13C2-7C6B-4754-811C-EAC8B3A7060F/74ef02fee0594b47a2edaf11b2a05a35.ics", "695F13C2-7C6B-4754-811C-EAC8B3A7060F/b814cdaf824b4f7ab79ed9b9c7661834.ics", "695F13C2-7C6B-4754-811C-EAC8B3A7060F/color", "695F13C2-7C6B-4754-811C-EAC8B3A7060F/displayname"]
+action = "The user created list 'Twydo discovery probe' with a non-default color and one open and one completed synthetic task in 2Do on the iPhone, then synced the phone. Twydo (feat/list-create build, tdo 0.2.0) ran tdo sync --discover. The local folder equals the server collection id in vdirsyncer's discovery cache; name, color and both tasks are present; the 13 existing lists stayed ok. The phone still showed the list, its color and both tasks after another sync."
+device = "twydo"
+captured_at = "2026-11-11T20:11:29.410927+00:00"

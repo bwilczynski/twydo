@@ -360,9 +360,9 @@ evidence = []
 id = "list-create.collection"
 iphone_baseline = "pass"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
-evidence = ["list-create/phone-confirmation"]
-notes = "Phone-to-Twydo creation remains unverified."
+iphone_to_twydo = "pass"
+evidence = ["list-create/phone-confirmation", "list-create/phone-created-discovery"]
+notes = "Phone-created lists are adopted by local-only discovery (daemon start, tdo sync --discover)."
 
 [[contract]]
 id = "list-metadata.collection"

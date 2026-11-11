@@ -161,10 +161,13 @@ something 2Do on the iPhone reads differently. See [config.md](config.md).
 List creation, name/color editing and whole-list deletion have separate compatibility
 rows (`list-create`, `list-metadata`, `list-delete`). Task-operation verdicts do not
 authorize them. Helper creation/name/color propagation to the phone passed the approved
-lifecycle baseline; reverse creation remains unverified, so verified mode still refuses
-creation. Test mode can exercise unverified creation during a separately
-approved synthetic round; a missing, failed or unsupported row still refuses. Name/color
-editing stays refused in **every write mode** until server-enforced conditional writes
+lifecycle baseline. Twydo picks up lists created on the phone
+([sync.md](sync.md#new-lists-from-other-devices)); the
+[discovery round](reference/evidence.md) confirmed a phone-created list's identity, name,
+color and tasks in Twydo, so `list-create.collection` passes in all three directions and
+verified mode allows list creation. A missing, failed or unsupported row still refuses.
+Name/color editing stays refused in **every write mode** until server-enforced
+conditional writes
 are implemented and demonstrated. The prototype's preflight read and post-write readback
 cannot prevent a concurrent phone rename/color change from being silently overwritten.
 Successful phone round trips alone cannot enable that capability: the independent
