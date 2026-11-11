@@ -5,7 +5,6 @@ pub mod conflicts;
 pub mod daemon;
 pub mod export;
 pub mod op;
-mod permissions;
 pub mod sync;
 
 use std::path::Path;
@@ -13,7 +12,6 @@ use std::path::Path;
 use twydo_core::config::{Config, ConfigError};
 use twydo_core::store::existing_vdir_state;
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::views::Snapshot;
 pub use twydo_core::views::task_rule_class;
 
 /// Exit code for usage, configuration and read errors.
@@ -82,13 +80,6 @@ pub fn load_vdir(config: &Config) -> Result<twydo_core::vdir::LoadReport, CliErr
         path: config.vdir.clone(),
         source,
     })
-}
-
-/// Load the writer's visible tasks, including pending queued changes. Release the reader
-/// lock before projecting the queue, as the existing CLI write path does.
-pub(super) fn permission_snapshot(config: &Config) -> Result<Snapshot, CliError> {
-    let report = load_vdir(config)?;
-    Ok(twydo_core::store::queue::view(report, config.clone()))
 }
 
 /// The shared lock of `config`'s vdir (see [`VdirLock::reader`]), from its per-vdir state

@@ -3,6 +3,7 @@ pub mod events;
 pub mod jobs;
 pub mod lists;
 pub mod methods;
+pub mod reports;
 pub mod rpc;
 pub mod sync;
 pub mod wire;

@@ -259,6 +259,57 @@
         ],
         "type": "object"
       },
+      "CheckReport": {
+        "description": "What `check.report` answers: the lines to print on stdout and the warnings to print on\nstderr (the client adds `tdo: `).",
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "lines",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "CheckReportParams": {
+        "description": "Params of `check.report`: the report `tdo check` prints, or with `uid` the permissions of\none task (`tdo op check`).",
+        "properties": {
+          "matrix": {
+            "default": null,
+            "description": "A compatibility matrix file (a test hook); the daemon's own matrix when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uid": {
+            "default": null,
+            "description": "Report the one task with this UID instead of the whole collection.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verbose": {
+            "description": "Include task titles and parse-error paths.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "type": "object"
+      },
       "CheckResult": {
         "properties": {
           "allowed": {
@@ -3902,6 +3953,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/OpState"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "check.report",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/CheckReportParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/CheckReport"
         }
       },
       "x-lifecycle": false

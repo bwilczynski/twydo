@@ -226,6 +226,61 @@ impl Drop for TestEnv {
     }
 }
 
+/// A `tdo` environment with no config file: every command names its vdir with `--vdir`. It has
+/// its own socket, config and state directories (all in tempdirs), and dropping it stops the
+/// daemon that answered on its socket.
+pub struct VdirEnv {
+    vdir: PathBuf,
+    root: tempfile::TempDir,
+    sock_dir: tempfile::TempDir,
+}
+
+impl VdirEnv {
+    pub fn new(vdir: &Path) -> VdirEnv {
+        VdirEnv {
+            vdir: vdir.to_path_buf(),
+            root: tempfile::tempdir().unwrap(),
+            sock_dir: short_socket_dir(),
+        }
+    }
+
+    pub fn socket(&self) -> PathBuf {
+        self.sock_dir.path().join("tdo.sock")
+    }
+
+    /// The `XDG_CONFIG_HOME` of this environment (it holds no config file unless a test
+    /// writes one).
+    pub fn config_dir(&self) -> PathBuf {
+        self.root.path().join("config")
+    }
+
+    /// `tdo --vdir <vdir> <args>` in this environment; output is captured.
+    pub fn tdo(&self, args: &[&str]) -> std::process::Output {
+        self.cmd(args).output().expect("run tdo")
+    }
+
+    /// The command [`VdirEnv::tdo`] runs, not yet spawned.
+    pub fn cmd(&self, args: &[&str]) -> Command {
+        let mut c = tdo_bin(
+            &self.socket(),
+            &self.config_dir(),
+            &self.root.path().join("state"),
+        );
+        c.env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+            .env("HOME", self.root.path())
+            .arg("--vdir")
+            .arg(&self.vdir)
+            .args(args);
+        c
+    }
+}
+
+impl Drop for VdirEnv {
+    fn drop(&mut self) {
+        stop_daemon_at(&self.socket());
+    }
+}
+
 /// Stops the daemon answering on `socket` and waits until the socket is gone; kills it if it
 /// does not go. Nothing happens when none answers.
 pub fn stop_daemon_at(socket: &Path) {

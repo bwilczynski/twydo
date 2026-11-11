@@ -22,6 +22,7 @@ use crate::protocol::lists::{
     PendingListOp,
 };
 use crate::protocol::methods::*;
+use crate::protocol::reports::{CheckReport, CheckReportParams};
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
 use crate::protocol::wire::WireSnapshot;
@@ -80,6 +81,12 @@ pub const METHODS: &[MethodSpec] = &[
     m("op.undo", false, of::<UndoParams>, of::<WriteResult>),
     m("op.redo", false, of::<UndoParams>, of::<WriteResult>),
     m("op.get", false, of::<OpGetParams>, of::<OpState>),
+    m(
+        "check.report",
+        false,
+        of::<CheckReportParams>,
+        of::<CheckReport>,
+    ),
     m("op.check", false, of::<CheckParams>, of::<CheckResult>),
     m("refusals.ack", false, of::<AckParams>, of::<AckResult>),
     m("sync.run", false, of::<SyncRunParams>, of::<JobStarted>),
