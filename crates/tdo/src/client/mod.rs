@@ -5,6 +5,7 @@
 pub mod start;
 
 use std::io::ErrorKind;
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -19,7 +20,7 @@ use twydo_daemon::protocol::rpc::STARTING;
 pub const CLI_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How long a freshly started daemon has to answer.
-const START_WAIT: Duration = Duration::from_secs(5);
+pub const START_WAIT: Duration = Duration::from_secs(5);
 /// How long an old daemon has to finish its jobs and go after being asked to.
 pub const STOP_WAIT: Duration = Duration::from_secs(30);
 const POLL: Duration = Duration::from_millis(100);
@@ -243,7 +244,7 @@ pub fn connect(
         Attempt::Connected(c, r) => (c, r),
         Attempt::Failed(e) => return Err(e),
         Attempt::Absent => {
-            start::detached(t)
+            start::start(t)
                 .map_err(|e| ConnectError::Unavailable(format!("cannot start it: {e}")))?;
             wait_for_daemon(t, &hello, &log, false)?
         }
@@ -330,13 +331,17 @@ fn restart_on(
             HELLO_TIMEOUT,
         );
         drop(raw);
-        if !wait_gone(&t.socket, STOP_WAIT) {
+        // Under a service unit the manager may already have started the next daemon.
+        if !wait_replaced(&t.socket, Some(&info.epoch), STOP_WAIT) {
             return Err(ConnectError::Unavailable(
                 "the older daemon is still busy; try again once its job is done".into(),
             ));
         }
+        if UnixStream::connect(&t.socket).is_ok() {
+            return wait_for_daemon(t, hello, log, false);
+        }
     }
-    start::detached(t).map_err(|e| ConnectError::Unavailable(format!("cannot start it: {e}")))?;
+    start::start(t).map_err(|e| ConnectError::Unavailable(format!("cannot start it: {e}")))?;
     wait_for_daemon(t, hello, log, true)
 }
 
@@ -366,7 +371,7 @@ fn wait_for_daemon(
         }
         if !retried && begun.elapsed() > START_WAIT / 2 {
             retried = true;
-            let _ = start::detached(t);
+            let _ = start::start(t);
         }
         if begun.elapsed() > START_WAIT {
             if silent {
@@ -381,6 +386,11 @@ fn wait_for_daemon(
             );
             if let Some(line) = log.last_line() {
                 msg.push_str(&format!(": {line}"));
+            } else if let Some(j) = start::journal_hint(t) {
+                msg.push_str(&format!("; see {j}"));
+            }
+            if let Some(e) = start::manager_error() {
+                msg.push_str(&format!(" (the service manager failed to start it: {e})"));
             }
             return Err(ConnectError::Unavailable(msg));
         }
@@ -410,13 +420,56 @@ fn attempt(t: &Target, hello: &HelloParams) -> Attempt {
     }
 }
 
+/// What [`probe`] found on a socket.
+#[derive(Debug)]
+pub enum Probe {
+    Running(DaemonInfo),
+    /// A daemon of another instance answers; its message.
+    WrongInstance(String),
+    NotRunning,
+}
+
+/// Says hello on `t`'s socket and asks `daemon.info`, never starting or stopping anything.
+/// A daemon that refuses only on protocol is ours and is reported as running.
+pub fn probe(t: &Target) -> Probe {
+    let Ok(hello) = hello_params(t, "tdo", None) else {
+        return Probe::NotRunning;
+    };
+    let Ok(raw) = Client::connect_raw(&t.socket) else {
+        return Probe::NotRunning;
+    };
+    match raw.hello_on(hello) {
+        Ok(_) => {}
+        Err(ClientError::Rpc(e)) => match e.data.as_ref().map(|d| d.kind) {
+            Some(RpcKind::Protocol) => {}
+            Some(RpcKind::WrongInstance) => return Probe::WrongInstance(e.message),
+            _ => return Probe::NotRunning,
+        },
+        Err(_) => return Probe::NotRunning,
+    }
+    match raw
+        .caller()
+        .call_timeout("daemon.info", serde_json::json!({}), HELLO_TIMEOUT)
+    {
+        Ok(info) => Probe::Running(info),
+        Err(_) => Probe::NotRunning,
+    }
+}
+
 /// Waits until nothing answers on `socket` and its file is gone; false on timeout. A file
 /// that nothing answers on but that stays (a crashed daemon's) counts as gone after 5 s.
 pub fn wait_gone(socket: &std::path::Path, limit: Duration) -> bool {
+    wait_replaced(socket, None, limit)
+}
+
+/// Like [`wait_gone`], and also true once a daemon answers `daemon.info` with an epoch other
+/// than `old_epoch`: under a service unit the manager can restart the daemon before the
+/// socket is seen gone.
+pub fn wait_replaced(socket: &std::path::Path, old_epoch: Option<&str>, limit: Duration) -> bool {
     let deadline = Instant::now() + limit;
     let mut stale_since: Option<Instant> = None;
     loop {
-        match std::os::unix::net::UnixStream::connect(socket) {
+        match UnixStream::connect(socket) {
             Err(e) if e.kind() == ErrorKind::NotFound => return true,
             Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
                 if !socket.exists() {
@@ -427,6 +480,14 @@ pub fn wait_gone(socket: &std::path::Path, limit: Duration) -> bool {
                     return true;
                 }
             }
+            Ok(_) => {
+                stale_since = None;
+                if let Some(old) = old_epoch
+                    && answering_epoch(socket).is_some_and(|e| e != old)
+                {
+                    return true;
+                }
+            }
             _ => stale_since = None,
         }
         if Instant::now() >= deadline {
@@ -434,6 +495,16 @@ pub fn wait_gone(socket: &std::path::Path, limit: Duration) -> bool {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+/// The epoch of the daemon answering on `socket` (`daemon.info` needs no hello).
+fn answering_epoch(socket: &std::path::Path) -> Option<String> {
+    let raw = Client::connect_raw(socket).ok()?;
+    let info: DaemonInfo = raw
+        .caller()
+        .call_timeout("daemon.info", serde_json::json!({}), HELLO_TIMEOUT)
+        .ok()?;
+    Some(info.epoch)
 }
 
 /// `(major, minor, patch)` of a version; a pre-release or build suffix is ignored. An

@@ -787,3 +787,39 @@ pub fn dropping_proxy(
     });
     (path, seen, open)
 }
+
+/// A fake `systemctl` in a fresh `dir/fake-bin`: it appends its arguments (one line per call)
+/// to the returned log, prints `enabled` for `is-enabled` and `active` for `is-active`.
+/// Returns `(bin dir, log)`. Nothing here can reach a real service manager.
+///
+/// A real `enable --now` would start the daemon through the unit, which a fake cannot do. So
+/// the `enable` branch starts a detached daemon the way `tdo` itself does, when the test sets
+/// `TDO_BIN` (the built binary) on the command; the socket and config come from the
+/// environment the test command already carries. This is test-only scaffolding.
+pub fn fake_service_manager(dir: &Path) -> (PathBuf, PathBuf) {
+    let bin = dir.join("fake-bin");
+    fs::create_dir_all(&bin).unwrap();
+    let log = dir.join("manager.log");
+    write_script(
+        &bin.join("systemctl"),
+        &format!(
+            "echo \"$@\" >> '{log}'\n\
+             case \"$*\" in\n\
+               *is-enabled*) echo enabled ;;\n\
+               *is-active*) echo active ;;\n\
+               *' enable '*) if [ -n \"$FAKE_STRICT_LOADED\" ]; then [ -e '{log}.loaded' ] && {{ echo 'already loaded' >&2; exit 1; }}; touch '{log}.loaded'; fi; if [ -n \"$TDO_BIN\" ]; then \"$TDO_BIN\" daemon --detach --socket \"$TWYDO_SOCKET\" >/dev/null 2>&1; fi ;;\n\
+               *' start '*) [ -n \"$FAKE_START_NOOP\" ] && exit 0; [ -n \"$FAKE_START_FAILS\" ] && {{ echo 'unit not found' >&2; exit 1; }}; if [ -n \"$TDO_BIN\" ]; then \"$TDO_BIN\" daemon --detach --socket \"$TWYDO_SOCKET\" >/dev/null 2>&1; fi ;;\n\
+               *' stop '*) rm -f '{log}.loaded'; [ -n \"$FAKE_STOP_FAILS\" ] && {{ echo 'not loaded' >&2; exit 1; }}; [ -n \"$FAKE_STOP_NOOP\" ] && exit 0; pid=$(sed -n 's/.*(pid \\([0-9]*\\)).*/\\1/p' \"$XDG_STATE_HOME\"/twydo/daemon-*.log | tail -1); if [ -n \"$pid\" ]; then kill -TERM \"$pid\" 2>/dev/null; n=0; while kill -0 \"$pid\" 2>/dev/null && [ $n -lt 300 ]; do sleep 0.05; n=$((n+1)); done; fi ;;\n\
+             esac\n\
+             exit 0\n",
+            log = log.display()
+        ),
+    );
+    (bin, log)
+}
+
+/// The built `tdo` binary's path, for tests that must link to it or hand it to a fake. A
+/// command to run it is built with [`tdo_bin`] or `TestEnv::tdo_cmd`.
+pub fn tdo_exe() -> &'static str {
+    env!("CARGO_BIN_EXE_tdo")
+}

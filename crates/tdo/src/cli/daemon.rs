@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::client::{self, Target};
+use crate::service::{self, Platform};
 use serde_json::json;
 use signal_hook::consts::{SIGINT, SIGTERM};
 use signal_hook::flag;
@@ -54,6 +55,18 @@ use super::{CliError, EXIT_ERROR, resolve_config};
 pub enum DaemonCommand {
     /// Stop the daemon once it is idle, and wait until it is gone
     Stop,
+    /// Install the daemon as a login service (systemd user unit or launchd agent)
+    Install {
+        /// The `tdo` the unit runs (default: a stable path found on PATH)
+        #[arg(long, value_name = "PATH")]
+        exe: Option<PathBuf>,
+    },
+    /// Remove the login service
+    Uninstall,
+    /// Show whether the service is installed and whether the daemon is running
+    Status,
+    /// Print the daemon's protocol schema (OpenRPC) and exit
+    Schema,
     /// Connect (starting the daemon if needed) and print its epoch
     #[command(hide = true)]
     Ping,
@@ -86,70 +99,124 @@ pub fn client_command(vdir: Option<&Path>, socket: Option<&Path>, cmd: DaemonCom
                 }
             }
         }
-        DaemonCommand::Stop => {
-            let hello = match client::hello_params(&target, "tdo", None) {
-                Ok(h) => h,
-                Err(e) => {
-                    eprintln!("tdo: {e}");
-                    return EXIT_ERROR;
-                }
-            };
-            // Hello first, so another instance's daemon on this socket is never stopped. A
-            // protocol mismatch still stops (`daemon.shutdown` is frozen across protocols).
-            let raw = match Client::connect_raw(&target.socket) {
-                Ok(c) => c,
-                Err(ClientError::Io(e))
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
-                    ) =>
-                {
-                    println!("no daemon is running");
-                    return 0;
-                }
-                Err(e) => {
-                    eprintln!("tdo: {e}");
-                    return EXIT_ERROR;
-                }
-            };
-            // `daemon.shutdown` goes on this very connection, after its hello was checked.
-            match raw.hello_on(hello) {
-                Ok(_) => {}
-                Err(ClientError::Rpc(e)) => match e.data.as_ref().map(|d| d.kind) {
-                    // Relies on the daemon checking the instance before the protocol in
-                    // hello: a `protocol` refusal means this is our instance's daemon.
-                    Some(ErrorKind::Protocol) => {}
-                    _ => {
-                        eprintln!("tdo: {}", e.message);
-                        return EXIT_ERROR;
-                    }
-                },
-                Err(e) => {
-                    eprintln!("tdo: {e}");
-                    return EXIT_ERROR;
-                }
-            }
-            let sent: Result<serde_json::Value, _> = raw.caller().call_timeout(
-                "daemon.shutdown",
-                ShutdownParams { when_idle: true },
-                twydo_daemon::client::HELLO_TIMEOUT,
-            );
-            drop(raw);
-            // A daemon that is already going may close the connection before its reply is
-            // written: that is the answer, too.
-            if let Err(e) = sent
-                && !matches!(e, twydo_daemon::client::ClientError::Closed)
-            {
-                eprintln!("tdo: {e}");
-                return EXIT_ERROR;
-            }
-            if client::wait_gone(&target.socket, client::STOP_WAIT) {
+        DaemonCommand::Stop => match stop(&target) {
+            Ok(false) => {
+                println!("no daemon is running");
                 0
-            } else {
-                eprintln!("tdo: the daemon is still busy; it stops when its job is done");
+            }
+            Ok(true) => 0,
+            Err(e) => {
+                eprintln!("tdo: {e}");
                 EXIT_ERROR
             }
+        },
+        DaemonCommand::Install { exe } => {
+            let mgr = service::manager(Platform::current());
+            super::service::install(&target, exe.as_deref(), mgr.as_ref())
         }
+        DaemonCommand::Uninstall => {
+            let mgr = service::manager(Platform::current());
+            super::service::uninstall(&target, mgr.as_ref())
+        }
+        DaemonCommand::Status => {
+            let mgr = service::manager(Platform::current());
+            super::service::status(&target, mgr.as_ref())
+        }
+        DaemonCommand::Schema => {
+            match serde_json::to_string_pretty(&twydo_daemon::schema::document()) {
+                Ok(t) => {
+                    println!("{t}");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("tdo: {e}");
+                    EXIT_ERROR
+                }
+            }
+        }
+    }
+}
+
+/// `tdo daemon stop`: through the service manager when a unit is installed (it would restart
+/// a daemon that merely exited), else [`stop_detached`]. `Ok(false)`: none was running.
+pub fn stop(target: &Target) -> Result<bool, String> {
+    let unit = service::unit_for_current(&target.socket);
+    if !unit.file.exists() {
+        return stop_detached(target);
+    }
+    let was_running = match client::probe(target) {
+        client::Probe::WrongInstance(m) => return Err(m),
+        client::Probe::NotRunning => false,
+        client::Probe::Running(_) => true,
+    };
+    // The manager is told to stop even when nothing answers: the unit may be between restarts
+    // (RestartSec, launchd throttling, startup before the socket binds).
+    let mgr = service::manager(Platform::current());
+    let failed = mgr.stop(&unit).err();
+    if (failed.is_none() || !was_running)
+        && client::wait_gone(&target.socket, Duration::from_millis(500))
+    {
+        return Ok(was_running);
+    }
+    // The manager stopped nothing, or failed (launchd with the agent not loaded): the daemon
+    // was started outside the unit (detached).
+    let stopped = stop_detached(target);
+    match (failed, stopped) {
+        // Report the manager's error only while a daemon still answers.
+        (Some(e), Ok(false) | Err(_)) if !client::wait_gone(&target.socket, Duration::ZERO) => {
+            Err(format!("cannot stop {}: {e}", unit.name))
+        }
+        (Some(_), Ok(_)) => Ok(true),
+        (_, r) => r,
+    }
+}
+
+/// Asks the daemon on `target`'s socket to stop once idle and waits until it is gone.
+/// `Ok(false)`: none was running. Hello comes first, so another instance's daemon on this
+/// socket is never stopped; a protocol mismatch still stops (`daemon.shutdown` is frozen
+/// across protocols).
+pub fn stop_detached(target: &Target) -> Result<bool, String> {
+    let hello = client::hello_params(target, "tdo", None).map_err(|e| e.to_string())?;
+    let raw = match Client::connect_raw(&target.socket) {
+        Ok(c) => c,
+        Err(ClientError::Io(e))
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(e) => return Err(e.to_string()),
+    };
+    // `daemon.shutdown` goes on this very connection, after its hello was checked.
+    match raw.hello_on(hello) {
+        Ok(_) => {}
+        Err(ClientError::Rpc(e)) => match e.data.as_ref().map(|d| d.kind) {
+            // Relies on the daemon checking the instance before the protocol in hello: a
+            // `protocol` refusal means this is our instance's daemon.
+            Some(ErrorKind::Protocol) => {}
+            _ => return Err(e.message),
+        },
+        Err(e) => return Err(e.to_string()),
+    }
+    let sent: Result<serde_json::Value, _> = raw.caller().call_timeout(
+        "daemon.shutdown",
+        ShutdownParams { when_idle: true },
+        twydo_daemon::client::HELLO_TIMEOUT,
+    );
+    drop(raw);
+    // A daemon that is already going may close the connection before its reply is written:
+    // that is the answer, too.
+    if let Err(e) = sent
+        && !matches!(e, ClientError::Closed)
+    {
+        return Err(e.to_string());
+    }
+    if client::wait_gone(&target.socket, client::STOP_WAIT) {
+        Ok(true)
+    } else {
+        Err("the daemon is still busy; it stops when its job is done".to_string())
     }
 }
 

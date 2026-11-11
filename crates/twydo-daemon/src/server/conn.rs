@@ -153,11 +153,22 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
             let state = Arc::clone(&state);
             let tx = tx.clone();
             move || {
-                let shutdown = is_shutdown(&req.method, req.params.as_ref());
+                let (shutdown, refused) = match is_shutdown(&req.method, req.params.as_ref()) {
+                    Some(Ok(p)) => (Some(p), None),
+                    Some(Err(e)) => (None, Some(e)),
+                    None => (None, None),
+                };
                 // A panicking handler answers `internal`; the connection goes on.
                 let method = req.method.clone();
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     shared.test_point(&format!("request:{method}"));
+                    if let Some(e) = refused {
+                        return Err(e);
+                    }
+                    // With `when_idle`, new jobs are refused from here on, before the reply.
+                    if shutdown.as_ref().is_some_and(|p| p.when_idle) {
+                        shared.runner.set_closing();
+                    }
                     dispatch(&shared, &state, &method, req.params)
                 }))
                 .unwrap_or_else(|p| {
@@ -177,8 +188,8 @@ pub fn serve(shared: &Arc<Shared>, id: u64, stream: UnixStream) {
                     );
                 }
                 match shutdown {
-                    Some(false) if ok => shared.stop_after_reply(),
-                    Some(true) if ok => shared.stop_when_idle(),
+                    Some(p) if ok && p.when_idle => shared.stop_when_idle(),
+                    Some(_) if ok => shared.stop_after_reply(),
                     _ => {}
                 }
             }

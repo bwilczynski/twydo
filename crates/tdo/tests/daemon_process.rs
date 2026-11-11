@@ -783,3 +783,37 @@ fn stop_sends_shutdown_on_the_connection_whose_hello_was_refused() {
         vec![(0, "hello".to_string()), (0, "daemon.shutdown".to_string())]
     );
 }
+
+#[test]
+fn upgrade_accepts_a_daemon_restarted_by_the_manager() {
+    let env = TestEnv::new("");
+    let old = env.in_process_daemon(Some("0.0.1"));
+    let before = old.epoch().to_string();
+    // The service manager: starts a new daemon on the same socket as soon as the old one
+    // exits, before the client sees the socket go.
+    let socket = env.socket();
+    let mut cmd = env.tdo_cmd();
+    cmd.args(["daemon", "--detach"]);
+    let watcher = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while twydo_daemon::client::Client::connect_raw(&socket).is_ok() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "old daemon never left"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(cmd.status().unwrap().success());
+    });
+    let started = std::time::Instant::now();
+    let (code, epoch, err) = ping(&mut env.tdo_cmd());
+    watcher.join().unwrap();
+    assert_eq!(code, Some(0), "{err}");
+    assert!(!err.contains("still busy"), "{err}");
+    assert_ne!(epoch, before);
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}

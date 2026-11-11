@@ -12,6 +12,7 @@ use twydo_core::config::Config;
 use twydo_daemon::paths;
 
 use super::Target;
+use crate::service;
 
 /// `$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`: where a detached daemon's stderr goes.
 pub fn log_path(socket: &Path) -> PathBuf {
@@ -31,6 +32,45 @@ pub fn open_log(socket: &Path) -> io::Result<File> {
         .append(true)
         .mode(0o600)
         .open(path)
+}
+
+/// What the service manager last said when it failed to start the daemon in this process, for
+/// the final "no daemon answered" message.
+static MANAGER_ERROR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The manager's error left by [`start`], if any (not cleared).
+pub fn manager_error() -> Option<String> {
+    MANAGER_ERROR.lock().ok().and_then(|g| g.clone())
+}
+
+/// `journalctl --user -u <unit>` when the daemon is meant to run under a systemd unit that
+/// started without error: its stderr goes to the journal, not to the log [`LogMark`] reads.
+pub fn journal_hint(t: &Target) -> Option<String> {
+    let unit = service::unit_for_current(&t.socket);
+    (unit.platform == service::Platform::Systemd && unit.file.exists() && manager_error().is_none())
+        .then(|| format!("journalctl --user -u {}", unit.name))
+}
+
+/// Starts the daemon for `t`: through the service manager when a unit is installed for its
+/// socket, else (or when the manager fails; its error is kept, see [`manager_error`]) with
+/// [`detached`].
+pub fn start(t: &Target) -> io::Result<()> {
+    if let Ok(mut g) = MANAGER_ERROR.lock() {
+        *g = None;
+    }
+    let unit = service::unit_for_current(&t.socket);
+    if unit.file.exists() {
+        let mgr = service::manager(service::Platform::current());
+        match mgr.start(&unit) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if let Ok(mut g) = MANAGER_ERROR.lock() {
+                    *g = Some(e.to_string());
+                }
+            }
+        }
+    }
+    detached(t)
 }
 
 /// Runs `tdo daemon --detach` for `t` and waits for it to return (it exits as soon as the
