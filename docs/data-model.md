@@ -24,7 +24,7 @@ files Twydo writes are named `<uid>.ics`; existing files keep whatever name they
 ## A task as 2Do writes it
 
 This is a project item created on the iPhone, from the synthetic test fixtures
-(`fixtures/phase0/v1/plan6-list1/01-create`):
+(`fixtures/complete/family-lifecycle/create/list1`):
 
 ```
 BEGIN:VCALENDAR

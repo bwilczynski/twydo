@@ -1,5 +1,5 @@
 //! Operations on a checklist or project: like 2Do, they act on the whole family
-//! (`docs/reference/phase0/plan6-baseline.md` H5–H9). Each writes the parent and its children in one
+//! (see `complete/family-lifecycle` and `move/family-destination`). Each writes the family in one
 //! journal entry: creates first, then updates, then removes. `uids` is the parent, then
 //! every UID the op created or touched. Every loaded member the op does not write is held:
 //! the entry is refused unless its file still holds the loaded bytes.
