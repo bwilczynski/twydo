@@ -61,7 +61,7 @@ has the bounded exception described [below](#item-reordering), because the phone
 offer the reorder operation. A write counts as
 verified once Twydo's own result was also checked on the iPhone: read back correctly, and edited
 again (the `twydo_to_iphone` and `iphone_to_twydo` columns). The results are recorded in
-[`compat/matrix.toml`](../compat/matrix.toml), which is built into `tdo`. Many writes have a
+[`compat/matrix.toml`](../compat/matrix.toml), which is built into `tdo` and owned by the daemon. Many writes have a
 baseline but are not verified yet.
 
 By default (`[writes] mode = "verified"`), Twydo runs **only** writes the matrix marks as passing,
@@ -107,7 +107,8 @@ Task titles and parse-error paths are omitted unless `--verbose` is supplied; ta
 are never printed by this report. Exit 0 means a report was produced, even with refused
 actions or individual parse errors. Exit 2 means a configuration, invocation or vdir-read
 failure. An explicit `--matrix` that cannot be loaded is an error; without it, the matrix
-built into the binary is used.
+built into the binary is used. The daemon loads the file for that one report only; the
+matrix that governs writes is the one built into the daemon.
 
 For one task, `tdo op check <uid>` uses the same probes and reports `allowed`,
 `refused` with a reason, `inapplicable`, or `needs input`. It does not treat a title

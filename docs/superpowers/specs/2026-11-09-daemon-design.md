@@ -227,8 +227,7 @@ the live previews of the date and repeat grammars, and computing views.
   open (the task and configuration types inside the snapshot) gain values only with a new
   generation.
 - `rpc.discover` on a running daemon and `tdo daemon schema` print the same document
-  *(builder decision, plan 3: `tdo daemon schema` is not built yet; use `rpc.discover` or the
-  file)*.
+  *(builder decision, plan 4: `tdo daemon schema` is built and needs no daemon)*.
 - A real break needs a new **protocol generation** (an integer, starting at 1), chosen on
   purpose.
 
@@ -685,6 +684,14 @@ detached daemon already holds the lock. With the unit installed, the daemon runs
 from login, so syncs and reminders happen with no terminal open. A systemd socket unit is
 optional and the builder's call. The TUI shows `daemon restarted` once when the epoch
 changes, so a crash does not go unnoticed.
+
+*(Builder decisions, plan 4.)* launchd cannot exclude one exit code from `KeepAlive`, so a
+daemon that loses the lock to another is restarted every 10 seconds (launchd's throttle) until it
+wins or the unit is removed; `install` stops a detached daemon first, so this happens only in a
+race. The unit names the `tdo` by a stable path: the first `tdo` on `PATH`, else mise's shim,
+that has no `/installs/` component (`mise activate` puts the versioned install directory on
+`PATH`); with none left, `install` refuses and `--exe` overrides. `TimeoutStopSec` and launchd's
+`ExitTimeOut` are 90 seconds.
 
 ### 10.3 Upgrades
 

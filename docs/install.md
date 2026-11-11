@@ -77,13 +77,67 @@ regenerate it into an empty folder to start over.
 
 ## The daemon
 
-`tdo` starts its daemon the first time it needs it (the TUI, `tdo op`, `tdo sync`,
-`tdo conflicts resolve`), in the background; it keeps running when you close the TUI, syncs, and
-is started again on demand. Its log is `$XDG_STATE_HOME/twydo/daemon-<id>.log`. After upgrading
-`tdo` or changing `timezone`, `vdir` or `[sync]` in the config, run `tdo daemon stop`; the next
-`tdo` starts a new one. A service unit that starts it at login comes in a later release.
-Setups that must not share the usual daemon (a test setup) set `TWYDO_SOCKET` next to
-`XDG_CONFIG_HOME`. For writing your own client, see [protocol.md](protocol.md).
+`tdo` starts its daemon the first time it needs it (the TUI, `tdo op`, `tdo sync`, `tdo check`,
+`tdo export-json`, `tdo status`, `tdo conflicts`), in the background; it keeps running when you
+close the TUI, syncs, and is started again on demand. Its log is
+`$XDG_STATE_HOME/twydo/daemon-<id>.log`. Setups that must not share the usual daemon (a test
+setup) set `TWYDO_SOCKET` next to `XDG_CONFIG_HOME`. For writing your own client, see
+[protocol.md](protocol.md).
+
+### Start it at login
+
+A daemon started on demand is detached: it keeps syncing after you close the TUI, until you stop
+it, it crashes or the machine reboots. A service unit starts it at login and restarts it after a
+failure. `tdo daemon install` needs a configuration (a config file or `--vdir`) and writes that
+login service:
+
+```sh
+tdo daemon install
+tdo daemon status
+```
+
+- **Linux:** a systemd user unit, `~/.config/systemd/user/twydo.service` (under
+  `$XDG_CONFIG_HOME` when that is set), enabled and started with `systemctl --user`. A setup
+  with its own `TWYDO_SOCKET` gets its own unit, `twydo-<socket-id>.service`.
+- **macOS:** a launchd agent, `~/Library/LaunchAgents/app.twydo.daemon.plist` (with a
+  `.<socket-id>` suffix for another socket), bootstrapped into your login session. macOS is not
+  tested yet.
+
+The unit runs `tdo daemon`, passing `--vdir` and `--socket` where they are not the defaults, and
+sets `PATH` (the daemon runs vdirsyncer and the conflict hook) and the `XDG_*` directories you
+have set. It restarts the daemon when it exits, one second later. A daemon that exits because
+another one already serves the vdir is not restarted under systemd (exit status 10); launchd
+cannot exclude one exit code, so there a losing daemon is retried every 10 seconds until it wins
+or the unit is removed. `install` stops a detached daemon first, so that only happens in a race.
+A stop waits up to 90 seconds for the daemon to finish. Reference copies of both units are in
+`contrib/`.
+
+`tdo` must have a path that survives upgrades. `install` looks for it on `PATH`, then at
+`${MISE_DATA_DIR:-~/.local/share/mise}/shims/tdo`, and skips mise's versioned install directories,
+which disappear on `mise up`. If it finds only such a path it refuses: run `mise reshim`, or pass
+`--exe <path>`. Running `install` again rewrites the unit (after the path moved, say) and says it
+was already installed. If it finds the old `twydo-sync.timer` (or the macOS `app.twydo.sync`
+agent), it disables it and says so; the files stay where they are.
+
+With a unit installed, a `tdo` that finds no daemon starts it through the service manager, and
+`tdo daemon stop` stops it through the manager too, at once (the manager would otherwise bring it
+straight back); a daemon that still answers afterwards, because it was started detached, is asked
+to stop once idle. Without a unit, `tdo daemon stop` asks the daemon to stop once it is idle and
+waits until it is gone, and prints `no daemon is running` when nothing runs.
+
+While no unit is installed, the TUI says once per run `daemon won't start at login; run tdo
+daemon install`. Turn that off with `[daemon] unit_warning = false` ([config.md](config.md#daemon)).
+
+`tdo daemon status` says whether the unit is installed and enabled and whether a daemon answers.
+`tdo daemon uninstall` stops the daemon, disables the unit and removes its file; the daemon then
+starts on demand again.
+
+### After an upgrade
+
+After upgrading `tdo` (`mise up`) the old daemon keeps running until the next `tdo` that is newer
+than it asks it to stop once it is idle and starts its own version, through the unit when there
+is one. After changing `timezone`, `vdir`, `[writes]` or `[sync]` in the config, run
+`tdo daemon stop`; the next `tdo` (or the unit's restart) starts a new daemon.
 
 ## Where Twydo keeps things
 
@@ -99,4 +153,5 @@ Setups that must not share the usual daemon (a test setup) set `TWYDO_SOCKET` ne
 `tdo op` makes the same changes as the TUI from the command line (`add`, `edit`, `complete`,
 `reopen`, `delete`, `move`, `undo`, and `check` to see what is allowed for a task). It prints the
 operation id and exits 0; 1 means the operation was refused, stale or stuck (the reason on
-stderr); 2 is a usage, config or IO error. `tdo export-json` dumps every task as JSON.
+stderr); 2 is a usage, config or IO error. `tdo export-json` dumps every task as JSON (the vdir as the daemon last read it, without
+edits still queued behind a sync).

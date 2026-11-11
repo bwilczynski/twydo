@@ -64,9 +64,20 @@ reconnects when it is back and says `daemon restarted`.
   operations. It syncs at startup, every 60 s, after edits (in batches), after a recorded
   conflict choice, when automatic sync is switched on and after the machine wakes
   ([sync.md](sync.md#when-edits-sync)).
-- **What still reads files directly.** `tdo check`, `export-json`, `status`, `conflicts`,
-  `conflicts show` and `tdo op check` read the vdir and state themselves, as before. They
-  work without the daemon.
+- **Nothing else reads files.** No client opens the vdir, the state directory or the
+  configuration. The read-only commands are methods too: `check.report` (the text of `tdo check`
+  and `tdo op check`, from the snapshot with queued edits applied), `export` (the schema-v1
+  document, from the vdir as last read, without queued edits), `conflicts.show` (the fields of
+  the local, remote and current copies and their file paths) and `status.get`, `snapshot.get` and
+  `conflicts.list` for `tdo status`. When a read-only command cannot reach a daemon because the
+  vdir is missing or the configuration is invalid, the error comes from the daemon start
+  (`daemon not running: …`) with exit 2.
+- **Starting it.** A client that finds no daemon starts it. With a service unit installed
+  (`tdo daemon install`) it asks the service manager (`systemctl --user start`, or `launchctl
+  bootstrap` and `kickstart`), and falls back to a detached start if that fails. Without a unit
+  it starts a detached daemon. See [install.md](install.md#start-it-at-login).
+- **Outside changes.** The daemon's file watcher notices files changed behind its back (a
+  vdirsyncer run, a hand edit), so a change shows up after a short delay.
 - **Upgrades.** A client that is newer than the running daemon asks it to stop once it is
   idle and starts its own version. A client that is older than the daemon says
   `tdo was upgraded; restart it`.
@@ -381,9 +392,7 @@ applied writes are skipped, applying an entry twice has the same effect as apply
 
 ### Recovery
 
-Recovery runs in the daemon at startup, before every sync, and before every write. The
-commands that still read the vdir themselves (`export-json`, `check`, `op check`) run it at
-their start too:
+Recovery runs in the daemon at startup, before every sync, and before every write, and nowhere else:
 
 - with no journal directory, it does nothing and creates nothing;
 - otherwise, under the exclusive lock, every `prepared` entry is rolled forward and marked
