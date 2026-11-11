@@ -6,7 +6,7 @@ use chrono::Utc;
 use common::{Fixture, TestDaemon, kind};
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
-use twydo_daemon::protocol::reports::{CheckReport, CheckReportParams};
+use twydo_daemon::protocol::reports::{CheckReport, CheckReportParams, ExportResult};
 use twydo_daemon::protocol::rpc::ErrorKind;
 use twydo_daemon::server::lane::LongKind;
 use twydo_daemon::server::permissions::{probes, task_lines};
@@ -149,4 +149,111 @@ fn check_report_counts_queued_edits() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     drop(job);
+}
+
+fn export(c: &twydo_daemon::client::Client) -> ExportResult {
+    c.call("export", serde_json::json!({})).unwrap()
+}
+
+#[test]
+fn export_matches_schema_v1() {
+    let fx = fx();
+    fx.write(
+        "a/own.ics",
+        &ics("own", "X-2DOAPP-TYPE:0\r\nX-2DOAPP-STAR:1\r\n"),
+    );
+    fx.write("a/displayname", "A");
+    fx.write("a/color", "#102030");
+    let td = TestDaemon::start(&fx);
+    let r = export(&td.client());
+    assert_eq!(r.skipped, 0);
+    let d = &r.document;
+    assert_eq!(d["schema"], 1);
+    let cols: Vec<&str> = d["collections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    let mut sorted = cols.clone();
+    sorted.sort();
+    assert_eq!(cols, sorted);
+    assert!(cols.contains(&"a") && cols.contains(&"c"), "{cols:?}");
+    let a = d["collections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "a")
+        .unwrap();
+    assert_eq!(a["color"], "#102030");
+    assert_eq!(a["display_name"], "A");
+    let keys: Vec<(String, String)> = d["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            (
+                t["collection"].as_str().unwrap().into(),
+                t["uid"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    let mut sorted = keys.clone();
+    sorted.sort();
+    assert_eq!(keys, sorted);
+    assert_eq!(keys.len(), 3);
+    let own = d["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["uid"] == "own")
+        .unwrap();
+    assert_eq!(
+        own["x2do_props"],
+        serde_json::json!(["X-2DOAPP-STAR", "X-2DOAPP-TYPE"])
+    );
+}
+
+#[test]
+fn export_ignores_queued_edits() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let job = td.handle().hold_long(LongKind::Test);
+    let r = common::submit(&c, common::edit_title("weekly", "Edited")).unwrap();
+    assert_eq!(
+        r.outcome,
+        twydo_daemon::protocol::methods::WriteOutcome::Queued
+    );
+    // The published (planning) view shows the edit; the export does not.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let snap: twydo_daemon::protocol::wire::WireSnapshot =
+            c.call("snapshot.get", serde_json::json!({})).unwrap();
+        if snap.tasks.iter().any(|t| t.task.summary == "Edited") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "edit never shown");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let doc = export(&c).document;
+    let titles: Vec<&str> = doc["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["summary"].as_str().unwrap())
+        .collect();
+    assert!(titles.contains(&"Synthetic weekly"), "{titles:?}");
+    assert!(!titles.contains(&"Edited"), "{titles:?}");
+    drop(job);
+}
+
+#[test]
+fn export_counts_unparseable_files() {
+    let fx = fx();
+    fx.write("c/broken.ics", "this is not a calendar\r\n");
+    let td = TestDaemon::start(&fx);
+    let r = export(&td.client());
+    assert_eq!(r.skipped, 1);
+    assert_eq!(r.document["tasks"].as_array().unwrap().len(), 2);
 }

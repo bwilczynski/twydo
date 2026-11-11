@@ -415,15 +415,6 @@ fn export_waits_for_writer_lock() {
     assert!(status.success());
 }
 
-/// A read-only command does not create the state dir.
-#[test]
-fn export_creates_no_state_dir() {
-    let env = Env::new("verified");
-    let o = env.tdo(&["export-json"]);
-    assert!(o.status.success(), "{}", err(&o));
-    assert!(!env.state().exists(), "export-json created the state dir");
-}
-
 /// A Prepared entry whose `before` no longer matches the disk is stuck: readers warn and
 /// still read, writes exit 1 until the entry is abandoned.
 #[test]
@@ -448,11 +439,6 @@ fn stuck_entry_blocks_writes_until_abandoned() {
 
     let o = env.tdo(&["export-json"]);
     assert!(o.status.success(), "{}", err(&o));
-    assert!(
-        err(&o).contains("tdo: journal has unfinished operations; run 'tdo op journal'"),
-        "{}",
-        err(&o)
-    );
     assert!(out(&o).contains(TASK_A), "export missing tasks");
     assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
 

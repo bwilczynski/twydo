@@ -66,10 +66,15 @@ mod gate {
 
     #[test]
     fn export_json_sample() {
-        let o = tdo_cfg(
-            &["--vdir", sample(), "export-json"],
-            Some("vdir = \"/nonexistent/overridden\"\ntimezone = \"America/New_York\"\n"),
-        );
+        let env = sample_env();
+        let cfg = env.config_dir().join("twydo");
+        std::fs::create_dir_all(&cfg).unwrap();
+        std::fs::write(
+            cfg.join("config.toml"),
+            "vdir = \"/nonexistent/overridden\"\ntimezone = \"America/New_York\"\n",
+        )
+        .unwrap();
+        let o = env.tdo(&["export-json"]);
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
         let v: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
         assert_eq!(v["schema"], 1);
@@ -206,8 +211,18 @@ mod gate {
 
     #[test]
     fn config_supplies_vdir_and_timezone() {
-        let cfg = format!("vdir = \"{}\"\ntimezone = \"Asia/Tokyo\"\n", sample());
-        let o = tdo_cfg(&["export-json"], Some(&cfg));
+        let env = crate::common::TestEnv::new("");
+        let sample = root().join(sample());
+        std::fs::write(
+            env.config_path(),
+            format!(
+                "vdir = \"{}\"\nstate_dir = \"{}\"\ntimezone = \"Asia/Tokyo\"\n[writes]\nmode = \"test\"\n",
+                sample.display(),
+                env.root.path().join("state").display()
+            ),
+        )
+        .unwrap();
+        let o = env.tdo_cmd().arg("export-json").output().unwrap();
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
         let v: serde_json::Value = serde_json::from_str(&stdout(&o)).unwrap();
         let t = v["tasks"]

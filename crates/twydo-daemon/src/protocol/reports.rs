@@ -26,3 +26,14 @@ pub struct CheckReport {
     pub lines: Vec<String>,
     pub warnings: Vec<String>,
 }
+
+/// What `export` answers: the schema v1 document `tdo export-json` prints, and how many
+/// resources the read could not parse.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExportResult {
+    /// Resources that failed to parse and are missing from `document`.
+    pub skipped: usize,
+    /// Schema v1, as read by tools/reconcile.py.
+    #[schemars(description = "schema v1, as read by tools/reconcile.py")]
+    pub document: serde_json::Value,
+}
