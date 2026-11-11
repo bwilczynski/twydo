@@ -210,3 +210,13 @@ session corpus and historical session documents have been removed. Technical
 
 The final committed diff is available for terminal review. Integration remains a
 separate user decision; the branch and worktree are preserved.
+
+
+### Release ownership correction
+
+The user confirmed that release-plz owns version and changelog updates. The
+manual Cargo.toml/Cargo.lock 0.2.0 bump and CHANGELOG.md additions were removed.
+The breaking conventional commit and PR title remain the release signal; the
+release PR will apply the next version and generate its changelog. The earlier
+0.2.0 binary check describes the pre-correction build; this feature branch now
+keeps the current released version until the automated release PR is merged.
