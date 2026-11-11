@@ -51,6 +51,9 @@ enum Command {
         /// Apply an emptied list to both sides (collection id or display name)
         #[arg(long, value_name = "LIST")]
         force_delete: Vec<String>,
+        /// Find lists created on another device (local folders only), then sync
+        #[arg(long, conflicts_with_all = ["switch", "background"])]
+        discover: bool,
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
@@ -148,6 +151,7 @@ fn main() {
             background,
             when_due,
             force_delete,
+            discover,
         } => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
@@ -156,6 +160,7 @@ fn main() {
                 background,
                 when_due,
                 &force_delete,
+                discover,
             ))
         }
         Command::Status => {

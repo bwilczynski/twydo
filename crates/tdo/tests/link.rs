@@ -425,6 +425,7 @@ fn a_sync_through_the_link_reports_its_message() {
     until(&link, |u| matches!(u, Update::Status(_)).then_some(()));
     link.send(Command::Sync {
         force_delete: Vec::new(),
+        discover: false,
     });
     let done = until(&link, |u| match u {
         Update::SyncDone(m) => Some(m),

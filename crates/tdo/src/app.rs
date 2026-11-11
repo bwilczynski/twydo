@@ -81,9 +81,10 @@ const NUMBERED_VIEWS: [View; 5] = [
 pub enum Outcome {
     Continue,
     Quit,
-    /// Run `tdo sync`, with `--force-delete <list>` when given.
+    /// Run `tdo sync`, with `--force-delete <list>` when given, or `--discover`.
     Sync {
         force_delete: Option<String>,
+        discover: bool,
     },
     /// Switch automatic sync on (`true`) or off.
     SyncSwitch(bool),
@@ -1440,9 +1441,19 @@ impl App {
                     self.message = Some("usage: :sync! <list>".into());
                 } else {
                     let force_delete = (cmd == "sync!").then(|| arg.to_string());
-                    return Outcome::Sync { force_delete };
+                    return Outcome::Sync {
+                        force_delete,
+                        discover: false,
+                    };
                 }
             }
+            "discover" if arg.is_empty() => {
+                return Outcome::Sync {
+                    force_delete: None,
+                    discover: true,
+                };
+            }
+            "discover" => self.message = Some("usage: :discover".into()),
             "conflicts" => self.show_conflicts = !self.show_conflicts,
             "forget-list" => self.forget_command(arg),
             "lists" if arg.is_empty() => self.manage_lists(),

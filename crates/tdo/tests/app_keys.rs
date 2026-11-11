@@ -327,9 +327,26 @@ fn sync_command_returns_sync_outcome() {
     let mut a = app();
     assert_eq!(
         run_cmd(&mut a, ":sync"),
-        Outcome::Sync { force_delete: None }
+        Outcome::Sync {
+            force_delete: None,
+            discover: false
+        }
     );
     assert_eq!(a.mode, Mode::Normal);
+}
+
+#[test]
+fn discover_command_syncs_with_discovery() {
+    let mut a = app();
+    assert_eq!(
+        run_cmd(&mut a, ":discover"),
+        Outcome::Sync {
+            force_delete: None,
+            discover: true
+        }
+    );
+    assert_eq!(run_cmd(&mut a, ":discover x"), Outcome::Continue);
+    assert_eq!(a.message.as_deref(), Some("usage: :discover"));
 }
 
 #[test]
@@ -347,7 +364,8 @@ fn sync_bang_passes_list() {
     assert_eq!(
         run_cmd(&mut a, ":sync! Groceries"),
         Outcome::Sync {
-            force_delete: Some("Groceries".into())
+            force_delete: Some("Groceries".into()),
+            discover: false
         }
     );
     assert_eq!(run_cmd(&mut a, ":sync!"), Outcome::Continue);

@@ -440,6 +440,35 @@ mod sync {
     }
 
     #[test]
+    fn discover_flag_conflicts_with_switch_and_background() {
+        let fx = Fx::with_fake(|_| "exit 0".into());
+        let o = fx.tdo(&["sync", "--discover", "on"]);
+        assert_eq!(o.status.code(), Some(2));
+        assert!(stderr(&o).contains("cannot be used with"), "{}", stderr(&o));
+        let o = fx.tdo(&["sync", "--discover", "--background"]);
+        assert_eq!(o.status.code(), Some(2));
+    }
+
+    /// `--discover` asks the daemon to discover first: the test pair is not a CalDAV pair,
+    /// so the helper refuses, which makes the run a problem (exit 1) while the ordinary
+    /// sync still runs. A plain `tdo sync` never discovers.
+    #[test]
+    fn discover_flag_sends_discovery_and_plain_sync_does_not() {
+        let fx = Fx::with_fake(|fx| format!("echo \"$@\" >> '{}'", fx.path("args.txt").display()));
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let o = fx.tdo(&["sync", "--discover"]);
+        assert_eq!(o.status.code(), Some(1), "{}", stderr(&o));
+        assert!(stderr(&o).contains("discover"), "{}", stderr(&o));
+        assert_eq!(
+            fs::read_to_string(fx.path("args.txt")).unwrap(),
+            "sync twydo\nsync twydo\n"
+        );
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(out.contains("discovery error: "), "{out}");
+    }
+
+    #[test]
     fn sync_off_and_on_switch_automatic_sync() {
         let fx = Fx::with_fake(|fx| format!("touch '{}'", fx.path("marker").display()));
         let o = fx.tdo(&["sync", "off"]);

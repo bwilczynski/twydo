@@ -225,6 +225,59 @@ The record of a list is only as good as the last sync that wrote it:
   only at the end of its update. A sync that is killed, fails, or cannot write the file (it warns)
   leaves no record, so the next one forces nothing.
 
+## New lists from other devices
+
+A list created on another device (the phone) is picked up by discovery. Run
+`vdirsyncer discover <pair>` by hand only once, at setup; after that Twydo discovers for you.
+Discovery runs at these points only:
+
+- once after the daemon starts: it leaves a `sync/discover` marker, and the first sync that
+  gets past the skip checks (timer, batch, manual or the startup sync itself) discovers and then
+  removes the marker, whether the discovery succeeded or failed, so a broken helper is not
+  retried on every sync. A discovery that was stopped learned nothing and keeps the marker; one that timed out
+  is retried once more (the marker remembers it), so a hanging discovery does not cost a full
+  timeout on every sync. A startup sync skipped by backoff, or while automatic sync is off,
+  therefore does not lose it;
+- on request: `tdo sync --discover` or `:discover` in the TUI. These discover, then sync,
+  and report like `tdo sync`. `--discover` cannot be combined with `on`/`off` or `--background`;
+- after `:forget-list`, as part of the recovery below.
+
+Ordinary syncs (timer, after edits, plain `tdo sync` and `:sync`) do not discover and make no
+extra server request, so a new phone list appears after the next daemon start or `:discover`.
+
+Discovery only creates local folders. A collection that exists on the server and not locally
+is adopted: the same run syncs and metasyncs it, so it arrives with its tasks, name and color,
+and the sync note says `found new list "<name>"`. A collection missing on the server is never
+created there, because a local folder without a server counterpart usually means the list was
+deleted on the phone. Discovery runs through Twydo's bundled helper, not the plain
+`vdirsyncer discover` command, which cannot tell the two cases apart.
+
+A local list whose server collection is gone (deleted on the phone, not yet forgotten) stops
+discovery, as vdirsyncer does, so no new list is adopted in that run. The report names the
+list and its collection id and gives the `:forget-list <id>` command; see
+[Deleted lists and recovery](#deleted-lists-and-recovery). Ordinary sync continues. Discovery
+reports one deleted list at a time, because each deletion must be confirmed separately; after
+you forget one, the next discovery reports the next.
+
+The discovery helper runs under the sync run: it is recorded in `sync/running.json`, holds the
+shared vdir lock (inherited from the run, so it outlives even a killed daemon) for as long as
+it runs, and is killed with its process group when the sync is stopped (`tdo sync stop`, a write
+that stops it, or the daemon shutting down after its grace period) or times out. If discovery
+fails, the folders it had already created are removed again (only while empty), by the helper
+itself or, when it was killed before it could (stopped, timed out, a signal), by the sync run, so no list is half adopted.
+
+A failed discovery (server unreachable, a pair layout the helper refuses, a stale list,
+timeout) keeps the previous cached collection set. With `tdo sync --discover` it counts as a
+problem: the ordinary sync still runs, but the exit code is 1. At daemon startup it is only
+a warning on the startup sync. A helper that cannot run at all (the `[sync].list_python`
+interpreter does not start, or vdirsyncer is not importable from it) is likewise only a
+warning, and is not saved, when the discovery was not requested (the startup marker and the
+`:forget-list` recovery); `tdo sync --discover` reports and saves it. Any other failure is saved in
+`sync/status.json` (`discovery_error`) and shown as `discovery error:` in `tdo status` and in
+the TUI's `:errors` report until a later discovery succeeds; runs that do not discover leave
+it alone. A list removed with `:forget-list` that still exists on the server is adopted again
+by the next discovery.
+
 ## Deleted lists and recovery
 
 Deleting a collection in 2Do can leave it in vdirsyncer's cached list set, so later syncs
@@ -239,11 +292,15 @@ unsynced journal evidence, and both versions of recorded conflicts outside the s
 before removing the local folder. Cancelling or a changed confirmation snapshot writes
 nothing. Other lists' pending work remains active; archived work is not marked synced.
 
-The next sync first runs the ordinary `vdirsyncer discover <pair>`, with the configured
+The next sync first runs the local-only discovery described in
+[New lists from other devices](#new-lists-from-other-devices). When it succeeds it has refreshed
+the cached collection set itself, so the request is cleared and the plain command is skipped.
+When it fails or cannot run (a warning), the ordinary `vdirsyncer discover <pair>` runs, with the configured
 executable/configuration, timeout, and lock protection. It never automatically answers yes
 to creation prompts. This refreshes the cached collection set before sync and metasync.
 A discovery failure keeps the backup and discovery request, reports the failure, and blocks
-ordinary sync until discovery succeeds. If several lists were removed remotely, forgetting
+ordinary sync until discovery succeeds. Lists the helper adopted already have local folders,
+so a new phone list no longer makes this discovery fail. If several lists were removed remotely, forgetting
 one can leave discovery blocked on another. The last Not Found reports for remaining local
 lists stay available in `:errors` and the `:forget-list` chooser; remote missing-collection
 diagnostics from discovery add new reports. Retired lists leave that report, and a later
@@ -374,7 +431,7 @@ read; do not edit them while a sync runs.
 | `sync/off` | exists while automatic sync is off (`tdo sync off`); see [When edits sync](#when-edits-sync) |
 | `sync/rediscover` | a confirmed list retirement requires ordinary discovery before another sync; removed only when discovery succeeds |
 | `retired/<id>/` | permanent local-list backup, journal/conflict evidence, and recovery operation; see [deleted lists and recovery](#deleted-lists-and-recovery) |
-| `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
+| `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, `discovery_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
 | `sync/running.json` | exists while vdirsyncer runs (and after a killed daemon, until the next daemon start reaps it): `runner_pid`, `runner_start`, `child_pgid` (vdirsyncer's process group, `null` between calls), `child_start`, `started` |

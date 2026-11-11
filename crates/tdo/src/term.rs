@@ -229,8 +229,12 @@ fn outcome(app: &mut App, session: &mut Session, o: Outcome) -> Flow {
         Outcome::Quit => return Flow::Quit,
         Outcome::EditNotes(notes) => return Flow::EditNotes(notes),
         // `sync.run` waits its turn behind a running job, so nothing is refused here.
-        Outcome::Sync { force_delete } => link.send(Command::Sync {
+        Outcome::Sync {
+            force_delete,
+            discover,
+        } => link.send(Command::Sync {
             force_delete: force_delete.into_iter().collect(),
+            discover,
         }),
         Outcome::SyncSwitch(on) => link.send(Command::SetAuto(on)),
         Outcome::Resolve { id, keep } => link.send(Command::Resolve {
