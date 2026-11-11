@@ -1,5 +1,5 @@
 //! Edits of a checklist's or project's members, as the 2Do iPhone app writes them when the
-//! parent changes (`complete/family-lifecycle`, `move/family-destination`; `docs/reference/phase0/plan6-baseline.md`).
+//! parent changes (operation cases `complete/family-lifecycle` and `move/family-destination`).
 //!
 //! A member points at its parent with `RELATED-TO:<parent UID>` and JSON `parentuid`.
 //! - Completing the parent completes every open member at the parent's completion time; a

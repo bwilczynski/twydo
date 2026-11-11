@@ -2,7 +2,7 @@
 //! modifiers `after done`, `until <date>` and `10 times` (spec 2026-11-03 §3.5).
 //!
 //! `parse` is a pure function of its arguments so the same grammar can serve natural-language
-//! input later. The encodings follow what 2Do itself writes (`docs/reference/phase0/plan7-capture.md`)
+//! input later. The encodings follow what 2Do itself writes (`set-repeat/phone-encodings`)
 //! and, where the phone cannot create a shape, the port mapping in `01-features.md` §6.
 
 use std::str::FromStr;
