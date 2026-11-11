@@ -40,11 +40,11 @@ fn matrix() -> Matrix {
 
 fn setup(kind: TaskKind) -> (Env, Store, String, Vec<String>) {
     let scene = if kind == TaskKind::Checklist {
-        "issue35-checklist-order"
+        "insert/checklist-items"
     } else {
-        "issue35-project-order"
+        "insert/project-items"
     };
-    let env = Env::new(WriteMode::Verified, &format!("{scene}/000-created"));
+    let env = Env::new(WriteMode::Verified, &format!("{scene}/created/list1"));
     let store = env.store(matrix());
     let s = env.snap();
     let p = s
@@ -608,12 +608,12 @@ fn recurring_checklist_and_project_reorder_preserves_every_other_field() {
     for (fixture, parent) in [
         (format!("{SCENARIO}/{SET}"), FC),
         (
-            "plan6-list1/04-reopen-child".into(),
+            "complete/family-lifecycle/reopen-child/list1".into(),
             "8f603cfaa41f4c229b9adcd6223e7393",
         ),
         // A project with an independently repeating child uses the same field write.
         (
-            "plan6-list1/04-reopen-child".into(),
+            "complete/family-lifecycle/reopen-child/list1".into(),
             "09c49c2cd76f483498fc2ff3a0f66160",
         ),
     ] {
@@ -846,11 +846,11 @@ fn explicit_order_materializes_integer_ranks_including_invalid_first_position() 
 
 #[test]
 fn captured_reorder_ranks_override_creation_and_title_without_changing_task_semantics() {
-    let env = Env::new(WriteMode::Verified, "issue41-item-reorder/000-seeded");
+    let env = Env::new(WriteMode::Verified, "reorder/family-items/seeded/list1");
     let before = env.snap();
-    for step in ["015-parent-stamp", "020-twydo-reordered"] {
+    for step in ["parent-stamp/list1", "twydo-reordered/list1"] {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/issue41-item-reorder")
+            .join("../../fixtures/reorder/family-items")
             .join(step);
         for e in fs::read_dir(dir).unwrap() {
             let path = e.unwrap().path();
@@ -908,9 +908,9 @@ fn captured_reorder_ranks_override_creation_and_title_without_changing_task_sema
         displayed,
         ["Mike", "Zulu", "Alpha", "Mike", "Zulu", "Alpha"]
     );
-    for step in ["040-manual-display", "050-phone-rename"] {
+    for step in ["manual-display/list1", "phone-rename/list1"] {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/issue41-item-reorder")
+            .join("../../fixtures/reorder/family-items")
             .join(step);
         for e in fs::read_dir(dir).unwrap() {
             let path = e.unwrap().path();
@@ -946,16 +946,16 @@ fn captured_reorder_ranks_override_creation_and_title_without_changing_task_sema
 
 #[test]
 fn captured_anchored_insertions_keep_positions_after_phone_renames_and_later_reorders() {
-    let env = Env::new(WriteMode::Verified, "issue41-item-reorder/000-seeded");
+    let env = Env::new(WriteMode::Verified, "reorder/family-items/seeded/list1");
     for step in [
-        "015-parent-stamp",
-        "020-twydo-reordered",
-        "040-manual-display",
-        "050-phone-rename",
-        "060-twydo-inserted",
+        "parent-stamp/list1",
+        "twydo-reordered/list1",
+        "manual-display/list1",
+        "phone-rename/list1",
+        "twydo-inserted/list1",
     ] {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/issue41-item-reorder")
+            .join("../../fixtures/reorder/family-items")
             .join(step);
         for e in fs::read_dir(dir).unwrap() {
             let p = e.unwrap().path();
@@ -967,7 +967,7 @@ fn captured_anchored_insertions_keep_positions_after_phone_renames_and_later_reo
     let inserted = env.snap();
     assert_eq!(inserted.tasks.len(), 12);
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename");
+        .join("../../fixtures/reorder/family-items/phone-insertion-rename/list1");
     for e in fs::read_dir(dir).unwrap() {
         let p = e.unwrap().path();
         if p.extension().is_some_and(|e| e == "ics") {

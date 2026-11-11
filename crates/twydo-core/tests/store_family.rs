@@ -1,6 +1,6 @@
 //! The store on a checklist or project: completing, reopening, moving or deleting the parent
 //! writes the whole family in one journal entry, as 2Do does (`docs/reference/phase0/plan6-baseline.md`
-//! H5–H9), against a tempdir copy of the iPhone capture `plan6-list1/04-reopen-child`.
+//! H5–H9), against a tempdir copy of the iPhone capture `complete/family-lifecycle/reopen-child/list1`.
 
 mod common;
 
@@ -19,9 +19,9 @@ use twydo_core::store::{Store, WriteError};
 
 use common::{Env, Line, fixture, is_stamp, lines, sorted, stamp, with_completed_now};
 
-const FIXTURE: &str = "plan6-list1/04-reopen-child";
-const L1: &str = "plan6-list1";
-const AFTER: &str = "05-complete-parent";
+const FIXTURE: &str = "complete/family-lifecycle/reopen-child/list1";
+const L1: &str = "complete/family-lifecycle";
+const AFTER: &str = "complete-parent/list1";
 
 const K: &str = "a8dcf93bcaa14211a07481eb87af8f11";
 const K1B: &str = "28ae80e7369d40feaba54fe228eda2c6";
@@ -427,7 +427,7 @@ fn verified_undo_of_recurring_project_completion_needs_its_edge_case() {
 
 // Plan 6 Task 7 round 01: checklist C dated Dec 10, its items carrying the same date; the
 // phone moved C to Dec 11 and removed c1–c3's own dates.
-const T1: &str = "plan6-twydo-list1";
+const T1: &str = "create/family-roundtrip";
 const C: &str = "c05c77f7a0bc42d79f32d95ebf519ea3";
 const C_ITEMS: [&str; 3] = [
     "f2bcae42b8f84b37b48c18b7f89c5ac0",
@@ -436,7 +436,7 @@ const C_ITEMS: [&str; 3] = [
 ];
 
 fn dated_checklist() -> (Env, Store) {
-    let env = Env::new(WriteMode::Test, "plan6-twydo-list1/00-setup");
+    let env = Env::new(WriteMode::Test, "create/family-roundtrip/setup/list1");
     let mut cases = CASES.to_vec();
     cases.push("date-only");
     let store = env.store(common::matrix(&cases, "unverified", &[]));
@@ -467,7 +467,7 @@ fn checklist_date_change_drops_item_dates_like_2do() {
     let (env, mut store) = dated_checklist();
     let id = store.apply(&env.snap(), &new_date(), now()).unwrap();
     for uid in std::iter::once(C).chain(C_ITEMS) {
-        let want = fixture(T1, "01-phone-edit", uid);
+        let want = fixture(T1, "initial-phone-edit/list1", uid);
         assert_eq!(
             content(&fs::read(env.file(uid)).unwrap()),
             content(&want),
@@ -507,12 +507,15 @@ fn checklist_date_change_refused_when_item_changed() {
 }
 
 // Plan 8 FCa: a recurring monthly checklist whose items carry the inherited Dec 10 date
-// (`plan8-tui-a/010-first-phone-actions`). The phone's completion reset in `020` removes the
+// (`complete/checklist-and-until/first-phone-actions/list1`). The phone's completion reset in `020` removes the
 // live items' inherited dates; a checklist due edit uses the same cleanup writer.
 const FC: &str = "61ed74be3ba34212ab7476b698de1263";
 
 fn recurring_checklist_env(step: &str) -> (Env, Store) {
-    let env = Env::new(WriteMode::Verified, &format!("plan8-tui-a/{step}"));
+    let env = Env::new(
+        WriteMode::Verified,
+        &format!("complete/checklist-and-until/{step}"),
+    );
     let store = env.store(Matrix::embedded().clone());
     (env, store)
 }
@@ -538,7 +541,7 @@ fn without_dates(bytes: &[u8], names: &[&str]) -> Vec<Line> {
 
 #[test]
 fn checklist_due_capability_changes_parent_and_cleans_inherited_items() {
-    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let (env, mut store) = recurring_checklist_env("first-phone-actions/list1");
     let snap = env.snap();
     let p = snap.find(FC).unwrap();
     let children: Vec<String> = snap
@@ -628,7 +631,7 @@ fn checklist_due_capability_changes_parent_and_cleans_inherited_items() {
 #[test]
 fn checklist_due_capability_handles_empty_and_undated_checklists() {
     // Empty: only the parent resource is written.
-    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let (env, mut store) = recurring_checklist_env("first-phone-actions/list1");
     let snap = env.snap();
     for &c in snap.children(snap.find(FC).unwrap()) {
         fs::remove_file(&snap.tasks[c].path).unwrap();
@@ -651,7 +654,7 @@ fn checklist_due_capability_handles_empty_and_undated_checklists() {
     // Undated items: the parent moves and item bytes stay exactly as loaded.
     let e = Env::new(
         WriteMode::Verified,
-        "plan8-checklist-b/011-phone-items-and-text",
+        "complete/checklist-reset/phone-items-and-text/list1",
     );
     let mut store = e.store(Matrix::embedded().clone());
     let initial = e.snap();
@@ -701,7 +704,7 @@ fn checklist_due_capability_handles_empty_and_undated_checklists() {
 
 #[test]
 fn checklist_due_capability_refuses_neighbors_atomically() {
-    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let (env, mut store) = recurring_checklist_env("first-phone-actions/list1");
     let before = env.files();
     for (why, op) in [
         ("day 29", due(FC, 2026, 12, 29)),
@@ -723,7 +726,7 @@ fn checklist_due_capability_refuses_neighbors_atomically() {
     }
 
     // A child changed after load: the store refuses without touching the parent.
-    let (env, mut store) = recurring_checklist_env("010-first-phone-actions");
+    let (env, mut store) = recurring_checklist_env("first-phone-actions/list1");
     let snap = env.snap();
     let child = snap.tasks[snap.children(snap.find(FC).unwrap())[0]]
         .uid
@@ -827,7 +830,7 @@ fn op_on_empty_parent_refused_when_its_first_item_arrives_after_load() {
         let k = snap.find(K).unwrap();
         assert!(snap.children(k).is_empty());
         let item = env.file("0000000000000000000000000000f00d");
-        let text = fixture(L1, "04-reopen-child", K2)
+        let text = fixture(L1, "reopen-child/list1", K2)
             .iter()
             .map(|&b| b as char)
             .collect::<String>()
@@ -855,7 +858,7 @@ fn op_on_plain_task_refused_when_an_item_arrives_after_load() {
         .uid
         .clone();
     let item = env.file("0000000000000000000000000000d00d");
-    let text = String::from_utf8(fixture(L1, "04-reopen-child", K2))
+    let text = String::from_utf8(fixture(L1, "reopen-child/list1", K2))
         .unwrap()
         .replace(K2, "0000000000000000000000000000d00d")
         .replace(K, &l);
@@ -1188,11 +1191,11 @@ mod item_order {
 
     fn setup(kind: TaskKind) -> (Env, Store, String) {
         let scenario = match kind {
-            TaskKind::Checklist => "issue35-checklist-order",
-            TaskKind::Project => "issue35-project-order",
+            TaskKind::Checklist => "insert/checklist-items",
+            TaskKind::Project => "insert/project-items",
             _ => unreachable!(),
         };
-        let env = Env::new(WriteMode::Verified, &format!("{scenario}/000-created"));
+        let env = Env::new(WriteMode::Verified, &format!("{scenario}/created/list1"));
         let store = env.store(Matrix::embedded().clone());
         let parent = env
             .snap()
@@ -1455,7 +1458,7 @@ mod item_order {
     fn recurring_parent_completion_preserves_positions_in_live_and_history_items() {
         for (scenario, parent) in [
             (FIXTURE, R),
-            ("plan8-checklist-b/011d-phone-delete-items", ""),
+            ("complete/checklist-reset/phone-delete-items/list1", ""),
         ] {
             let env = Env::new(WriteMode::Test, scenario);
             let mut store = env.store(Matrix::embedded().clone());
@@ -1687,8 +1690,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn checklist_repeat_removal_matches_capture_and_needs_both_family_repeat_rows() {
-        const BEFORE: &str = "144-phone-removal-and-history-followup";
-        const AFTER: &str = "151-twydo-checklist-repeat-removed";
+        const BEFORE: &str = "phone-removal-and-history-followup/list1";
+        const AFTER: &str = "twydo-checklist-repeat-removed/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = before
@@ -1805,8 +1808,8 @@ mod monthly_checklist_writes {
 
     #[test]
     fn monthly_checklist_creation_conversion_and_member_creation_match_phone() {
-        let evidence = cal("010-phone-create-convert", CHECKLIST_A_UID);
-        let e = env("002-seeded");
+        let evidence = cal("phone-create-convert/list1", CHECKLIST_A_UID);
+        let e = env("seeded/list1");
         let mut store = e.store(Matrix::embedded().clone());
         let op = Op::Create(NewTask {
             kind: TaskKind::Checklist,
@@ -1828,7 +1831,7 @@ mod monthly_checklist_writes {
             &evidence,
             &BTreeMap::from([(uid, CHECKLIST_A_UID.into())]),
         );
-        let evidence = cal("010-phone-create-convert", CHECKLIST_B_UID);
+        let evidence = cal("phone-create-convert/list1", CHECKLIST_B_UID);
         store
             .apply(
                 &e.snap(),
@@ -1859,14 +1862,14 @@ mod monthly_checklist_writes {
             "conversion differs only in explicitly mapped internal parent identity"
         );
 
-        let e = env("010-phone-create-convert");
+        let e = env("phone-create-convert/list1");
         let mut store = e.store(Matrix::embedded().clone());
         let phone = Env::new(
             WriteMode::Verified,
-            &format!("{CHECKLIST_B}/011-phone-items-and-text"),
+            &format!("{CHECKLIST_B}/phone-items-and-text/list1"),
         );
         let phone_uid = member(&phone.snap(), CHECKLIST_B_UID, "q");
-        let evidence = cal("011-phone-items-and-text", &phone_uid);
+        let evidence = cal("phone-items-and-text/list1", &phone_uid);
         store
             .apply(
                 &e.snap(),
@@ -1891,14 +1894,14 @@ mod monthly_checklist_writes {
 
     #[test]
     fn individual_checklist_deletion_matches_phone_and_undo_redo() {
-        let e = env("011-phone-items-and-text");
+        let e = env("phone-items-and-text/list1");
         let mut store = e.store(Matrix::embedded().clone());
         let before = e.files();
         for parent in [CHECKLIST_A_UID, CHECKLIST_B_UID] {
             let uid = member(&e.snap(), parent, "q");
             store.apply(&e.snap(), &Op::Delete { uid }, now()).unwrap();
         }
-        let phone = env("011d-phone-delete-items");
+        let phone = env("phone-delete-items/list1");
         assert_eq!(e.files(), phone.files(), "only deleted bytes differ");
         let after = e.files();
         assert!(
@@ -1917,7 +1920,7 @@ mod monthly_checklist_writes {
     #[test]
     fn item_delete_refuses_changed_parent_or_sibling_without_writes() {
         for change in ["parent", "sibling", "missing-sibling", "new-sibling"] {
-            let e = env("011-phone-items-and-text");
+            let e = env("phone-items-and-text/list1");
             let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
@@ -1952,10 +1955,10 @@ mod monthly_checklist_writes {
     }
     #[test]
     fn checklist_text_edits_match_phone_and_mixed_schedule_save_is_atomic() {
-        let e = env("010-phone-create-convert");
+        let e = env("phone-create-convert/list1");
         let mut store = e.store(Matrix::embedded().clone());
         for (uid, title) in [(CHECKLIST_A_UID, "A"), (CHECKLIST_B_UID, "B")] {
-            let want = cal("011-phone-items-and-text", uid);
+            let want = cal("phone-items-and-text/list1", uid);
             let before = e.files();
             store
                 .apply(
@@ -1999,14 +2002,14 @@ mod monthly_checklist_writes {
     fn checklist_completion_after_deletion_matches_phone_history_and_reset() {
         for (from, to, parents, total) in [
             (
-                "011d-phone-delete-items",
-                "012-phone-family-complete",
+                "phone-delete-items/list1",
+                "phone-family-complete/list1",
                 [CHECKLIST_A_UID, CHECKLIST_B_UID],
                 9,
             ),
             (
-                "028-phone-writer-note-followup",
-                "029-phone-second-family-reset",
+                "phone-writer-note-followup/list1",
+                "phone-second-family-reset/list1",
                 ["55180c631f304b44be543382c0b85b94", "twydo-p8-c29-d"],
                 20,
             ),
@@ -2090,7 +2093,7 @@ mod monthly_checklist_writes {
 
     #[test]
     fn checklist_delete_recovery_reuses_record_and_undo_preserves_remote_edit() {
-        let e = env("011-phone-items-and-text");
+        let e = env("phone-items-and-text/list1");
         let mut store = e.store(Matrix::embedded().clone());
         let before = e.files();
         let uid = member(&e.snap(), CHECKLIST_A_UID, "q");
@@ -2100,7 +2103,7 @@ mod monthly_checklist_writes {
         let after = e.files();
         let mut entry = e.journal().pop().unwrap();
         entry.stage = Stage::Prepared;
-        let recovering = env("011-phone-items-and-text");
+        let recovering = env("phone-items-and-text/list1");
         drop(recovering.store(Matrix::embedded().clone()));
         Journal::open(&recovering.state)
             .unwrap()
@@ -2125,7 +2128,7 @@ mod monthly_checklist_writes {
             "redo-sibling-removed",
             "recover-parent-changed",
         ] {
-            let e = env("011-phone-items-and-text");
+            let e = env("phone-items-and-text/list1");
             let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
@@ -2184,7 +2187,7 @@ mod monthly_checklist_writes {
     fn checklist_item_text_edits_hold_the_parent_for_edit_and_save() {
         for grouped in [false, true] {
             for removed in [false, true] {
-                let e = env("011-phone-items-and-text");
+                let e = env("phone-items-and-text/list1");
                 let mut store = e.store(Matrix::embedded().clone());
                 let snap = e.snap();
                 let uid = member(&snap, CHECKLIST_A_UID, "z");
@@ -2221,7 +2224,7 @@ mod monthly_checklist_writes {
     #[test]
     fn deletion_inverses_refuse_new_family_members_without_writes() {
         for redo in [false, true] {
-            let e = env("011-phone-items-and-text");
+            let e = env("phone-items-and-text/list1");
             let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
@@ -2256,7 +2259,7 @@ mod monthly_checklist_writes {
     #[test]
     fn deletion_recovery_refuses_new_family_members_before_or_after_removal() {
         for removed in [false, true] {
-            let e = env("011-phone-items-and-text");
+            let e = env("phone-items-and-text/list1");
             let mut store = e.store(Matrix::embedded().clone());
             let snap = e.snap();
             let uid = member(&snap, CHECKLIST_A_UID, "q");
@@ -2284,7 +2287,7 @@ mod monthly_checklist_writes {
 
     #[test]
     fn deletion_inverses_and_recovery_allow_unrelated_new_resources() {
-        let e = env("011-phone-items-and-text");
+        let e = env("phone-items-and-text/list1");
         let mut store = e.store(Matrix::embedded().clone());
         let snap = e.snap();
         let uid = member(&snap, CHECKLIST_A_UID, "q");
@@ -2506,7 +2509,10 @@ fn individual_item_deletion_preserves_opaque_content_and_unexecuted_schedules() 
 
 #[test]
 fn individual_history_item_deletion_keeps_live_family_and_other_history_untouched() {
-    let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let e = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/complete-parent/list1",
+    );
     let mut store = e.store(common::item_deletion::matrix("pass"));
     let before = e.files();
     let mut after = before.clone();
@@ -2676,7 +2682,7 @@ fn checklist_schedule_stale_members_refuse_atomically() {
     use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
     for queued in [false, true] {
         for mutation in ["new", "changed", "removed"] {
-            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            let (e, mut store) = recurring_checklist_env("first-phone-actions/list1");
             let snapshot = e.snap();
             let op = due(FC, 2026, 12, 11);
             let lock = queued.then(|| VdirLock::exclusive(&e.state).unwrap());
@@ -2724,7 +2730,7 @@ fn checklist_schedule_stale_members_refuse_atomically() {
 #[test]
 fn checklist_schedule_inverse_and_recovery_keep_dates_consistent() {
     for interruption in [0, 1, 3] {
-        let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+        let (e, mut store) = recurring_checklist_env("first-phone-actions/list1");
         let before = e.files();
         let id = store
             .apply(&e.snap(), &due(FC, 2026, 12, 11), now())
@@ -2760,7 +2766,7 @@ fn checklist_schedule_inverse_and_recovery_keep_dates_consistent() {
         "recover-partial",
         "remote-child",
     ] {
-        let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+        let (e, mut store) = recurring_checklist_env("first-phone-actions/list1");
         let id = store
             .apply(&e.snap(), &due(FC, 2026, 12, 11), now())
             .unwrap();
@@ -2817,7 +2823,7 @@ fn checklist_interval_capability_cli_and_card_are_equivalent() {
     use twydo_core::compat::Verdict;
     let mut outputs = Vec::new();
     for card in [false, true] {
-        let (e, _) = recurring_checklist_env("010-first-phone-actions");
+        let (e, _) = recurring_checklist_env("first-phone-actions/list1");
         let mut matrix = Matrix::embedded().clone();
         let row = matrix
             .operation
@@ -2898,7 +2904,7 @@ fn checklist_schedule_json_only_members_block_apply_queue_inverse_and_recovery()
             "recover-before",
             "recover-partial",
         ] {
-            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            let (e, mut store) = recurring_checklist_env("first-phone-actions/list1");
             if internal_alias {
                 let snapshot = e.snap();
                 let parent = snapshot.find(FC).unwrap();
@@ -3013,7 +3019,7 @@ fn checklist_due_capability_refuses_ambiguous_source_dates_and_alarms() {
             "duplicate-meta",
             "unreadable-alarm",
         ] {
-            let (e, mut store) = recurring_checklist_env("010-first-phone-actions");
+            let (e, mut store) = recurring_checklist_env("first-phone-actions/list1");
             let snapshot = e.snap();
             let p = snapshot.find(FC).unwrap();
             let i = if parent { p } else { snapshot.children(p)[0] };
@@ -3085,18 +3091,24 @@ mod capability_deletion {
     fn checklist_env() -> Env {
         Env::new(
             WriteMode::Verified,
-            "plan8-checklist-b/011-phone-items-and-text",
+            "complete/checklist-reset/phone-items-and-text/list1",
         )
     }
 
     fn history() -> Env {
-        Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent")
+        Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        )
     }
 
     #[test]
     fn capability_delete_removes_only_selected_resource_or_flat_family() {
         // Standalone weekly resource.
-        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/edit/list1",
+        );
         weekly(&e, E);
         let before = e.files();
         let mut store = e.store(Matrix::embedded().clone());
@@ -3155,7 +3167,7 @@ mod capability_deletion {
         // Completed flat project and checklist families.
         let e = Env::new(
             WriteMode::Verified,
-            "issue27-items/020-phone-complete-project",
+            "delete/family-items/phone-complete-project/list1",
         );
         let before = e.files();
         let mut store = e.store(Matrix::embedded().clone());
@@ -3439,7 +3451,10 @@ mod json_family_membership {
     }
 
     fn env() -> Env {
-        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/edit/list1",
+        );
         fs::write(e.file(HEAD), resource(HEAD, None, None)).unwrap();
         fs::write(
             e.file("synthetic-valid-child"),
@@ -3644,7 +3659,10 @@ mod json_family_membership {
 
 #[test]
 fn history_family_capability_matches_h7() {
-    let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let env = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/complete-parent/list1",
+    );
     // No ordinary family or scheduling operation rows are required by this write set.
     assert!(
         twydo_core::gate::check(
@@ -3667,7 +3685,7 @@ fn history_family_capability_matches_h7() {
         same_lines(
             uid,
             lines(&parse(&after[&key(uid)]).unwrap()),
-            lines(&parse(&fixture(L1, "06-reopen-parent", uid)).unwrap()),
+            lines(&parse(&fixture(L1, "reopen-parent/list1", uid)).unwrap()),
         );
     }
     for (path, bytes) in &before {
@@ -3697,7 +3715,10 @@ fn history_family_capability_refuses_unsafe_relationships() {
         "json-only",
         "active-repeat",
     ] {
-        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let mut snap = env.snap();
         let p = snap.find(R_COPY).unwrap();
         let c = snap.find(R1_COPY).unwrap();
@@ -3753,8 +3774,11 @@ fn history_family_capability_refuses_unsafe_relationships() {
 
 #[test]
 fn history_item_capability_keeps_parent_policy() {
-    for step in ["05-complete-parent", "06-reopen-parent"] {
-        let env = Env::new(WriteMode::Verified, &format!("plan6-list1/{step}"));
+    for step in ["complete-parent/list1", "reopen-parent/list1"] {
+        let env = Env::new(
+            WriteMode::Verified,
+            &format!("complete/family-lifecycle/{step}"),
+        );
         let mut snap = env.snap();
         let child = snap.find(R1_COPY).unwrap();
         snap.tasks[child].status = twydo_core::model::Status::Completed;
@@ -3776,7 +3800,10 @@ fn history_item_capability_keeps_parent_policy() {
 #[test]
 fn history_reopen_stale_family_and_inverse_refuse() {
     for action in ["apply", "undo", "redo", "recover"] {
-        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let mut store = env.store(Matrix::embedded().clone());
         let snap = env.snap();
         let op = Op::Reopen { uid: R_COPY.into() };
@@ -3793,7 +3820,7 @@ fn history_reopen_stale_family_and_inverse_refuse() {
             Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
         }
         // A new member is a dependency even when all recorded writes still match.
-        let text = String::from_utf8(fixture(L1, "05-complete-parent", R1_COPY))
+        let text = String::from_utf8(fixture(L1, "complete-parent/list1", R1_COPY))
             .unwrap()
             .replace(R1_COPY, "synthetic-new-history-child");
         fs::write(env.file("synthetic-new-history-child"), text).unwrap();
@@ -3814,7 +3841,10 @@ fn history_reopen_stale_family_and_inverse_refuse() {
 
 #[test]
 fn history_reopen_queue_and_recovery_are_idempotent() {
-    let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let env = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/complete-parent/list1",
+    );
     let mut store = env.store(Matrix::embedded().clone());
     let before = env.files();
     let lock = twydo_core::store::fsio::VdirLock::exclusive(&env.state).unwrap();
@@ -3846,7 +3876,10 @@ fn history_reopen_queue_and_recovery_are_idempotent() {
     ));
     let after = env.files();
     let mut entry = env.journal().remove(0);
-    let recovering = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+    let recovering = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/complete-parent/list1",
+    );
     drop(recovering.store(Matrix::embedded().clone()));
     entry.stage = Stage::Prepared;
     entry.from_queue = None;
@@ -3876,7 +3909,10 @@ fn history_reopen_queue_and_recovery_are_idempotent() {
 #[test]
 fn history_family_preserves_open_cancelled_members_and_schedule_variants() {
     for kind in [1, 2] {
-        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let mut parent = parse(&fs::read(env.file(R_COPY)).unwrap()).unwrap();
         let component = parent
             .root
@@ -3943,7 +3979,10 @@ fn history_family_preserves_open_cancelled_members_and_schedule_variants() {
 #[test]
 fn history_reopen_queue_refuses_changed_removed_and_joined_members() {
     for change in ["changed", "removed", "joined"] {
-        let env = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let mut store = env.store(Matrix::embedded().clone());
         let lock = twydo_core::store::fsio::VdirLock::exclusive(&env.state).unwrap();
         store

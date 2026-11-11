@@ -1,5 +1,0 @@
-scenario = "issue27-items"
-step = "038-twydo-upload"
-device = "twydo"
-action = "Scoped upload of six representative child deletions and pb completion; eight parents retained and seven journal entries confirmed synced."
-captured_at = "2026-11-07T14:51:57Z"

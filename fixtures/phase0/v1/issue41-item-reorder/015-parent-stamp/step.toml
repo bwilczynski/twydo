@@ -1,7 +1,0 @@
-scenario = "issue41-item-reorder"
-step = "015-parent-stamp"
-device = "iphone"
-action = "Before the approved reorder, stale dependency check stopped with no writes. Fresh scoped capture found only project parent DTSTAMP/LAST-MODIFIED changed; all task fields/metadata and all children unchanged. Fresh offline candidate regenerated, preserving this parent."
-base_step = "010-phone-baseline"
-unchanged_files = ["2a01813b8ed34b9ebe0a83fa0bcb339b.ics", "3873be9bf6d64de590d591cc787044bb.ics", "25606a40735741cba229db38d41f40c7.ics", "42d75a3f97c0457dbb65648803cddca9.ics", "72e7cd12fd744219aef31707cc158978.ics", "03fff855c20b4ddd960f0a594036aae7.ics", "7a038ef0c3114b2b8e0757be9b1d3d34.ics"]
-captured_at = "2026-11-06T22:19:17.551958+00:00"

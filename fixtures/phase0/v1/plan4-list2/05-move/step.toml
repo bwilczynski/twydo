@@ -1,5 +1,0 @@
-scenario = "plan4-list2"
-step = "05-move"
-device = "iphone"
-action = "A2 move to list2; B remove due date; E live (due 2027-01-10) move to list2"
-captured_at = "2026-11-01T14:17:04Z"

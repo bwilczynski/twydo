@@ -1,5 +1,0 @@
-scenario = "plan4-list2"
-step = "04-reopen"
-device = "iphone"
-action = "A2 reopen; B due->2026-12-05; C delete; D delete; E reopen the completed history copy"
-captured_at = "2026-11-01T14:15:18Z"

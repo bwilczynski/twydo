@@ -1859,8 +1859,8 @@ const QA: &str = "0a04f22aeb294b719633c978fe1975e5";
 
 /// Copies the synthetic plan 4 tasks into `c1` and lets the drain's gate pass (test mode).
 fn seed_tasks(fx: &mut Fx) {
-    let src =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1/plan4-list1/02-edit");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/complete/standalone-lifecycle/edit/list1");
     for e in fs::read_dir(src).unwrap() {
         let p = e.unwrap().path();
         if p.extension().is_some_and(|x| x == "ics") {

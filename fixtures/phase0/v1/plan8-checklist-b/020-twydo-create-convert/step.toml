@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "020-twydo-create-convert"
-device = "twydo"
-action = "B-only candidate writer barrier convert-d. Earlier baseline resources unchanged except intended d conversion; no shipping verdict promotion."
-captured_at = "2026-11-05T09:44:59Z"

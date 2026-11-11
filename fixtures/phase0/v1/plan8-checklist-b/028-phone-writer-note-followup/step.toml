@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "028-phone-writer-note-followup"
-device = "iphone"
-action = "Phone inspects Twydo-created/converted C/D monthly checklists due Jan10 with open z/no q, then changes parent notes x to z. Only C/D parent notes, modification stamps and explicitly asserted first-phone-save PRODID/sync decorations change; all other B resources exact."
-captured_at = "2026-11-05T09:48:54Z"

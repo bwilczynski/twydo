@@ -1,5 +1,0 @@
-scenario = "plan7-list1"
-step = "00-seed"
-device = "twydo"
-action = "tdo op add R01-R17,K1,K2; seed_fixture C,c1-c3,P,p1-p3 and P,p1,p2 renamed Q,q1,q2"
-captured_at = "2026-11-03T21:42:05Z"

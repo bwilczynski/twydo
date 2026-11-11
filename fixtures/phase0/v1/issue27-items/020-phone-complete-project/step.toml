@@ -1,5 +1,0 @@
-scenario = "issue27-items"
-step = "020-phone-complete-project"
-device = "iphone"
-action = "Manually complete plain project pa with its already-completed x item, before deleting that last item."
-captured_at = "2026-11-07T14:27:20Z"

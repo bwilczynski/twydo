@@ -1,5 +1,0 @@
-scenario = "twydo-list1"
-step = "07-phone-edit"
-device = "iphone"
-action = "phone: S notes m; Q title Q2"
-captured_at = "2026-11-01T16:02:26Z"

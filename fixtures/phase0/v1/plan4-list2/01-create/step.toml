@@ -1,5 +1,0 @@
-scenario = "plan4-list2"
-step = "01-create"
-device = "iphone"
-action = "create A (due 2026-12-03), B (due 2026-12-03), C (due 2026-12-03 17:30 phone zone), D (start 2026-12-01 due 2026-12-03), E (due 2026-12-10 monthly), F (due 2026-12-15 yearly)"
-captured_at = "2026-11-01T14:06:52Z"

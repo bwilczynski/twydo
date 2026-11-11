@@ -28,7 +28,7 @@ impl Env {
         let dir = tempfile::tempdir().unwrap();
         let vdir = dir.path().join("vdir");
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/plan4-list1/02-edit");
+            .join("../../fixtures/complete/standalone-lifecycle/edit/list1");
         fs::create_dir_all(vdir.join("list1")).unwrap();
         fs::create_dir_all(vdir.join("list2")).unwrap();
         for e in fs::read_dir(&src).unwrap() {
@@ -349,7 +349,7 @@ mod verified_recurrence_tui {
 
     const FC: &str = "61ed74be3ba34212ab7476b698de1263";
     fn env(step: &str) -> Env {
-        env_in("plan8-tui-a", step)
+        env_in("complete/checklist-and-until", step)
     }
     fn env_in(scenario: &str, step: &str) -> Env {
         let e = Env::new();
@@ -357,7 +357,7 @@ mod verified_recurrence_tui {
         fs::remove_dir_all(&list).unwrap();
         fs::create_dir(&list).unwrap();
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1")
+            .join("../../fixtures")
             .join(scenario)
             .join(step);
         for p in fs::read_dir(src).unwrap().map(|p| p.unwrap().path()) {
@@ -411,7 +411,7 @@ mod verified_recurrence_tui {
 
     #[test]
     fn repeat_card_uses_verified_permissions_and_mixed_refusal_keeps_typing() {
-        let e = env("010-first-phone-actions");
+        let e = env("first-phone-actions/list1");
         let w = writer(&e.config());
         let mut a = App::new(
             e.snapshot(),
@@ -459,7 +459,7 @@ mod verified_recurrence_tui {
 
     #[test]
     fn verified_checklist_card_creation_and_conversion_are_usable() {
-        let e = env_in("plan8-checklist-b", "002-seeded");
+        let e = env_in("complete/checklist-reset", "seeded/list1");
         let w = writer(&e.config());
         let mut a = App::new(
             e.snapshot(),
@@ -512,7 +512,7 @@ mod verified_recurrence_tui {
 
     #[test]
     fn text_capability_closed_checklist_card_saves_text_and_keeps_refused_mixed_input() {
-        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
+        let e = env_in("complete/checklist-reset", "phone-items-and-text/list1");
         let uid = "twydo-p8-c29-b";
         let path = e.vdir().join("list1").join(format!("{uid}.ics"));
         let source = fs::read_to_string(&path).unwrap().replace(
@@ -577,8 +577,8 @@ mod verified_recurrence_tui {
 
     #[test]
     fn completed_item_delete_and_undo_go_through_the_writer() {
-        let (step, prefix, child, done) = ("020-phone-complete-project", "p", "x", true);
-        let e = env_in("issue27-items", step);
+        let (step, prefix, child, done) = ("phone-complete-project/list1", "p", "x", true);
+        let e = env_in("delete/family-items", step);
         let parent = format!("twydo-i27-{prefix}-a");
         let uid = format!("{parent}-{child}");
         let before = item_bytes(&e);

@@ -469,7 +469,7 @@ fn check_finishes_permissions_for_a_large_collection() {
     let fx = Fixture::new(&[]);
     let source =
         std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../../fixtures/phase0/v1/plan4-list1/02-edit/0a04f22aeb294b719633c978fe1975e5.ics",
+            "../../fixtures/complete/standalone-lifecycle/edit/list1/0a04f22aeb294b719633c978fe1975e5.ics",
         ))
         .unwrap();
     for n in 0..1000 {
@@ -521,7 +521,7 @@ fn resource_bytes(fx: &Fixture) -> std::collections::BTreeMap<std::path::PathBuf
 fn capture(path: &str) -> Fixture {
     let fx = Fixture::new(&[]);
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(path);
     for file in std::fs::read_dir(source).unwrap() {
         let path = file.unwrap().path();
@@ -625,7 +625,7 @@ fn both_reports_use_the_configured_mode_and_real_gate() {
 #[test]
 fn history_reopen_reports_match_real_gate_without_task_content() {
     use twydo_core::{edit::Op, gate, model::Status, views::Snapshot};
-    let fx = capture("plan6-list1/05-complete-parent");
+    let fx = capture("complete/family-lifecycle/complete-parent/list1");
     let mut cfg = fx.config();
     cfg.timezone = Some("America/New_York".into());
     cfg.writes.mode = WriteMode::Verified;
@@ -709,7 +709,7 @@ fn both_reports_reflect_exact_resource_deletion_without_titles() {
 
 #[test]
 fn both_reports_admit_text_edits_on_closed_recurring_checklists() {
-    let fx = capture("plan8-checklist-b/011-phone-items-and-text");
+    let fx = capture("complete/checklist-reset/phone-items-and-text/list1");
     let uid = "twydo-p8-c29-b";
     let rel = format!("c/{uid}.ics");
     fx.write(

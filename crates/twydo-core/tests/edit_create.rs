@@ -21,7 +21,7 @@ fn reference() -> Calendar {
 
 fn capture(uid: &str) -> Calendar {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan4-list1/01-create")
+        .join("../../fixtures/complete/standalone-lifecycle/create/list1")
         .join(format!("{uid}.ics"));
     parse(&std::fs::read(&p).unwrap()).unwrap()
 }
@@ -160,7 +160,7 @@ fn new_timed_task_matches_2do_with_auto_alarm() {
 
 fn fixture(scenario: &str, step: &str, uid: &str) -> Calendar {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(scenario)
         .join(step)
         .join(format!("{uid}.ics"));
@@ -190,7 +190,7 @@ fn dated(summary: &str, due: NaiveDate) -> NewTask {
     }
 }
 
-const P6: &str = "plan6-list1";
+const P6: &str = "complete/family-lifecycle";
 const PARENT_PROJECT: &str = "09c49c2cd76f483498fc2ff3a0f66160";
 const PARENT_CHECKLIST: &str = "a8dcf93bcaa14211a07481eb87af8f11";
 
@@ -204,7 +204,7 @@ fn creates_a_project_like_the_phone() {
         &t,
         PARENT_PROJECT,
         None,
-        &fixture(P6, "01-create", PARENT_PROJECT),
+        &fixture(P6, "create/list1", PARENT_PROJECT),
     );
 }
 
@@ -218,7 +218,7 @@ fn creates_a_checklist_like_the_phone() {
         &t,
         PARENT_CHECKLIST,
         None,
-        &fixture(P6, "01-create", PARENT_CHECKLIST),
+        &fixture(P6, "create/list1", PARENT_CHECKLIST),
     );
 }
 
@@ -229,7 +229,7 @@ fn creates_a_checklist_item_like_the_phone() {
         parent: Some(PARENT_CHECKLIST.into()),
         ..NewTask::plain("l", "k1")
     };
-    assert_like_phone(&t, uid, None, &fixture(P6, "01-create", uid));
+    assert_like_phone(&t, uid, None, &fixture(P6, "create/list1", uid));
 }
 
 #[test]
@@ -239,7 +239,7 @@ fn creates_a_project_item_like_the_phone() {
         parent: Some(PARENT_PROJECT.into()),
         ..dated("p1", d(2026, 12, 5))
     };
-    assert_like_phone(&t, uid, None, &fixture(P6, "01-create", uid));
+    assert_like_phone(&t, uid, None, &fixture(P6, "create/list1", uid));
 }
 
 #[test]
@@ -263,7 +263,7 @@ fn creates_a_recurring_project_like_the_phone() {
         repeat: Some(repeat_spec("monthly")),
         ..dated("R", d(2026, 12, 15))
     };
-    assert_like_phone(&t, uid, None, &fixture(P6, "01-create", uid));
+    assert_like_phone(&t, uid, None, &fixture(P6, "create/list1", uid));
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn creates_a_repeating_task_like_the_phone_monthly() {
         &t,
         uid,
         None,
-        &fixture("rule-months-day-1-28", "01-create", uid),
+        &fixture("complete/monthly-calendar", "create/list1", uid),
     );
 }
 
@@ -288,7 +288,12 @@ fn creates_a_repeating_task_like_the_phone_yearly() {
         repeat: Some(repeat_spec("yearly")),
         ..dated("Test rule years", d(2026, 11, 15))
     };
-    assert_like_phone(&t, uid, None, &fixture("rule-years", "01-create", uid));
+    assert_like_phone(
+        &t,
+        uid,
+        None,
+        &fixture("complete/yearly-calendar", "create/list1", uid),
+    );
 }
 
 /// No phone create exists for the other classes: a create with a repeat equals a plain create

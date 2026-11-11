@@ -1,5 +1,0 @@
-scenario = "issue27-items"
-step = "001-seeded"
-device = "twydo"
-action = "Seed four representative deletion families and writer twins (20 synthetic resources); no item deletion yet."
-captured_at = "2026-11-07T13:49:07Z"

@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "030-phone-parent-note-return"
-device = "iphone"
-action = "B-only phone return changes C/D parent notes z to x instead of the requested item rename. Only notes/stamps change; children remain titled z. Preserve this state; final planned item rename still pending."
-captured_at = "2026-11-05T10:07:21Z"

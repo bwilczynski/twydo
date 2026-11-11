@@ -1,5 +1,5 @@
 //! Create a task in the layout the 2Do iPhone app writes for a plain task (fixture
-//! `plan4-list1/01-create`). The `X-2DOAPP-SYNC-*` / `AUDIO-DURATION` properties are left out
+//! `complete/standalone-lifecycle/create/list1`). The `X-2DOAPP-SYNC-*` / `AUDIO-DURATION` properties are left out
 //! (meaning unknown). Due, start, `duetime` and the automatic alert of a timed due go
 //! through the same setters as edits.
 

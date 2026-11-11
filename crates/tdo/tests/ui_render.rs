@@ -1082,16 +1082,16 @@ fn details_lines(buf: &Buffer) -> Vec<String> {
 #[test]
 fn details_and_task_list_share_captured_checklist_and_project_item_order() {
     for (scenario, title) in [
-        ("issue35-checklist-order", "Order 35"),
-        ("issue35-project-order", "Project Order 35"),
+        ("insert/checklist-items", "Order 35"),
+        ("insert/project-items", "Project Order 35"),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let list = dir.path().join("test");
         fs::create_dir(&list).unwrap();
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1")
+            .join("../../fixtures")
             .join(scenario);
-        for step in ["000-created", "010-appended"] {
+        for step in ["created/list1", "appended/list1"] {
             for entry in fs::read_dir(root.join(step)).unwrap() {
                 let p = entry.unwrap().path();
                 if p.extension().is_some_and(|ext| ext == "ics") {

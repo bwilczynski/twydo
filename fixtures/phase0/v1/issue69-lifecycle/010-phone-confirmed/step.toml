@@ -1,7 +1,0 @@
-scenario = "issue69-lifecycle"
-step = "010-phone-confirmed"
-device = "iphone"
-action = "User confirmed the helper-created blue lifecycle list, open task and completed task after phone sync. Post-phone server resources remained exact baseline bytes. Done Show all was permitted; no task edits requested."
-captured_at = "2026-11-09T17:20:56.932645+00:00"
-base_step = "000-helper-baseline"
-unchanged_files = ["fa3fa47e19904ec8a1923639afc526bc.ics", "7495a3471e08497d9a08a25eaeeab4e9.ics", "displayname", "color"]

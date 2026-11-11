@@ -1,5 +1,0 @@
-scenario = "twydo-list1"
-step = "09-create-x"
-device = "twydo"
-action = "tdo: add X due 2026-12-03"
-captured_at = "2026-11-01T16:16:21Z"

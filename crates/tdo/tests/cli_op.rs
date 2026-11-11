@@ -26,7 +26,7 @@ impl Env {
         let root = dir.path();
         let vdir = root.join("vdir");
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/plan4-list1/02-edit");
+            .join("../../fixtures/complete/standalone-lifecycle/edit/list1");
         fs::create_dir_all(vdir.join("list1")).unwrap();
         fs::create_dir_all(vdir.join("list2")).unwrap();
         for e in fs::read_dir(&src).unwrap() {
@@ -776,7 +776,7 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     let env = Env::new("verified");
     let uid = "twydo-p8-rfra-fields-p";
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload")
+        .join("../../fixtures/set-due/from-completion/seeded-after-upload/list1")
         .join(format!("{uid}.ics"));
     let target = env.vdir().join(format!("list1/{uid}.ics"));
     fs::copy(source, &target).unwrap();
@@ -1162,7 +1162,7 @@ fn checklist_due_capability_cli_preserves_items_and_refuses_interval_candidate()
     fs::remove_dir_all(&list).unwrap();
     fs::create_dir(&list).unwrap();
     let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions");
+        .join("../../fixtures/complete/checklist-and-until/first-phone-actions/list1");
     for p in fs::read_dir(src).unwrap().map(|e| e.unwrap().path()) {
         if p.extension().is_some_and(|x| x == "ics") {
             fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
@@ -1266,7 +1266,7 @@ fn edit_cli_maps_title_and_notes_on_closed_recurring_checklist() {
     fs::remove_dir_all(&list).unwrap();
     fs::create_dir(&list).unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text");
+        .join("../../fixtures/complete/checklist-reset/phone-items-and-text/list1");
     for path in fs::read_dir(source).unwrap().map(|e| e.unwrap().path()) {
         if path.extension().is_some_and(|e| e == "ics") {
             fs::copy(&path, list.join(path.file_name().unwrap())).unwrap();

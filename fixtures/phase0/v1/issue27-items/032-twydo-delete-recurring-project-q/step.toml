@@ -1,5 +1,0 @@
-scenario = "issue27-items"
-step = "032-twydo-delete-recurring-project-q"
-device = "twydo"
-action = "delete twydo-i27-p-b-q on reserved writer twin; capture exact resource set."
-captured_at = "2026-11-07T14:50:11Z"

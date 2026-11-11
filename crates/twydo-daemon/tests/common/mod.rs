@@ -486,7 +486,7 @@ pub fn count_titled(td: &TestDaemon, title: &str) -> usize {
     n
 }
 
-/// The project family of the phase-0 capture `plan6-list1/04-reopen-child` (synthetic test
+/// The project family of the phase-0 capture `complete/family-lifecycle/reopen-child/list1` (synthetic test
 /// account): project `P` with open items `p1`, `p2`, `p3` and a completed history copy, in
 /// list `list1`.
 pub mod project {
@@ -500,7 +500,7 @@ pub mod project {
     pub fn fixture() -> super::Fixture {
         let fx = super::Fixture::new(&[]);
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1/plan6-list1/04-reopen-child");
+            .join("../../fixtures/complete/family-lifecycle/reopen-child/list1");
         for uid in [P, P1, P2, P3, P3_COPY] {
             let text = std::fs::read_to_string(src.join(format!("{uid}.ics"))).unwrap();
             fx.write(&format!("{LIST}/{uid}.ics"), &text);

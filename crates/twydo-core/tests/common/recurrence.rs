@@ -8,14 +8,14 @@ use std::path::Path;
 use twydo_core::ical::{Calendar, parse};
 use twydo_core::model::meta_edit::MetaJson;
 
-pub const SCENARIO: &str = "plan8-tui-a";
-pub const SEED: &str = "001-after-upload";
-pub const SET: &str = "010-first-phone-actions";
-pub const ADVANCE: &str = "020-boundary-and-checklist-complete";
-pub const END: &str = "030-end-series-and-items";
-pub const REOPEN: &str = "040-reopen-ended-and-complete-parent";
-pub const REMOVE: &str = "050-remove-repeat-and-refinish";
-pub const HISTORY: &str = "060-remove-checklist-repeat-and-history-reopen";
+pub const SCENARIO: &str = "complete/checklist-and-until";
+pub const SEED: &str = "after-upload/list1";
+pub const SET: &str = "first-phone-actions/list1";
+pub const ADVANCE: &str = "boundary-and-checklist-complete/list1";
+pub const END: &str = "end-series-and-items/list1";
+pub const REOPEN: &str = "reopen-ended-and-complete-parent/list1";
+pub const REMOVE: &str = "remove-repeat-and-refinish/list1";
+pub const HISTORY: &str = "remove-checklist-repeat-and-history-reopen/list1";
 pub const FC: &str = "61ed74be3ba34212ab7476b698de1263";
 pub const U1: &str = "91fb1d1636754afda633eb2bda234417";
 pub const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
@@ -28,7 +28,7 @@ pub fn cal(step: &str, uid: &str) -> Calendar {
 
 pub fn step_files(step: &str) -> BTreeMap<String, Calendar> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(SCENARIO)
         .join(step);
     fs::read_dir(dir)
@@ -95,6 +95,6 @@ pub fn preserved_created(before: &Calendar, after: &Calendar) {
 }
 
 /// New evidence for issue 29 is exclusively from capture B.
-pub const CHECKLIST_B: &str = "plan8-checklist-b";
+pub const CHECKLIST_B: &str = "complete/checklist-reset";
 pub const CHECKLIST_A_UID: &str = "12d762a5639e406c8ec865517882f130";
 pub const CHECKLIST_B_UID: &str = "twydo-p8-c29-b";

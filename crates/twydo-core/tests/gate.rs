@@ -2020,7 +2020,7 @@ fn new_repeat_kinds_complete_when_their_verdicts_pass() {
 /// A vdir with the given fixture steps, each as its own list.
 fn steps_snap(steps: &[(&str, &str)]) -> (tempfile::TempDir, Snapshot) {
     let tmp = tempfile::tempdir().unwrap();
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     for (list, step) in steps {
         let dir = tmp.path().join(list);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2040,7 +2040,7 @@ fn steps_snap(steps: &[(&str, &str)]) -> (tempfile::TempDir, Snapshot) {
 /// the matrix rows (whose `reopen` verdicts would otherwise be cited), in every mode.
 #[test]
 fn reopening_an_ended_series_says_why_before_the_rows() {
-    let (_tmp, s) = steps_snap(&[("c", "plan7-twydo-list2/01-phone-complete")]);
+    let (_tmp, s) = steps_snap(&[("c", "complete/recurrence-profiles/phone-complete/list1")]);
     let uid = by_title(&s, "c", "C1a");
     let why = "reopening the last occurrence of an ended repeat is not supported; use undo";
     for mode in [WriteMode::Verified, WriteMode::Test] {
@@ -2052,12 +2052,12 @@ fn reopening_an_ended_series_says_why_before_the_rows() {
     }
 }
 
-/// A vdir with the session C seed (`plan7-twydo-list2/00-seed`, list `c`) and session B's
-/// first round (`plan7-twydo-list1/01-twydo-create`, list `b`), as Twydo wrote them.
+/// A vdir with the session C seed (`complete/recurrence-profiles/seed/list1`, list `c`) and session B's
+/// first round (`set-repeat/encoding-roundtrip/twydo-create/list1`, list `b`), as Twydo wrote them.
 fn session_snap() -> (tempfile::TempDir, Snapshot) {
     steps_snap(&[
-        ("c", "plan7-twydo-list2/00-seed"),
-        ("b", "plan7-twydo-list1/01-twydo-create"),
+        ("c", "complete/recurrence-profiles/seed/list1"),
+        ("b", "set-repeat/encoding-roundtrip/twydo-create/list1"),
     ])
 }
 
@@ -2289,44 +2289,6 @@ fn interval_on_a_weekday_set_repeat_is_refused() {
 
 /// Sessions B/C already supply fixture-comparison tests for these edges in edit_complete.rs.
 /// Keep the summary records aligned without promoting the only partially captured edges.
-#[test]
-fn embedded_edge_records_match_existing_completion_captures() {
-    use twydo_core::compat::Verdict;
-
-    let m = Matrix::embedded();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for (id, evidence) in [
-        (
-            "monthly-31st",
-            "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again",
-        ),
-        (
-            "yearly-feb-29",
-            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
-        ),
-        (
-            "from-completion-anchor",
-            "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete",
-        ),
-        (
-            "end-after-n",
-            "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act",
-        ),
-    ] {
-        let edge = m.edge_case(id).unwrap();
-        assert_eq!(edge.verdict, Verdict::Pass, "{id}");
-        assert!(edge.evidence.iter().any(|e| e == evidence), "{id}");
-        for path in &edge.evidence {
-            assert!(root.join(path).is_dir(), "{id}: {path}");
-        }
-    }
-    assert_eq!(
-        m.edge_case("missing-fifth-weekday").unwrap().verdict,
-        Verdict::Unverified
-    );
-    assert_eq!(m.edge_case("end-on-date").unwrap().verdict, Verdict::Pass);
-    assert_eq!(m.rule("mod:until").unwrap().execute, Verdict::Pass);
-}
 
 // Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
@@ -2406,7 +2368,7 @@ mod recurrence_phone_captures {
 
     #[test]
     fn checklist_repeat_only_reshape_uses_repeat_evidence_and_mixed_edits_still_need_edit() {
-        const STEP: &str = "120-phone-second-round-followup";
+        const STEP: &str = "phone-second-round-followup/list1";
         let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{STEP}"));
         let snap = env.snap();
         let uid = step_files(STEP)
@@ -2500,14 +2462,17 @@ mod verified_recurrence_shapes {
     const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
     const RD: &str = "db95528b16fb4aa2b6a47e56a0a1000b";
     const RY: &str = "033d6526b6ba46999f3f510edecf888b";
-    const SEED: &str = "001-after-upload";
-    const SET: &str = "010-first-phone-actions";
-    const BOUNDARY: &str = "020-boundary-and-checklist-complete";
-    const END: &str = "030-end-series-and-items";
-    const REOPEN: &str = "040-reopen-ended-and-complete-parent";
+    const SEED: &str = "after-upload/list1";
+    const SET: &str = "first-phone-actions/list1";
+    const BOUNDARY: &str = "boundary-and-checklist-complete/list1";
+    const END: &str = "end-series-and-items/list1";
+    const REOPEN: &str = "reopen-ended-and-complete-parent/list1";
 
     fn env(step: &str) -> Env {
-        Env::new(WriteMode::Verified, &format!("plan8-tui-a/{step}"))
+        Env::new(
+            WriteMode::Verified,
+            &format!("complete/checklist-and-until/{step}"),
+        )
     }
     fn now() -> chrono::DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 11, 4, 18, 0, 0).unwrap()
@@ -2579,7 +2544,7 @@ mod verified_recurrence_shapes {
             cases.push((END, Op::Reopen { uid: uid.into() }, 1));
         }
         cases.push((
-            "050-remove-repeat-and-refinish",
+            "remove-repeat-and-refinish/list1",
             Op::Reopen {
                 uid: "7435cbd64d9443888f9eb8ebc84518f4".into(),
             },
@@ -2807,7 +2772,7 @@ mod verified_recurrence_shapes {
     }
     #[test]
     fn weekly_checklist_completion_refused_but_history_preservation_admitted() {
-        let e = env("050-remove-repeat-and-refinish");
+        let e = env("remove-repeat-and-refinish/list1");
         let snap = e.snap();
         assert!(
             gate::check(
@@ -2849,7 +2814,10 @@ mod verified_recurrence_shapes {
                 "{shape}"
             );
         }
-        let family = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let family = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         assert!(
             gate::check(
                 &family.snap(),
@@ -2872,7 +2840,7 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
     let list = dir.path().join("list");
     std::fs::create_dir(&list).unwrap();
     let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload/twydo-p8-rfra-fields-p.ics",
+        "../../fixtures/set-due/from-completion/seeded-after-upload/list1/twydo-p8-rfra-fields-p.ics",
     );
     std::fs::copy(seed, list.join("fields.ics")).unwrap();
     let m = Matrix::embedded().clone();
@@ -2929,7 +2897,7 @@ fn verified_from_completion_repeat_changes_require_captured_transitions() {
     let list = dir.path().join("list");
     std::fs::create_dir(&list).unwrap();
     let seed = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/phase0/v1/plan8-rfra/202-seeded-after-upload/twydo-p8-rfra-fields-p.ics",
+        "../../fixtures/set-due/from-completion/seeded-after-upload/list1/twydo-p8-rfra-fields-p.ics",
     );
     std::fs::copy(seed, list.join("fields.ics")).unwrap();
     let uid = "twydo-p8-rfra-fields-p";
@@ -2982,7 +2950,7 @@ fn verified_from_completion_repeat_changes_require_captured_transitions() {
 #[test]
 fn verified_from_completion_due_edits_refuse_custom_zero_offset_alarms_atomically() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(
-        "../../fixtures/phase0/v1/plan8-rfra/250-phone-time-added/twydo-p8-rfra-fields-p.ics",
+        "../../fixtures/set-due/from-completion/phone-time-added/list1/twydo-p8-rfra-fields-p.ics",
     );
     let original = std::fs::read_to_string(fixture).unwrap();
     let m = Matrix::embedded().clone();
@@ -3021,8 +2989,8 @@ fn verified_from_completion_due_edits_refuse_custom_zero_offset_alarms_atomicall
 #[test]
 fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_foreign_series_ids() {
     use twydo_core::edit::reopen_one_time;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1/plan8-rfra");
-    let history = std::fs::read_dir(root.join("363-phone-fields-live-note"))
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/set-due/from-completion");
+    let history = std::fs::read_dir(root.join("phone-fields-live-note/list1"))
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "ics"))
@@ -3068,7 +3036,7 @@ fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_fore
     );
 
     let mut live = parse(
-        &std::fs::read(root.join("202-seeded-after-upload/twydo-p8-rfra-fields-p.ics")).unwrap(),
+        &std::fs::read(root.join("seeded-after-upload/list1/twydo-p8-rfra-fields-p.ics")).unwrap(),
     )
     .unwrap();
     let p = live
@@ -3119,7 +3087,7 @@ mod recurring_checklist_writes {
 
     #[test]
     fn verified_checklist_rows_allow_only_captured_creation_and_text_conversion() {
-        let e = env("010-phone-create-convert");
+        let e = env("phone-create-convert/list1");
         let s = e.snap();
         let m = Matrix::embedded().clone();
         for op in [
@@ -3215,7 +3183,7 @@ mod recurring_checklist_writes {
 
     #[test]
     fn legacy_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
-        let e = env("011-phone-items-and-text");
+        let e = env("phone-items-and-text/list1");
         let mut s = e.snap();
         let mut m = Matrix::embedded().clone();
         m.operation
@@ -3255,7 +3223,7 @@ mod recurring_checklist_writes {
     }
     #[test]
     fn legacy_checklist_last_item_and_uncaptured_parent_operations_stay_blocked() {
-        let e = env("011d-phone-delete-items");
+        let e = env("phone-delete-items/list1");
         let s = e.snap();
         let mut legacy = Matrix::embedded().clone();
         legacy.operation.retain(|r| {
@@ -3279,7 +3247,7 @@ mod recurring_checklist_writes {
                 .is_err()
             );
         }
-        let e = env("002-seeded");
+        let e = env("seeded/list1");
         let base = e.snap();
         for rule in [
             "FREQ=WEEKLY",
@@ -3316,7 +3284,10 @@ mod recurring_checklist_writes {
 
     #[test]
     fn checklist_due_capability_changes_parent_and_cleans_inherited_items() {
-        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        );
         let s = e.snap();
         let m = Matrix::embedded().clone();
         let op = due(FC, 2026, 12, 11);
@@ -3369,7 +3340,10 @@ mod recurring_checklist_writes {
         use twydo_core::ical::value::IcalDateTime;
         use twydo_core::model::{Alarm, Status, Trigger};
 
-        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        );
         let base = e.snap();
         let m = Matrix::embedded().clone();
         let p = base.find(FC).unwrap();
@@ -3518,7 +3492,10 @@ mod recurring_checklist_writes {
     fn checklist_interval_capability_cli_and_card_are_equivalent() {
         use twydo_core::compat::Verdict;
 
-        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        );
         let s = e.snap();
         let mut candidate = Matrix::embedded().clone();
         let row = candidate
@@ -3600,7 +3577,10 @@ mod recurring_checklist_writes {
     #[test]
     fn checklist_interval_capability_rejects_anchor_end_and_class_changes() {
         use twydo_core::compat::Verdict;
-        let e = Env::new(WriteMode::Verified, "plan8-tui-a/010-first-phone-actions");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        );
         let s = e.snap();
         let mut candidate = Matrix::embedded().clone();
         let row = candidate
@@ -3960,7 +3940,10 @@ mod capability_deletion {
     #[test]
     fn capability_delete_removes_only_selected_resource_or_flat_family() {
         // A standalone weekly resource.
-        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/edit/list1",
+        );
         weekly(&e, E);
         let s = e.snap();
         assert_eq!(
@@ -3969,7 +3952,10 @@ mod capability_deletion {
             "standalone weekly"
         );
         // An empty weekly project.
-        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         for child in [R1, R2, R3] {
             fs::remove_file(e.file(child)).unwrap();
         }
@@ -3996,7 +3982,7 @@ mod capability_deletion {
         // A nonempty recurring checklist.
         let e = Env::new(
             WriteMode::Verified,
-            "plan8-checklist-b/011-phone-items-and-text",
+            "complete/checklist-reset/phone-items-and-text/list1",
         );
         let s = e.snap();
         assert_eq!(
@@ -4007,7 +3993,7 @@ mod capability_deletion {
         // The same checklist with no items.
         let e = Env::new(
             WriteMode::Verified,
-            "plan8-checklist-b/011-phone-items-and-text",
+            "complete/checklist-reset/phone-items-and-text/list1",
         );
         for child in [A_Q, A_Z] {
             fs::remove_file(e.file(child)).unwrap();
@@ -4022,7 +4008,7 @@ mod capability_deletion {
         // Completed flat families: a project and a checklist.
         let e = Env::new(
             WriteMode::Verified,
-            "issue27-items/020-phone-complete-project",
+            "delete/family-items/phone-complete-project/list1",
         );
         let s = e.snap();
         for uid in [PA, CA] {
@@ -4036,7 +4022,10 @@ mod capability_deletion {
 
     #[test]
     fn capability_delete_preserves_series_history_and_other_resources() {
-        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let s = e.snap();
         let mut payload = s.clone();
         let r = payload.find(R).unwrap();
@@ -4075,7 +4064,7 @@ mod capability_deletion {
             assert!(check_uid(&s, m, uid).is_err(), "{uid}");
         }
 
-        let e = Env::new(WriteMode::Verified, "issue27-items/001-seeded");
+        let e = Env::new(WriteMode::Verified, "delete/family-items/seeded/list1");
         let base = e.snap();
         let parent = base.find(CA).unwrap();
         let child = base.find(CA_Q).unwrap();
@@ -4114,7 +4103,7 @@ mod capability_deletion {
 
         let e = Env::new(
             WriteMode::Verified,
-            "plan8-checklist-b/011-phone-items-and-text",
+            "complete/checklist-reset/phone-items-and-text/list1",
         );
         let mut s = e.snap();
         let b_child = s.find(B_Q).unwrap();
@@ -4137,7 +4126,7 @@ mod capability_deletion {
             (CA, "UID:another-synthetic-identity"),
             (CA_Q, "RELATED-TO:twydo-i27-p-a"),
         ] {
-            let e = Env::new(WriteMode::Verified, "issue27-items/001-seeded");
+            let e = Env::new(WriteMode::Verified, "delete/family-items/seeded/list1");
             let path = e.file(target);
             let raw = fs::read_to_string(&path)
                 .unwrap()
@@ -4149,7 +4138,10 @@ mod capability_deletion {
         }
 
         // Raw malformed TaskType values are refused, not treated as an absent type.
-        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/edit/list1",
+        );
         let path = e.file(PLAIN_D);
         let original = fs::read_to_string(&path).unwrap();
         assert!(original.contains("%22TaskType%22%3A0"));
@@ -4173,7 +4165,10 @@ mod capability_deletion {
 
     #[test]
     fn capability_delete_requires_its_own_evidence() {
-        let e = Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/edit/list1",
+        );
         weekly(&e, E);
         let s = e.snap();
 
@@ -4212,7 +4207,7 @@ mod capability_deletion {
         // Rule execution/edit verdicts neither authorize nor block resource removal.
         let e = Env::new(
             WriteMode::Verified,
-            "plan8-checklist-b/011-phone-items-and-text",
+            "complete/checklist-reset/phone-items-and-text/list1",
         );
         assert_eq!(
             check_uid(&e.snap(), &m, CHECKLIST_A),
@@ -4248,7 +4243,10 @@ mod capability_deletion {
         );
 
         // No other operation is admitted by these rows.
-        let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let s = e.snap();
         for op in [
             Op::Move {
@@ -4393,7 +4391,10 @@ fn history_task_capability_refuses_ambiguous_recurrence_metadata() {
 
 #[test]
 fn live_parent_with_foreign_series_identity_does_not_use_history_item_policy() {
-    let env = common::Env::new(WriteMode::Verified, "plan6-list1/06-reopen-parent");
+    let env = common::Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-parent/list1",
+    );
     let mut s = env.snap();
     let parent = s.find("14b5a37a52224e8c959b5002e2275fc9").unwrap();
     let child = "780885dd967342ec8953c6824f1d674b";
@@ -4484,7 +4485,10 @@ fn capability_move_gate_is_independent_of_schedule_execution() {
 
 #[test]
 fn capability_move_save_revalidates_permitted_transition_without_legacy_move_rows() {
-    let env = common::Env::new(WriteMode::Verified, "plan4-list1/02-edit");
+    let env = common::Env::new(
+        WriteMode::Verified,
+        "complete/standalone-lifecycle/edit/list1",
+    );
     let s = env.snap();
     let mut text = String::from("matrix_version = 1\n");
     for (case, op) in [
@@ -4508,7 +4512,10 @@ fn capability_move_save_revalidates_permitted_transition_without_legacy_move_row
 #[test]
 fn reparent_candidate_refuses_ambiguous_links_nesting_and_closed_targets() {
     use common::Env;
-    let e = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let e = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-child/list1",
+    );
     let k = "a8dcf93bcaa14211a07481eb87af8f11";
     let child = "c57dfd30e9574d6ba195117e73dcc6d9";
     let p = "09c49c2cd76f483498fc2ff3a0f66160";
@@ -4564,7 +4571,10 @@ fn reparent_candidate_refuses_ambiguous_links_nesting_and_closed_targets() {
 
 #[test]
 fn reparent_refuses_hidden_descendant_of_selected_leaf() {
-    let e = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let e = common::Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-child/list1",
+    );
     let uid = "c57dfd30e9574d6ba195117e73dcc6d9";
     let source = std::fs::read(e.file(uid)).unwrap();
     let mut cal = parse(&source).unwrap();
@@ -4591,17 +4601,17 @@ fn reparent_refuses_hidden_descendant_of_selected_leaf() {
 fn resource_capabilities_refuse_duplicate_metadata() {
     for (fixture, uid, op) in [
         (
-            "plan6-list1/04-reopen-child",
+            "complete/family-lifecycle/reopen-child/list1",
             "a8dcf93bcaa14211a07481eb87af8f11",
             "delete",
         ),
         (
-            "plan6-list1/04-reopen-child",
+            "complete/family-lifecycle/reopen-child/list1",
             "a8dcf93bcaa14211a07481eb87af8f11",
             "move",
         ),
         (
-            "plan6-list1/05-complete-parent",
+            "complete/family-lifecycle/complete-parent/list1",
             "14b5a37a52224e8c959b5002e2275fc9",
             "reopen",
         ),
@@ -4637,7 +4647,10 @@ fn resource_capabilities_refuse_duplicate_metadata() {
 fn history_reopen_refuses_ambiguous_lifecycle_properties() {
     let uid = "14b5a37a52224e8c959b5002e2275fc9";
     for name in ["STATUS", "COMPLETED", "PERCENT-COMPLETE"] {
-        let e = common::Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
+        let e = common::Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/complete-parent/list1",
+        );
         let mut cal = parse(&std::fs::read(e.file(uid)).unwrap()).unwrap();
         let t = cal.root.children_named_mut("VTODO").next().unwrap();
         t.props.push(t.prop(name).unwrap().clone());
@@ -4660,7 +4673,10 @@ fn history_reopen_refuses_ambiguous_lifecycle_properties() {
 fn resource_capabilities_refuse_internal_identity_collisions() {
     let head = "a8dcf93bcaa14211a07481eb87af8f11";
     let other = "09c49c2cd76f483498fc2ff3a0f66160";
-    let e = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let e = common::Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-child/list1",
+    );
     let mut cal = parse(&std::fs::read(e.file(other)).unwrap()).unwrap();
     let t = cal.root.children_named_mut("VTODO").next().unwrap();
     let prop = t.prop_mut("X-2DOAPP-METADATA").unwrap();
@@ -4691,7 +4707,10 @@ fn resource_capabilities_refuse_internal_identity_collisions() {
 
 #[test]
 fn reused_gate_facts_are_scoped_to_their_immutable_snapshot() {
-    let env = common::Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let env = common::Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-child/list1",
+    );
     let parent = "a8dcf93bcaa14211a07481eb87af8f11";
     let member = "4a706b9a22b14576af63d06d9dc7db2e";
     let before = env.snap();

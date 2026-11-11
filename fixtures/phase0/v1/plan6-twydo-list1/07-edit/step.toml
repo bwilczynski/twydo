@@ -1,5 +1,0 @@
-scenario = "plan6-twydo-list1"
-step = "07-edit"
-device = "twydo"
-action = "tdo op edit: live R2 title R3; live p3b notes n; c1 title c1b"
-captured_at = "2026-11-02T19:22:35Z"

@@ -1,5 +1,0 @@
-scenario = "plan8-tui-a"
-step = "100-phone-items-and-ended-reopen"
-device = "iphone"
-action = "User confirmed inspection of Twydo checklist reset and final originals; completed FCb items individually with parent left open, and reopened ended original U1b/U2b without recompleting."
-captured_at = "2026-11-04T15:05:14Z"

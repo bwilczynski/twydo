@@ -1,5 +1,0 @@
-scenario = "plan4-list1"
-step = "02-edit"
-device = "iphone"
-action = "A title->A2; B notes 'x, y' newline 'z'; C time->18:45; D start->2026-12-02; E notes->n; F move to list2"
-captured_at = "2026-11-01T14:10:06Z"

@@ -1,5 +1,0 @@
-scenario = "issue41-item-reorder"
-step = "000-seeded"
-device = "twydo"
-action = "Eight separately approved create-only baseline resources: Order 41 Checklist and Order 41 Project, each with Zulu, Alpha, Mike. All HTTP 201 and exact server read-back. Phone baseline display confirmation pending; no reorder upload approved."
-captured_at = "2026-11-06T22:10:13.870429+00:00"

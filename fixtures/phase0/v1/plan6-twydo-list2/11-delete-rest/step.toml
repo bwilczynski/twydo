@@ -1,5 +1,0 @@
-scenario = "plan6-twydo-list2"
-step = "11-delete-rest"
-device = "iphone"
-action = "phone: delete the five remaining history copies; list 1 emptied remotely, synced with --force-delete"
-captured_at = "2026-11-02T19:30:43Z"

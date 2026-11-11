@@ -663,22 +663,12 @@ fn item_order_capture(scenario: &str, through: &str) -> Snapshot {
     let list = temp.path().join("list1");
     std::fs::create_dir(&list).unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(scenario);
-    for step in [
-        "000-created",
-        "010-appended",
-        "020-twydo-appended",
-        "030-phone-return",
-    ]
-    .into_iter()
-    .take_while(|step| *step <= through)
-    {
-        for entry in std::fs::read_dir(root.join(step)).unwrap() {
-            let p = entry.unwrap().path();
-            if p.extension().is_some_and(|ext| ext == "ics") {
-                std::fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
-            }
+    for entry in std::fs::read_dir(root.join(through)).unwrap() {
+        let p = entry.unwrap().path();
+        if p.extension().is_some_and(|ext| ext == "ics") {
+            std::fs::copy(&p, list.join(p.file_name().unwrap())).unwrap();
         }
     }
     Snapshot::new(load(temp.path()).unwrap(), config(&[]))
@@ -686,15 +676,15 @@ fn item_order_capture(scenario: &str, through: &str) -> Snapshot {
 
 #[test]
 fn captured_checklist_and_project_keep_phone_item_order_under_list_sort_overrides() {
-    for scenario in ["issue35-checklist-order", "issue35-project-order"] {
+    for scenario in ["insert/checklist-items", "insert/project-items"] {
         for appended in [false, true] {
             for field in [SortField::Due, SortField::Title, SortField::Creation] {
                 let mut s = item_order_capture(
                     scenario,
                     if appended {
-                        "010-appended"
+                        "appended/list1"
                     } else {
-                        "000-created"
+                        "created/list1"
                     },
                 );
                 s.config.lists.insert(
@@ -740,7 +730,7 @@ fn captured_checklist_and_project_keep_phone_item_order_under_list_sort_override
 #[test]
 fn captured_checklist_item_order_is_shared_by_flat_views() {
     for view in [View::Today, View::Next3Days, View::Scheduled] {
-        let mut s = item_order_capture("issue35-checklist-order", "010-appended");
+        let mut s = item_order_capture("insert/checklist-items", "appended/list1");
         let p = s.tasks.iter().position(|t| t.parent.is_none()).unwrap();
         s.tasks[p].due = Some(IcalDateTime::Date(now().date_naive()));
         if view == View::Scheduled {
@@ -760,9 +750,9 @@ fn captured_checklist_item_order_is_shared_by_flat_views() {
 
 #[test]
 fn phone_edits_of_appended_items_keep_identity_order_and_unchanged_neighbors() {
-    for scenario in ["issue35-checklist-order", "issue35-project-order"] {
-        let before = item_order_capture(scenario, "020-twydo-appended");
-        let after = item_order_capture(scenario, "030-phone-return");
+    for scenario in ["insert/checklist-items", "insert/project-items"] {
+        let before = item_order_capture(scenario, "twydo-appended/list1");
+        let after = item_order_capture(scenario, "phone-return/list1");
         assert_eq!(before.tasks.len(), 6);
         assert_eq!(after.tasks.len(), 6);
         let echo = before.tasks.iter().find(|t| t.summary == "Echo").unwrap();
@@ -845,7 +835,7 @@ fn nested_order_uses_position_then_creation_then_uid_with_safe_missing_values() 
 
 #[test]
 fn independent_project_items_in_flat_views_keep_date_sorting() {
-    let mut s = item_order_capture("issue35-project-order", "010-appended");
+    let mut s = item_order_capture("insert/project-items", "appended/list1");
     for t in &mut s.tasks {
         t.due = Some(IcalDateTime::Date(date(match t.summary.as_str() {
             "Bravo" => "2026-11-01",

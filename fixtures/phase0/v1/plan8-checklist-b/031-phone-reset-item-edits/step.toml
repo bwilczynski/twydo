@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "031-phone-reset-item-edits"
-device = "iphone"
-action = "Final B-only phone action: rename each live reset C/D child z to x. Exactly those two items change SUMMARY and modification stamps; all parent/history/identity/metadata bytes otherwise preserved. Phone rounds complete."
-captured_at = "2026-11-05T10:09:47Z"

@@ -1,5 +1,0 @@
-scenario = "plan7-twydo-list1"
-step = "04-twydo-complete"
-device = "twydo"
-action = "tdo op complete D1, WK, N2, Y29, S1"
-captured_at = "2026-11-04T06:53:28Z"

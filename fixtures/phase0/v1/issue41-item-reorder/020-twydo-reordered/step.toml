@@ -1,7 +1,0 @@
-scenario = "issue41-item-reorder"
-step = "020-twydo-reordered"
-device = "twydo"
-action = "User approved six synthetic child updates; actual Twydo TUI K/K per family generated Mike=0/Zulu=1/Alpha=2. Fresh family membership/byte checks and If-Match guards applied to six PUTs; HTTP 204 and exact read-back verified. Both parents unchanged. Project Status sort unchanged; phone display check pending."
-base_step = "015-parent-stamp"
-unchanged_files = ["42d75a3f97c0457dbb65648803cddca9.ics", "d528606ffbed438db6ecf175c0ccb7cb.ics"]
-captured_at = "2026-11-06T22:20:47.310498+00:00"

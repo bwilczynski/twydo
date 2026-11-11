@@ -1,5 +1,0 @@
-scenario = "issue35-checklist-order"
-step = "010-appended"
-device = "iphone"
-action = "Append Bravo on iPhone; user confirms displayed order Zulu, Alpha, Mike, Bravo. Drag reorder unavailable."
-captured_at = "2026-11-05T17:06:40Z"

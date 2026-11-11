@@ -1,5 +1,5 @@
 //! Edits of checklist and project members (complete, reopen, copy, move) against the iPhone
-//! captures in `plan6-list1` and `plan6-list2`.
+//! captures in `complete/family-lifecycle` and `move/family-destination`.
 
 mod common;
 
@@ -12,8 +12,8 @@ use twydo_core::model::meta_edit::MetaJson;
 
 use common::{check_in_place, check_lines, completed, dtstamp, fixture, lines, sorted, todo};
 
-const L1: &str = "plan6-list1";
-const L2: &str = "plan6-list2";
+const L1: &str = "complete/family-lifecycle";
+const L2: &str = "move/family-destination";
 const K: &str = "a8dcf93bcaa14211a07481eb87af8f11";
 const K_MOVED: &str = "55c46cbc93fc41b695492a0ea63dec78";
 const K1B: &str = "28ae80e7369d40feaba54fe228eda2c6";
@@ -46,9 +46,9 @@ fn meta(cal: &Calendar) -> MetaJson {
 /// Complete `uid` from `04-reopen-child` as its parent's completion did in
 /// `05-complete-parent`: `COMPLETED` = the parent's, stamps = the member's.
 fn check_completed_member(uid: &str, parent: &str) {
-    let input = fixture(L1, "04-reopen-child", uid);
-    let evidence = parse(&fixture(L1, "05-complete-parent", uid)).unwrap();
-    let at = completed(&parse(&fixture(L1, "05-complete-parent", parent)).unwrap());
+    let input = fixture(L1, "reopen-child/list1", uid);
+    let evidence = parse(&fixture(L1, "complete-parent/list1", uid)).unwrap();
+    let at = completed(&parse(&fixture(L1, "complete-parent/list1", parent)).unwrap());
     assert_eq!(completed(&evidence), at, "{uid}: completed with its parent");
     let now = dtstamp(&evidence);
     let mut cal = parse(&input).unwrap();
@@ -65,7 +65,7 @@ fn completing_checklist_completes_open_item() {
 #[test]
 fn completing_project_completes_repeating_child_keeping_rrule() {
     check_completed_member(P3, P);
-    let mut cal = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    let mut cal = parse(&fixture(L1, "reopen-child/list1", P3)).unwrap();
     let rrule = todo(&cal).prop("RRULE").unwrap().clone();
     let t = dtstamp(&cal);
     complete_member(&mut cal, t, t).unwrap();
@@ -75,8 +75,8 @@ fn completing_project_completes_repeating_child_keeping_rrule() {
 #[test]
 fn reopening_parent_reopens_repeating_child_and_history_copy() {
     for uid in [P3, P3_COPY] {
-        let input = fixture(L1, "05-complete-parent", uid);
-        let evidence = parse(&fixture(L1, "06-reopen-parent", uid)).unwrap();
+        let input = fixture(L1, "complete-parent/list1", uid);
+        let evidence = parse(&fixture(L1, "reopen-parent/list1", uid)).unwrap();
         let now = dtstamp(&evidence);
         let mut cal = parse(&input).unwrap();
         reopen_member(&mut cal, now).unwrap();
@@ -87,11 +87,11 @@ fn reopening_parent_reopens_repeating_child_and_history_copy() {
 
 #[test]
 fn recurring_project_child_copies_match_2do() {
-    let at = completed(&parse(&fixture(L1, "05-complete-parent", R_COPY)).unwrap());
+    let at = completed(&parse(&fixture(L1, "complete-parent/list1", R_COPY)).unwrap());
     for (uid, copy_uid) in [(R1, R1_COPY), (R2, R2_COPY)] {
-        let cal = parse(&fixture(L1, "04-reopen-child", uid)).unwrap();
+        let cal = parse(&fixture(L1, "reopen-child/list1", uid)).unwrap();
         let before = cal.clone();
-        let evidence = parse(&fixture(L1, "05-complete-parent", copy_uid)).unwrap();
+        let evidence = parse(&fixture(L1, "complete-parent/list1", copy_uid)).unwrap();
         let now = dtstamp(&evidence);
         let copy = member_copy(&cal, copy_uid, R_COPY, at, now).unwrap();
         assert_eq!(cal, before, "{uid}: input untouched");
@@ -104,12 +104,12 @@ fn recurring_project_child_copies_match_2do() {
     }
 }
 
-/// Move `uid` from `plan6-list1/06-reopen-parent` to `moved` in `plan6-list2/07-move`.
+/// Move `uid` from `complete/family-lifecycle/reopen-parent/list1` to `moved` in `move/family-destination/move/list1`.
 /// 2Do dropped `PERCENT-COMPLETE:0` there; Twydo keeps the line, so it is left out of the
 /// comparison with the evidence (and must keep its bytes).
 fn check_move(uid: &str, moved: &str, parent: Option<&str>, changed: &[&str]) {
-    let input = fixture(L1, "06-reopen-parent", uid);
-    let evidence = parse(&fixture(L2, "07-move", moved)).unwrap();
+    let input = fixture(L1, "reopen-parent/list1", uid);
+    let evidence = parse(&fixture(L2, "move/list1", moved)).unwrap();
     let now = dtstamp(&evidence);
     let cal = parse(&input).unwrap();
     let out = serialize(&moved_copy(&cal, moved, parent, now).unwrap());
@@ -133,7 +133,7 @@ fn moving_child_points_at_new_parent_and_keeps_ruid() {
     let changed = &["UID", "RELATED-TO", "X-2DOAPP-METADATA"];
     check_move(K1B, K1B_MOVED, Some(K_MOVED), changed);
     check_move(P3, P3_MOVED, Some(P_MOVED), changed);
-    let cal = parse(&fixture(L1, "06-reopen-parent", P3)).unwrap();
+    let cal = parse(&fixture(L1, "reopen-parent/list1", P3)).unwrap();
     let moved = moved_copy(&cal, P3_MOVED, Some(P_MOVED), dtstamp(&cal)).unwrap();
     assert_eq!(meta(&moved).get_str("RUID"), Some(P3));
 }
@@ -147,13 +147,13 @@ fn t0() -> DateTime<Utc> {
 #[test]
 fn member_state_checks() {
     // Completing a completed member, reopening an open one: refused, `cal` untouched.
-    let mut cal = parse(&fixture(L1, "05-complete-parent", K2)).unwrap();
+    let mut cal = parse(&fixture(L1, "complete-parent/list1", K2)).unwrap();
     let before = cal.clone();
     let err = complete_member(&mut cal, t0(), t0()).unwrap_err();
     assert_eq!(unsupported(&err), "task is already completed");
     assert_eq!(cal, before);
 
-    let mut cal = parse(&fixture(L1, "04-reopen-child", K2)).unwrap();
+    let mut cal = parse(&fixture(L1, "reopen-child/list1", K2)).unwrap();
     let before = cal.clone();
     let err = reopen_member(&mut cal, t0()).unwrap_err();
     assert_eq!(unsupported(&err), "task is not completed");
@@ -162,13 +162,13 @@ fn member_state_checks() {
 
 #[test]
 fn member_copy_refusals() {
-    let r2 = parse(&fixture(L1, "04-reopen-child", R2)).unwrap();
+    let r2 = parse(&fixture(L1, "reopen-child/list1", R2)).unwrap();
     for bad in ["", R2] {
         let err = member_copy(&r2, bad, R_COPY, t0(), t0()).unwrap_err();
         assert!(matches!(err, EditError::Unsupported(_)), "{bad:?}: {err:?}");
     }
     // A repeating member's copy is not captured.
-    let p3 = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    let p3 = parse(&fixture(L1, "reopen-child/list1", P3)).unwrap();
     let err = member_copy(&p3, R2_COPY, R_COPY, t0(), t0()).unwrap_err();
     assert_eq!(
         unsupported(&err),
@@ -178,7 +178,7 @@ fn member_copy_refusals() {
 
 /// r1 with its JSON `key` set to its own UID.
 fn r1_naming_itself(key: &str) -> Calendar {
-    let mut cal = parse(&fixture(L1, "04-reopen-child", R1)).unwrap();
+    let mut cal = parse(&fixture(L1, "reopen-child/list1", R1)).unwrap();
     let mut m = meta(&cal);
     m.set_str(key, R1);
     let todo = cal.root.children_named_mut("VTODO").next().unwrap();
@@ -205,20 +205,20 @@ fn member_copy_refused_when_metadata_names_itself() {
 #[test]
 fn moving_without_parent_keeps_related_to() {
     // `None` leaves the parent link as it is (the store decides what a lone move means).
-    let cal = parse(&fixture(L1, "06-reopen-parent", K1B)).unwrap();
+    let cal = parse(&fixture(L1, "reopen-parent/list1", K1B)).unwrap();
     let moved = moved_copy(&cal, K1B_MOVED, None, t0()).unwrap();
     assert_eq!(todo(&moved).prop("RELATED-TO").unwrap().value, K);
     assert_eq!(meta(&moved).get_str("parentuid"), Some(K));
 }
 
 // Plan 6 Task 7 round 01: the phone moved checklist C's date and removed its items' own dates.
-const T1: &str = "plan6-twydo-list1";
+const T1: &str = "create/family-roundtrip";
 const C1: &str = "f2bcae42b8f84b37b48c18b7f89c5ac0";
 
 #[test]
 fn dropping_item_dates_matches_2do() {
-    let input = fixture(T1, "00-setup", C1);
-    let evidence = parse(&fixture(T1, "01-phone-edit", C1)).unwrap();
+    let input = fixture(T1, "setup/list1", C1);
+    let evidence = parse(&fixture(T1, "initial-phone-edit/list1", C1)).unwrap();
     let mut cal = parse(&input).unwrap();
     drop_member_dates(&mut cal, dtstamp(&evidence)).unwrap();
     let out = serialize(&cal);
@@ -227,7 +227,7 @@ fn dropping_item_dates_matches_2do() {
 
 #[test]
 fn dropping_item_dates_refuses_an_item_without_a_date() {
-    let mut cal = parse(&fixture(T1, "01-phone-edit", C1)).unwrap();
+    let mut cal = parse(&fixture(T1, "initial-phone-edit/list1", C1)).unwrap();
     let before = cal.clone();
     let err = drop_member_dates(&mut cal, t0()).unwrap_err();
     assert_eq!(unsupported(&err), "item has no date of its own");
@@ -237,7 +237,7 @@ fn dropping_item_dates_refuses_an_item_without_a_date() {
 #[test]
 fn dropping_item_dates_refuses_a_timed_or_started_item() {
     for (key, value) in [("duetime", 900), ("StartDate", 1796083200)] {
-        let mut cal = parse(&fixture(T1, "00-setup", C1)).unwrap();
+        let mut cal = parse(&fixture(T1, "setup/list1", C1)).unwrap();
         let mut m = meta(&cal);
         m.set_i64(key, value);
         let todo = cal.root.children_named_mut("VTODO").next().unwrap();
@@ -257,7 +257,7 @@ fn dropping_item_dates_refuses_a_timed_or_started_item() {
 
 #[test]
 fn reparent_candidate_link_representations_agree() {
-    let cal = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    let cal = parse(&fixture(L1, "reopen-child/list1", P3)).unwrap();
     let before = serialize(&cal);
     let now = dtstamp(&cal);
     let attached = twydo_core::edit::reparented_copy(
@@ -295,7 +295,7 @@ fn reparent_candidate_link_representations_agree() {
 
 #[test]
 fn reparent_candidate_checklist_dates_are_explicit() {
-    let cal = parse(&fixture(L1, "04-reopen-child", K2)).unwrap();
+    let cal = parse(&fixture(L1, "reopen-child/list1", K2)).unwrap();
     let now = dtstamp(&cal);
     let clean = twydo_core::edit::reparented_copy(
         &cal,
@@ -308,7 +308,7 @@ fn reparent_candidate_checklist_dates_are_explicit() {
     for name in ["DUE", "DTSTART"] {
         assert!(todo(&clean).prop(name).is_none());
     }
-    let repeating = parse(&fixture(L1, "04-reopen-child", P3)).unwrap();
+    let repeating = parse(&fixture(L1, "reopen-child/list1", P3)).unwrap();
     assert!(
         twydo_core::edit::reparented_copy(
             &repeating,

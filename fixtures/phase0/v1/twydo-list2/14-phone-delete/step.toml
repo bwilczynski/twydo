@@ -1,5 +1,0 @@
-scenario = "twydo-list2"
-step = "14-phone-delete"
-device = "iphone"
-action = "phone: delete X, Y (list2) and Y copy, U, U copy, V, V copy (list1); vdirsyncer --force-delete"
-captured_at = "2026-11-01T16:24:10Z"

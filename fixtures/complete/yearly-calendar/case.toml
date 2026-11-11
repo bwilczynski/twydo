@@ -1,0 +1,37 @@
+claim = "Yearly completion advances by one interval and creates a separate history resource."
+origin = "device"
+observed = "Yearly completion advances by one interval and creates a separate history resource."
+tests = ["crates/twydo-core/tests/edit_complete.rs::one_time_complete_and_reopen_match_2do", "crates/twydo-core/tests/edit_create.rs::new_uid_shape", "crates/twydo-core/tests/edit_fields.rs::text_capability_preserves_full_resources_including_alarms_and_metadata", "crates/twydo-core/tests/ical_write.rs::unedited_calendar_is_byte_equal"]
+supports = ["complete.yearly", "set-repeat.yearly"]
+
+[provenance]
+source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
+source_path = "fixtures/phase0/v1/rule-years"
+
+[environment]
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
+
+[states."create"]
+path = "create"
+collections = ["list1"]
+members = ["list1/5c072ad90a8f44f1a974e170a8a950e7.ics", "list1/6f19ef6b404644a38451520da5804e9f.ics", "list1/c3e7283649dd413abf3f73745121bce5.ics"]
+action = "create yearly task due 2026-11-15, date only, repeat yearly"
+device = "iphone"
+
+[states."complete"]
+path = "complete"
+collections = ["list1"]
+members = ["list1/5c072ad90a8f44f1a974e170a8a950e7.ics", "list1/6f19ef6b404644a38451520da5804e9f.ics", "list1/8c164aa9120c42df846a5680e1788e5f.ics", "list1/c3e7283649dd413abf3f73745121bce5.ics"]
+action = "complete the yearly task once"
+device = "iphone"
+
+[states."edit"]
+path = "edit"
+collections = ["list1"]
+members = ["list1/5c072ad90a8f44f1a974e170a8a950e7.ics", "list1/6f19ef6b404644a38451520da5804e9f.ics", "list1/8c164aa9120c42df846a5680e1788e5f.ics", "list1/c3e7283649dd413abf3f73745121bce5.ics"]
+action = "edit repeat to every 2 years"
+device = "iphone"

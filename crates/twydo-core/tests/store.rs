@@ -1,5 +1,5 @@
 //! The store: gated, journaled apply with undo and redo, against a tempdir copy of the
-//! iPhone capture `plan4-list1/02-edit` (synthetic test-account content).
+//! iPhone capture `complete/standalone-lifecycle/edit/list1` (synthetic test-account content).
 
 mod common;
 
@@ -21,7 +21,7 @@ use common::Env;
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
 const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
-const FIXTURE: &str = "plan4-list1/02-edit";
+const FIXTURE: &str = "complete/standalone-lifecycle/edit/list1";
 const CASES: [&str; 5] = ["one-time", "monthly", "date-only", "timed", "start-date"];
 
 fn now() -> DateTime<Utc> {
@@ -253,7 +253,7 @@ fn last_occurrence(env: &Env, twydo: &str, edge: &str) -> Store {
 
 /// Task 14: completing the last occurrence of a counted series (`COUNT=1`) completes the
 /// task in place: one write, no history copy, as the phone did with `C1a` (session C,
-/// `plan7-twydo-list2/01-phone-complete`).
+/// `complete/recurrence-profiles/phone-complete/list1`).
 #[test]
 fn completing_the_last_occurrence_completes_in_place() {
     let env = Env::new(WriteMode::Test, FIXTURE);
@@ -697,7 +697,7 @@ fn move_history_copy_keeps_series_ruid() {
     const COPY: &str = "7d0349b58c3545d2ba6c8d87bcc45e85";
     let (env, mut store) = test_env();
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-        "../../fixtures/phase0/v1/plan4-list1/03-complete/{COPY}.ics"
+        "../../fixtures/complete/standalone-lifecycle/complete/list1/{COPY}.ics"
     ));
     fs::copy(&src, env.file(COPY)).unwrap();
     let op = Op::Move {
@@ -823,7 +823,7 @@ fn parent_json_uid_is_the_metadata_uid_when_it_differs() {
     // `b783e95f…` is a project whose JSON `uid` is not its iCalendar UID.
     let env = Env::new(
         WriteMode::Test,
-        "plan7-list1/03b-phone-item-under-converted",
+        "set-repeat/phone-encodings/phone-item-under-converted/list1",
     );
     let snap = env.snap();
     assert_eq!(
@@ -943,8 +943,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn fixed_checklist_reset_and_until_end_match_preupload_capture() {
-        const BEFORE: &str = "080-phone-check-twydo-first";
-        const AFTER: &str = "090-twydo-checklist-reset-and-until-end";
+        const BEFORE: &str = "phone-check-twydo-first/list1";
+        const AFTER: &str = "twydo-checklist-reset-and-until-end/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = |title: &str| {
@@ -1011,8 +1011,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn phone_item_completion_and_ended_reopen_after_twydo_reset_match_store() {
-        const BEFORE: &str = "090-twydo-checklist-reset-and-until-end";
-        const AFTER: &str = "100-phone-items-and-ended-reopen";
+        const BEFORE: &str = "twydo-checklist-reset-and-until-end/list1";
+        const AFTER: &str = "phone-items-and-ended-reopen/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = |title: &str| {
@@ -1094,9 +1094,9 @@ mod recurrence_phone_captures {
 
     #[test]
     fn second_checklist_reset_reshape_and_twydo_ended_reopen_match_captures() {
-        const BEFORE: &str = "100-phone-items-and-ended-reopen";
-        const ENDED: &str = "110-twydo-second-reset-reshape-and-end";
-        const OPEN: &str = "111-twydo-ended-originals-reopened";
+        const BEFORE: &str = "phone-items-and-ended-reopen/list1";
+        const ENDED: &str = "twydo-second-reset-reshape-and-end/list1";
+        const OPEN: &str = "twydo-ended-originals-reopened/list1";
         let before = step_files(BEFORE);
         let ended = step_files(ENDED);
         let uid = |title: &str| {
@@ -1196,8 +1196,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn repeat_removal_and_earliest_history_reopen_match_fixed_preupload_capture() {
-        const BEFORE: &str = "120-phone-second-round-followup";
-        const AFTER: &str = "130-twydo-repeat-removal-and-history-reopen";
+        const BEFORE: &str = "phone-second-round-followup/list1";
+        const AFTER: &str = "initial-twydo-repeat-removal-and-history-reopen/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = |title: &str, history_due: Option<&str>| {
@@ -1290,9 +1290,9 @@ mod recurrence_phone_captures {
 
     #[test]
     fn controlled_repeat_and_history_retry_matches_both_states_and_clean_upload() {
-        const BEFORE: &str = "131-phone-versions-kept-after-conflict";
-        const PREPARED: &str = "141-prepared-repeat-and-history-states";
-        const AFTER: &str = "142-twydo-repeat-removal-and-history-reopen";
+        const BEFORE: &str = "phone-versions-kept-after-conflict/list1";
+        const PREPARED: &str = "prepared-repeat-and-history-states/list1";
+        const AFTER: &str = "followup-twydo-repeat-removal-and-history-reopen/list1";
         let before = step_files(BEFORE);
         let uid = |title: &str, history_due: Option<&str>| {
             before
@@ -1397,7 +1397,10 @@ fn history_task_capability_preserves_schedule_and_series() {
         "BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER;RELATED=END:-PT15M\nDESCRIPTION:Synthetic\nEND:VALARM\n",
         "BEGIN:VALARM\nACTION:DISPLAY\nTRIGGER;VALUE=DATE-TIME:20261110T090000Z\nDESCRIPTION:Synthetic\nEND:VALARM\n",
     ] {
-        let env = Env::new(WriteMode::Verified, "plan4-list1/03-complete");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/standalone-lifecycle/complete/list1",
+        );
         let text = fs::read_to_string(env.file(COPY))
             .unwrap()
             .replace("END:VTODO", &format!("{alarm}END:VTODO"));

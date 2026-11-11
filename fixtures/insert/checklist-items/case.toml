@@ -1,0 +1,44 @@
+claim = "New checklist items append after existing items and retain order through phone edits."
+origin = "device"
+observed = "New checklist items append after existing items and retain order through phone edits."
+tests = ["crates/tdo/tests/item_order.rs::keys_reorder_and_preserve_selection_with_undo_redo", "crates/tdo/tests/ui_render.rs::renders_three_panes_wide", "crates/twydo-core/tests/store_family.rs::completing_checklist_writes_parent_and_open_items", "crates/twydo-core/tests/store_order.rs::reorder_persists_and_undo_redo_restore_exact_bytes", "crates/twydo-core/tests/views.rs::today_membership"]
+supports = []
+
+[provenance]
+source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
+source_path = "fixtures/phase0/v1/issue35-checklist-order"
+
+[environment]
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
+
+[states."created"]
+path = "created"
+collections = ["list1"]
+members = ["list1/0318a0d53b2a4e37b0fb75434ea3dd1a.ics", "list1/03cb3774ae1b46a6832d75563b5a6b78.ics", "list1/1462126c3ef1406c95c1ea0b1ea244e9.ics", "list1/f11378045a4b4b09b09d5a128e9ebd5e.ics"]
+action = "Create Order 35 checklist, then Zulu, Alpha, Mike in that order; sync. Displayed order awaiting user confirmation."
+device = "iphone"
+
+[states."appended"]
+path = "appended"
+collections = ["list1"]
+members = ["list1/0318a0d53b2a4e37b0fb75434ea3dd1a.ics", "list1/03cb3774ae1b46a6832d75563b5a6b78.ics", "list1/1462126c3ef1406c95c1ea0b1ea244e9.ics", "list1/5cc260ee3e814959b0d2a208578307a4.ics", "list1/f11378045a4b4b09b09d5a128e9ebd5e.ics"]
+action = "Append Bravo on iPhone; user confirms displayed order Zulu, Alpha, Mike, Bravo. Drag reorder unavailable."
+device = "iphone"
+
+[states."twydo-appended"]
+path = "twydo-appended"
+collections = ["list1"]
+members = ["list1/0318a0d53b2a4e37b0fb75434ea3dd1a.ics", "list1/03cb3774ae1b46a6832d75563b5a6b78.ics", "list1/1462126c3ef1406c95c1ea0b1ea244e9.ics", "list1/5cc260ee3e814959b0d2a208578307a4.ics", "list1/f11378045a4b4b09b09d5a128e9ebd5e.ics", "list1/f9caad0502784423965f0dc424f29837.ics"]
+action = "Create only Echo at DisplayOrder 4 with the candidate verified-mode CLI; conditionally upload and verify read-back. All five prior family resources remain byte-unchanged."
+device = "twydo"
+
+[states."phone-return"]
+path = "phone-return"
+collections = ["list1"]
+members = ["list1/0318a0d53b2a4e37b0fb75434ea3dd1a.ics", "list1/03cb3774ae1b46a6832d75563b5a6b78.ics", "list1/1462126c3ef1406c95c1ea0b1ea244e9.ics", "list1/5cc260ee3e814959b0d2a208578307a4.ics", "list1/f11378045a4b4b09b09d5a128e9ebd5e.ics", "list1/f9caad0502784423965f0dc424f29837.ics"]
+action = "User confirms Echo is last, renames it to ECHO and syncs. UID, parent links, CREATED and DisplayOrder 4 are preserved; all five prior family members byte-unchanged."
+device = "iphone"

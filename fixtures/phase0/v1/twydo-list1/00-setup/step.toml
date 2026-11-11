@@ -1,5 +1,0 @@
-scenario = "twydo-list1"
-step = "00-setup"
-device = "iphone"
-action = "phone creates S (monthly due 2026-12-10) and T (yearly due 2026-12-15)"
-captured_at = "2026-11-01T15:29:46Z"

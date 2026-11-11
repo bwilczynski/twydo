@@ -1,7 +1,0 @@
-scenario = "issue41-item-reorder"
-step = "040-manual-display"
-device = "iphone"
-action = "User selected Manually on phone and confirmed saved Mike/Zulu/Alpha order appears. Only parent modification stamps changed; six child resources/ranks byte-unchanged. No shared sort field observed."
-base_step = "030-phone-display"
-unchanged_files = ["2a01813b8ed34b9ebe0a83fa0bcb339b.ics", "3873be9bf6d64de590d591cc787044bb.ics", "25606a40735741cba229db38d41f40c7.ics", "72e7cd12fd744219aef31707cc158978.ics", "03fff855c20b4ddd960f0a594036aae7.ics", "7a038ef0c3114b2b8e0757be9b1d3d34.ics"]
-captured_at = "2026-11-06T22:24:24.002479+00:00"

@@ -1,17 +1,17 @@
 //! Completion and reopen, as the 2Do iPhone app writes them.
 //!
-//! - One-time complete (H3, `plan4-list1/03-complete` A): `STATUS:COMPLETED`,
+//! - One-time complete (H3, `complete/standalone-lifecycle/complete/list1` A): `STATUS:COMPLETED`,
 //!   `PERCENT-COMPLETE:100` and `COMPLETED:<UTC>` after `STATUS`.
-//! - Reopen (H4 as captured, `plan4-list1/04-reopen` A and E's history copy):
+//! - Reopen (H4 as captured, `complete/standalone-lifecycle/reopen/list1` A and E's history copy):
 //!   `STATUS:NEEDS-ACTION`, `COMPLETED` removed, `PERCENT-COMPLETE:0`.
-//! - Repeat complete (H11, `rule-months-day-1-28/02-complete`, `rule-years/02-complete`):
+//! - Repeat complete (H11, `complete/monthly-calendar/complete/list1`, `complete/yearly-calendar/complete/list1`):
 //!   copy-and-advance. The live task's due date moves to the next occurrence, and a completed
 //!   history copy with a new UID records the occurrence that was done.
 //!
 //! Every repeat kind Twydo can create completes (see [`next_due`]): a date-only or
 //! floating-time `DUE` (the time is kept), from the due date or from completion, with an
-//! optional `COUNT` or `UNTIL` end (session B, `plan7-twydo-list1/03-phone-act`); each kind's
-//! result equals the phone's own completion (session C, `plan7-twydo-list2`). A JSON
+//! optional `COUNT` or `UNTIL` end (session B, `set-repeat/encoding-roundtrip/phone-act/list1`); each kind's
+//! result equals the phone's own completion (session C, `complete/recurrence-profiles`). A JSON
 //! `StartDate` moves by as many days as the due date (H11, gap session round 04), and a JSON
 //! `uid` naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
@@ -549,7 +549,7 @@ pub fn complete_recurring(
 
     // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
     // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
-    // 2027-02-13 -> 2028-02-14 (`gap-list1/04-phone-complete`).
+    // 2027-02-13 -> 2028-02-14 (`delete/mixed-families/phone-complete/list1`).
     let mut live_meta = meta.clone();
     if let Some(start) = start {
         let next_start = start

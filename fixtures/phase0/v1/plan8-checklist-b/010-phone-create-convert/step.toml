@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "010-phone-create-convert"
-device = "iphone"
-action = "Phone creates a monthly checklist and converts monthly task b to checklist; d untouched. Capture B only."
-captured_at = "2026-11-05T08:58:58Z"

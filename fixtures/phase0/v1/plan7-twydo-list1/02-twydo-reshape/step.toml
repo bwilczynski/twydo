@@ -1,5 +1,0 @@
-scenario = "plan7-twydo-list1"
-step = "02-twydo-reshape"
-device = "twydo"
-action = "tdo op edit: S1 weekly; S2 monthly then 2m; M1 no repeat; W1 monthly; UN monthly (no end); K1 checklist; K2 project; C project; E checklist; EC task; P due Dec 20 monthly"
-captured_at = "2026-11-04T06:43:05Z"

@@ -1,7 +1,0 @@
-scenario = "issue35-project-order"
-step = "030-phone-return"
-device = "iphone"
-action = "User confirms Echo is last, renames it to ECHO and syncs. UID, parent links, CREATED and DisplayOrder 4 are preserved; all five prior family members byte-unchanged."
-base_step = "020-twydo-appended"
-unchanged_files = ["0f3c6f5eb84540df8d96b70fad96db34.ics", "5def84c9a3234ad3bd16e9f3ecd76225.ics", "845d3e481ce54ae8bc2c620e80f95c33.ics", "a5f00e12b7b544e9969438df9ee27c8f.ics", "f939fd8c2a4d48909e52ce1c77fd9a64.ics"]
-captured_at = "2026-11-05T17:50:45Z"

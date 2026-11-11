@@ -1,5 +1,0 @@
-scenario = "plan8-checklist-b"
-step = "029-phone-second-family-reset"
-device = "iphone"
-action = "In B only, tick each C/D live z then manually tick each parent. Parents advance Jan10 to Feb10, z reopen, four correctly linked new history resources; deleted q stays absent and all previous history unchanged."
-captured_at = "2026-11-05T09:52:08Z"

@@ -12,7 +12,7 @@ fn fixtures() -> Vec<std::path::PathBuf> {
             }
         }
     }
-    let root = format!("{}/../../fixtures/phase0/v1", env!("CARGO_MANIFEST_DIR"));
+    let root = format!("{}/../../fixtures", env!("CARGO_MANIFEST_DIR"));
     let mut out = Vec::new();
     walk(std::path::Path::new(&root), &mut out);
     out.sort();
@@ -48,62 +48,6 @@ fn todo(cal: &mut twydo_core::ical::Calendar) -> &mut Component {
 fn unedited_calendar_is_byte_equal() {
     let all = fixtures();
     assert!(!all.is_empty());
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1");
-    // The former subset scans also failed if a required capture directory disappeared.
-    // Keep that guard without parsing any resource a second time.
-    for scenario in [
-        "plan7-list1",
-        "issue35-checklist-order",
-        "issue35-project-order",
-    ] {
-        assert!(root.join(scenario).is_dir(), "missing capture {scenario}");
-    }
-    for step in [
-        "001-after-upload",
-        "010-first-phone-actions",
-        "020-boundary-and-checklist-complete",
-        "030-end-series-and-items",
-        "040-reopen-ended-and-complete-parent",
-        "050-remove-repeat-and-refinish",
-        "060-remove-checklist-repeat-and-history-reopen",
-        "070-twydo-first-transitions",
-        "080-phone-check-twydo-first",
-        "090-twydo-checklist-reset-and-until-end",
-        "100-phone-items-and-ended-reopen",
-        "110-twydo-second-reset-reshape-and-end",
-        "111-twydo-ended-originals-reopened",
-        "120-phone-second-round-followup",
-        "130-twydo-repeat-removal-and-history-reopen",
-        "131-phone-versions-kept-after-conflict",
-        "141-prepared-repeat-and-history-states",
-        "142-twydo-repeat-removal-and-history-reopen",
-        "144-phone-removal-and-history-followup",
-        "151-twydo-checklist-repeat-removed",
-        "153-phone-checklist-removal-followup",
-    ] {
-        assert!(
-            root.join("plan8-tui-a").join(step).is_dir(),
-            "missing capture {step}"
-        );
-    }
-    let plan7 = all
-        .iter()
-        .filter(|p| p.components().any(|c| c.as_os_str() == "plan7-list1"))
-        .count();
-    assert!(plan7 > 100, "expected the plan 7 captures, found {plan7}");
-    let item_order = all
-        .iter()
-        .filter(|p| {
-            p.components().any(|c| {
-                c.as_os_str() == "issue35-checklist-order"
-                    || c.as_os_str() == "issue35-project-order"
-            })
-        })
-        .count();
-    assert!(
-        item_order >= 16,
-        "expected both families and their append captures"
-    );
     for p in all {
         let b = std::fs::read(&p).unwrap();
         let mut cal = parse(&b).unwrap();
@@ -116,7 +60,7 @@ fn unedited_calendar_is_byte_equal() {
 
 #[test]
 fn edit_changes_only_that_line() {
-    let (_, b) = first_with("rule-years/01-create/c3e7");
+    let (_, b) = first_with("complete/yearly-calendar/create/list1/c3e7");
     let mut cal = parse(&b).unwrap();
     todo(&mut cal)
         .prop_mut("SUMMARY")

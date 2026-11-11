@@ -1,5 +1,0 @@
-scenario = "plan6-checklist-date-list1"
-step = "00-setup"
-device = "iphone"
-action = "checklist D due 2026-12-10 set first, then items d1 d2 (items got DUE/DTSTART copies)"
-captured_at = "2026-11-02T19:48:32Z"

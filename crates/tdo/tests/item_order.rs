@@ -58,14 +58,14 @@ impl Env {
         let vdir = tmp.path().join("vdir");
         fs::create_dir_all(vdir.join("list1")).unwrap();
         let scene = if kind == TaskKind::Checklist {
-            "issue35-checklist-order"
+            "insert/checklist-items"
         } else {
-            "issue35-project-order"
+            "insert/project-items"
         };
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1")
+            .join("../../fixtures")
             .join(scene)
-            .join("000-created");
+            .join("created/list1");
         for e in fs::read_dir(src).unwrap() {
             let p = e.unwrap().path();
             if p.extension().is_some_and(|e| e == "ics") {
@@ -381,7 +381,7 @@ fn normal_verified_tui_can_reorder_items_of_a_recurring_checklist() {
     }
     let parent = "61ed74be3ba34212ab7476b698de1263";
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions");
+        .join("../../fixtures/complete/checklist-and-until/first-phone-actions/list1");
     for entry in fs::read_dir(source).unwrap() {
         let path = entry.unwrap().path();
         if !path.extension().is_some_and(|e| e == "ics") {

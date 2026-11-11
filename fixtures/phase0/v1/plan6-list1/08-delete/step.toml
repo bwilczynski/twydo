@@ -1,5 +1,0 @@
-scenario = "plan6-list1"
-step = "08-delete"
-device = "iphone"
-action = "delete K, P, live R (list 2) and live L, S, T, Y; standard delete confirmation"
-captured_at = "2026-11-02T16:03:31Z"

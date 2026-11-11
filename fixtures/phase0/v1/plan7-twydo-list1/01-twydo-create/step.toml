@@ -1,5 +1,0 @@
-scenario = "plan7-twydo-list1"
-step = "01-twydo-create"
-device = "twydo"
-action = "tdo op add (test mode, session matrix): P p1 p2, C c1 c2, RP r1, D1 D3 W1 W2 WD WK M1 M31 LD N2 LW WE Y1 Y29 FC CT UN, K1 K2 S1 S2, E, EC"
-captured_at = "2026-11-04T06:21:53Z"

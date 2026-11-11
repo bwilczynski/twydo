@@ -1,5 +1,0 @@
-scenario = "plan8-tui-a"
-step = "111-twydo-ended-originals-reopened"
-device = "twydo"
-action = "Fixed writer reopens ended original U1b/U2b in place after the captured 110 completed state; rules, dates, identities and end metadata retained."
-captured_at = "2026-11-04T15:09:49Z"
