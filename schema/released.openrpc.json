@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AbandonResult": {
+        "description": "Result of `journal.abandon`.",
+        "properties": {
+          "abandoned": {
+            "description": "False when the entry was already abandoned.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "abandoned"
+        ],
+        "type": "object"
+      },
       "AckParams": {
         "properties": {
           "ids": {
@@ -47,6 +60,40 @@
         "required": [
           "trigger",
           "index"
+        ],
+        "type": "object"
+      },
+      "BackupPreviewParams": {
+        "description": "Params of `lists.backup_preview`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "Backups": {
+        "description": "The answer of `lists.backups`.",
+        "properties": {
+          "deleted": {
+            "items": {
+              "$ref": "#/components/schemas/DeletedBackupView"
+            },
+            "type": "array"
+          },
+          "retired": {
+            "items": {
+              "$ref": "#/components/schemas/RetiredBackupView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "retired",
+          "deleted"
         ],
         "type": "object"
       },
@@ -212,6 +259,57 @@
         ],
         "type": "object"
       },
+      "CheckReport": {
+        "description": "What `check.report` answers: the lines to print on stdout and the warnings to print on\nstderr (the client adds `tdo: `).",
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "lines",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "CheckReportParams": {
+        "description": "Params of `check.report`: the report `tdo check` prints, or with `uid` the permissions of\none task (`tdo op check`).",
+        "properties": {
+          "matrix": {
+            "default": null,
+            "description": "A compatibility matrix file (a test hook); the daemon's own matrix when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uid": {
+            "default": null,
+            "description": "Report the one task with this UID instead of the whole collection.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verbose": {
+            "description": "Include task titles and parse-error paths.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose"
+        ],
+        "type": "object"
+      },
       "CheckResult": {
         "properties": {
           "allowed": {
@@ -232,6 +330,15 @@
       "Config": {
         "additionalProperties": false,
         "properties": {
+          "daemon": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DaemonPrefs"
+              }
+            ],
+            "description": "Never on the wire: a client one release older rejects keys it does not know. It\ntravels as `WireSnapshot.unit_warning`.",
+            "writeOnly": true
+          },
           "default_list": {
             "default": null,
             "type": [
@@ -318,6 +425,184 @@
         ],
         "type": "object"
       },
+      "ConfigStatus": {
+        "description": "How the live configuration stands.",
+        "properties": {
+          "error": {
+            "description": "Why the last change to the file was not applied (unreadable, invalid); the last good\nconfiguration stays in force.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "restart_needed": {
+            "description": "Binding settings the file now names differently (`vdir`, `state_dir`, `writes`,\n`sync`); they apply only after the daemon restarts.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ConflictDetail": {
+        "description": "Result of `conflicts.show`.",
+        "properties": {
+          "conflict": {
+            "$ref": "#/components/schemas/ConflictView"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task as the vdir holds it now; `None` when its file is absent."
+          },
+          "local": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`None` means the version was deleted."
+          },
+          "remote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`None` means the version was deleted."
+          },
+          "vdir_file": {
+            "description": "Absolute path of the task's file in the vdir.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conflict",
+          "vdir_file"
+        ],
+        "type": "object"
+      },
+      "ConflictList": {
+        "description": "Result of `conflicts.list`.",
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/ConflictView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "conflicts"
+        ],
+        "type": "object"
+      },
+      "ConflictView": {
+        "description": "One unresolved conflict.",
+        "properties": {
+          "choice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WireSide"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The side chosen, once a held conflict has one (applied on the next sync)."
+          },
+          "collection": {
+            "type": "string"
+          },
+          "detected": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "held": {
+            "description": "True while vdirsyncer still keeps the two sides apart: only local or remote can be kept.",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WireConflictKind"
+          },
+          "path": {
+            "description": "Vdir-relative path of the task's file.",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/WireConflictState"
+          },
+          "title": {
+            "description": "The task's `SUMMARY` from either version (local first); absent when neither has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "uid",
+          "collection",
+          "path",
+          "kind",
+          "held",
+          "state",
+          "detected"
+        ],
+        "type": "object"
+      },
+      "ConflictsResolveParams": {
+        "description": "Params of `conflicts.resolve`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "keep": {
+            "$ref": "#/components/schemas/WireKeep"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "keep"
+        ],
+        "type": "object"
+      },
+      "ConflictsShowParams": {
+        "description": "Params of `conflicts.show`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
       "Created": {
         "properties": {
           "rev": {
@@ -367,6 +652,57 @@
           "uptime_secs",
           "vdir",
           "epoch"
+        ],
+        "type": "object"
+      },
+      "DaemonPrefs": {
+        "additionalProperties": false,
+        "description": "`[daemon]` table: preferences about the daemon that clients act on.",
+        "properties": {
+          "unit_warning": {
+            "default": true,
+            "description": "Warn in the TUI while no service unit is installed.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DeletedBackupView": {
+        "description": "A backup a list deletion kept.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "local_files": {
+            "description": "Local files the backup preserves.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "resources": {
+            "description": "Remote resources the backup preserves.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "name",
+          "created",
+          "resources",
+          "local_files"
         ],
         "type": "object"
       },
@@ -531,6 +867,89 @@
               "state"
             ],
             "type": "object"
+          },
+          {
+            "description": "A sync began (a `sync.run` job's, or a background one without a `job_id`).",
+            "properties": {
+              "job_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/SyncReason"
+              },
+              "type": {
+                "const": "sync.started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A sync ended; sent after its changes are published (`status_rev` is the status after\nit).",
+            "properties": {
+              "job_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/components/schemas/SyncReason"
+              },
+              "result": {
+                "$ref": "#/components/schemas/SyncResult"
+              },
+              "status_rev": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "sync.finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "reason",
+              "result",
+              "status_rev"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A job ended; `job.get` returns the same state later.",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/components/schemas/JobState"
+              },
+              "type": {
+                "const": "job.finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "job_id",
+              "state"
+            ],
+            "type": "object"
           }
         ],
         "properties": {
@@ -545,6 +964,55 @@
         ],
         "type": "object",
         "x-open": true
+      },
+      "ExportResult": {
+        "description": "What `export` answers: the schema v1 document `tdo export-json` prints, and how many\nresources the read could not parse.",
+        "properties": {
+          "document": {
+            "description": "schema v1, as read by tools/reconcile.py"
+          },
+          "skipped": {
+            "description": "Resources that failed to parse and are missing from `document`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skipped",
+          "document"
+        ],
+        "type": "object"
+      },
+      "ForgetPreview": {
+        "description": "What forgetting a list would preserve.",
+        "properties": {
+          "collection": {
+            "description": "The list's directory name.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "description": "Edits of the list that are not yet synced.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tasks": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collection",
+          "name",
+          "tasks",
+          "pending"
+        ],
+        "type": "object"
       },
       "Freq": {
         "enum": [
@@ -717,6 +1185,84 @@
           }
         ]
       },
+      "InputField": {
+        "description": "Which field `input.parse` reads text for.\n\nClients send this value and the daemon reads it, so it is a closed enum: a daemon that\ndoes not know a field answers `invalid` through the ordinary params check.",
+        "enum": [
+          "due",
+          "start",
+          "repeat"
+        ],
+        "type": "string"
+      },
+      "InputParseParams": {
+        "description": "Params of `input.parse`: typed text of a date or repeat field, read with the grammar the\nTUI uses.",
+        "properties": {
+          "anchor": {
+            "description": "The date a repeat description follows (the task's due date, else today); defaults to\nnone. Only the repeat field reads it.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field": {
+            "$ref": "#/components/schemas/InputField"
+          },
+          "text": {
+            "type": "string"
+          },
+          "today": {
+            "description": "The day \"today\" means; defaults to today in the configured time zone.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "field",
+          "text"
+        ],
+        "type": "object"
+      },
+      "InputParsed": {
+        "description": "Result of `input.parse`. Empty text clears the field: `cleared` is true and the rest is\nempty. A date field fills `due` (for `start` too: it is the date the field takes).",
+        "properties": {
+          "cleared": {
+            "type": "boolean"
+          },
+          "description": {
+            "description": "The preview line the TUI shows under the field.",
+            "type": "string"
+          },
+          "due": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Due"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repeat": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ParsedRepeat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cleared",
+          "description"
+        ],
+        "type": "object"
+      },
       "Instance": {
         "description": "Which configuration and vdir a client means; checked by `hello`.",
         "properties": {
@@ -732,6 +1278,397 @@
         },
         "required": [
           "config"
+        ],
+        "type": "object"
+      },
+      "JobGetParams": {
+        "description": "Params of `job.get`: exactly one of the two.",
+        "properties": {
+          "job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "JobKind": {
+        "enum": [
+          "sync",
+          "list_create",
+          "list_update",
+          "list_archive",
+          "list_unarchive",
+          "list_preview_delete",
+          "list_delete",
+          "list_reconcile",
+          "list_export",
+          "list_forget",
+          "list_recover"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "JobResult": {
+        "description": "What a finished job produced.",
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SyncResult"
+              }
+            ],
+            "properties": {
+              "type": {
+                "const": "sync",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A list was created, changed, archived, unarchived or reconciled; `operation` is the\nlist operation's id (empty for a local archive change).",
+            "properties": {
+              "operation": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/WireListState"
+              },
+              "type": {
+                "const": "list_saved",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "operation",
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WireDeletePreview"
+              }
+            ],
+            "description": "`lists.preview_delete` saved a backup.",
+            "properties": {
+              "type": {
+                "const": "delete_preview",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`lists.export` copied backup `backup` to `destination`.",
+            "properties": {
+              "backup": {
+                "type": "string"
+              },
+              "destination": {
+                "type": "string"
+              },
+              "type": {
+                "const": "exported",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "backup",
+              "destination"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`lists.forget` preserved list `name` as `backup`; `message` is what the TUI shows\n(with the sync's problems appended), `sync` the sync that followed.",
+            "properties": {
+              "backup": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sync": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SyncResult"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "const": "forgot",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "backup",
+              "name",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`lists.recover` copied a backup into a list (`applied`), or found it already copied.",
+            "properties": {
+              "applied": {
+                "type": "boolean"
+              },
+              "message": {
+                "type": "string"
+              },
+              "op_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "recovered",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "applied",
+              "message"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
+      },
+      "JobStarted": {
+        "description": "The answer of a job method.",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "JobState": {
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "queued",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "running",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "result": {
+                "$ref": "#/components/schemas/JobResult"
+              },
+              "state": {
+                "const": "finished",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "result"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "kind": {
+                "$ref": "#/components/schemas/ErrorKind"
+              },
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "const": "failed",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "kind",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The daemon stopped before the job ended (it was queued or running).",
+            "properties": {
+              "state": {
+                "const": "interrupted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
+      },
+      "JobView": {
+        "description": "A job as `job.get` returns it.",
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ended": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/JobKind"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          }
+        },
+        "required": [
+          "job_id",
+          "kind",
+          "state",
+          "created"
+        ],
+        "type": "object"
+      },
+      "JournalAbandonParams": {
+        "description": "Params of `journal.abandon`.",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "op_id"
+        ],
+        "type": "object"
+      },
+      "JournalEntryView": {
+        "description": "One journal entry, as `tdo op journal` lists it.",
+        "properties": {
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The client request behind the entry, if one made it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stage": {
+            "$ref": "#/components/schemas/WireStage"
+          },
+          "synced": {
+            "description": "When a sync confirmed the server holds the entry's result.",
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "created",
+          "kind",
+          "stage",
+          "uids"
+        ],
+        "type": "object"
+      },
+      "JournalRevertParams": {
+        "description": "Params of `journal.revert`: undoes the applied entry `op_id`, whoever wrote it. The revert\nis not on any session's undo stack.",
+        "properties": {
+          "op_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id",
+          "op_id"
         ],
         "type": "object"
       },
@@ -752,6 +1689,104 @@
         "required": [
           "unfinished",
           "stuck"
+        ],
+        "type": "object"
+      },
+      "ListArchiveParams": {
+        "description": "Params of `lists.archive` and `lists.unarchive`: the list as the client saw it.",
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/WireListState"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "expected"
+        ],
+        "type": "object"
+      },
+      "ListCreateParams": {
+        "description": "Params of `lists.create`.",
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The new list's directory name.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "name",
+          "color"
+        ],
+        "type": "object"
+      },
+      "ListDeleteParams": {
+        "description": "Params of `lists.delete`: the preview the client showed.",
+        "properties": {
+          "preview": {
+            "$ref": "#/components/schemas/WireDeletePreview"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "ListExportParams": {
+        "description": "Params of `lists.export`: copy backup `backup` to the new directory `destination`.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "backup",
+          "destination"
+        ],
+        "type": "object"
+      },
+      "ListForgetParams": {
+        "description": "Params of `lists.forget`: the list `name` as the preview showed it; the job fails when\n`name` now resolves to another directory than `collection`.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "name",
+          "collection"
         ],
         "type": "object"
       },
@@ -790,6 +1825,109 @@
             }
           }
         },
+        "type": "object"
+      },
+      "ListPreviewDeleteParams": {
+        "description": "Params of `lists.preview_delete`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id"
+        ],
+        "type": "object"
+      },
+      "ListPreviewForgetParams": {
+        "description": "Params of `lists.preview_forget`: the list to forget, by directory or display name.",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ListReconcileParams": {
+        "description": "Params of `lists.reconcile`: finish the unfinished list operation `operation`, or, with\n`keep_server`, adopt what the server holds.",
+        "properties": {
+          "keep_server": {
+            "type": "boolean"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "operation",
+          "keep_server"
+        ],
+        "type": "object"
+      },
+      "ListRecoverParams": {
+        "description": "Params of `lists.recover`: copy the tasks of retired-list backup `backup` into the\nexisting list `to`.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "request_id",
+          "backup",
+          "to"
+        ],
+        "type": "object"
+      },
+      "ListUpdateParams": {
+        "description": "Params of `lists.update`: the new name and colour of the list `expected` describes as the\nclient saw it.",
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`; absent for no colour.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected": {
+            "$ref": "#/components/schemas/WireListState"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "id",
+          "name",
+          "expected"
+        ],
         "type": "object"
       },
       "MetaFormat": {
@@ -1275,6 +2413,82 @@
         ],
         "x-open": true
       },
+      "ParsedRepeat": {
+        "description": "A parsed repeat rule.",
+        "properties": {
+          "from_completion": {
+            "type": "boolean"
+          },
+          "rrule": {
+            "description": "The rule as RRULE text.",
+            "type": "string"
+          },
+          "spec": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RepeatSpec"
+              }
+            ],
+            "description": "The rule in the form `Op` takes (`repeat` of a `set` or a `create`)."
+          }
+        },
+        "required": [
+          "rrule",
+          "from_completion",
+          "spec"
+        ],
+        "type": "object"
+      },
+      "PendingListOp": {
+        "description": "An unfinished list save (`lists.pending`), as the TUI's reconcile card needs it.",
+        "properties": {
+          "action": {
+            "description": "`create`, `update`, and so on.",
+            "type": "string"
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_color": {
+            "description": "The colour the server reported, when the record has it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observed_name": {
+            "description": "The name the server reported, when the record has it.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "operation": {
+            "description": "The operation record's id (`lists.reconcile` takes it).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "action"
+        ],
+        "type": "object"
+      },
       "Placement": {
         "description": "A write operation on the task store.",
         "enum": [
@@ -1384,6 +2598,29 @@
         ],
         "type": "object"
       },
+      "RecoverResult": {
+        "description": "Result of `journal.recover`.",
+        "properties": {
+          "resumed": {
+            "description": "Ids of the entries rolled forward to applied.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stuck": {
+            "items": {
+              "$ref": "#/components/schemas/StuckView"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "resumed",
+          "stuck"
+        ],
+        "type": "object"
+      },
       "RefusalView": {
         "properties": {
           "at": {
@@ -1429,6 +2666,82 @@
         "required": [
           "rule",
           "from_completion"
+        ],
+        "type": "object"
+      },
+      "ResolveResult": {
+        "description": "Result of `conflicts.resolve`.",
+        "properties": {
+          "message": {
+            "description": "The confirmation, in the words `tdo conflicts resolve` uses.",
+            "type": "string"
+          },
+          "op_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/WireResolution"
+          }
+        },
+        "required": [
+          "resolution",
+          "message"
+        ],
+        "type": "object"
+      },
+      "RetiredBackupView": {
+        "description": "A preserved (forgotten) list.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "conflicts": {
+            "description": "The list had unresolved conflicts when it was preserved.",
+            "type": "boolean"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "destination": {
+            "description": "The list a recovery of this backup went to, once one was recorded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retired": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "collection",
+          "name",
+          "created",
+          "tasks",
+          "pending",
+          "retired",
+          "conflicts"
         ],
         "type": "object"
       },
@@ -1480,6 +2793,14 @@
       },
       "StatusView": {
         "properties": {
+          "config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfigStatus"
+              }
+            ],
+            "description": "The state of `config.toml` as the daemon reads it live; omitted while all is well."
+          },
           "conflicts": {
             "format": "uint",
             "minimum": 0,
@@ -1499,6 +2820,13 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "queue_unreadable": {
+            "description": "Queue item files that do not parse (paths): they are not drained and not shown as\npending; the user decides what to do with them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "refusals": {
             "items": {
@@ -1528,6 +2856,22 @@
           "conflicts",
           "journal",
           "refusals"
+        ],
+        "type": "object"
+      },
+      "StuckView": {
+        "description": "An entry recovery could not finish.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reason"
         ],
         "type": "object"
       },
@@ -1658,6 +3002,141 @@
         },
         "type": "object"
       },
+      "SyncOutcome": {
+        "oneOf": [
+          {
+            "enum": [
+              "ok",
+              "failed",
+              "stopped"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "skipped",
+            "description": "The run did nothing (another runner held the run lock, sync is not configured, ...).",
+            "type": "string"
+          }
+        ],
+        "x-open": true
+      },
+      "SyncReason": {
+        "description": "Why a sync ran.",
+        "enum": [
+          "manual",
+          "startup",
+          "periodic",
+          "batch",
+          "resolve",
+          "switch_on",
+          "list"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "SyncResult": {
+        "description": "What a sync did, in the words `tdo sync` uses.",
+        "properties": {
+          "drained": {
+            "description": "Queued edits the sync dealt with (each also gets its `op.finished`).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "new_conflicts": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes": {
+            "description": "What the runner did on its own.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/SyncOutcome"
+          },
+          "problems": {
+            "description": "What the user should act on (`tdo sync` prints them after `tdo: `).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "warnings": {
+            "description": "What did not fail the run (`tdo sync` prints them after `tdo: warning: `).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcome",
+          "problems",
+          "warnings",
+          "notes",
+          "new_conflicts",
+          "drained"
+        ],
+        "type": "object"
+      },
+      "SyncRunParams": {
+        "description": "Params of `sync.run`.",
+        "properties": {
+          "force_delete": {
+            "default": [],
+            "description": "Lists to sync with `--force-delete` (directory or display names), as\n`tdo sync --force-delete`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "SyncSetAutoParams": {
+        "description": "Params of `sync.set_auto`.",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "on"
+        ],
+        "type": "object"
+      },
+      "SyncSetAutoResult": {
+        "description": "Result of `sync.set_auto`.",
+        "properties": {
+          "auto": {
+            "description": "The switch the call set: `true` is automatic sync on. It repeats the request's `on`;\nit is not read back from the switch file.",
+            "type": "boolean"
+          },
+          "message": {
+            "description": "The confirmation, in the words `tdo sync on|off` uses.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "auto",
+          "message"
+        ],
+        "type": "object"
+      },
       "SyncState": {
         "enum": [
           "idle",
@@ -1666,15 +3145,43 @@
         "type": "string",
         "x-open": true
       },
+      "SyncStopResult": {
+        "description": "Result of `sync.stop`.",
+        "properties": {
+          "stopping": {
+            "description": "False when no sync ran in this daemon, so there was nothing to stop.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopping"
+        ],
+        "type": "object"
+      },
       "SyncView": {
         "properties": {
           "auto": {
             "type": "boolean"
           },
+          "collections": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WireCollState"
+            },
+            "default": {},
+            "description": "The last reported state of each list, by directory name.",
+            "type": "object"
+          },
           "failures": {
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "job_id": {
+            "description": "The job of the running sync (a `sync.run`); absent for a background sync.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "last_attempt": {
             "format": "date-time",
@@ -1691,6 +3198,13 @@
           },
           "last_success": {
             "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metasync_error": {
+            "description": "Why the last list-metadata sync failed, when it did.",
             "type": [
               "string",
               "null"
@@ -1798,6 +3312,113 @@
         ],
         "type": "object"
       },
+      "VersionView": {
+        "description": "The fields `tdo conflicts show` prints of one version of a task.",
+        "properties": {
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "description": "Absolute path of the kept copy; absent for the current version, whose path is `vdir_file`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_modified": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "WireCollState": {
+        "description": "The last reported sync result of one list.",
+        "oneOf": [
+          {
+            "properties": {
+              "state": {
+                "const": "ok",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "conflict",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "emptied_local",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "state": {
+                "const": "emptied_remote",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "const": "error",
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "message"
+            ],
+            "type": "object"
+          }
+        ],
+        "x-open": true
+      },
       "WireCollection": {
         "properties": {
           "color": {
@@ -1822,6 +3443,60 @@
         ],
         "type": "object"
       },
+      "WireConflictKind": {
+        "description": "What kind of disagreement a conflict is (mirrors the core's `ConflictKind`).",
+        "enum": [
+          "both_changed",
+          "local_delete_remote_edit",
+          "remote_delete_local_edit",
+          "journal"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "WireConflictState": {
+        "description": "Where a conflict is in its life (mirrors the core's `ConflictState`).",
+        "enum": [
+          "open",
+          "chosen",
+          "resolved",
+          "superseded"
+        ],
+        "type": "string",
+        "x-open": true
+      },
+      "WireDeletePreview": {
+        "description": "What `lists.preview_delete` saved: the backup that a deletion would keep.",
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string"
+          },
+          "local_files": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "resources": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backup",
+          "collection",
+          "name",
+          "resources",
+          "local_files"
+        ],
+        "type": "object"
+      },
       "WireError": {
         "properties": {
           "message": {
@@ -1837,6 +3512,86 @@
           "message"
         ],
         "type": "object"
+      },
+      "WireKeep": {
+        "description": "Which version to keep.",
+        "oneOf": [
+          {
+            "enum": [
+              "local",
+              "remote"
+            ],
+            "type": "string"
+          },
+          {
+            "const": "current",
+            "description": "The task as the vdir holds it now (not for a held conflict).",
+            "type": "string"
+          }
+        ]
+      },
+      "WireListState": {
+        "description": "A list as the list methods see it: its name, colour and local archive flag.",
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "color": {
+            "description": "`#rrggbb`; absent when the list has no colour.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "description": "The list's directory name in the vdir.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "archived"
+        ],
+        "type": "object"
+      },
+      "WireResolution": {
+        "description": "What a resolution did (mirrors the core's `Resolution`).",
+        "oneOf": [
+          {
+            "const": "recorded",
+            "description": "A held conflict: the choice is recorded and the next sync applies it.",
+            "type": "string"
+          },
+          {
+            "const": "already_in_place",
+            "description": "The vdir already held the kept version.",
+            "type": "string"
+          },
+          {
+            "const": "written",
+            "description": "The kept version was written to the vdir (`op_id` names the journal entry).",
+            "type": "string"
+          },
+          {
+            "const": "kept_current",
+            "description": "The conflict is closed and the vdir file left as it is.",
+            "type": "string"
+          }
+        ],
+        "x-open": true
+      },
+      "WireSide": {
+        "description": "Which copy of a task (mirrors the core's `Side`).",
+        "enum": [
+          "local",
+          "remote"
+        ],
+        "type": "string",
+        "x-open": true
       },
       "WireSnapshot": {
         "properties": {
@@ -1871,6 +3626,11 @@
               "$ref": "#/components/schemas/WireTask"
             },
             "type": "array"
+          },
+          "unit_warning": {
+            "default": true,
+            "description": "`daemon.unit_warning` of the configuration, which is not serialised inside `config`\n(an older client would reject the key). Absent means `true`.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1882,6 +3642,16 @@
           "errors"
         ],
         "type": "object"
+      },
+      "WireStage": {
+        "description": "Where a journal entry is in its life (mirrors the core's `Stage`).",
+        "enum": [
+          "prepared",
+          "applied",
+          "abandoned"
+        ],
+        "type": "string",
+        "x-open": true
       },
       "WireTask": {
         "properties": {
@@ -2332,6 +4102,44 @@
       "x-lifecycle": false
     },
     {
+      "name": "check.report",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/CheckReportParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/CheckReport"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "export",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ExportResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
       "name": "op.check",
       "params": [
         {
@@ -2365,6 +4173,510 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/AckResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.run",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SyncRunParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.stop",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SyncStopResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "sync.set_auto",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SyncSetAutoParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SyncSetAutoResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "job.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JobGetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobView"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.create",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListCreateParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.update",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListUpdateParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.archive",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListArchiveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.unarchive",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListArchiveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.preview_delete",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListPreviewDeleteParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.delete",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListDeleteParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.reconcile",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListReconcileParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.export",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListExportParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.preview_forget",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListPreviewForgetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ForgetPreview"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.forget",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListForgetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.recover",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ListRecoverParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/JobStarted"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.pending",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/PendingListOp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.backups",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Backups"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "lists.backup_preview",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/BackupPreviewParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WireSnapshot"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConflictList"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.show",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ConflictsShowParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConflictDetail"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.resolve",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ConflictsResolveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ResolveResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "items": {
+            "$ref": "#/components/schemas/JournalEntryView"
+          },
+          "type": "array"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.recover",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/RecoverResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.revert",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JournalRevertParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/WriteResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "journal.abandon",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/JournalAbandonParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/AbandonResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "input.parse",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/InputParseParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/InputParsed"
         }
       },
       "x-lifecycle": false
