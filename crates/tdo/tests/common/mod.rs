@@ -30,6 +30,19 @@ pub fn short_socket_dir() -> tempfile::TempDir {
     dir
 }
 
+/// The one place that builds a `tdo` command: it always names its own socket, config and state
+/// directories, and never inherits `TWYDO_SOCKET`. Callers add their own variables (`HOME`,
+/// `XDG_RUNTIME_DIR`, ...); a test that never reaches a daemon passes a socket path that
+/// does not exist.
+pub fn tdo_bin(socket: &Path, xdg_config: &Path, xdg_state: &Path) -> Command {
+    let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
+    c.env_remove("TWYDO_SOCKET")
+        .env("TWYDO_SOCKET", socket)
+        .env("XDG_CONFIG_HOME", xdg_config)
+        .env("XDG_STATE_HOME", xdg_state);
+    c
+}
+
 /// A spawned process, killed and reaped on drop.
 pub struct Proc(pub Child);
 
@@ -128,12 +141,12 @@ impl TestEnv {
     /// A `tdo` command in this environment: its own config, state and socket, and no
     /// `--vdir` (the configuration names the vdir). Output is not redirected.
     pub fn tdo_cmd(&self) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
-        c.env_remove("TWYDO_SOCKET")
-            .env("TWYDO_SOCKET", self.socket())
-            .env("XDG_CONFIG_HOME", self.root.path().join("config"))
-            .env("XDG_STATE_HOME", self.xdg_state())
-            .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+        let mut c = tdo_bin(
+            &self.socket(),
+            &self.root.path().join("config"),
+            &self.xdg_state(),
+        );
+        c.env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
             .env("HOME", self.root.path());
         c
     }
@@ -397,6 +410,164 @@ impl WriteDaemon {
     }
 }
 
+/// A `ClientSync` as the status line and the conflict overlay read it, built directly from
+/// what a sync summary holds (the daemon sends the same facts in `status.get` and
+/// `conflicts.list`).
+pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
+    use twydo_daemon::protocol::admin::ConflictView;
+    use twydo_daemon::protocol::methods::{ConfigStatus, SyncState, SyncView};
+    tdo::app::ClientSync {
+        sync: Some(SyncView {
+            state: SyncState::Idle,
+            auto: !s.off,
+            last_success: s.status.last_success,
+            last_attempt: s.status.last_attempt,
+            next_attempt: s.status.next_attempt,
+            failures: s.status.failures,
+            last_error: s.status.last_error.clone(),
+            job_id: None,
+            collections: s
+                .status
+                .collections
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into()))
+                .collect(),
+            metasync_error: s.status.metasync_error.clone(),
+        }),
+        unsynced: s.pending,
+        queued: s.queued,
+        conflicts: s.conflicts.iter().map(ConflictView::of).collect(),
+        refusals: Vec::new(),
+        config: ConfigStatus::default(),
+        drain_error: None,
+    }
+}
+
+/// A daemon with lists `c1` and `c2` that a synthetic server also holds (the core tests'
+/// offline list backend), and the way to reach it.
+pub struct ListEnv {
+    pub root: tempfile::TempDir,
+    pub _sockets: tempfile::TempDir,
+    pub daemon: DaemonHandle,
+    pub socket: PathBuf,
+    pub instance: Instance,
+}
+
+pub const COLOR: &str = "#3289d2";
+
+pub fn list_env() -> ListEnv {
+    let root = tempfile::tempdir().unwrap();
+    let sockets = short_socket_dir();
+    let vdir = root.path().join("vdir");
+    let mut collections = serde_json::Map::new();
+    for (id, name) in [("c1", "Synthetic one"), ("c2", "Synthetic two")] {
+        fs::create_dir_all(vdir.join(id)).unwrap();
+        fs::write(
+            vdir.join(id).join(format!("u-{id}.ics")),
+            format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:u-{id}\r\nSUMMARY:One\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"),
+        )
+        .unwrap();
+        fs::write(vdir.join(id).join("displayname"), name).unwrap();
+        fs::write(vdir.join(id).join("color"), COLOR).unwrap();
+        collections.insert(id.into(), serde_json::json!({"name": name, "color": COLOR}));
+    }
+    fs::write(
+        root.path().join("server.json"),
+        serde_json::json!({"calls": [], "flags": {}, "collections": collections}).to_string(),
+    )
+    .unwrap();
+    let connection = root.path().join("connection.json");
+    fs::write(&connection, serde_json::json!({"vdir": vdir}).to_string()).unwrap();
+    let vdirsyncer = root.path().join("fake-vdirsyncer");
+    write_script(&vdirsyncer, "exit 0");
+    let backend = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../twydo-core/tests/common/list_backend.py")
+        .canonicalize()
+        .unwrap();
+    let helper = root.path().join("list-python");
+    fs::write(
+        &helper,
+        format!(
+            "#!/usr/bin/env python3\nimport runpy,sys\n\
+             if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
+             runpy.run_path({backend:?}, run_name='__main__')\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
+    // A script written while another test thread forks can briefly be busy: probe it.
+    let end = Instant::now() + Duration::from_secs(5);
+    while std::process::Command::new(&helper)
+        .arg("__probe")
+        .status()
+        .map(|s| !s.success())
+        .unwrap_or(true)
+    {
+        assert!(Instant::now() < end, "the list helper never ran");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let config = root.path().join("config.toml");
+    fs::write(
+        &config,
+        format!(
+            "vdir = {vdir:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
+             pair = \"synthetic\"\nlocal_storage = \"local\"\ncommand = {vdirsyncer:?}\n\
+             list_python = {helper:?}\nvdirsyncer_config = {connection:?}\nmetasync = false\n",
+            root.path().join("state"),
+        ),
+    )
+    .unwrap();
+    let cfg = Config::load(&config).unwrap();
+    let mut matrix = Matrix::embedded().clone();
+    let row = matrix
+        .operation
+        .iter_mut()
+        .find(|r| r.case == "list-metadata" && r.op == "edit")
+        .unwrap();
+    row.iphone_baseline = twydo_core::compat::Verdict::Pass;
+    row.twydo_to_iphone = twydo_core::compat::Verdict::Pass;
+    row.iphone_to_twydo = twydo_core::compat::Verdict::Pass;
+    matrix
+        .edge_case
+        .iter_mut()
+        .find(|e| e.id == "list-metadata-atomicity")
+        .unwrap()
+        .verdict = twydo_core::compat::Verdict::Pass;
+    let socket = sockets.path().join("s").join("tdo.sock");
+    let mut opts = DaemonOptions::new(socket.clone());
+    opts.schedule = false;
+    opts.matrix = matrix;
+    let instance = Instance {
+        config,
+        vdir: Some(vdir),
+    };
+    let daemon = Daemon::start(cfg, instance.clone(), opts).unwrap();
+    assert!(daemon.wait_ready(Duration::from_secs(10)));
+    ListEnv {
+        root,
+        _sockets: sockets,
+        daemon,
+        socket,
+        instance,
+    }
+}
+
+/// A link that connects to `socket` as `instance` (no daemon is started for it).
+pub fn link_to(socket: PathBuf, instance: Instance) -> tdo::term::link::Link {
+    let connect: tdo::term::link::Connector = Box::new(move |session| {
+        let hello = twydo_daemon::protocol::methods::HelloParams {
+            client: "link-test".into(),
+            version: "0".into(),
+            protocol: twydo_daemon::PROTOCOL,
+            session,
+            instance: instance.clone(),
+        };
+        twydo_daemon::client::Client::connect(&socket, hello)
+            .map_err(|e| tdo::client::ConnectError::Unavailable(e.to_string()))
+    });
+    tdo::term::link::Link::start_with(connect)
+}
+
 /// Which answers to `op.submit` a [`lossy_proxy`] swallows.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Lose {
@@ -560,162 +731,4 @@ pub fn dropping_proxy(
         }
     });
     (path, seen, open)
-}
-
-/// A `ClientSync` as the status line and the conflict overlay read it, built directly from
-/// what a sync summary holds (the daemon sends the same facts in `status.get` and
-/// `conflicts.list`).
-pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
-    use twydo_daemon::protocol::admin::ConflictView;
-    use twydo_daemon::protocol::methods::{ConfigStatus, SyncState, SyncView};
-    tdo::app::ClientSync {
-        sync: Some(SyncView {
-            state: SyncState::Idle,
-            auto: !s.off,
-            last_success: s.status.last_success,
-            last_attempt: s.status.last_attempt,
-            next_attempt: s.status.next_attempt,
-            failures: s.status.failures,
-            last_error: s.status.last_error.clone(),
-            job_id: None,
-            collections: s
-                .status
-                .collections
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into()))
-                .collect(),
-            metasync_error: s.status.metasync_error.clone(),
-        }),
-        unsynced: s.pending,
-        queued: s.queued,
-        conflicts: s.conflicts.iter().map(ConflictView::of).collect(),
-        refusals: Vec::new(),
-        config: ConfigStatus::default(),
-        drain_error: None,
-    }
-}
-
-/// A daemon with lists `c1` and `c2` that a synthetic server also holds (the core tests'
-/// offline list backend), and the way to reach it.
-pub struct ListEnv {
-    pub root: tempfile::TempDir,
-    pub _sockets: tempfile::TempDir,
-    pub daemon: DaemonHandle,
-    pub socket: PathBuf,
-    pub instance: Instance,
-}
-
-pub const COLOR: &str = "#3289d2";
-
-pub fn list_env() -> ListEnv {
-    let root = tempfile::tempdir().unwrap();
-    let sockets = short_socket_dir();
-    let vdir = root.path().join("vdir");
-    let mut collections = serde_json::Map::new();
-    for (id, name) in [("c1", "Synthetic one"), ("c2", "Synthetic two")] {
-        fs::create_dir_all(vdir.join(id)).unwrap();
-        fs::write(
-            vdir.join(id).join(format!("u-{id}.ics")),
-            format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\nUID:u-{id}\r\nSUMMARY:One\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"),
-        )
-        .unwrap();
-        fs::write(vdir.join(id).join("displayname"), name).unwrap();
-        fs::write(vdir.join(id).join("color"), COLOR).unwrap();
-        collections.insert(id.into(), serde_json::json!({"name": name, "color": COLOR}));
-    }
-    fs::write(
-        root.path().join("server.json"),
-        serde_json::json!({"calls": [], "flags": {}, "collections": collections}).to_string(),
-    )
-    .unwrap();
-    let connection = root.path().join("connection.json");
-    fs::write(&connection, serde_json::json!({"vdir": vdir}).to_string()).unwrap();
-    let vdirsyncer = root.path().join("fake-vdirsyncer");
-    write_script(&vdirsyncer, "exit 0");
-    let backend = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../twydo-core/tests/common/list_backend.py")
-        .canonicalize()
-        .unwrap();
-    let helper = root.path().join("list-python");
-    fs::write(
-        &helper,
-        format!(
-            "#!/usr/bin/env python3\nimport runpy,sys\n\
-             if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
-             runpy.run_path({backend:?}, run_name='__main__')\n"
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-    // A script written while another test thread forks can briefly be busy: probe it.
-    let end = Instant::now() + Duration::from_secs(5);
-    while std::process::Command::new(&helper)
-        .arg("__probe")
-        .status()
-        .map(|s| !s.success())
-        .unwrap_or(true)
-    {
-        assert!(Instant::now() < end, "the list helper never ran");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let config = root.path().join("config.toml");
-    fs::write(
-        &config,
-        format!(
-            "vdir = {vdir:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             pair = \"synthetic\"\nlocal_storage = \"local\"\ncommand = {vdirsyncer:?}\n\
-             list_python = {helper:?}\nvdirsyncer_config = {connection:?}\nmetasync = false\n",
-            root.path().join("state"),
-        ),
-    )
-    .unwrap();
-    let cfg = Config::load(&config).unwrap();
-    let mut matrix = Matrix::embedded().clone();
-    let row = matrix
-        .operation
-        .iter_mut()
-        .find(|r| r.case == "list-metadata" && r.op == "edit")
-        .unwrap();
-    row.iphone_baseline = twydo_core::compat::Verdict::Pass;
-    row.twydo_to_iphone = twydo_core::compat::Verdict::Pass;
-    row.iphone_to_twydo = twydo_core::compat::Verdict::Pass;
-    matrix
-        .edge_case
-        .iter_mut()
-        .find(|e| e.id == "list-metadata-atomicity")
-        .unwrap()
-        .verdict = twydo_core::compat::Verdict::Pass;
-    let socket = sockets.path().join("s").join("tdo.sock");
-    let mut opts = DaemonOptions::new(socket.clone());
-    opts.schedule = false;
-    opts.matrix = matrix;
-    let instance = Instance {
-        config,
-        vdir: Some(vdir),
-    };
-    let daemon = Daemon::start(cfg, instance.clone(), opts).unwrap();
-    assert!(daemon.wait_ready(Duration::from_secs(10)));
-    ListEnv {
-        root,
-        _sockets: sockets,
-        daemon,
-        socket,
-        instance,
-    }
-}
-
-/// A link that connects to `socket` as `instance` (no daemon is started for it).
-pub fn link_to(socket: PathBuf, instance: Instance) -> tdo::term::link::Link {
-    let connect: tdo::term::link::Connector = Box::new(move |session| {
-        let hello = twydo_daemon::protocol::methods::HelloParams {
-            client: "link-test".into(),
-            version: "0".into(),
-            protocol: twydo_daemon::PROTOCOL,
-            session,
-            instance: instance.clone(),
-        };
-        twydo_daemon::client::Client::connect(&socket, hello)
-            .map_err(|e| tdo::client::ConnectError::Unavailable(e.to_string()))
-    });
-    tdo::term::link::Link::start_with(connect)
 }

@@ -96,10 +96,12 @@ fn sigterm_shuts_down_and_removes_the_socket() {
 #[test]
 fn a_missing_config_exits_with_the_error_code() {
     let env = TestEnv::new("");
-    let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
-    c.env("TWYDO_SOCKET", env.socket())
-        .env("XDG_CONFIG_HOME", env.root.path().join("none"))
-        .env("HOME", env.root.path())
+    let mut c = common::tdo_bin(
+        &env.socket(),
+        &env.root.path().join("none"),
+        &env.xdg_state(),
+    );
+    c.env("HOME", env.root.path())
         .arg("daemon")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
