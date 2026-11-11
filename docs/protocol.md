@@ -11,7 +11,8 @@ clients.
 `--socket`, else the `TWYDO_SOCKET` environment variable, else `$XDG_RUNTIME_DIR/twydo/tdo.sock`
 (`$TMPDIR/twydo/tdo.sock` on macOS). The socket is `0600` in a `0700` directory. The daemon
 refuses connections from other users, and a client should check the daemon's user the same way.
-A client may start the daemon with `tdo daemon --detach`.
+A client may start the daemon with `tdo daemon --detach`, or through the service unit
+`tdo daemon install` writes ([install.md](install.md#start-it-at-login)).
 
 Messages are JSON-RPC 2.0, one per line (UTF-8, `\n`-terminated), in both directions. Requests
 may be pipelined; responses carry the request's `id`. Messages without an `id` from the daemon
@@ -54,6 +55,12 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   write ends with an `op.finished` event. Resending the same `request_id` returns the original
   outcome and never writes twice, so a client may retry after a lost answer. `op.get` looks an
   outcome up by `op_id` or `request_id`. A refusal names a kind and a message to show as is.
+- Read-only reports: `check.report` (`verbose`, optional `matrix` path, optional `uid`) returns
+  `{lines, warnings}`, the exact stdout and stderr lines of `tdo check` or `tdo op check`.
+  `export` returns `{skipped, document}`, the schema-v1 JSON of `tdo export-json`.
+  `conflicts.list` and `conflicts.show {id}` return conflicts and the detail of one (fields and
+  file paths of the local, remote and current copies). `status.get` also carries the journal
+  entries still unfinished.
 - Syncs and list operations are jobs: they answer at once with a `job_id` and end with a
   `job.finished` event; `job.get` returns the outcome later. There is no `job.progress` yet.
   `sync.stop` asks the running sync to stop; its result then reports the outcome `stopped`.
@@ -61,8 +68,8 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
 ## Schema files and open enums
 
 - `schema/tdo.openrpc.json` in the repository describes every method, result, error and event,
-  and is generated from the Rust types. A running daemon prints the same document for
-  `rpc.discover`. There is no `tdo daemon schema` command yet.
+  and is generated from the Rust types. `tdo daemon schema` prints the same
+  document without a daemon, and a running daemon returns it for `rpc.discover`.
 - `schema/released.openrpc.json` is the schema of the last release; a test rejects changes that
   would break a client built against it.
 - Enums a client receives (outcomes, operation states, error kinds, the event `type`, causes) are

@@ -41,33 +41,16 @@ in [config.md](config.md) (`[sync]`).
 
 4. **Background sync.** Nothing to set up: while the daemon runs it syncs by itself (at startup,
    every 60 seconds, after edits, after a conflict choice, when automatic sync is switched on
-   and after the machine wakes), and the TUI and the commands start it. A timer or agent is
-   only needed to keep the daemon (and so the sync) running while no `tdo` is open. An
-   installed one keeps working: `tdo sync --background` now only starts the daemon and
-   returns. The service unit that keeps the daemon alive, and `tdo daemon install`, come in a
-   later release. Pick one:
+   and after the machine wakes), and the TUI and the commands start it. To keep the daemon (and
+   so the sync) running while no `tdo` is open, run `tdo daemon install` once: it installs a
+   login service ([install.md](install.md#start-it-at-login)).
 
-   - Linux, systemd user units:
+   The old timer (`twydo-sync.timer` on Linux, `app.twydo.sync` on macOS) is retired. `tdo
+   daemon install` disables it if it finds it and leaves the files in place; `tdo sync
+   --background` (hidden) now only starts the daemon, so a timer you keep is harmless.
 
-     ```
-     cp contrib/systemd/twydo-sync.service contrib/systemd/twydo-sync.timer ~/.config/systemd/user/
-     systemctl --user daemon-reload
-     systemctl --user enable --now twydo-sync.timer
-     ```
-
-     Adjust `ExecStart` to where `tdo` lives. For a separate test setup, uncomment the
-     `Environment=` line. A run that skips (backoff, or another runner busy) exits 0. The unit sets
-     `SuccessExitStatus=1`: `tdo sync` exits 1 while a conflict or an emptied list waits for you,
-     or after a failure, and the unit would otherwise show failed every minute; check
-     `tdo status` instead. Exit 2 (configuration or IO error) still marks the unit failed.
-
-   - macOS, launchd agent: copy `contrib/launchd/app.twydo.sync.plist` to
-     `~/Library/LaunchAgents/`, replace `/usr/local/bin/tdo` and `/Users/USER` with real paths
-     (launchd does not expand `~`), then
-     `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.twydo.sync.plist`.
-
-   Both run `tdo sync --background` every minute, which starts the daemon if it is not
-   running. Once it runs, it syncs and pulls changes made on other devices itself.
+   Do not run `vdirsyncer sync` by hand while the daemon runs: it would race the daemon's own
+   sync. Use `tdo sync`, which asks the daemon.
 
 ## When edits sync
 
@@ -102,7 +85,7 @@ sync at once.
 
 **What the TUI sees.** The daemon tells the TUI when a sync starts and ends and when files
 change, so the TUI shows what any sync brought in, whoever asked for it (`tdo sync` in another
-terminal, a timer, the daemon itself).
+terminal, the daemon itself).
 
 ## What `tdo sync` does
 

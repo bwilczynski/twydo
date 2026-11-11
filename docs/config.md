@@ -5,9 +5,8 @@ alike). An empty `XDG_CONFIG_HOME` counts as unset. Unknown keys are an error an
 names the key. Twydo only reads this file, and only the daemon reads it (`tdo daemon`, started
 by the first `tdo` that needs it; [architecture.md](architecture.md#the-daemon)). Most changes
 apply to the running daemon at once. `vdir`, `state_dir`, `[writes]`, `[sync]`, `timezone` and
-`work_days` need a restart: run `tdo daemon stop`; the next `tdo` starts a new one.
-Read-only commands (`check`, `export-json`, `status`, `conflicts`) still read the file
-themselves.
+`work_days` need a restart: run `tdo daemon stop`; the next `tdo` starts a new one. No client
+reads the file: `check`, `export-json`, `status`, `conflicts` and the rest ask the daemon too.
 
 ## Top-level keys
 
@@ -39,7 +38,8 @@ operation was blocked, stale or stuck (reason on stderr); exit 2 is a usage, con
 when actions are refused, and exits 1 if the UID is missing. `tdo check` summarizes
 permissions for all loaded tasks. It exits 0 when the report is produced, including
 refusals or individual parse errors, and 2 on configuration or vdir-read failure.
-Both reports honor `[writes] mode`, include queued edits, and distinguish operations
+`tdo check --matrix <path>` loads that compatibility matrix file for the one report (the
+daemon does the loading; a file that does not load is an error). Both reports honor `[writes] mode`, include queued edits, and distinguish operations
 that need proposed field values or a destination. See [compatibility.md](compatibility.md).
 While a sync holds the vdir the write is queued instead: it prints
 `queued (a sync is running): <queue id>` and exits 0 at once. `--wait` (on every write
@@ -49,11 +49,21 @@ nobody has been told about yet are printed on stderr by the next `tdo op` other 
 `op check` ([sync.md](sync.md#stopping-a-sync)). Permission reports leave these
 notifications pending; use `tdo op journal` to display their details.
 The daemon rolls forward unfinished journal entries of its vdir, kept under `state_dir`, at
-startup and before each write; `export-json` and `check` do so themselves.
+startup and before each write. `tdo check`, `export-json` and `status` print
+`tdo: journal has unfinished operations; run 'tdo op journal'` when the daemon reports entries
+that are stuck.
 
 `tdo daemon --matrix <path>` and `tdo op check <uid> --matrix <path>` are hidden test-only hooks:
 they replace the compatibility matrix built into `tdo` with the file at `<path>` (writes go
 through the daemon, which owns the matrix). Never use them on real data.
+
+## `[daemon]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `unit_warning` | bool | `true` | Show `daemon won't start at login; run tdo daemon install` in the TUI, once per run, while no service unit is installed. Set `false` if you deliberately run without one ([install.md](install.md#start-it-at-login)). |
+
+The periodic sync interval (60 seconds) is fixed; there is no key for it.
 
 ## `[sync]`
 

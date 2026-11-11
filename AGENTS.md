@@ -69,21 +69,23 @@ app replacing 2Do for one user, plan by plan.
    (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`). **Decided 2026-11-09:** `tdo` gets
    a daemon that owns the data, sync and scheduling; the TUI and CLI are clients over a Unix socket
    ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md); protocol intro in
-   [`docs/protocol.md`](docs/protocol.md)). **Daemon plans 1 to 3 are done** (plan 1 PR #78, plan 2
+   [`docs/protocol.md`](docs/protocol.md)). **Daemon plans 1 to 4 are done** (plan 1 PR #78, plan 2
    PR #79; `docs/superpowers/plans/2026-11-09-daemon-1-core-and-writes.md`,
    `2026-11-10-daemon-2-sync-and-jobs.md`, `2026-11-10-daemon-3-clients-switch.md`). The daemon runs
    syncs and list jobs on its vdir lane and schedules syncs (startup, every 60 s, batched, after a
    conflict choice, switch turned on, wake). Plan 3 switched the clients: the TUI, `tdo op`,
    `tdo sync` (and `on`/`off`) and `tdo conflicts resolve` talk to it and start it on demand; the
    cross-process queue waiter, the sync-ended file, the TUI's file watcher and
-   `tdo sync --background --when-due` are gone; only the daemon reads `config.toml`. The read-only
-   commands (`check`, `export-json`, `status`, `conflicts`, `op check`) still read files directly.
+   `tdo sync --background --when-due` stay only as hidden flags so an installed old timer stays
+   harmless; only the daemon reads `config.toml`. The read-only
+   commands (`check`, `export-json`, `status`, `conflicts`, `op check`) go through it too (plan 4).
    The socket is `--socket`, else `TWYDO_SOCKET`, else the per-user default, so **the test setup
    needs `TWYDO_SOCKET` next to `XDG_CONFIG_HOME`**; stop a daemon with `tdo daemon stop`. The
-   `op --matrix` hook is now `tdo daemon --matrix`. **Next: daemon plan 4** (design §12 step 2):
-   read-only commands through the daemon, `tdo daemon install`/`uninstall`/`status`, service-manager
-   start, a warning when no unit is installed, the contrib units and the full documentation.
-   Write-queue plan 3 (rebasing, inside the daemon) and Plan 2 (the notifier) follow it.
+   `op --matrix` hook is now `tdo daemon --matrix`. **Daemon plan 4 is done**
+   (`docs/superpowers/plans/2026-11-11-daemon-4-reads-and-service.md`): the read-only commands go
+   through the daemon, `tdo daemon install`/`uninstall`/`status`/`schema`, service-manager start, a
+   warning when no unit is installed, the contrib units and the documentation. **Next:** write-queue
+   plan 3 (rebasing, inside the daemon), then Plan 2 (the notifier).
 
 ## Issue 41 checkpoint
 

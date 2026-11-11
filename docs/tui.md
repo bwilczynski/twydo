@@ -56,7 +56,9 @@ the daemon when none runs, and reloads when the daemon says the data changed: an
 **The daemon.** When the TUI loses the daemon (it was stopped or crashed) the status line says
 `daemon not running: <reason>; retrying`; the TUI reconnects by itself and says
 `daemon restarted` when it is back. Edits you make meanwhile are refused with the same
-reason. `tdo was upgraded; restart it` means a newer `tdo` replaced the daemon; quit and
+reason. If no service unit is installed, the status line says once per run `daemon won't start
+at login; run tdo daemon install` (turn it off with `[daemon] unit_warning = false`,
+[config.md](config.md#daemon)). `tdo was upgraded; restart it` means a newer `tdo` replaced the daemon; quit and
 start `tdo` again (the TUI does not retry then). After you change `timezone`, `work_days`,
 `vdir`, `state_dir`, `[writes]` or `[sync]` in the config, it says
 `restart the daemon (tdo daemon stop) and reopen tdo`; other settings apply live. If a save
