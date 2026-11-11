@@ -216,11 +216,11 @@ impl Pair {
     }
 
     fn tdo(&self, args: &[&str]) -> Output {
-        // `tdo op`, `tdo sync` and `tdo conflicts resolve` talk to a daemon. Each call gets a
+        // `tdo op`, `tdo sync` and `tdo conflicts` (but not its hook) talk to a daemon. Each call gets a
         // fresh one (test matrix, sync off) that is stopped afterwards: it then starts from
         // what `vdirsyncer` left on disk, with no watcher latency in between.
-        let client = matches!(args.first(), Some(&"op" | &"sync"))
-            || args.starts_with(&["conflicts", "resolve"]);
+        let client = matches!(args.first(), Some(&"op" | &"sync" | &"conflicts"))
+            && !args.starts_with(&["conflicts", "hook"]);
         let daemon = client.then(|| self.start_daemon());
         let mut cmd = self.base_cmd();
         cmd.args(args);
@@ -1072,6 +1072,18 @@ fn resolve_held_via_cli() {
     // Resolved conflicts cannot be resolved again.
     let o = p.tdo(&["conflicts", "resolve", &id, "--keep", "local"]);
     assert!(!o.status.success());
+}
+
+#[test]
+fn conflicts_show_unknown_id_exits_2() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    let o = p.tdo(&["conflicts", "show", "nope"]);
+    assert_eq!(o.status.code(), Some(2), "{o:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&o.stderr).trim(),
+        "tdo: no conflict nope"
+    );
 }
 
 #[test]

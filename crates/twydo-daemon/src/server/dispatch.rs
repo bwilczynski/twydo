@@ -126,6 +126,7 @@ pub fn dispatch(
         "sync.stop" => super::syncjob::sync_stop(shared),
         "sync.set_auto" => super::syncjob::sync_set_auto(shared, parse(params)?),
         "conflicts.list" => super::admin::conflicts_list(shared),
+        "conflicts.show" => super::admin::conflicts_show(shared, parse(params)?),
         "conflicts.resolve" => super::admin::conflicts_resolve(shared, conn, parse(params)?),
         "journal.list" => super::admin::journal_list(shared),
         "journal.recover" => super::admin::journal_recover(shared),

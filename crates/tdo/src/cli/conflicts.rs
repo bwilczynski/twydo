@@ -1,18 +1,19 @@
 //! `tdo conflicts`: sync conflicts kept outside the vdir.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use chrono::Utc;
 use clap::{Subcommand, ValueEnum};
-use twydo_core::config::Config;
-use twydo_core::conflicts::{ConflictState, ConflictStore, Side};
-use twydo_core::ical;
-use twydo_core::store::existing_vdir_state;
+use twydo_core::conflicts::ConflictKind;
 use twydo_core::sync::hook::{VDIR_ENV, conflict_hook};
-use twydo_daemon::protocol::admin::{ConflictsResolveParams, ResolveResult, WireKeep};
+use twydo_daemon::protocol::admin::{
+    ConflictDetail, ConflictList, ConflictsResolveParams, ConflictsShowParams, ResolveResult,
+    VersionView, WireConflictKind, WireConflictState, WireKeep, WireSide,
+};
 
 use super::{EXIT_ERROR, resolve_config};
-use crate::client::Target;
+use crate::client::{self, CLI_TIMEOUT, Target};
 
 /// Which version to keep.
 #[derive(Clone, Copy, ValueEnum)]
@@ -50,121 +51,115 @@ pub enum ConflictsCommand {
 pub fn run(target: &Target, command: Option<ConflictsCommand>) -> i32 {
     let vdir = target.vdir.as_deref();
     match command {
-        None => list(vdir),
-        Some(ConflictsCommand::Show { id }) => show(vdir, &id),
+        None => list(target),
+        Some(ConflictsCommand::Show { id }) => show(target, &id),
         Some(ConflictsCommand::Resolve { id, keep }) => resolve_cmd(target, &id, keep),
         Some(ConflictsCommand::Hook { a, b }) => hook(vdir, &a, &b),
     }
 }
 
-fn fail(msg: impl std::fmt::Display) -> i32 {
-    eprintln!("tdo: {msg}");
-    EXIT_ERROR
-}
-
-/// The conflict store of `cfg`'s vdir with its directory; `None` when it has no conflicts yet.
-fn open_store(cfg: &Config) -> std::io::Result<Option<(ConflictStore, PathBuf)>> {
-    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
-        return Ok(None);
-    };
-    Ok(ConflictStore::existing(&state)?.map(|s| (s, state)))
-}
-
-/// The first VTODO property `name` of an `.ics` text, as written.
-fn field(text: &str, name: &str) -> Option<String> {
-    let cal = ical::parse(text.as_bytes()).ok()?;
-    let todo = cal.root.children_named("VTODO").next()?;
-    todo.prop(name).map(|p| p.value.clone())
-}
-
-fn state_word(s: ConflictState) -> &'static str {
+fn state_word(s: WireConflictState) -> &'static str {
     match s {
-        ConflictState::Open => "open",
-        ConflictState::Chosen => "chosen",
-        ConflictState::Resolved => "resolved",
-        ConflictState::Superseded => "superseded",
+        WireConflictState::Open => "open",
+        WireConflictState::Chosen => "chosen",
+        WireConflictState::Resolved => "resolved",
+        WireConflictState::Superseded => "superseded",
+        WireConflictState::Unknown => "unknown",
     }
 }
 
-fn list(vdir: Option<&Path>) -> i32 {
-    let cfg = match resolve_config(vdir) {
-        Ok(c) => c,
-        Err(e) => return fail(e),
-    };
-    let found = match open_store(&cfg).and_then(|s| match s {
-        Some((store, _)) => store.unresolved(),
-        None => Ok(Vec::new()),
-    }) {
+/// The kind in words (the core's `ConflictKind::words`).
+fn kind_words(k: WireConflictKind) -> &'static str {
+    match k {
+        WireConflictKind::BothChanged => ConflictKind::BothChanged,
+        WireConflictKind::LocalDeleteRemoteEdit => ConflictKind::LocalDeleteRemoteEdit,
+        WireConflictKind::RemoteDeleteLocalEdit => ConflictKind::RemoteDeleteLocalEdit,
+        WireConflictKind::Journal => ConflictKind::Journal,
+        WireConflictKind::Unknown => return "a conflict of a kind this tdo does not know",
+    }
+    .words()
+}
+
+/// How long a call waits for a daemon that is still starting.
+const STARTUP_WAIT: Duration = Duration::from_secs(30);
+
+fn ask<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    target: &Target,
+    method: &str,
+    params: &P,
+) -> Result<R, i32> {
+    let client = super::sync::connect(target)?;
+    client::call_ready(&client.caller(), method, params, CLI_TIMEOUT, STARTUP_WAIT)
+        .map_err(|e| super::sync::client_error(&e))
+}
+
+fn list(target: &Target) -> i32 {
+    let found: ConflictList = match ask(target, "conflicts.list", &serde_json::json!({})) {
         Ok(f) => f,
-        Err(e) => return fail(e),
+        Err(code) => return code,
     };
-    if found.is_empty() {
+    if found.conflicts.is_empty() {
         println!("no conflicts");
     }
-    for c in &found {
+    for c in &found.conflicts {
         let state = match (c.state, c.choice) {
-            (ConflictState::Chosen, Some(Side::Local)) => "chosen: keep local".to_string(),
-            (ConflictState::Chosen, Some(Side::Remote)) => "chosen: keep remote".to_string(),
+            (WireConflictState::Chosen, Some(WireSide::Local)) => "chosen: keep local".to_string(),
+            (WireConflictState::Chosen, Some(WireSide::Remote)) => {
+                "chosen: keep remote".to_string()
+            }
             (s, _) => state_word(s).to_string(),
         };
         println!(
             "{}  {}  {}  {}  {}",
             c.id,
             c.collection,
-            c.title(),
-            c.kind.words(),
+            c.title.as_deref().unwrap_or(&c.uid),
+            kind_words(c.kind),
             state
         );
     }
     0
 }
 
-fn show(vdir: Option<&Path>, id: &str) -> i32 {
-    let cfg = match resolve_config(vdir) {
-        Ok(c) => c,
-        Err(e) => return fail(e),
-    };
-    let found = open_store(&cfg).and_then(|s| match s {
-        Some((store, dir)) => Ok(store.get(id)?.map(|c| (c, dir))),
-        None => Ok(None),
-    });
-    let (c, state) = match found {
-        Ok(Some(f)) => f,
-        Ok(None) => return fail(format!("no conflict {id}")),
-        Err(e) => return fail(e),
-    };
-    println!("{}  {}", c.id, c.kind.words());
-    for (name, side, text) in [
-        ("local", "local.ics", &c.local),
-        ("remote", "remote.ics", &c.remote),
+fn print_version(v: &VersionView) {
+    for (prop, value) in [
+        ("SUMMARY", &v.summary),
+        ("DUE", &v.due),
+        ("STATUS", &v.status),
+        ("LAST-MODIFIED", &v.last_modified),
     ] {
+        println!("  {prop}: {}", value.as_deref().unwrap_or_default());
+    }
+}
+
+fn show(target: &Target, id: &str) -> i32 {
+    let d: ConflictDetail = match ask(
+        target,
+        "conflicts.show",
+        &ConflictsShowParams { id: id.to_string() },
+    ) {
+        Ok(d) => d,
+        Err(code) => return code,
+    };
+    println!("{}  {}", d.conflict.id, kind_words(d.conflict.kind));
+    for (name, v) in [("local", &d.local), ("remote", &d.remote)] {
         println!("{name}:");
-        match text {
+        match v {
             None => println!("  (deleted)"),
-            Some(t) => {
-                for prop in ["SUMMARY", "DUE", "STATUS", "LAST-MODIFIED"] {
-                    println!("  {prop}: {}", field(t, prop).unwrap_or_default());
+            Some(v) => {
+                print_version(v);
+                if let Some(f) = &v.file {
+                    println!("  file: {}", f.display());
                 }
-                println!(
-                    "  file: {}",
-                    state.join("conflicts").join(&c.id).join(side).display()
-                );
             }
         }
     }
-    let file = cfg.vdir.join(&c.path);
     println!("current:");
-    match std::fs::read(&file) {
-        Ok(b) => {
-            let t = String::from_utf8_lossy(&b);
-            for prop in ["SUMMARY", "DUE", "STATUS", "LAST-MODIFIED"] {
-                println!("  {prop}: {}", field(&t, prop).unwrap_or_default());
-            }
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => println!("  (absent)"),
-        Err(e) => return fail(format!("{}: {e}", file.display())),
+    match &d.current {
+        Some(v) => print_version(v),
+        None => println!("  (absent)"),
     }
-    println!("vdir file: {}", file.display());
+    println!("vdir file: {}", d.vdir_file.display());
     0
 }
 

@@ -436,6 +436,56 @@
         },
         "type": "object"
       },
+      "ConflictDetail": {
+        "description": "Result of `conflicts.show`.",
+        "properties": {
+          "conflict": {
+            "$ref": "#/components/schemas/ConflictView"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The task as the vdir holds it now; `None` when its file is absent."
+          },
+          "local": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`None` means the version was deleted."
+          },
+          "remote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`None` means the version was deleted."
+          },
+          "vdir_file": {
+            "description": "Absolute path of the task's file in the vdir.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conflict",
+          "vdir_file"
+        ],
+        "type": "object"
+      },
       "ConflictList": {
         "description": "Result of `conflicts.list`.",
         "properties": {
@@ -529,6 +579,18 @@
           "request_id",
           "id",
           "keep"
+        ],
+        "type": "object"
+      },
+      "ConflictsShowParams": {
+        "description": "Params of `conflicts.show`.",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
         ],
         "type": "object"
       },
@@ -3229,6 +3291,43 @@
         ],
         "type": "object"
       },
+      "VersionView": {
+        "description": "The fields `tdo conflicts show` prints of one version of a task.",
+        "properties": {
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file": {
+            "description": "Absolute path of the kept copy; absent for the current version, whose path is `vdir_file`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_modified": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "WireCollState": {
         "description": "The last reported sync result of one list.",
         "oneOf": [
@@ -4416,6 +4515,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ConflictList"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "conflicts.show",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ConflictsShowParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ConflictDetail"
         }
       },
       "x-lifecycle": false

@@ -4,6 +4,7 @@
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use twydo_core::conflicts::{Conflict, ConflictKind, ConflictState, Side};
 use twydo_core::store::journal::{Entry, RecoveryReport, Stage};
 use twydo_core::sync::resolve::Resolution;
@@ -108,6 +109,49 @@ pub struct ConflictView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ConflictList {
     pub conflicts: Vec<ConflictView>,
+}
+
+/// Params of `conflicts.show`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConflictsShowParams {
+    pub id: String,
+}
+
+/// The fields `tdo conflicts show` prints of one version of a task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct VersionView {
+    pub summary: Option<String>,
+    pub due: Option<String>,
+    pub status: Option<String>,
+    pub last_modified: Option<String>,
+    /// Absolute path of the kept copy; absent for the current version, whose path is `vdir_file`.
+    pub file: Option<PathBuf>,
+}
+
+/// Result of `conflicts.show`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConflictDetail {
+    pub conflict: ConflictView,
+    /// `None` means the version was deleted.
+    pub local: Option<VersionView>,
+    /// `None` means the version was deleted.
+    pub remote: Option<VersionView>,
+    /// The task as the vdir holds it now; `None` when its file is absent.
+    pub current: Option<VersionView>,
+    /// Absolute path of the task's file in the vdir.
+    pub vdir_file: PathBuf,
+}
+
+impl VersionView {
+    pub fn of(text: &str, file: Option<PathBuf>) -> VersionView {
+        VersionView {
+            summary: Conflict::field(text, "SUMMARY"),
+            due: Conflict::field(text, "DUE"),
+            status: Conflict::field(text, "STATUS"),
+            last_modified: Conflict::field(text, "LAST-MODIFIED"),
+            file,
+        }
+    }
 }
 
 impl ConflictView {

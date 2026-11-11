@@ -19,9 +19,10 @@ use twydo_core::store::bind_vdir_state;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::admin::{
-    AbandonResult, ConflictList, ConflictsResolveParams, InputField, InputParseParams, InputParsed,
-    JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult, ResolveResult,
-    WireConflictKind, WireConflictState, WireKeep, WireResolution, WireSide, WireStage,
+    AbandonResult, ConflictDetail, ConflictList, ConflictsResolveParams, ConflictsShowParams,
+    InputField, InputParseParams, InputParsed, JournalAbandonParams, JournalEntryView,
+    JournalRevertParams, RecoverResult, ResolveResult, WireConflictKind, WireConflictState,
+    WireKeep, WireResolution, WireSide, WireStage,
 };
 use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::jobs::JobStarted;
@@ -294,6 +295,62 @@ fn resolve_during_a_sync_waits_for_it() {
     let r = rx.recv_timeout(BOUND).unwrap().unwrap();
     assert_eq!(r.resolution, WireResolution::Written);
     h.join().unwrap();
+}
+
+#[test]
+fn conflicts_show_reports_both_sides_and_current() {
+    let fx = fx();
+    let local = todo_ics("u1", "Local title", None);
+    let remote =
+        todo_ics("u1", "Remote title", None).replace("END:VTODO", "STATUS:COMPLETED\r\nEND:VTODO");
+    fx.write("c1/u1.ics", &remote);
+    let id = ConflictStore::open(&fx.state())
+        .unwrap()
+        .record(
+            NewConflict {
+                uid: "u1".into(),
+                collection: "c1".into(),
+                path: "c1/u1.ics".into(),
+                kind: ConflictKind::RemoteDeleteLocalEdit,
+                held: false,
+                vdir_holds: Side::Remote,
+                local: Some(local),
+                remote: None,
+            },
+            Utc::now(),
+        )
+        .unwrap()
+        .id;
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let d: ConflictDetail = c
+        .call("conflicts.show", ConflictsShowParams { id: id.clone() })
+        .unwrap();
+    assert_eq!(d.conflict.id, id);
+    let l = d.local.unwrap();
+    assert_eq!(l.summary.as_deref(), Some("Local title"));
+    assert_eq!(
+        l.file,
+        Some(fx.state().join("conflicts").join(&id).join("local.ics"))
+    );
+    assert!(l.file.unwrap().is_absolute());
+    assert!(d.remote.is_none());
+    let cur = d.current.unwrap();
+    assert_eq!(cur.summary.as_deref(), Some("Remote title"));
+    assert_eq!(cur.status.as_deref(), Some("COMPLETED"));
+    assert_eq!(cur.file, None);
+    assert!(d.vdir_file.ends_with("c1/u1.ics"));
+}
+
+#[test]
+fn conflicts_show_unknown_id_is_not_found() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let e = c
+        .call::<_, ConflictDetail>("conflicts.show", ConflictsShowParams { id: "nope".into() })
+        .unwrap_err();
+    assert_eq!(kind(&e), ErrorKind::NotFound);
 }
 
 #[test]

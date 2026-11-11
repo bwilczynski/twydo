@@ -25,9 +25,9 @@ use super::dispatch::ConnState;
 use super::replay::Begin;
 use super::writes::{refusal_of, require_request_id};
 use crate::protocol::admin::{
-    AbandonResult, ConflictList, ConflictView, ConflictsResolveParams, InputField,
-    InputParseParams, InputParsed, JournalAbandonParams, JournalEntryView, ParsedRepeat,
-    RecoverResult, ResolveResult, WireKeep,
+    AbandonResult, ConflictDetail, ConflictList, ConflictView, ConflictsResolveParams,
+    ConflictsShowParams, InputField, InputParseParams, InputParsed, JournalAbandonParams,
+    JournalEntryView, ParsedRepeat, RecoverResult, ResolveResult, VersionView, WireKeep,
 };
 use crate::protocol::events::Cause;
 use crate::protocol::rpc::{ErrorKind, RpcError};
@@ -65,6 +65,39 @@ pub fn conflicts_list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     })()
     .map_err(internal)?;
     to_value(ConflictList { conflicts: found })
+}
+
+/// `conflicts.show`: both versions of one conflict and the task as the vdir holds it now.
+/// Read-only; an unknown id is `not_found`.
+pub fn conflicts_show(shared: &Arc<Shared>, p: ConflictsShowParams) -> Result<Value, RpcError> {
+    let cfg = &shared.cfg;
+    let not_found = || RpcError::refused(ErrorKind::NotFound, format!("no conflict {}", p.id));
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir).map_err(internal)? else {
+        return Err(not_found());
+    };
+    let Some(store) = ConflictStore::existing(&state).map_err(internal)? else {
+        return Err(not_found());
+    };
+    let Some(c) = store.get(&p.id).map_err(internal)? else {
+        return Err(not_found());
+    };
+    let side = |text: &Option<String>, name: &str| {
+        text.as_deref()
+            .map(|t| VersionView::of(t, Some(state.join("conflicts").join(&c.id).join(name))))
+    };
+    let vdir_file = cfg.vdir.join(&c.path);
+    let current = match std::fs::read(&vdir_file) {
+        Ok(b) => Some(VersionView::of(&String::from_utf8_lossy(&b), None)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(internal(format!("{}: {e}", vdir_file.display()))),
+    };
+    to_value(ConflictDetail {
+        conflict: ConflictView::of(&c),
+        local: side(&c.local, "local.ics"),
+        remote: side(&c.remote, "remote.ics"),
+        current,
+        vdir_file,
+    })
 }
 
 /// What a recorded resolution answered: from the conflict's own record, else from the journal
