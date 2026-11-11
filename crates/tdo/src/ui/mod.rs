@@ -133,6 +133,15 @@ fn render_errors(f: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
+    if let Some(error) = app
+        .sync
+        .as_ref()
+        .and_then(|cs| cs.sync.as_ref())
+        .and_then(|s| s.discovery_error.as_ref())
+    {
+        sync_errors = true;
+        lines.push(Line::raw(error.clone()));
+    }
     if lines.is_empty() {
         lines.push(Line::styled("No unreadable files", dim()));
     }
@@ -287,6 +296,11 @@ const HELP: &[(&str, &str, bool)] = &[
     (
         ":errors",
         "unreadable files and sync errors (j/k scroll)",
+        false,
+    ),
+    (
+        ":discover",
+        "find lists created on another device, then sync",
         false,
     ),
     (

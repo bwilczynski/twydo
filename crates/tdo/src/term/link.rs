@@ -83,6 +83,7 @@ pub enum Command {
     },
     Sync {
         force_delete: Vec<String>,
+        discover: bool,
     },
     SetAuto(bool),
     Resolve {
@@ -551,7 +552,10 @@ impl Thread {
                     },
                 )
             }
-            Command::Sync { force_delete } => {
+            Command::Sync {
+                force_delete,
+                discover,
+            } => {
                 let id = caller.next_request_id();
                 let started = call::<_, JobStarted>(
                     caller,
@@ -559,7 +563,7 @@ impl Thread {
                     &SyncRunParams {
                         request_id: format!("sync-{id}"),
                         force_delete,
-                        discover: false,
+                        discover,
                     },
                 );
                 self.started(caller, started, Job::Sync, Update::SyncDone)

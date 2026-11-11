@@ -91,7 +91,13 @@ fn print_config_warnings(client: &Client) -> Result<(), i32> {
 /// lists, a failure or was stopped, 2 when the daemon refused the call or is out of reach.
 /// `--background` and `--when-due` only connect, so the installed timer keeps the daemon
 /// alive; they print nothing.
-pub fn sync(target: &Target, background: bool, _when_due: bool, force_delete: &[String]) -> i32 {
+pub fn sync(
+    target: &Target,
+    background: bool,
+    _when_due: bool,
+    force_delete: &[String],
+    discover: bool,
+) -> i32 {
     let client = match connect(target) {
         Ok(c) => c,
         Err(code) => return code,
@@ -102,13 +108,18 @@ pub fn sync(target: &Target, background: bool, _when_due: bool, force_delete: &[
     if let Err(code) = print_config_warnings(&client) {
         return code;
     }
-    match run_and_wait(target, client, force_delete) {
+    match run_and_wait(target, client, force_delete, discover) {
         Ok(code) => code,
         Err(code) => code,
     }
 }
 
-fn run_and_wait(target: &Target, mut client: Client, force_delete: &[String]) -> Result<i32, i32> {
+fn run_and_wait(
+    target: &Target,
+    mut client: Client,
+    force_delete: &[String],
+    discover: bool,
+) -> Result<i32, i32> {
     let _: SubscribeResult = client
         .caller()
         .call_timeout("events.subscribe", serde_json::json!({}), CLI_TIMEOUT)
@@ -122,7 +133,7 @@ fn run_and_wait(target: &Target, mut client: Client, force_delete: &[String]) ->
         &SyncRunParams {
             request_id: rid.clone(),
             force_delete: force_delete.to_vec(),
-            discover: false,
+            discover,
         },
         client::Unknown::SyncStarted,
     )?;
@@ -351,6 +362,9 @@ pub fn status(target: &Target) -> i32 {
     }
     if let Some(e) = &sync.metasync_error {
         println!("metasync error: {e}");
+    }
+    if let Some(e) = &sync.discovery_error {
+        println!("discovery error: {e}");
     }
     if !sync.collections.is_empty() {
         println!("lists:");

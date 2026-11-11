@@ -113,6 +113,7 @@ On a checklist or project, a write acts on the whole family; see
 | `:sync` | sync now; behind a sync that is already running, it waits and then runs (needs `[sync]` in the config; [sync.md](sync.md)) |
 | `:sync on` / `:sync off` | switch automatic sync on or off ([sync.md](sync.md#when-edits-sync)); on starts a sync when edits are unsynced; any other argument shows the usage |
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
+| `:discover` | find lists created on another device (local folders only), then sync, and reload the lists ([sync.md](sync.md#new-lists-from-other-devices)); any argument shows the usage |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
 | `:errors` | show unreadable files and sync errors; j/k scroll |
 | `:lists` | manage all lists, including hidden and archived lists, or resume a pending list save |
