@@ -181,6 +181,13 @@ impl Publisher {
         (cur.revision, cur)
     }
 
+    /// What the last reload read from the vdir and the live configuration, without the queue
+    /// laid over it: the files as they are. Empty before the first reload.
+    pub fn disk_snapshot(&self) -> CoreSnapshot {
+        let report = self.state.lock().unwrap().last_report.clone();
+        CoreSnapshot::new(report.unwrap_or_default(), self.config())
+    }
+
     /// A kept revision, or `None` once it has left the ring.
     pub fn at(&self, revision: u64) -> Option<Arc<Snapshot>> {
         let s = self.state.lock().unwrap();

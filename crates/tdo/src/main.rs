@@ -158,7 +158,11 @@ fn main() {
             ))
         }
         Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),
-        Command::ExportJson => cli::export::run(cli.vdir.as_deref()),
+        Command::ExportJson => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::export::run(&target))
+        }
         Command::Check { matrix, verbose } => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());

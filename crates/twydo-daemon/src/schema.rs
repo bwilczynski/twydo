@@ -22,7 +22,7 @@ use crate::protocol::lists::{
     PendingListOp,
 };
 use crate::protocol::methods::*;
-use crate::protocol::reports::{CheckReport, CheckReportParams};
+use crate::protocol::reports::{CheckReport, CheckReportParams, ExportResult};
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
 use crate::protocol::wire::WireSnapshot;
@@ -87,6 +87,7 @@ pub const METHODS: &[MethodSpec] = &[
         of::<CheckReportParams>,
         of::<CheckReport>,
     ),
+    m("export", false, of::<Empty>, of::<ExportResult>),
     m("op.check", false, of::<CheckParams>, of::<CheckResult>),
     m("refusals.ack", false, of::<AckParams>, of::<AckResult>),
     m("sync.run", false, of::<SyncRunParams>, of::<JobStarted>),

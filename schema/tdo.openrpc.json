@@ -882,6 +882,25 @@
         "type": "object",
         "x-open": true
       },
+      "ExportResult": {
+        "description": "What `export` answers: the schema v1 document `tdo export-json` prints, and how many\nresources the read could not parse.",
+        "properties": {
+          "document": {
+            "description": "schema v1, as read by tools/reconcile.py"
+          },
+          "skipped": {
+            "description": "Resources that failed to parse and are missing from `document`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "skipped",
+          "document"
+        ],
+        "type": "object"
+      },
       "ForgetPreview": {
         "description": "What forgetting a list would preserve.",
         "properties": {
@@ -3972,6 +3991,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/CheckReport"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "export",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ExportResult"
         }
       },
       "x-lifecycle": false
