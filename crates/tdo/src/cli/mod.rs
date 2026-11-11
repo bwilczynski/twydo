@@ -5,6 +5,7 @@ pub mod conflicts;
 pub mod daemon;
 pub mod export;
 pub mod op;
+pub mod service;
 pub mod sync;
 
 use std::path::Path;

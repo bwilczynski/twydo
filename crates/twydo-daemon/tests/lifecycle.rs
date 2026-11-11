@@ -627,6 +627,44 @@ mod during_a_job {
         assert!(!td.socket().exists());
     }
 
+    #[test]
+    fn shutdown_when_idle_races_job_creation() {
+        for round in 0..50 {
+            let fx = fx();
+            let (td, c) = start(&fx, "exit 0", Duration::from_secs(5));
+            let c2 = td.client();
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let b = std::sync::Arc::clone(&barrier);
+            let shutter = std::thread::spawn(move || {
+                b.wait();
+                let r: Result<Value, _> = c2.call("daemon.shutdown", json!({"when_idle": true}));
+                r.unwrap();
+            });
+            barrier.wait();
+            let started = sync_run(&c);
+            shutter.join().unwrap();
+            // `Closed`: teardown shut the connection's read side before the request was read,
+            // so it never reached dispatch (nothing was recorded either).
+            if let Err(e) = &started
+                && !matches!(e, twydo_daemon::client::ClientError::Closed)
+            {
+                assert_eq!(kind(e), ErrorKind::Unavailable, "round {round}: {e}");
+            }
+            assert!(stopped_within(&td, BOUND), "round {round}: never stopped");
+            // Whatever was recorded ended: none waits `queued` (or `running`) for a runner
+            // that is gone.
+            let dir = fx.state().join("daemon/jobs");
+            let mut seen = 0;
+            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let view: JobView =
+                    serde_json::from_slice(&std::fs::read(entry.path()).unwrap()).unwrap();
+                assert!(view.state.is_final(), "round {round}: {:?}", view.state);
+                seen += 1;
+            }
+            assert_eq!(seen, usize::from(started.is_ok()), "round {round}");
+        }
+    }
+
     /// Is the daemon lock of `fx`'s vdir still held (a second daemon cannot start)?
     fn vdir_owned(fx: &Fixture) -> bool {
         use twydo_daemon::server::{Daemon, DaemonOptions, StartError};
@@ -830,4 +868,44 @@ fn a_live_daemon_on_the_socket_blocks_another_vdir() {
     assert!(text.contains("use another --socket"), "{text}");
     // Still answering.
     assert!(Client::connect(td.socket(), td.hello_params()).is_ok());
+}
+
+#[test]
+fn a_request_held_across_shutdown_is_unavailable() {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    let fx = fx();
+    let (reached_tx, reached_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let reached_tx = Mutex::new(reached_tx);
+    let release_rx = Mutex::new(release_rx);
+    let td = TestDaemon::start_with(&fx, |o| {
+        o.test_point = Some(Arc::new(move |p: &str| {
+            if p == "dispatch:after-stopping-check" {
+                let _ = reached_tx.lock().unwrap().send(());
+                let _ = release_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(Duration::from_secs(10));
+            }
+        }));
+    });
+    let (c, _) = Client::connect(td.socket(), td.hello_params()).unwrap();
+    let caller = c.caller();
+    std::thread::scope(|s| {
+        let call = s.spawn(|| caller.call::<_, Value>("status.get", json!({})));
+        reached_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the request never reached dispatch");
+        // The request has passed the stopping check; now shut down, which takes the session.
+        let stopper = s.spawn(|| td.handle().shutdown());
+        std::thread::sleep(Duration::from_millis(500));
+        let _ = release_tx.send(());
+        let r = call.join().unwrap();
+        stopper.join().unwrap();
+        match r {
+            Err(e) => assert_eq!(kind(&e), ErrorKind::Unavailable, "{e}"),
+            Ok(v) => panic!("expected unavailable, got {v}"),
+        }
+    });
 }

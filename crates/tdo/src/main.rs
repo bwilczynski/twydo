@@ -54,8 +54,7 @@ enum Command {
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
-    /// Run the daemon (it owns the data; clients talk to it over a socket), or stop it
-    #[command(hide = true)]
+    /// Run the daemon (it owns the data; clients talk to it over a socket), or manage it
     Daemon {
         /// Compatibility matrix file (test hook)
         #[arg(long, value_name = "PATH", hide = true)]

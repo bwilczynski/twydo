@@ -214,19 +214,13 @@ mod tests {
         // A failing bootstrap (already loaded) still kickstarts.
         let d = tempfile::tempdir().unwrap();
         let prog = d.path().join("launchctl");
-        fs::write(
+        testutil::write_script(
             &prog,
-            format!(
-                "#!/bin/sh\necho \"$@\" >> '{}'\n[ \"$1\" = bootstrap ] && exit 5\nexit 0\n",
+            &format!(
+                "echo \"$@\" >> '{}'\n[ \"$1\" = bootstrap ] && exit 5\nexit 0",
                 d.path().join("log").display()
             ),
-        )
-        .unwrap();
-        std::os::unix::fs::PermissionsExt::set_mode(
-            &mut fs::metadata(&prog).unwrap().permissions(),
-            0o755,
         );
-        fs::set_permissions(&prog, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
         lc(d.path(), prog).start(&launchd_unit()).unwrap();
         assert_eq!(log(d.path()).len(), 2);
         assert!(log(d.path())[1].starts_with("kickstart"));

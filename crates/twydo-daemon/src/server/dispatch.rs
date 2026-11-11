@@ -81,25 +81,33 @@ pub fn dispatch(
                 epoch: shared.epoch.clone(),
             }),
             "daemon.shutdown" => {
-                // The reply is queued by the caller before stopping: see `conn::serve`. With
-                // `when_idle`, new jobs are refused from here on, before the reply.
-                let p: ShutdownParams = parse(params)?;
-                if p.when_idle {
-                    shared.runner.set_closing();
-                }
+                // The parameters were parsed once by the connection layer (`is_shutdown`),
+                // which refused new jobs (`when_idle`) before this reply and stops the daemon
+                // after it: see `conn::serve`.
                 Ok(json!({}))
             }
             _ => unreachable!("lifecycle table and dispatch disagree"),
         };
     }
-    if conn.session.lock().unwrap().is_none() {
-        return Err(RpcError::refused(ErrorKind::Invalid, "say hello first"));
-    }
+    // Stopping first: at shutdown the connection reader takes the session while a request it
+    // already spawned is still on its way here, and that request must see "unavailable".
     if shared.is_stopping() {
         return Err(RpcError::refused(
             ErrorKind::Unavailable,
             "the daemon is shutting down",
         ));
+    }
+    shared.test_point("dispatch:after-stopping-check");
+    if conn.session.lock().unwrap().is_none() {
+        // Teardown sets stop, then takes the session: a missing session with stop set now is
+        // that race, not a client that skipped `hello`.
+        if shared.is_stopping() {
+            return Err(RpcError::refused(
+                ErrorKind::Unavailable,
+                "the daemon is shutting down",
+            ));
+        }
+        return Err(RpcError::refused(ErrorKind::Invalid, "say hello first"));
     }
     if let Some(e) = shared.startup_error.lock().unwrap().as_ref() {
         return Err(RpcError::refused(
@@ -211,13 +219,13 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
     })
 }
 
-/// For the shutdown call, its `when_idle`; `None` for any other request. The connection
-/// layer stops the daemon after the reply is queued, or once idle.
-pub fn is_shutdown(method: &str, params: Option<&Value>) -> Option<bool> {
+/// For the shutdown call, its parameters parsed (once: the connection layer acts on them
+/// before and after the reply); `None` for any other request.
+pub fn is_shutdown(
+    method: &str,
+    params: Option<&Value>,
+) -> Option<Result<ShutdownParams, RpcError>> {
     (method == "daemon.shutdown").then(|| {
-        params
-            .and_then(|p| p.get("when_idle"))
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+        serde_json::from_value(params.cloned().unwrap_or_else(|| json!({}))).map_err(invalid_params)
     })
 }
