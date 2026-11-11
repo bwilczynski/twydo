@@ -157,7 +157,11 @@ fn main() {
                 &force_delete,
             ))
         }
-        Command::Status => std::process::exit(cli::sync::status(cli.vdir.as_deref())),
+        Command::Status => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::sync::status(&target))
+        }
         Command::ExportJson => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());

@@ -1,22 +1,22 @@
 //! `tdo sync`, `tdo status` and `tdo sync on|off`.
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use twydo_core::sync::report::{NOT_CONFIGURED, describe};
-use twydo_core::sync::summary;
+use twydo_core::sync::report::NOT_CONFIGURED;
 use twydo_daemon::client::{Client, ClientError, Notification};
+use twydo_daemon::protocol::admin::{ConflictList, WireConflictState};
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::jobs::{JobGetParams, JobResult, JobStarted, JobState, JobView};
-use twydo_daemon::protocol::methods::SubscribeResult;
+use twydo_daemon::protocol::methods::{StatusView, SubscribeResult, WireCollState};
 use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
 use twydo_daemon::protocol::sync::{
     SyncOutcome, SyncResult, SyncRunParams, SyncSetAutoParams, SyncSetAutoResult,
 };
 use twydo_daemon::protocol::wire::WireSnapshot;
 
-use super::{EXIT_ERROR, op, resolve_config};
+use super::conflicts::kind_words;
+use super::{EXIT_ERROR, op};
 use crate::client::{self, CLI_TIMEOUT, Target};
 
 const CLIENT: &str = "tdo-sync";
@@ -274,50 +274,98 @@ pub fn switch_command(target: &Target, on: bool) -> i32 {
     }
 }
 
-/// `tdo status`: last success, pending entries, conflicts, failures and per-list state.
-pub fn status(vdir: Option<&Path>) -> i32 {
-    let cfg = match resolve_config(vdir) {
+/// A list's sync state in words, as `describe` words the core's `CollState`.
+pub(super) fn describe_wire(s: &WireCollState) -> String {
+    match s {
+        WireCollState::Ok => "ok".into(),
+        WireCollState::Conflict => "conflict".into(),
+        WireCollState::EmptiedLocal => "emptied here".into(),
+        WireCollState::EmptiedRemote => "emptied on the server".into(),
+        WireCollState::Error { message } => format!("error: {message}"),
+        WireCollState::Unknown => "unknown".into(),
+    }
+}
+
+/// Warns on stderr when journal recovery left stuck entries (`status.get`); a failed call
+/// is not reported here, the command's own calls report it.
+pub(super) fn warn_stuck_journal(client: &Client) {
+    if let Ok(s) = ask::<StatusView>(client, "status.get")
+        && !s.journal.stuck.is_empty()
+    {
+        eprintln!("tdo: journal has unfinished operations; run 'tdo op journal'");
+    }
+}
+
+/// `tdo status`: last success, pending entries, conflicts, failures and per-list state, all
+/// from the daemon. Exit 0, or 2 when sync is not configured or the daemon is out of reach.
+pub fn status(target: &Target) -> i32 {
+    let client = match connect(target) {
         Ok(c) => c,
-        Err(e) => return error(&e),
+        Err(code) => return code,
     };
-    for w in cfg.warnings() {
+    let snap: WireSnapshot = match ask(&client, "snapshot.get") {
+        Ok(v) => v,
+        Err(e) => return client_error(&e),
+    };
+    let st: StatusView = match ask(&client, "status.get") {
+        Ok(v) => v,
+        Err(e) => return client_error(&e),
+    };
+    let found: ConflictList = match ask(&client, "conflicts.list") {
+        Ok(v) => v,
+        Err(e) => return client_error(&e),
+    };
+    for w in &snap.config_warnings {
         eprintln!("warning: {w}");
     }
-    let s = match summary(&cfg) {
-        Ok(Some(s)) => s,
-        Ok(None) => return error(&NOT_CONFIGURED),
-        Err(e) => return error(&e),
+    warn_stuck_journal(&client);
+    let Some(sync) = &st.sync else {
+        return error(&NOT_CONFIGURED);
     };
-    let tz = cfg.tz();
+    let tz = snap.config.tz();
     let when = |t: Option<DateTime<Utc>>| match t {
         Some(t) => t.with_timezone(&tz).format("%Y-%m-%d %H:%M").to_string(),
         None => "never".to_string(),
     };
-    let st = &s.status;
-    println!("last sync: {}", when(st.last_success));
-    println!("last attempt: {}", when(st.last_attempt));
-    println!("automatic sync: {}", if s.off { "off" } else { "on" });
-    println!("pending: {}", s.pending);
-    println!("conflicts: {}", s.conflicts.len());
-    for c in &s.conflicts {
-        println!("  {}  {}  {}", c.id, c.path, c.kind.words());
+    let open: Vec<_> = found
+        .conflicts
+        .iter()
+        .filter(|c| matches!(c.state, WireConflictState::Open | WireConflictState::Chosen))
+        .collect();
+    println!("last sync: {}", when(sync.last_success));
+    println!("last attempt: {}", when(sync.last_attempt));
+    println!("automatic sync: {}", if sync.auto { "on" } else { "off" });
+    println!("pending: {}", st.journal.unfinished);
+    println!("conflicts: {}", open.len());
+    for c in &open {
+        println!("  {}  {}  {}", c.id, c.path, kind_words(c.kind));
     }
-    print!("failures: {}", st.failures);
-    if st.failures > 0 {
-        print!(" (next attempt {})", when(st.next_attempt));
+    print!("failures: {}", sync.failures);
+    if sync.failures > 0 {
+        print!(" (next attempt {})", when(sync.next_attempt));
     }
     println!();
-    if let Some(e) = &st.last_error {
+    if let Some(e) = &sync.last_error {
         println!("last error: {e}");
     }
-    if let Some(e) = &st.metasync_error {
+    if let Some(e) = &sync.metasync_error {
         println!("metasync error: {e}");
     }
-    if !st.collections.is_empty() {
+    if !sync.collections.is_empty() {
         println!("lists:");
-        for (coll, state) in &st.collections {
-            println!("  {coll}: {}", describe(state));
+        for (coll, state) in &sync.collections {
+            println!("  {coll}: {}", describe_wire(state));
         }
     }
     0
+}
+
+fn ask<R: serde::de::DeserializeOwned>(client: &Client, method: &str) -> Result<R, ClientError> {
+    client::call_ready(
+        &client.caller(),
+        method,
+        &serde_json::json!({}),
+        CLI_TIMEOUT,
+        STARTUP_WAIT,
+    )
 }

@@ -554,6 +554,18 @@ mod sync {
     }
 
     #[test]
+    fn status_without_sync_exits_2() {
+        let fx = Fx::new(None);
+        let o = fx.tdo(&["status"]);
+        assert_eq!(o.status.code(), Some(2), "{}", stderr(&o));
+        assert!(
+            stderr(&o).contains("tdo: sync is not configured: add a [sync] table (docs/sync.md)"),
+            "{}",
+            stderr(&o)
+        );
+    }
+
+    #[test]
     fn status_prints_never_synced() {
         let fx = Fx::new(Some("command = \"/nonexistent/vdirsyncer\""));
         let o = fx.tdo(&["status"]);
@@ -562,7 +574,6 @@ mod sync {
         assert!(out.contains("last sync: never"), "{out}");
         assert!(out.contains("pending: 0"), "{out}");
         assert!(out.contains("conflicts: 0"), "{out}");
-        assert!(!fx.path("state").exists(), "status creates nothing");
     }
 
     #[test]

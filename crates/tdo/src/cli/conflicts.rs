@@ -69,7 +69,7 @@ fn state_word(s: WireConflictState) -> &'static str {
 }
 
 /// The kind in words (the core's `ConflictKind::words`).
-fn kind_words(k: WireConflictKind) -> &'static str {
+pub(super) fn kind_words(k: WireConflictKind) -> &'static str {
     match k {
         WireConflictKind::BothChanged => ConflictKind::BothChanged,
         WireConflictKind::LocalDeleteRemoteEdit => ConflictKind::LocalDeleteRemoteEdit,

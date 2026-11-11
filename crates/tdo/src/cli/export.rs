@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use twydo_daemon::protocol::reports::ExportResult;
 
-use super::sync::{client_error, connect};
+use super::sync::{client_error, connect, warn_stuck_journal};
 use crate::client::{self, CLI_TIMEOUT, Target};
 
 /// How long the call waits for a daemon that is still starting.
@@ -28,6 +28,7 @@ pub fn run(target: &Target) -> i32 {
         Ok(r) => r,
         Err(e) => return client_error(&e),
     };
+    warn_stuck_journal(&client);
     if result.skipped > 0 {
         eprintln!("skipped {} unparseable resources", result.skipped);
     }
