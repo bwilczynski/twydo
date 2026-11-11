@@ -17,8 +17,8 @@ class EvidenceTests(unittest.TestCase):
         vocabulary = self.root / "crates/twydo-core/src/compat/contracts.rs"
         vocabulary.parent.mkdir(parents=True)
         vocabulary.write_text('''contracts! {
-    EditTitleResource => EditTitle, "edit-title.resource";
-    EditNotesResource => EditNotes, "edit-notes.resource";
+    EditTitleResource => EditTitle, "edit-title.resource", "editing a title";
+    EditNotesResource => EditNotes, "edit-notes.resource", "editing notes";
 }''')
 
     def case(self, extra="", origin="device", members='["list1/task.ics"]'):

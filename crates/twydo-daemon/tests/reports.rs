@@ -364,7 +364,7 @@ fn healthy_data_and_partial_parse_still_report_refused_operations() {
             assert!(out.contains("complete=pass set-repeat=unverified"), "{out}");
             assert!(out.contains("edit-title: allowed=0 refused=1"), "{out}");
             assert!(
-                out.contains("edit-title.resource is not verified yet"),
+                out.contains("editing a title is not verified yet (edit-title.resource: "),
                 "{out}"
             );
             assert!(!out.contains("b.ics"), "{out}");

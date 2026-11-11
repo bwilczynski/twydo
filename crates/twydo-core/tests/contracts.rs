@@ -98,3 +98,48 @@ fn collection_interoperability_does_not_prove_atomicity() {
             .is_err()
     );
 }
+
+#[test]
+fn refusals_name_the_write_its_verdict_and_the_matrix_entry() {
+    let text = "matrix_version = 2\n\
+        [[contract]]\nid = \"convert.project-checklist\"\niphone_baseline = \"unsupported\"\n\
+        [[contract]]\nid = \"complete.task\"\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"fail\"\niphone_to_twydo = \"pass\"\n\
+        [[contract]]\nid = \"reopen.resource\"\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"pass\"\n";
+    let m = Matrix::from_toml_str(text).unwrap();
+    let message = |id| m.require(id, WriteMode::Verified).unwrap_err().to_string();
+    assert_eq!(
+        message(ContractId::ConvertProjectChecklist),
+        "converting a project with items to a checklist is not supported by 2Do \
+         (convert.project-checklist: iphone_baseline)"
+    );
+    assert_eq!(
+        message(ContractId::CompleteTask),
+        "completing a task fails with 2Do (complete.task: twydo_to_iphone)"
+    );
+    assert_eq!(
+        message(ContractId::ReopenResource),
+        "reopening a task is not verified yet (reopen.resource: twydo_to_iphone)"
+    );
+    assert_eq!(
+        message(ContractId::DeleteResource),
+        "deleting a task is not verified yet (delete.resource: no matrix entry)"
+    );
+}
+
+#[test]
+fn schedule_verdict_reports_the_worst_part() {
+    use twydo_core::compat::{OperationId, Verdict};
+    let m = Matrix::embedded();
+    assert_eq!(
+        m.schedule_verdict(OperationId::Complete, "days+until"),
+        Verdict::Pass
+    );
+    assert_eq!(
+        m.schedule_verdict(OperationId::SetRepeat, "months-last-day"),
+        Verdict::Fail
+    );
+    assert_eq!(
+        m.schedule_verdict(OperationId::Complete, "unrecognized"),
+        Verdict::Unverified
+    );
+}
