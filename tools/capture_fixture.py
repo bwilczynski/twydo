@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""Phase-0 fixture capture and privacy scan.
+"""Capture selected resources into a complete operation evidence state, or privacy-scan staging.
 
-Usage:
-  capture_fixture.py capture <collection-dir> <out-root> --scenario <id> --step <NN-slug>
-                     --device mac|iphone|twydo --action "<text>"
-  capture_fixture.py scan <dir>
+capture <vdir> <out-root> --operation move --case family --state before
+  --collection list1 --collection list2 --resource list1/parent.ics
+  --resource list1/child.ics --device iphone --origin device
+  --claim "Move preserves fields" --test path/to/test.rs::test_name --action "Observed action"
+scan <directory>
 
-capture snapshots *.ics, displayname and color from a vdirsyncer collection folder into
-<out-root>/<scenario>/<step>/, writes step.toml and changes.diff (against the lexically
-greatest earlier step of the scenario). The source folder is only read.
-scan checks staged fixtures for personal data; exit 1 if anything is flagged.
-Never commit fixtures before scan passes and a human confirms the content is synthetic.
+Enumerate every family member explicitly. Empty declared collections represent absence.
+Raw staging stays outside git; fill provenance/versions and obtain synthetic-content
+confirmation before promotion. No previous-state lookup, diffs, network or source writes.
 """
 import argparse
-import difflib
 import re
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ALLOWED_FILES = {"displayname", "color", "step.toml", "changes.diff"}
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.evidence import OPERATIONS, inside
+
+ALLOWED_FILES = {"displayname", "color", "case.toml", ".gitkeep"}
 FORBIDDEN_PROPS = {"ORGANIZER", "ATTENDEE", "X-APPLE-ABUID", "X-APPLE-STRUCTURED-LOCATION",
                    "LOCATION", "URL"}
 EMAIL_RE = re.compile(r"\w[\w.+-]*@[\w-]+(?:\.[\w-]+)*")
@@ -45,68 +46,71 @@ def toml_str(value: str) -> str:
     return '"' + "".join(out) + '"'
 
 
-def collect(src: Path) -> dict:
-    files = {}
-    for p in sorted(src.iterdir()):
-        if p.is_file() and (p.suffix == ".ics" or p.name in ("displayname", "color")):
-            files[p.name] = p.read_bytes()
-    return files
-
-
-def previous_step(scenario_dir: Path, step: str):
-    if not scenario_dir.is_dir():
-        return None
-    names = sorted(d.name for d in scenario_dir.iterdir() if d.is_dir() and d.name < step)
-    return scenario_dir / names[-1] if names else None
-
-
-def build_diff(prev: dict, new: dict) -> str:
-    out = []
-    for name in sorted(set(prev) | set(new)):
-        if name not in prev:
-            out.append(f"added: {name}\n")
-        elif name not in new:
-            out.append(f"removed: {name}\n")
-        elif prev[name] != new[name]:
-            a = prev[name].decode("utf-8", "replace").splitlines(keepends=True)
-            b = new[name].decode("utf-8", "replace").splitlines(keepends=True)
-            for line in difflib.unified_diff(a, b, f"a/{name}", f"b/{name}"):
-                out.append(line if line.endswith("\n") else line + "\n")
-    return "".join(out)
-
-
-def bad_name(value: str) -> bool:
-    return "/" in value or "\\" in value or ".." in value or not value
-
-
 def cmd_capture(args) -> int:
-    for label, value in (("scenario", args.scenario), ("step", args.step)):
-        if bad_name(value):
-            print(f"error: invalid --{label}: {value!r}", file=sys.stderr)
-            return 2
-    src = Path(args.collection)
-    if not src.is_dir():
-        print(f"error: not a directory: {src}", file=sys.stderr)
+    # Validate the whole selection before creating anything. Staging is local and
+    # explicitly bounded; the helper never discovers or contacts a server.
+    try:
+        import tomllib
+        for name in (args.case, args.state):
+            if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+                raise ValueError(f"invalid case/state name: {name!r}")
+        source = Path(args.vdir).resolve()
+        if not source.is_dir():
+            raise ValueError(f"not a vdir: {source}")
+        case = inside(Path(args.out_root), f"{args.operation}/{args.case}")
+        state = inside(case, args.state)
+        if source.is_relative_to(case.resolve()) or case.resolve().is_relative_to(source):
+            raise ValueError("source and capture destination must be separate")
+        if state.exists():
+            raise ValueError(f"state already exists: {state}")
+        collections = sorted(set(args.collection))
+        for collection in collections:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", collection):
+                raise ValueError(f"invalid collection: {collection!r}")
+            if not inside(source, collection).is_dir():
+                raise ValueError(f"missing collection: {collection}")
+        members = sorted(set(args.resource or []))
+        captured = {}
+        for member in members:
+            path = inside(source, member)
+            parts = Path(member).parts
+            if len(parts) != 2 or parts[0] not in collections:
+                raise ValueError(f"resource outside declared collections: {member}")
+            if path.suffix != ".ics" and path.name not in ("displayname", "color"):
+                raise ValueError(f"not a vdir resource: {member}")
+            if path.is_symlink():
+                raise ValueError(f"symlink resource: {member}")
+            captured[member] = path.read_bytes()
+        manifest = case / "case.toml"
+        if manifest.exists():
+            metadata = tomllib.loads(manifest.read_text())
+            if metadata["claim"] != args.claim or metadata["origin"] != args.origin:
+                raise ValueError("existing case claim/origin differs")
+            prefix = manifest.read_text()
+        else:
+            prefix = (f"claim = {toml_str(args.claim)}\norigin = {toml_str(args.origin)}\n"
+                      f"observed = {toml_str(args.action)}\n"
+                      f"tests = [{', '.join(toml_str(t) for t in args.test)}]\n"
+                      '[provenance]\nsource_revision = "unknown"\nsource_path = "external staged capture"\n'
+                      '[environment]\nclient_version = "unknown"\nserver_version = "unknown"\n')
+        import json
+        record = (f"\n[states.{toml_str(args.state)}]\npath = {toml_str(args.state)}\n"
+                  f"collections = {json.dumps(collections)}\nmembers = {json.dumps(members)}\n"
+                  f"action = {toml_str(args.action)}\ndevice = {toml_str(args.device)}\n"
+                  f"captured_at = {toml_str(datetime.now(timezone.utc).isoformat())}\n")
+        for collection in collections:
+            inside(state, collection).mkdir(parents=True, exist_ok=True)
+        for member, contents in captured.items():
+            inside(state, member).write_bytes(contents)
+        for collection in collections:
+            if not any(Path(m).parts[0] == collection for m in members):
+                inside(state, collection + "/.gitkeep").write_bytes(b"")
+        manifest.write_text(prefix + record, encoding="utf-8")
+    except (ValueError, OSError, KeyError) as error:
+        print(f"error: {error}", file=sys.stderr)
         return 2
-    new = collect(src)
-    scenario_dir = Path(args.out_root) / args.scenario
-    step_dir = scenario_dir / args.step
-    if step_dir.exists() and any(step_dir.iterdir()):
-        print(f"error: step directory already exists and is not empty: {step_dir}",
-              file=sys.stderr)
-        return 2
-    prev_dir = previous_step(scenario_dir, args.step)
-    prev = collect(prev_dir) if prev_dir else {}
-    step_dir.mkdir(parents=True, exist_ok=True)
-    for name, data in new.items():
-        (step_dir / name).write_bytes(data)
-    captured = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    (step_dir / "step.toml").write_text(
-        f"scenario = {toml_str(args.scenario)}\nstep = {toml_str(args.step)}\n"
-        f"device = {toml_str(args.device)}\naction = {toml_str(args.action)}\n"
-        f"captured_at = {toml_str(captured)}\n", encoding="utf-8")
-    (step_dir / "changes.diff").write_text(build_diff(prev, new), encoding="utf-8")
-    print(f"captured {len(new)} file(s) to {step_dir}")
+    print(f"captured {len(captured)} selected resources to {state}")
+    print("Fill unknown provenance/versions, scan, and confirm synthetic content before promotion.")
     return 0
 
 
@@ -142,13 +146,14 @@ def cmd_scan(args) -> int:
             findings.append(f"{rel}:1: file type not allowed in fixtures")
             continue
         is_ics = path.suffix == ".ics"
-        is_diff = path.name == "changes.diff"
         text = path.read_text(encoding="utf-8", errors="replace")
+        if path.name == ".gitkeep" and path.stat().st_size:
+            findings.append(f"{rel}:1: nonempty collection marker")
+        if path.name == "case.toml":
+            summaries.setdefault(("CASE", text.strip()), None)
         if path.name == "displayname":
             summaries.setdefault(("DISPLAYNAME", text.strip()), None)
         for n, line in logical_lines(text, unfold=is_ics):
-            if is_diff and line[:1] in "+- " and not line.startswith(("+++", "---")):
-                line = line[1:]
             m = PROP_RE.match(line)
             name = m.group(1).upper() if m else ""
             if name in FORBIDDEN_PROPS:
@@ -174,11 +179,17 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("capture")
-    c.add_argument("collection")
+    c.add_argument("vdir")
     c.add_argument("out_root")
-    c.add_argument("--scenario", required=True)
-    c.add_argument("--step", required=True)
-    c.add_argument("--device", required=True, choices=["mac", "iphone", "twydo"])
+    c.add_argument("--operation", required=True, choices=sorted(OPERATIONS))
+    c.add_argument("--case", required=True)
+    c.add_argument("--state", required=True)
+    c.add_argument("--collection", required=True, action="append")
+    c.add_argument("--resource", action="append")
+    c.add_argument("--device", required=True, choices=["mac", "iphone", "twydo", "server"])
+    c.add_argument("--origin", required=True, choices=["device", "synthetic", "protocol"])
+    c.add_argument("--claim", required=True)
+    c.add_argument("--test", required=True, action="append")
     c.add_argument("--action", required=True)
     s = sub.add_parser("scan")
     s.add_argument("dir")

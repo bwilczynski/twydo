@@ -34,7 +34,7 @@ def load_case(root: Path, case_id: str) -> dict:
 def validate(root: Path) -> list[str]:
     errors = []
     cases = {}
-    used = set()
+    owned_files = set()
     for manifest in sorted((root / "fixtures").glob("*/*/case.toml")):
         case_id = manifest.parent.relative_to(root / "fixtures").as_posix()
         try:
@@ -90,33 +90,55 @@ def validate(root: Path) -> list[str]:
             for path in manifest.parent.rglob("*"):
                 if path.is_symlink():
                     inside(manifest.parent, path.relative_to(manifest.parent).as_posix())
+                if path.name == ".gitkeep" and path.is_file() and path.read_bytes() == b"":
+                    # Git needs a zero-byte marker to retain a declared empty
+                    # collection. It is bookkeeping, never a task resource.
+                    for state in case.get("states", {}).values():
+                        base = inside(manifest.parent, state["path"])
+                        if any(path.parent == inside(base, c) and not any(
+                                Path(member).is_relative_to(Path(c))
+                                for member in state.get("members", []))
+                               for c in state.get("collections", [])):
+                            owned.add(path.resolve())
                 if path.is_file() and path.resolve() not in owned:
                     errors.append(f"{case_id}: unowned resource {path.relative_to(manifest.parent)}")
+            owned_files.update(owned)
         except (OSError, ValueError, KeyError, TypeError) as error:
             errors.append(f"{case_id}: {error}")
+
+    for path in (root / "fixtures").rglob("*"):
+        if path.is_symlink():
+            errors.append(f"{path.relative_to(root)}: symlink evidence is not self-contained")
+        if path.is_file() and path.resolve() not in owned_files:
+            errors.append(f"{path.relative_to(root)}: unowned evidence file")
 
     matrix_path = root / "compat/matrix.toml"
     if matrix_path.exists():
         try:
             matrix = tomllib.loads(matrix_path.read_text())
+            vocabulary = (root / "crates/twydo-core/src/compat/contracts.rs").read_text()
+            known = set(re.findall(r'\w+\s*=>\s*\w+,\s*"([a-z][a-z0-9.-]+)";', vocabulary))
             seen = set()
             for contract in matrix.get("contract", []):
                 cid = contract["id"]
                 operation = cid.partition(".")[0]
-                if operation not in OPERATIONS or cid in seen:
+                if cid not in known or operation not in OPERATIONS or cid in seen:
                     errors.append(f"unknown or duplicate contract ID: {cid}")
                 seen.add(cid)
                 refs = contract.get("evidence", [])
                 observation = False
+                protocol = False
                 for ref in refs:
                     case = cases.get(ref)
                     if case is None:
                         errors.append(f"{cid}: missing evidence {ref}")
                         continue
-                    used.add(ref)
                     if not ref.startswith(operation + "/") and cid not in case.get("supports", []):
                         errors.append(f"{cid}: cross-operation evidence {ref} needs an explicit supports claim")
                     observation |= case.get("origin") in {"device", "protocol"}
+                    protocol |= case.get("origin") == "protocol"
+                if contract.get("atomicity") == "pass" and not protocol:
+                    errors.append(f"{cid}: atomicity needs a protocol observation")
                 if any(contract.get(c) == "pass" for c in
                        ("iphone_baseline", "twydo_to_iphone", "iphone_to_twydo")) and not observation:
                     errors.append(f"{cid}: passing device requirement needs an observation")
