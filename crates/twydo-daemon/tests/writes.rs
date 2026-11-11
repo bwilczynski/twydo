@@ -56,6 +56,9 @@ fn the_answer_carries_todays_message() {
     assert_eq!(u.message, "undone: One");
     let d = redo(&c).unwrap();
     assert_eq!(d.message, "redone: One");
+    submit(&c, Op::Delete { uid: "u1".into() }).unwrap();
+    // The deleted row is absent from the snapshot; undo still names its original title.
+    assert_eq!(undo(&c).unwrap().message, "undone: One");
 }
 
 #[test]
@@ -293,6 +296,7 @@ fn undo_is_per_session() {
     let a = td.client();
     let b = td.client();
     assert_ne!(a.session(), b.session());
+    assert_eq!(undo(&a).unwrap_err().to_string(), "nothing to undo");
     submit(&a, edit_title("u1", "One edited")).unwrap();
     submit(&b, edit_title("u2", "Two edited")).unwrap();
     let u = undo(&a).unwrap();
@@ -436,18 +440,24 @@ fn a_request_applied_before_a_restart_is_replayed_from_the_journal() {
     let fx = fx();
     let id;
     let first;
+    let epoch;
     {
         let td = TestDaemon::start(&fx);
         let c = td.client();
+        epoch = c.epoch().unwrap();
         id = c.next_request_id();
         first = submit_at(&c, based(&c), &id, create("X")).unwrap();
     }
     let td = TestDaemon::start(&fx);
     let c = td.client();
+    assert_ne!(c.epoch().as_deref(), Some(epoch.as_str()));
     let again = submit_at(&c, based(&c), &id, create("X")).unwrap();
     assert_eq!(again.outcome, WriteOutcome::Applied);
     assert_eq!(again.op_id, first.op_id);
     assert_eq!(again.message, "already applied");
+    assert_eq!(count_titled(&td, "X"), 1);
+    // Journal replay survives a restart; the previous owner's undo stacks do not.
+    assert_eq!(undo(&c).unwrap_err().to_string(), "nothing to undo");
     assert_eq!(count_titled(&td, "X"), 1);
 }
 

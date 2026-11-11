@@ -123,6 +123,43 @@ fn status_has_no_sync_without_a_sync_table() {
     assert!(st.journal.stuck.is_empty());
 }
 
+/// Issue #10: a client that connects while a long job holds the lane is served at once.
+#[test]
+fn a_client_opens_while_a_sync_holds_the_lane() {
+    use std::time::{Duration, Instant};
+    use twydo_daemon::client::Client;
+    use twydo_daemon::server::lane::LongKind;
+
+    let fx = fx();
+    let mut cfg = fx.config();
+    cfg.sync = Some(twydo_core::config::SyncConfig::default());
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let _sync = td.handle().hold_long(LongKind::Test);
+    let limit = Duration::from_secs(2);
+    let started = Instant::now();
+    let (client, _) = Client::connect(td.socket(), td.hello_params()).expect("hello");
+    assert!(
+        started.elapsed() < limit,
+        "hello took {:?}",
+        started.elapsed()
+    );
+    let started = Instant::now();
+    let wire: WireSnapshot = client.call("snapshot.get", empty()).unwrap();
+    assert!(
+        started.elapsed() < limit,
+        "snapshot.get took {:?}",
+        started.elapsed()
+    );
+    assert!(wire.tasks.iter().any(|t| t.task.uid == "uid-a"));
+    let started = Instant::now();
+    let _: StatusView = client.call("status.get", empty()).unwrap();
+    assert!(
+        started.elapsed() < limit,
+        "status.get took {:?}",
+        started.elapsed()
+    );
+}
+
 #[test]
 fn reads_answer_while_a_reload_waits_for_the_vdir_lock() {
     use std::time::{Duration, Instant};

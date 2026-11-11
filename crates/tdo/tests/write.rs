@@ -1,4 +1,5 @@
-//! The TUI writer against a temp vdir copied from synthetic phase-0 fixtures.
+//! Client write adaptation and representative TUI workflows against synthetic temp vdirs.
+//! Exhaustive write semantics belong to twydo-core; queue/lifecycle semantics to the daemon.
 
 mod common;
 
@@ -11,7 +12,7 @@ use common::WriteDaemon;
 use tdo::write::Request;
 use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, SyncConfig};
-use twydo_core::edit::{Change, Op};
+use twydo_core::edit::Op;
 use twydo_core::views::Snapshot;
 use twydo_daemon::server::lane::LongKind;
 
@@ -66,11 +67,7 @@ fn now() -> chrono::DateTime<Utc> {
 
 /// A daemon for `cfg` with the embedded matrix, and a client of it.
 fn writer(cfg: &Config) -> WriteDaemon {
-    writer_with(cfg, Matrix::embedded().clone())
-}
-
-fn writer_with(cfg: &Config, matrix: Matrix) -> WriteDaemon {
-    WriteDaemon::start(cfg.clone(), matrix)
+    WriteDaemon::start(cfg.clone(), Matrix::embedded().clone())
 }
 
 fn complete_a() -> Request {
@@ -92,163 +89,6 @@ fn complete_then_undo_then_redo() {
     assert_eq!(fs::read(env.task_file()).unwrap(), original);
     assert_eq!(w.run_fresh(&Request::Redo), Ok("redone: A2".into()));
     assert_ne!(fs::read(env.task_file()).unwrap(), original);
-}
-
-/// A daemon starts and serves over a pending collection operation (so the operation can be
-/// reconciled through it); once the operation is reconciled, a daemon writes.
-#[test]
-fn daemon_started_during_a_pending_list_operation_writes_after_reconciliation() {
-    let env = Env::new();
-    let mut cfg = env.config();
-    cfg.sync = Some(SyncConfig::default());
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "preview-delete".into();
-    request.collection = Some("list1".into());
-    let record = twydo_core::lists::operation::prepare(&cfg, request, now()).unwrap();
-    {
-        let dir = common::short_socket_dir();
-        let opts = twydo_daemon::server::DaemonOptions::new(dir.path().join("s").join("tdo.sock"));
-        let instance = twydo_daemon::protocol::methods::Instance {
-            config: dir.path().join("config.toml"),
-            vdir: Some(cfg.vdir.clone()),
-        };
-        let h = twydo_daemon::server::Daemon::start(cfg.clone(), instance, opts).unwrap();
-        assert!(
-            h.wait_ready(Duration::from_secs(10)),
-            "the daemon must start over an unfinished list operation"
-        );
-        h.shutdown();
-    }
-    let mut service = twydo_core::lists::ListService::open(&cfg, None).unwrap();
-    assert!(
-        service
-            .reconcile(&record.id)
-            .unwrap_err()
-            .to_string()
-            .contains("read-only")
-    );
-    assert!(
-        twydo_core::lists::operation::active(&cfg)
-            .unwrap()
-            .is_none()
-    );
-    let w = writer(&cfg);
-    assert_eq!(w.run_fresh(&complete_a()), Ok("done".into()));
-    assert_eq!(w.run_fresh(&Request::Undo), Ok("undone: A2".into()));
-}
-
-#[test]
-fn success_messages_per_op() {
-    let env = Env::new();
-    let w = writer(&env.config());
-    let edit = Request::Apply(Op::Edit {
-        uid: TASK_A.into(),
-        changes: vec![Change::Summary("A3".into())],
-    });
-    assert_eq!(w.run_fresh(&edit), Ok("saved".into()));
-    let delete = Request::Apply(Op::Delete { uid: TASK_A.into() });
-    assert_eq!(w.run_fresh(&delete), Ok("deleted · u to undo".into()));
-}
-
-#[test]
-fn undo_with_empty_session() {
-    let env = Env::new();
-    let w = writer(&env.config());
-    assert_eq!(w.run_fresh(&Request::Undo), Err("nothing to undo".into()));
-}
-
-/// The undo stack lives in the daemon's session: after a restart (a new epoch) there is none.
-#[test]
-fn undo_after_a_daemon_restart_says_nothing_to_undo() {
-    let env = Env::new();
-    let first = writer(&env.config());
-    assert_eq!(first.run(&complete_a()), Ok("done".into()));
-    let epoch = first.epoch.clone();
-    first.handle.shutdown();
-    drop(first);
-    let second = writer(&env.config());
-    assert_ne!(second.epoch, epoch);
-    assert_eq!(second.run(&Request::Undo), Err("nothing to undo".into()));
-    assert!(
-        fs::read_to_string(env.task_file())
-            .unwrap()
-            .contains("STATUS:COMPLETED"),
-        "the completed task stays completed"
-    );
-}
-
-#[test]
-fn blocked_op_returns_gate_reason() {
-    let env = Env::new();
-    let snap = env.snapshot();
-    let matrix = Matrix::from_toml_str("matrix_version = 1\n").unwrap();
-    let op = Op::Complete { uid: TASK_A.into() };
-    let reason = twydo_core::gate::check(
-        &snap,
-        &matrix,
-        env.config().writes.mode,
-        &op,
-        now().date_naive(),
-    )
-    .unwrap_err()
-    .to_string();
-    let original = fs::read(env.task_file()).unwrap();
-    let w = writer_with(&env.config(), matrix);
-    assert_eq!(w.run(&Request::Apply(op)), Err(reason));
-    assert_eq!(fs::read(env.task_file()).unwrap(), original);
-}
-
-#[test]
-fn stale_snapshot_is_refused_and_untouched() {
-    let env = Env::new();
-    // The view the edit is planned on is the one before the file changes.
-    let w = writer(&env.config());
-    let mut bytes = fs::read(env.task_file()).unwrap();
-    bytes.extend_from_slice(b"X-EXTRA:1\r\n");
-    fs::write(env.task_file(), &bytes).unwrap();
-    let edit = Request::Apply(Op::Edit {
-        uid: TASK_A.into(),
-        changes: vec![Change::Summary("A3".into())],
-    });
-    let err = w.run(&edit).unwrap_err();
-    assert!(err.contains("changed on disk"), "{err}");
-    assert_eq!(fs::read(env.task_file()).unwrap(), bytes);
-}
-
-/// A state directory that belongs to another vdir keeps a daemon from starting at all.
-#[test]
-fn daemon_refuses_a_state_dir_of_another_vdir() {
-    let env = Env::new();
-    let cfg = env.config();
-    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &env.vdir()).unwrap();
-    fs::create_dir_all(&state).unwrap();
-    fs::write(
-        state.join(twydo_core::store::VDIR_ID_FILE),
-        "/some/other/vdir\n",
-    )
-    .unwrap();
-    let dir = common::short_socket_dir();
-    let opts = twydo_daemon::server::DaemonOptions::new(dir.path().join("s").join("tdo.sock"));
-    let instance = twydo_daemon::protocol::methods::Instance {
-        config: dir.path().join("config.toml"),
-        vdir: Some(cfg.vdir.clone()),
-    };
-    let err = match twydo_daemon::server::Daemon::start(cfg, instance, opts) {
-        Ok(_) => panic!("the daemon started"),
-        Err(e) => e.to_string(),
-    };
-    assert!(err.contains("belongs to vdir /some/other/vdir"), "{err}");
-}
-
-#[test]
-fn move_message_names_list() {
-    let env = Env::new();
-    let w = writer(&env.config());
-    let mv = Request::Apply(Op::Move {
-        uid: TASK_A.into(),
-        to: "list2".into(),
-    });
-    assert_eq!(w.run_fresh(&mv), Ok("moved to Two".into()));
 }
 
 /// Review Focus 1 through the form: a sync that lands while the form is open (here, a
@@ -326,123 +166,6 @@ fn sync_config(env: &Env) -> Config {
     cfg
 }
 
-fn state_of(cfg: &Config) -> PathBuf {
-    twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()
-}
-
-fn wait_for(what: &str, ok: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while !ok() {
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
-/// Waits until no write is queued any more (the daemon applied or refused them all).
-fn wait_drained(cfg: &Config) {
-    let state = state_of(cfg);
-    wait_for("the queue to drain", || {
-        twydo_core::store::queue::Queue::existing(&state).is_none_or(|q| q.is_empty().unwrap())
-    });
-}
-
-/// A save while a sync holds the vdir does not wait: it is queued, and says so.
-#[test]
-fn save_during_a_sync_is_queued_at_once() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let w = writer(&cfg);
-    let _sync = w.handle.hold_long(LongKind::Test);
-    let original = fs::read(env.task_file()).unwrap();
-    let started = Instant::now();
-    let got = w.run(&complete_a());
-    assert!(
-        started.elapsed() < Duration::from_secs(1),
-        "{:?}",
-        started.elapsed()
-    );
-    assert_eq!(got, Ok("done · queued (a sync is running)".into()));
-    assert_eq!(fs::read(env.task_file()).unwrap(), original);
-}
-
-/// A queued save a drain refuses is reported once, by the title the user saw.
-#[test]
-fn drain_reports_refusals_with_the_title() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let w = writer(&cfg);
-    let sync = w.handle.hold_long(LongKind::Test);
-    w.run(&complete_a()).unwrap();
-    // The phone changes the task before the queue is written.
-    let old = fs::read_to_string(env.task_file()).unwrap();
-    fs::write(
-        env.task_file(),
-        old.replace("SUMMARY:A2", "SUMMARY:From phone"),
-    )
-    .unwrap();
-    drop(sync);
-    let state = state_of(&cfg);
-    let unshown = || {
-        twydo_core::store::queue::Queue::existing(&state)
-            .map(|q| q.unshown().unwrap())
-            .unwrap_or_default()
-    };
-    wait_for("the refusal", || !unshown().is_empty());
-    let refusals = unshown();
-    assert_eq!(
-        refusals
-            .iter()
-            .map(twydo_core::store::queue::refusal_message)
-            .collect::<Vec<_>>(),
-        vec!["Not saved: \"A2\" changed on another device".to_string()]
-    );
-    // Acknowledged, it is not shown again.
-    let ack: twydo_daemon::protocol::methods::AckResult = w
-        .client
-        .call(
-            "refusals.ack",
-            twydo_daemon::protocol::methods::AckParams {
-                request_id: w.client.next_request_id(),
-                ids: refusals.iter().map(|r| r.item.id.clone()).collect(),
-            },
-        )
-        .unwrap();
-    assert_eq!(ack.acknowledged, 1);
-    assert!(unshown().is_empty(), "shown once");
-    let text = fs::read_to_string(env.task_file()).unwrap();
-    assert!(!text.contains("STATUS:COMPLETED"), "{text}");
-}
-
-/// When the sync ends the daemon writes what was queued.
-#[test]
-fn a_queued_save_is_written_when_the_sync_ends() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let w = writer(&cfg);
-    let sync = w.handle.hold_long(LongKind::Test);
-    let first = w.run(&complete_a()).unwrap();
-    assert!(first.contains("queued"), "{first}");
-    drop(sync);
-    wait_drained(&cfg);
-    let text = fs::read_to_string(env.task_file()).unwrap();
-    assert!(text.contains("STATUS:COMPLETED"), "{text}");
-}
-
-#[test]
-fn undo_of_a_queued_save_cancels_it() {
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let w = writer(&cfg);
-    let sync = w.handle.hold_long(LongKind::Test);
-    let original = fs::read(env.task_file()).unwrap();
-    let first = w.run(&complete_a()).unwrap();
-    assert!(first.contains("queued"), "{first}");
-    assert_eq!(w.run_fresh(&Request::Undo), Ok("undone: A2".into()));
-    drop(sync);
-    wait_drained(&cfg);
-    assert_eq!(fs::read(env.task_file()).unwrap(), original);
-}
-
 /// A recovery is a job: during a sync it waits for the lane and runs after it (the backup
 /// here does not exist, so the job then fails with its own reason, not "try again").
 #[test]
@@ -471,42 +194,6 @@ fn recover_during_a_sync_runs_after_it() {
     let err = job.join().unwrap().unwrap_err();
     assert!(started.elapsed() >= Duration::from_millis(250));
     assert!(!err.contains("try again"), "{err}");
-}
-
-#[test]
-fn undo_and_redo_name_the_task() {
-    let env = Env::new();
-    let w = writer(&env.config());
-    w.run_fresh(&complete_a()).unwrap();
-    assert_eq!(w.run_fresh(&Request::Undo), Ok("undone: A2".into()));
-    assert_eq!(w.run_fresh(&Request::Redo), Ok("redone: A2".into()));
-}
-
-#[test]
-fn undo_of_a_delete_names_the_deleted_task() {
-    let env = Env::new();
-    let w = writer(&env.config());
-    let delete = Request::Apply(Op::Delete { uid: TASK_A.into() });
-    w.run_fresh(&delete).unwrap();
-    assert_eq!(w.run_fresh(&Request::Undo), Ok("undone: A2".into()));
-}
-
-#[test]
-fn stale_message_names_the_task_not_the_file() {
-    let env = Env::new();
-    // The view the edit is planned on is the one before the file changes.
-    let w = writer(&env.config());
-    let mut bytes = fs::read(env.task_file()).unwrap();
-    bytes.extend_from_slice(b"X-EXTRA:1\r\n");
-    fs::write(env.task_file(), &bytes).unwrap();
-    let edit = Request::Apply(Op::Edit {
-        uid: TASK_A.into(),
-        changes: vec![Change::Summary("A3".into())],
-    });
-    assert_eq!(
-        w.run(&edit),
-        Err("\"A2\" changed on disk; reload and try again".into())
-    );
 }
 
 /// Writes a synthetic checklist with two open items and one completed item into list1.
@@ -555,64 +242,6 @@ fn add_family(env: &Env) {
     for (name, body) in files {
         fs::write(dir.join(format!("{name}.ics")), body).unwrap();
     }
-}
-
-#[test]
-fn family_success_messages() {
-    let env = Env::new();
-    add_family(&env);
-    let mut cfg = env.config();
-    cfg.writes.mode = twydo_core::config::WriteMode::Test;
-    let w = writer(&cfg);
-    let run = |w: &WriteDaemon, op: Op| w.run_fresh(&Request::Apply(op));
-    let uid = || "fam-p".to_string();
-    assert_eq!(
-        run(&w, Op::Complete { uid: uid() }),
-        Ok("done: \"Synthetic parent\" and 2 items".into())
-    );
-    assert_eq!(
-        run(&w, Op::Reopen { uid: uid() }),
-        Ok("reopened: \"Synthetic parent\" and 3 items".into())
-    );
-    assert_eq!(
-        run(
-            &w,
-            Op::Move {
-                uid: uid(),
-                to: "list2".into()
-            }
-        ),
-        Ok("moved \"Synthetic parent\" and 3 items to Two".into())
-    );
-    let moved = env.snapshot();
-    let new_uid = moved
-        .tasks
-        .iter()
-        .find(|t| t.summary == "Synthetic parent")
-        .unwrap()
-        .uid
-        .clone();
-    assert_eq!(
-        run(&w, Op::Delete { uid: new_uid }),
-        Ok("deleted \"Synthetic parent\" and 3 items · u to undo".into())
-    );
-}
-
-#[test]
-fn family_success_message_uses_the_singular_for_one_item() {
-    let env = Env::new();
-    add_family(&env);
-    fs::remove_file(env.vdir().join("list1/fam-2.ics")).unwrap();
-    let mut cfg = env.config();
-    cfg.writes.mode = twydo_core::config::WriteMode::Test;
-    let w = writer(&cfg);
-    let done = Request::Apply(Op::Complete {
-        uid: "fam-p".into(),
-    });
-    assert_eq!(
-        w.run_fresh(&done),
-        Ok("done: \"Synthetic parent\" and 1 item".into())
-    );
 }
 
 /// The `Enter` chain against a real store (test mode): each row writes one item under the
@@ -708,7 +337,7 @@ fn enter_chain_writes_items_until_the_parent_is_gone() {
 /// Keyboard/card requests and the real writer together, using the shipped verified matrix.
 /// These fixtures are copied to a tempdir; no production vdir, config or sync is used.
 mod verified_recurrence_tui {
-    use super::{Env, WriteDaemon, now, wait_drained, writer};
+    use super::{Env, WriteDaemon, now, writer};
     use chrono::{TimeZone, Utc};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::fs;
@@ -719,8 +348,6 @@ mod verified_recurrence_tui {
     use twydo_core::model::{Status, TaskKind};
 
     const FC: &str = "61ed74be3ba34212ab7476b698de1263";
-    const U1: &str = "91fb1d1636754afda633eb2bda234417";
-    const U2: &str = "be99b147d81b4df6a63dc134e559dab6";
     fn env(step: &str) -> Env {
         env_in("plan8-tui-a", step)
     }
@@ -783,88 +410,6 @@ mod verified_recurrence_tui {
     }
 
     #[test]
-    fn completion_anchored_card_and_date_keys_use_verified_permissions_and_keep_refused_text() {
-        let e = env_in("plan8-rfra", "202-seeded-after-upload");
-        let uid = "twydo-p8-rfra-fields-p";
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, uid, false);
-        let path = e.vdir().join(format!("list1/{uid}.ics"));
-        let original = fs::read(&path).unwrap();
-        let r = request(a.handle_key(key(']')));
-        run(&e, &mut a, &w, r);
-        assert_ne!(fs::read(&path).unwrap(), original);
-        assert!(a.snapshot.tasks[a.snapshot.find(uid).unwrap()].from_completion);
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(fs::read(&path).unwrap(), original);
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
-        run(&e, &mut a, &w, r);
-        select(&mut a, uid, false);
-        let r = card_repeat(&mut a, "weekly after done");
-        run(&e, &mut a, &w, r);
-        let task = &a.snapshot.tasks[a.snapshot.find(uid).unwrap()];
-        assert_eq!(task.rrule.as_deref(), Some("FREQ=WEEKLY"));
-        assert!(task.from_completion);
-        select(&mut a, uid, false);
-        let r = card_repeat(&mut a, "daily after done");
-        a.form.as_mut().unwrap().title.push_str(" retained");
-        let typed = a.form.as_ref().unwrap().title.clone();
-        // Re-submit the grouped card after adding its ordinary field change.
-        let _ = r;
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        let before = fs::read(&path).unwrap();
-        let err = w.run(&r).unwrap_err();
-        a.write_finished(Err(err));
-        assert_eq!(a.form.as_ref().unwrap().title, typed);
-        assert_eq!(a.form.as_ref().unwrap().repeat, "daily after done");
-        assert_eq!(fs::read(&path).unwrap(), before);
-    }
-
-    #[test]
-    fn completion_anchored_interval_card_accepts_only_the_captured_pure_change() {
-        for mixed in [false, true] {
-            let e = env_in("plan8-rfra", "202-seeded-after-upload");
-            let uid = "twydo-p8-rfra-interval-p";
-            let w = writer(&e.config());
-            let mut a = App::new(
-                e.snapshot(),
-                now().with_timezone(&chrono_tz::America::New_York),
-            );
-            select(&mut a, uid, false);
-            let first = card_repeat(&mut a, "every 2 months after done");
-            let r = if mixed {
-                a.form.as_mut().unwrap().title.push_str(" retained");
-                request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)))
-            } else {
-                first
-            };
-            let before = fs::read(e.vdir().join(format!("list1/{uid}.ics"))).unwrap();
-            let result = w.run(&r);
-            if mixed {
-                let err = result.unwrap_err();
-                a.write_finished(Err(err));
-                assert!(a.form.as_ref().unwrap().title.ends_with(" retained"));
-                assert_eq!(a.form.as_ref().unwrap().repeat, "every 2 months after done");
-                assert_eq!(
-                    fs::read(e.vdir().join(format!("list1/{uid}.ics"))).unwrap(),
-                    before
-                );
-            } else {
-                result.unwrap();
-                let snap = e.snapshot();
-                assert_eq!(
-                    snap.tasks[snap.find(uid).unwrap()].rrule.as_deref(),
-                    Some("FREQ=MONTHLY;INTERVAL=2")
-                );
-            }
-        }
-    }
-
-    #[test]
     fn repeat_card_uses_verified_permissions_and_mixed_refusal_keeps_typing() {
         let e = env("010-first-phone-actions");
         let w = writer(&e.config());
@@ -910,100 +455,6 @@ mod verified_recurrence_tui {
         let t = &a.snapshot.tasks[a.snapshot.find(FC).unwrap()];
         assert!(t.rrule.is_none());
         assert_eq!(t.kind, TaskKind::Checklist);
-    }
-
-    #[test]
-    fn ticks_complete_captured_until_tasks_and_reset_a_monthly_checklist() {
-        for (uid, step, confirm, history_count) in [
-            (U1, "001-after-upload", false, 1),
-            (U2, "001-after-upload", false, 1),
-            (FC, "010-first-phone-actions", true, 4),
-        ] {
-            let e = env(step);
-            let w = writer(&e.config());
-            let before = e.snapshot().tasks.len();
-            let mut a = App::new(
-                e.snapshot(),
-                now().with_timezone(&chrono_tz::America::New_York),
-            );
-            select(&mut a, uid, false);
-            let first = a.handle_key(key('x'));
-            let r = if confirm {
-                assert!(matches!(first, Outcome::Continue));
-                request(a.handle_key(key('x')))
-            } else {
-                request(first)
-            };
-            run(&e, &mut a, &w, r);
-            assert_eq!(a.snapshot.tasks.len(), before + history_count);
-            let i = a.snapshot.find(uid).unwrap();
-            assert_eq!(a.snapshot.tasks[i].status, Status::Open);
-            if uid == FC {
-                for &c in a.snapshot.children(i) {
-                    assert_eq!(a.snapshot.tasks[c].status, Status::Open);
-                    assert!(a.snapshot.tasks[c].due.is_none());
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn done_ticks_reopen_an_ended_original_and_a_history_copy_in_verified_mode() {
-        for (uid, step, keeps_rule) in [
-            (U1, "030-end-series-and-items", true),
-            (
-                "7435cbd64d9443888f9eb8ebc84518f4",
-                "050-remove-repeat-and-refinish",
-                false,
-            ),
-        ] {
-            let e = env(step);
-            let w = writer(&e.config());
-            let count = e.snapshot().tasks.len();
-            let mut a = App::new(
-                e.snapshot(),
-                now().with_timezone(&chrono_tz::America::New_York),
-            );
-            select(&mut a, uid, true);
-            let r = request(a.handle_key(key('x')));
-            run(&e, &mut a, &w, r);
-            let t = &a.snapshot.tasks[a.snapshot.find(uid).unwrap()];
-            assert_eq!(t.status, Status::Open);
-            assert_eq!(t.rrule.is_some(), keeps_rule);
-            assert_eq!(a.snapshot.tasks.len(), count);
-        }
-    }
-    #[test]
-    fn history_family_done_selection_reopens_once_and_undo_restores_bytes() {
-        let e = env_in("plan6-list1", "05-complete-parent");
-        let uid = "14b5a37a52224e8c959b5002e2275fc9";
-        let originals: Vec<_> = fs::read_dir(e.vdir().join("list1"))
-            .unwrap()
-            .map(|p| {
-                let p = p.unwrap().path();
-                let b = fs::read(&p).unwrap();
-                (p, b)
-            })
-            .collect();
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, uid, true);
-        let r = request(a.handle_key(key('x')));
-        run(&e, &mut a, &w, r);
-        let p = a.snapshot.find(uid).unwrap();
-        assert_eq!(a.snapshot.tasks[p].status, Status::Open);
-        assert!(a.snapshot.tasks[p].rrule.is_none());
-        for &c in a.snapshot.children(p) {
-            assert_eq!(a.snapshot.tasks[c].status, Status::Open);
-        }
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        for (p, b) in originals {
-            assert_eq!(fs::read(p).unwrap(), b);
-        }
     }
 
     #[test]
@@ -1060,274 +511,6 @@ mod verified_recurrence_tui {
     }
 
     #[test]
-    fn verified_parent_delete_keys_remove_one_flat_family_and_undo_once() {
-        let parent = "12d762a5639e406c8ec865517882f130";
-        let q = "2cb7991c71624ddda29877c098acad43";
-        let z = "3199749e2ea64f10bdaebc00197768ca";
-        let b = "twydo-p8-c29-b";
-        let b_q = "96ee97f3cc8c403391c57ec8b8e5d192";
-        let b_z = "f9ae2ffd776e42919f9696f37dd6e849";
-        let d = "twydo-p8-c29-d";
-
-        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
-        let original = item_bytes(&e);
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, parent, false);
-        a.handle_key(key('d'));
-        let r = request(a.handle_key(key('d')));
-        assert!(
-            matches!(r, Request::Apply(twydo_core::edit::Op::Delete { ref uid }) if uid == parent),
-            "{r:?}"
-        );
-        run(&e, &mut a, &w, r);
-        for uid in [parent, q, z] {
-            assert!(a.snapshot.find(uid).is_none(), "{uid}");
-        }
-        for uid in [b, b_q, b_z, d] {
-            assert!(a.snapshot.find(uid).is_some(), "{uid}");
-        }
-        let after = item_bytes(&e);
-        for uid in [b, b_q, b_z, d] {
-            assert_eq!(
-                after[&format!("{uid}.ics")],
-                original[&format!("{uid}.ics")],
-                "{uid}"
-            );
-        }
-        // One undo restores the whole family and one redo removes it again.
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(item_bytes(&e), original);
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
-        run(&e, &mut a, &w, r);
-        assert_eq!(item_bytes(&e), after);
-
-        // An empty parent has the same one-resource scope.
-        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
-        for uid in [q, z] {
-            fs::remove_file(e.vdir().join(format!("list1/{uid}.ics"))).unwrap();
-        }
-        let empty_original = item_bytes(&e);
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, parent, false);
-        a.handle_key(key('d'));
-        let r = request(a.handle_key(key('d')));
-        run(&e, &mut a, &w, r);
-        assert!(a.snapshot.find(parent).is_none());
-        for uid in [b, b_q, b_z, d] {
-            assert!(a.snapshot.find(uid).is_some(), "{uid}");
-        }
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(item_bytes(&e), empty_original);
-
-        // A completed family is selectable in Done and is removed as a family.
-        let e = env_in("issue27-items", "020-phone-complete-project");
-        let pa = "twydo-i27-p-a";
-        let pa_x = "twydo-i27-p-a-x";
-        let ca = "twydo-i27-c-a";
-        let ca_x = "twydo-i27-c-a-x";
-        let completed_original = item_bytes(&e);
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, pa, true);
-        a.handle_key(key('d'));
-        let r = request(a.handle_key(key('d')));
-        run(&e, &mut a, &w, r);
-        for uid in [pa, pa_x] {
-            assert!(a.snapshot.find(uid).is_none(), "{uid}");
-        }
-        for uid in [ca, ca_x] {
-            assert!(a.snapshot.find(uid).is_some(), "{uid}");
-        }
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(item_bytes(&e), completed_original);
-    }
-
-    #[test]
-    fn verified_checklist_item_delete_keys_undo_and_reset_use_exact_targets() {
-        let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        let parent = "12d762a5639e406c8ec865517882f130";
-        let p = a.snapshot.find(parent).unwrap();
-        let q = a
-            .snapshot
-            .children(p)
-            .iter()
-            .map(|&i| &a.snapshot.tasks[i])
-            .find(|t| t.summary == "q")
-            .unwrap()
-            .uid
-            .clone();
-        select(&mut a, parent, false);
-        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        select(&mut a, &q, false);
-        a.handle_key(key('d'));
-        let r = request(a.handle_key(key('d')));
-        run(&e, &mut a, &w, r);
-        assert!(a.snapshot.find(&q).is_none());
-        assert!(a.snapshot.find(parent).is_some());
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert!(a.snapshot.find(&q).is_some());
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
-        run(&e, &mut a, &w, r);
-        assert!(a.snapshot.find(&q).is_none());
-        let p = a.snapshot.find(parent).unwrap();
-        let z = a.snapshot.tasks[a.snapshot.children(p)[0]].uid.clone();
-        select(&mut a, &z, false);
-        let r = request(a.handle_key(key('x')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(
-            a.snapshot.tasks[a.snapshot.find(parent).unwrap()].status,
-            Status::Open
-        );
-        select(&mut a, parent, false);
-        let r = request(a.handle_key(key('x')));
-        run(&e, &mut a, &w, r);
-        let p = a.snapshot.find(parent).unwrap();
-        assert_eq!(
-            a.snapshot.tasks[p]
-                .due
-                .as_ref()
-                .unwrap()
-                .local_date(a.snapshot.tz()),
-            chrono::NaiveDate::from_ymd_opt(2027, 1, 10).unwrap()
-        );
-        assert_eq!(
-            a.snapshot.tasks[a.snapshot.find(&z).unwrap()].status,
-            Status::Open
-        );
-        assert!(a.snapshot.find(&q).is_none());
-        assert!(
-            !a.snapshot
-                .tasks
-                .iter()
-                .any(|t| t.summary == "q" && t.parent.as_deref() == Some(parent))
-        );
-        // Text cards use the same shipping writer on reset items and their parent.
-        select(&mut a, &z, false);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().title = "x".into();
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        run(&e, &mut a, &w, r);
-        assert_eq!(a.snapshot.tasks[a.snapshot.find(&z).unwrap()].summary, "x");
-        assert_eq!(
-            a.snapshot.tasks[a.snapshot.find(&z).unwrap()]
-                .parent
-                .as_deref(),
-            Some(parent)
-        );
-        select(&mut a, parent, false);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().title = "renamed".into();
-        a.form.as_mut().unwrap().notes = "z".into();
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        run(&e, &mut a, &w, r);
-        let task = &a.snapshot.tasks[a.snapshot.find(parent).unwrap()];
-        assert_eq!(task.summary, "renamed");
-        assert_eq!(task.rrule.as_deref(), Some("FREQ=MONTHLY"));
-        // A day-29 date edit stays outside the scheduling contract and retains typing.
-        select(&mut a, parent, false);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().title = "kept unsaved".into();
-        a.form.as_mut().unwrap().due = "2027-01-29".into();
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        let before = fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap();
-        let err = w.run(&r).unwrap_err();
-        a.write_finished(Err(err));
-        assert_eq!(a.form.as_ref().unwrap().title, "kept unsaved");
-        assert_eq!(
-            fs::read(e.vdir().join(format!("list1/{parent}.ics"))).unwrap(),
-            before
-        );
-    }
-
-    #[test]
-    fn checklist_due_capability_date_keys_card_cancel_and_completion() {
-        let e = env("010-first-phone-actions");
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, FC, false);
-        let original = item_bytes(&e);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().due = "2026-12-11".into();
-        a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        assert_eq!(item_bytes(&e), original);
-        select(&mut a, FC, false);
-        let r = request(a.handle_key(key(']')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(
-            a.snapshot.tasks[a.snapshot.find(FC).unwrap()]
-                .due
-                .as_ref()
-                .unwrap()
-                .local_date(a.snapshot.tz())
-                .to_string(),
-            "2026-12-11"
-        );
-        let r = request(a.handle_key(key('u')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(item_bytes(&e), original);
-        select(&mut a, FC, false);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().title = "synthetic scheduled checklist".into();
-        a.form.as_mut().unwrap().notes = "preserved mixed save".into();
-        a.form.as_mut().unwrap().due = "2026-12-11".into();
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        run(&e, &mut a, &w, r);
-        select(&mut a, FC, false);
-        a.handle_key(key('x'));
-        let r = request(a.handle_key(key('x')));
-        run(&e, &mut a, &w, r);
-        assert_eq!(
-            a.snapshot.tasks[a.snapshot.find(FC).unwrap()]
-                .due
-                .as_ref()
-                .unwrap()
-                .local_date(a.snapshot.tz())
-                .to_string(),
-            "2027-01-11"
-        );
-    }
-
-    #[test]
-    fn checklist_interval_candidate_refusal_keeps_card_text_and_resources() {
-        let e = env("010-first-phone-actions");
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        select(&mut a, FC, false);
-        let r = card_repeat(&mut a, "2m");
-        let before = item_bytes(&e);
-        let err = w.run(&r).unwrap_err();
-        a.write_finished(Err(err));
-        assert_eq!(a.form.as_ref().unwrap().repeat, "2m");
-        assert_eq!(item_bytes(&e), before);
-    }
-
-    #[test]
     fn text_capability_closed_checklist_card_saves_text_and_keeps_refused_mixed_input() {
         let e = env_in("plan8-checklist-b", "011-phone-items-and-text");
         let uid = "twydo-p8-c29-b";
@@ -1368,49 +551,6 @@ mod verified_recurrence_tui {
         assert_eq!(item_bytes(&e), before);
     }
 
-    #[test]
-    fn checklist_schedule_stale_form_keeps_typing_and_item_dates_stay_inherited() {
-        let e = env("010-first-phone-actions");
-        let w = writer(&e.config());
-        let mut a = App::new(
-            e.snapshot(),
-            now().with_timezone(&chrono_tz::America::New_York),
-        );
-        let p = a.snapshot.find(FC).unwrap();
-        let child = a
-            .snapshot
-            .children(p)
-            .iter()
-            .copied()
-            .find(|&i| a.snapshot.tasks[i].status == Status::Open)
-            .unwrap();
-        let child_uid = a.snapshot.tasks[child].uid.clone();
-        select(&mut a, FC, false);
-        a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        select(&mut a, &child_uid, false);
-        let before = item_bytes(&e);
-        let r = request(a.handle_key(key(']')));
-        assert!(w.run(&r).is_err());
-        assert_eq!(item_bytes(&e), before);
-        select(&mut a, FC, false);
-        a.handle_key(key('i'));
-        a.form.as_mut().unwrap().title = "kept unsaved".into();
-        a.form.as_mut().unwrap().due = "2026-12-11".into();
-        let original = fs::read_to_string(e.vdir().join(format!("list1/{child_uid}.ics"))).unwrap();
-        fs::write(
-            e.vdir().join("list1/new-synthetic-child.ics"),
-            original.replace(&child_uid, "new-synthetic-child"),
-        )
-        .unwrap();
-        let before = item_bytes(&e);
-        let r = request(a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
-        let err = w.run(&r).unwrap_err();
-        a.write_finished(Err(err));
-        assert_eq!(a.form.as_ref().unwrap().title, "kept unsaved");
-        assert_eq!(a.form.as_ref().unwrap().due, "2026-12-11");
-        assert_eq!(item_bytes(&e), before);
-    }
-
     fn item_bytes(e: &Env) -> std::collections::BTreeMap<String, Vec<u8>> {
         fs::read_dir(e.vdir().join("list1"))
             .unwrap()
@@ -1436,81 +576,46 @@ mod verified_recurrence_tui {
     }
 
     #[test]
-    fn individual_item_deletion_keys_target_open_completed_and_last_items_and_restore_bytes() {
-        for (step, prefix, child, done) in [
-            ("001-seeded", "c", "q", false),
-            ("001-seeded", "p", "q", false),
-            ("020-phone-complete-project", "c", "x", false),
-            ("020-phone-complete-project", "p", "x", true),
-            ("020-phone-complete-project", "m", "q", false),
-            ("020-phone-complete-project", "w", "q", false),
-        ] {
-            let e = env_in("issue27-items", step);
-            let parent = format!("twydo-i27-{prefix}-a");
-            let uid = format!("{parent}-{child}");
-            let before = item_bytes(&e);
-            let mut expected = before.clone();
-            expected.remove(&(uid.clone() + ".ics"));
-            let w = writer(&e.config());
-            let mut a = item_app(&e, &parent);
-            select(&mut a, &uid, done);
-            assert!(!matches!(a.handle_key(key('d')), Outcome::Write(_)));
-            let r = request(a.handle_key(key('d')));
-            assert!(
-                matches!(&r, Request::Apply(twydo_core::edit::Op::Delete { uid: target }) if target == &uid)
-            );
-            run(&e, &mut a, &w, r);
-            assert_eq!(item_bytes(&e), expected, "{uid}");
-            let p = a.snapshot.find(&parent).unwrap();
-            assert_eq!(
-                a.snapshot.tasks[p].kind,
-                if matches!(prefix, "c" | "m") {
-                    TaskKind::Checklist
-                } else {
-                    TaskKind::Project
-                }
-            );
-            // Empty parents remain visible in their eligible view.
-            a.handle_key(key('2'));
-            assert!(
-                a.visible_rows()
-                    .iter()
-                    .any(|r| a.snapshot.tasks[r.task].uid == parent)
-            );
-            let r = request(a.handle_key(key('u')));
-            run(&e, &mut a, &w, r);
-            assert_eq!(item_bytes(&e), before);
-            let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
-            run(&e, &mut a, &w, r);
-            assert_eq!(item_bytes(&e), expected);
-        }
-    }
-
-    #[test]
-    fn individual_item_deletion_keys_queue_during_sync_and_undo_after_drain() {
-        let e = env_in("issue27-items", "020-phone-complete-project");
-        let parent = "twydo-i27-p-a";
-        let uid = "twydo-i27-p-a-x";
+    fn completed_item_delete_and_undo_go_through_the_writer() {
+        let (step, prefix, child, done) = ("020-phone-complete-project", "p", "x", true);
+        let e = env_in("issue27-items", step);
+        let parent = format!("twydo-i27-{prefix}-a");
+        let uid = format!("{parent}-{child}");
         let before = item_bytes(&e);
-        let w = writer(&e.config());
-        let mut a = item_app(&e, parent);
-        select(&mut a, uid, true);
-        a.handle_key(key('d'));
-        let r = request(a.handle_key(key('d')));
-        let state = twydo_core::store::vdir_state_dir(&e.config().state_dir(), &e.vdir()).unwrap();
-        let lock = twydo_core::store::fsio::VdirLock::exclusive(&state).unwrap();
-        let message = w.run(&r).unwrap();
-        assert!(message.contains("queued"));
-        assert_eq!(item_bytes(&e), before);
-        drop(lock);
-        wait_drained(&e.config());
-        a.reload(w.snapshot());
         let mut expected = before.clone();
-        expected.remove(&(uid.to_owned() + ".ics"));
-        assert_eq!(item_bytes(&e), expected);
+        expected.remove(&(uid.clone() + ".ics"));
+        let w = writer(&e.config());
+        let mut a = item_app(&e, &parent);
+        select(&mut a, &uid, done);
+        assert!(!matches!(a.handle_key(key('d')), Outcome::Write(_)));
+        let r = request(a.handle_key(key('d')));
+        assert!(
+            matches!(&r, Request::Apply(twydo_core::edit::Op::Delete { uid: target }) if target == &uid)
+        );
+        run(&e, &mut a, &w, r);
+        assert_eq!(item_bytes(&e), expected, "{uid}");
+        let p = a.snapshot.find(&parent).unwrap();
+        assert_eq!(
+            a.snapshot.tasks[p].kind,
+            if matches!(prefix, "c" | "m") {
+                TaskKind::Checklist
+            } else {
+                TaskKind::Project
+            }
+        );
+        // Empty parents remain visible in their eligible view.
+        a.handle_key(key('2'));
+        assert!(
+            a.visible_rows()
+                .iter()
+                .any(|r| a.snapshot.tasks[r.task].uid == parent)
+        );
         let r = request(a.handle_key(key('u')));
         run(&e, &mut a, &w, r);
         assert_eq!(item_bytes(&e), before);
+        let r = request(a.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL)));
+        run(&e, &mut a, &w, r);
+        assert_eq!(item_bytes(&e), expected);
     }
 }
 
@@ -1611,57 +716,4 @@ fn refusal_text_names_the_task_by_the_clients_title() {
     );
     let other = RpcError::refused(ErrorKind::Blocked, "blocked");
     assert_eq!(tdo::write::refusal_text(&other, title), "blocked");
-}
-
-/// Issue #10: a client that connects while a long job holds the lane is served at once.
-#[test]
-fn a_client_opens_while_a_sync_holds_the_lane() {
-    use twydo_daemon::client::Client;
-    use twydo_daemon::protocol::methods::{HelloParams, Instance};
-    let env = Env::new();
-    let cfg = sync_config(&env);
-    let w = writer(&cfg);
-    let _sync = w.handle.hold_long(LongKind::Test);
-    let hello = HelloParams {
-        client: "test".into(),
-        version: "0".into(),
-        protocol: twydo_daemon::PROTOCOL,
-        session: None,
-        instance: Instance {
-            config: w
-                .handle
-                .socket()
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join("config.toml"),
-            vdir: Some(cfg.vdir.clone()),
-        },
-    };
-    let limit = Duration::from_secs(2);
-    let started = Instant::now();
-    let (client, _) = Client::connect(w.handle.socket(), hello).expect("hello");
-    assert!(
-        started.elapsed() < limit,
-        "hello took {:?}",
-        started.elapsed()
-    );
-    let started = Instant::now();
-    let wire: twydo_daemon::protocol::wire::WireSnapshot =
-        client.call("snapshot.get", serde_json::json!({})).unwrap();
-    assert!(
-        started.elapsed() < limit,
-        "snapshot.get took {:?}",
-        started.elapsed()
-    );
-    let snap = twydo_daemon::protocol::wire::from_wire(wire);
-    assert!(snap.tasks.iter().any(|t| t.uid == TASK_A));
-    let started = Instant::now();
-    let _: serde_json::Value = client.call("status.get", serde_json::json!({})).unwrap();
-    assert!(
-        started.elapsed() < limit,
-        "status.get took {:?}",
-        started.elapsed()
-    );
 }

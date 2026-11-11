@@ -931,15 +931,29 @@ fn invalid_form_shows_error_without_write() {
 fn failed_write_keeps_form_open_with_error() {
     let mut a = app();
     a.handle_key(key('i'));
-    a.handle_key(key('!'));
-    a.handle_key(code(KeyCode::Enter));
+    let f = a.form.as_mut().unwrap();
+    f.title = "Kept title".into();
+    f.notes = "Kept notes".into();
+    f.due = "2026-11-10".into();
+    f.start = "2026-11-09".into();
+    f.repeat = "every 2 months after done".into();
+    f.list = "personal".into();
+    assert!(matches!(
+        a.handle_key(code(KeyCode::Enter)),
+        Outcome::Write(_)
+    ));
     a.write_finished(Err("projects and checklists cannot be edited yet".into()));
     let f = a.form.as_ref().expect("still open");
     assert_eq!(
         f.error.as_deref(),
         Some("projects and checklists cannot be edited yet")
     );
-    assert!(f.title.ends_with('!'), "typing kept");
+    assert_eq!(f.title, "Kept title");
+    assert_eq!(f.notes, "Kept notes");
+    assert_eq!(f.due, "2026-11-10");
+    assert_eq!(f.start, "2026-11-09");
+    assert_eq!(f.repeat, "every 2 months after done");
+    assert_eq!(f.list, "personal");
     assert_eq!(a.mode, Mode::Insert);
 }
 
@@ -2532,4 +2546,90 @@ fn structure_confirmation_is_invalidated_by_reload() {
     assert!(a.confirmation.is_none());
     assert!(a.picker.is_none());
     assert_eq!(a.handle_key(key('y')), Outcome::Continue);
+}
+
+/// Captures used only to check client selection and emitted requests; the core suites own
+/// compatibility, written bytes, history/reset behavior and undo of these same families.
+fn captured_report(scenario: &str, step: &str) -> twydo_core::vdir::LoadReport {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1")
+        .join(scenario)
+        .join(step);
+    let mut r = twydo_core::vdir::LoadReport {
+        collections: vec![twydo_core::vdir::Collection {
+            id: "list1".into(),
+            path: dir.clone(),
+            display_name: None,
+            color: None,
+        }],
+        ..Default::default()
+    };
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|ext| ext == "ics") {
+            let cal = twydo_core::ical::parse(&std::fs::read(&path).unwrap()).unwrap();
+            r.tasks
+                .extend(twydo_core::model::tasks_from_calendar(&cal, "list1", &path));
+        }
+    }
+    r
+}
+
+#[test]
+fn done_history_selection_requests_reopen_of_the_selected_uid() {
+    let r = captured_report("plan6-list1", "05-complete-parent");
+    let uid = "14b5a37a52224e8c959b5002e2275fc9";
+    let mut a = App::new(snapshot_of(r), now());
+    a.handle_key(key('4'));
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|row| a.snapshot.tasks[row.task].uid == uid)
+        .unwrap();
+    assert_eq!(
+        write_op(a.handle_key(key('x'))),
+        Op::Reopen { uid: uid.into() }
+    );
+}
+
+#[test]
+fn delete_targets_the_selected_item_and_reload_keeps_its_empty_parent() {
+    for (step, prefix, child, done) in [
+        ("001-seeded", "c", "q", false),
+        ("001-seeded", "p", "q", false),
+        ("020-phone-complete-project", "c", "x", false),
+        ("020-phone-complete-project", "p", "x", true),
+        ("020-phone-complete-project", "m", "q", false),
+        ("020-phone-complete-project", "w", "q", false),
+    ] {
+        let mut r = captured_report("issue27-items", step);
+        let parent = format!("twydo-i27-{prefix}-a");
+        let uid = format!("{parent}-{child}");
+        let at = NY.with_ymd_and_hms(2026, 11, 7, 11, 0, 0).unwrap();
+        let mut a = App::new(snapshot_of(r.clone()), at);
+        a.expanded.insert(parent.clone());
+        a.handle_key(key(if done { '4' } else { '2' }));
+        a.cursor = a
+            .visible_rows()
+            .iter()
+            .position(|row| a.snapshot.tasks[row.task].uid == uid)
+            .unwrap();
+        assert_eq!(a.handle_key(key('d')), Outcome::Continue);
+        assert_eq!(
+            write_op(a.handle_key(key('d'))),
+            Op::Delete { uid: uid.clone() }
+        );
+        // Deliver the post-delete snapshot. This checks the client's visible empty parent,
+        // without reapplying the store's six-case deletion/undo/redo matrix.
+        r.tasks.retain(|task| task.uid != uid);
+        a.reload(snapshot_of(r));
+        a.write_finished(Ok("deleted · u to undo".into()));
+        a.handle_key(key('2'));
+        assert!(
+            a.visible_rows()
+                .iter()
+                .any(|row| a.snapshot.tasks[row.task].uid == parent),
+            "{parent}"
+        );
+    }
 }
