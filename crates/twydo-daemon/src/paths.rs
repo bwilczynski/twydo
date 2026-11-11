@@ -31,6 +31,23 @@ pub fn socket_path(flag: Option<&Path>) -> PathBuf {
     socket_path_from(flag, &|k| std::env::var_os(k), uid)
 }
 
+/// The per-user default socket, ignoring `TWYDO_SOCKET`.
+pub fn default_socket() -> PathBuf {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::geteuid() };
+    socket_path_from(
+        None,
+        &|k| {
+            if k == "TWYDO_SOCKET" {
+                None
+            } else {
+                std::env::var_os(k)
+            }
+        },
+        uid,
+    )
+}
+
 /// Pure form of [`socket_path`]. The default is `$XDG_RUNTIME_DIR/twydo/tdo.sock` on Linux,
 /// `$TMPDIR/twydo/tdo.sock` on macOS, and `/tmp/twydo-<uid>/tdo.sock` without either variable.
 pub fn socket_path_from(
