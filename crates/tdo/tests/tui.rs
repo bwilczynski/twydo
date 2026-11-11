@@ -13,7 +13,7 @@ use common::TestEnv;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use tdo::app::{App, SYNC_DONE};
 use tdo::term::link::{Connector, Link};
-use tdo::term::{Flow, Session, first_app, step};
+use tdo::term::{Flow, Session, first_app, step, unit_notice};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::methods::{HelloParams, Instance};
 use twydo_daemon::server::lane::LongKind;
@@ -270,4 +270,44 @@ fn a_write_answer_follows_its_snapshot_so_the_new_row_is_followed() {
         .map(|i| app.snapshot.tasks[i].summary.clone());
     assert_eq!(selected.as_deref(), Some("New"));
     assert_ne!(app.message.as_deref(), Some(SYNC_DONE));
+}
+
+#[test]
+fn warns_once_without_a_unit() {
+    let env = TestEnv::new("");
+    let _daemon = env.in_process_daemon(None);
+    let (mut app, _session) = open(&env);
+    unit_notice(&mut app, true);
+    assert_eq!(app.message, None, "a unit is installed");
+    unit_notice(&mut app, false);
+    assert_eq!(
+        app.message.as_deref(),
+        Some("daemon won't start at login; run tdo daemon install")
+    );
+}
+
+#[test]
+fn the_warning_can_be_switched_off() {
+    let env = TestEnv::new("[daemon]\nunit_warning = false\n");
+    let _daemon = env.in_process_daemon(None);
+    let (mut app, _session) = open(&env);
+    assert!(!app.snapshot.config.daemon.unit_warning);
+    unit_notice(&mut app, false);
+    assert_eq!(app.message, None);
+}
+
+#[test]
+fn the_warning_switch_reaches_the_tui_live() {
+    let env = TestEnv::new("");
+    let _daemon = env.in_process_daemon(None);
+    let (mut app, mut session) = open(&env);
+    assert!(app.snapshot.config.daemon.unit_warning);
+
+    let mut text = fs::read_to_string(env.config_path()).unwrap();
+    text.push_str("[daemon]\nunit_warning = false\n");
+    fs::write(env.config_path(), text).unwrap();
+
+    pump(&mut app, &mut session, "the switch", |a| {
+        !a.snapshot.config.daemon.unit_warning
+    });
 }

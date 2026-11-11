@@ -238,3 +238,14 @@ fn after_edit_false_still_loads_with_a_warning() {
             .is_empty()
     );
 }
+
+#[test]
+fn the_daemon_table_defaults_to_warning_and_reads_the_switch() {
+    assert!(parse("vdir = \"/x\"").unwrap().daemon.unit_warning);
+    let c = parse("vdir = \"/x\"\n[daemon]\nunit_warning = false\n").unwrap();
+    assert!(!c.daemon.unit_warning);
+    let e = parse("vdir = \"/x\"\n[daemon]\nfoo = 1\n")
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("foo"), "{e}");
+}

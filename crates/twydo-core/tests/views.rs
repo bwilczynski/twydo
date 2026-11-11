@@ -134,6 +134,7 @@ fn config(lists: &[(&str, ListPrefs)]) -> Config {
         writes: Default::default(),
         state_dir: None,
         sync: None,
+        daemon: Default::default(),
     }
 }
 
