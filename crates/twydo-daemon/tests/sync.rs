@@ -4,7 +4,9 @@
 
 mod common;
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use twydo_core::config::Config;
 
 use common::{Fixture, TestDaemon, edit_title, empty, kind, submit, wait_event};
 use twydo_core::sync::lock::LockFile;
@@ -44,6 +46,7 @@ fn sync_run(c: &Client) -> JobStarted {
         SyncRunParams {
             request_id: c.next_request_id(),
             force_delete: Vec::new(),
+            discover: false,
         },
     )
     .unwrap()
@@ -289,6 +292,7 @@ fn sync_run_with(
         SyncRunParams {
             request_id: request_id.into(),
             force_delete: force_delete.iter().map(|s| s.to_string()).collect(),
+            discover: false,
         },
     )
 }
@@ -620,4 +624,227 @@ fn status_reports_running_until_sync_finished() {
         assert!(Instant::now() < deadline, "never idle");
     }
     assert!(running > 0, "never saw the sync running");
+}
+
+// ---- list discovery ----
+
+/// The fixture's config with the fake vdirsyncer `body` and the list helper routed to the
+/// offline backend of twydo-core over this fixture's vdir. `discover` is the backend's
+/// `discover` store. Returns the config and the helper directory.
+fn with_helper(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut cfg = fx.with_sync(body);
+    let keep = fx.vdir().parent().unwrap().join("helper");
+    std::fs::create_dir_all(&keep).unwrap();
+    let backend = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../twydo-core/tests/common/list_backend.py"
+    );
+    let wrapper = keep.join("python");
+    std::fs::write(
+        &wrapper,
+        format!("#!/usr/bin/env python3\nimport runpy\nrunpy.run_path({backend:?},run_name='__main__')\n"),
+    )
+    .unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let connection = keep.join("connection.json");
+    std::fs::write(
+        &connection,
+        serde_json::json!({"vdir": fx.vdir()}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        keep.join("server.json"),
+        serde_json::json!({"calls":[],"collections":{},"flags":{},"discover":discover}).to_string(),
+    )
+    .unwrap();
+    let sync = cfg.sync.as_mut().unwrap();
+    sync.pair = "synthetic".into();
+    sync.local_storage = "local".into();
+    sync.list_python = wrapper.to_str().unwrap().into();
+    sync.vdirsyncer_config = Some(connection);
+    (cfg, keep)
+}
+
+fn discoveries(keep: &std::path::Path) -> usize {
+    let store: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(keep.join("server.json")).unwrap()).unwrap();
+    store["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c.as_str() == Some("DISCOVER"))
+        .count()
+}
+
+const OK_SYNC: &str = "[ \"$1\" = sync ] && echo 'Syncing synthetic/c1' >&2\nexit 0";
+
+fn finished(c: &Client, reason: SyncReason) -> SyncResult {
+    match wait_event(
+        c,
+        BOUND,
+        |e| matches!(e, Event::SyncFinished { reason: r, .. } if *r == reason),
+    ) {
+        Event::SyncFinished { result, .. } => result,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn startup_sync_discovers_new_lists() {
+    let fx = fx();
+    let (cfg, _keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
+    );
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Startup);
+    let r = finished(&c, SyncReason::Startup);
+    assert!(
+        r.notes.iter().any(|n| n.contains("found new list")),
+        "{r:?}"
+    );
+    assert!(
+        common::snapshot(&c)
+            .collections
+            .iter()
+            .any(|col| col.id == "phone-list")
+    );
+}
+
+#[test]
+fn startup_discovery_failure_is_a_warning() {
+    let fx = fx();
+    let (cfg, _keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":[],"local_only":["stale"]}),
+    );
+    std::fs::create_dir_all(fx.vdir().join("stale")).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Startup);
+    let r = finished(&c, SyncReason::Startup);
+    assert_eq!(r.outcome, SyncOutcome::Ok, "{r:?}");
+    assert!(r.warnings.iter().any(|w| w.contains("stale")), "{r:?}");
+    let _: serde_json::Value = c.call("rpc.discover", serde_json::json!({})).unwrap();
+}
+
+#[test]
+fn periodic_sync_does_not_discover() {
+    let fx = fx();
+    let (cfg, keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
+    );
+    let marker = discover_marker(&cfg);
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    // Startup leaves the marker for the first sync; with it consumed, periodic ones do not
+    // discover.
+    std::fs::remove_file(&marker).unwrap();
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Periodic);
+    finished(&c, SyncReason::Periodic);
+    assert_eq!(discoveries(&keep), 0);
+}
+
+fn discover_marker(cfg: &Config) -> PathBuf {
+    twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir)
+        .unwrap()
+        .join("sync/discover")
+}
+
+#[test]
+fn startup_leaves_a_discovery_marker_that_the_first_sync_consumes() {
+    let fx = fx();
+    let (cfg, keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
+    );
+    let marker = discover_marker(&cfg);
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    assert!(marker.exists(), "no marker after startup");
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Batch);
+    let r = finished(&c, SyncReason::Batch);
+    assert!(
+        r.notes.iter().any(|n| n.contains("found new list")),
+        "{r:?}"
+    );
+    assert!(!marker.exists());
+    assert_eq!(discoveries(&keep), 1);
+}
+
+#[test]
+fn startup_discovery_survives_a_startup_sync_skipped_by_backoff() {
+    let fx = fx();
+    let (cfg, keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
+    );
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    twydo_core::sync::status::SyncStatus {
+        next_attempt: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+        ..Default::default()
+    }
+    .save(&state)
+    .unwrap();
+    let marker = discover_marker(&cfg);
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    td.handle().post_sync_for_test(SyncReason::Startup);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(marker.exists(), "marker lost with the skipped sync");
+    assert_eq!(discoveries(&keep), 0);
+    // Backoff over: the next periodic sync discovers.
+    twydo_core::sync::status::SyncStatus::default()
+        .save(&state)
+        .unwrap();
+    td.handle().post_sync_for_test(SyncReason::Periodic);
+    let r = finished(&c, SyncReason::Periodic);
+    assert!(
+        r.notes.iter().any(|n| n.contains("found new list")),
+        "{r:?}"
+    );
+    assert!(!marker.exists());
+}
+
+#[test]
+fn sync_run_with_discover_fails_on_missing_remote() {
+    let fx = fx();
+    let (cfg, _keep) = with_helper(
+        &fx,
+        OK_SYNC,
+        serde_json::json!({"remote_only":[],"local_only":["stale"]}),
+    );
+    std::fs::create_dir_all(fx.vdir().join("stale")).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let started: JobStarted = c
+        .call(
+            "sync.run",
+            SyncRunParams {
+                request_id: c.next_request_id(),
+                force_delete: Vec::new(),
+                discover: true,
+            },
+        )
+        .unwrap();
+    let r = sync_finished(&c, &started.job_id);
+    assert_eq!(r.outcome, SyncOutcome::Failed, "{r:?}");
+    assert!(
+        r.problems.iter().any(|p| p.contains(":forget-list stale")),
+        "{r:?}"
+    );
 }

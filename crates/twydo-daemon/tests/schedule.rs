@@ -232,6 +232,7 @@ fn switched_off_runs_no_background_sync() {
             SyncRunParams {
                 request_id: s.c.next_request_id(),
                 force_delete: Vec::new(),
+                discover: false,
             },
         )
         .unwrap();

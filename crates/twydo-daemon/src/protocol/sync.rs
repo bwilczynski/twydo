@@ -11,6 +11,10 @@ pub struct SyncRunParams {
     /// `tdo sync --force-delete`.
     #[serde(default)]
     pub force_delete: Vec<String>,
+    /// Look for lists created on the server before syncing (`:discover` and `tdo sync --discover`
+    /// ask for it; a daemon does it by itself at startup). Absent means no.
+    #[serde(default)]
+    pub discover: bool,
 }
 
 /// Why a sync ran.

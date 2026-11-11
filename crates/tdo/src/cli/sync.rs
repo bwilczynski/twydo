@@ -122,6 +122,7 @@ fn run_and_wait(target: &Target, mut client: Client, force_delete: &[String]) ->
         &SyncRunParams {
             request_id: rid.clone(),
             force_delete: force_delete.to_vec(),
+            discover: false,
         },
         client::Unknown::SyncStarted,
     )?;

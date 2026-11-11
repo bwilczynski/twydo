@@ -298,4 +298,7 @@ pub struct SyncView {
     /// Why the last list-metadata sync failed, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metasync_error: Option<String>,
+    /// Why the last list discovery failed, when it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_error: Option<String>,
 }

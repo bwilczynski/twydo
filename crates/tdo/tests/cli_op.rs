@@ -1000,6 +1000,7 @@ fn op_wait_survives_a_daemon_restart() {
             SyncRunParams {
                 request_id: "t-sync".into(),
                 force_delete: vec![],
+                discover: false,
             },
         );
         match r {
@@ -1497,6 +1498,7 @@ fn op_status_reports_a_sync_job() {
             SyncRunParams {
                 request_id: "t-status-sync".into(),
                 force_delete: vec![],
+                discover: false,
             },
         );
         match r {
