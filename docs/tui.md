@@ -48,10 +48,21 @@ columns), or a third below 60 columns.
 Colours come from your terminal's 16-colour palette, so the TUI follows your terminal theme and
 re-colours live when it changes. Only the list bars use the lists' own (true) colours.
 
-The TUI reloads when files in the vdir change, for example after a sync, and when any sync ends
-(its own `:sync`, the startup sync, the batch waiter or the timer), even if no file change was
-reported. Every minute it moves its clock on, so
+The TUI shows what the daemon holds ([architecture.md](architecture.md#the-daemon)). It starts
+the daemon when none runs, and reloads when the daemon says the data changed: an edit, a sync
+(whoever started it), or a change made outside. Every minute it moves its clock on, so
 "today" and the groups stay current.
+
+**The daemon.** When the TUI loses the daemon (it was stopped or crashed) the status line says
+`daemon not running: <reason>; retrying`; the TUI reconnects by itself and says
+`daemon restarted` when it is back. Edits you make meanwhile are refused with the same
+reason. `tdo was upgraded; restart it` means a newer `tdo` replaced the daemon; quit and
+start `tdo` again (the TUI does not retry then). After you change `timezone`, `work_days`,
+`vdir`, `state_dir`, `[writes]` or `[sync]` in the config, it says
+`restart the daemon (tdo daemon stop) and reopen tdo`; other settings apply live. If a save
+gets no answer within 8 seconds, it says
+`daemon did not answer; the save may still apply — check before retrying`. (`tdo op status
+<request-id>` looks up a request from the command line; see [sync.md](sync.md#stopping-a-sync).)
 
 ## Keys
 
@@ -97,7 +108,7 @@ On a checklist or project, a write acts on the whole family; see
 | Command | What it does |
 |---|---|
 | `:list <name>` | open a list by name (or collection id), also a hidden one |
-| `:sync` | sync now (needs `[sync]` in the config; [sync.md](sync.md)) |
+| `:sync` | sync now; behind a sync that is already running, it waits and then runs (needs `[sync]` in the config; [sync.md](sync.md)) |
 | `:sync on` / `:sync off` | switch automatic sync on or off ([sync.md](sync.md#when-edits-sync)); on starts a sync when edits are unsynced; any other argument shows the usage |
 | `:sync! <list>` | sync and accept that a list was emptied on purpose ([sync.md](sync.md)) |
 | `:conflicts` | show sync conflicts; `l` keeps the local version, `r` the remote one |
@@ -372,15 +383,20 @@ The status line says why, and nothing is written:
 A save made while a sync is running is not refused and does not wait: it is queued, the message
 ends in `· queued (a sync is running)`, and the task shows as saved with a muted `(queued)` after
 its title. The queued edits count in the status line's `N pending`. They are written when the
-sync ends (or the next time the TUI starts); `u` on a queued save cancels it before anything is
-written. There is no question about stopping the sync. `:recover` is the exception: it waits up
-to two seconds for a running sync, then says `a sync is running; try again`.
+sync ends (the daemon keeps the queue, so it survives closing the TUI); `u` on a queued save
+cancels it before anything is written. There is no question about stopping the sync. List
+operations such as `:recover` run as jobs on the daemon after a running sync, so they wait
+their turn instead of failing.
+
+If a list save was interrupted (the daemon stopped in the middle of it), the daemon still starts.
+The list card offers to finish it, and the status line says why other edits wait; the journal
+is recovered once the list save is finished.
 
 Success messages clear after five seconds. Writes sync in batches: a background sync starts
 once `batch_size` edits are unsynced and edits have paused for 3 seconds, or `max_wait_secs`
 after the oldest one, so quick writes in a row (closing checklist items one by one) are not
 interrupted by their own sync. A save made while a sync is running is queued (see above).
-Quitting starts no sync; the batch waiter sends the last edits
+Quitting starts no sync; the daemon sends the last edits
 ([sync.md](sync.md#when-edits-sync)).
 
 ## Reordering items

@@ -6,31 +6,21 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
 ## The pieces
 
 ```
- iPhone (2Do) ──CalDAV──▶ CalDAV server ◀──CalDAV── vdirsyncer ──files──▶ vdir ◀── tdo
-                                                         ▲                         │
-                                                         └──── tdo sync runs it ───┘
+ iPhone (2Do) ──CalDAV──▶ CalDAV server ◀──CalDAV── vdirsyncer ──files──▶ vdir
+                                                         ▲                  ▲
+                                                         └─ runs it ─ tdo daemon ◀──socket── tdo (TUI, CLI)
 ```
 
 - **The vdir** is the source of truth on your machine: a folder with one subfolder per list
   and one `.ics` file per task, kept in step with the CalDAV server by
   [vdirsyncer](https://vdirsyncer.pimutils.org/). Twydo never talks CalDAV itself.
-- **`tdo`** reads the vdir, shows it in the TUI and writes changes back as files. `tdo sync`
-  runs vdirsyncer for you, with recovery before and conflict handling after
-  ([sync.md](sync.md)).
+- **The daemon** (`tdo daemon`) owns the vdir: it reads it, writes changes back as files, runs
+  vdirsyncer with recovery before and conflict handling after ([sync.md](sync.md)), and
+  decides when to sync. See [The daemon](#the-daemon).
+- **`tdo`** is its client: the TUI, `tdo op`, `tdo sync` and `tdo conflicts resolve` ask the
+  daemon instead of touching the vdir themselves.
 - **2Do on the iPhone** syncs with the same server. Twydo writes every change the way 2Do itself
   writes it, so the phone reads Twydo's changes as its own ([compatibility.md](compatibility.md)).
-
-**In progress: the daemon.** A daemon that owns the vdir, sync and scheduling is being built
-([design](superpowers/specs/2026-11-09-daemon-design.md)). `tdo` does not use it yet. This page
-will describe it fully when the TUI and CLI switch over.
-
-Its protocol is described by `schema/tdo.openrpc.json`, generated from the Rust types; a test
-compares it with `schema/released.openrpc.json` and fails on a change that would break a
-released client. The protocol's own enums that clients receive (outcomes, operation states,
-error kinds, events) are open (`"x-open": true`): a client reads a value it does not know as
-`Unknown` and acts conservatively (refetches, or shows the message as is), so a newer daemon
-may add values. Every other change a client could not read needs a new protocol generation
-([design §6.2](superpowers/specs/2026-11-09-daemon-design.md#62-schema-and-versioning)).
 
 Twydo keeps its own state (the operation journal, sync status, conflicts) outside the vdir, under
 `state_dir` ([config.md](config.md)). Task data stays iCalendar; nothing in the state directory
@@ -50,9 +40,53 @@ operation/identity mapping before it applies, so retries reuse identities and ne
 the import. Known family/history references follow the remapped identities. Backups survive
 normal journal/conflict retention. User-facing commands are in [tui.md](tui.md#commands).
 
+## The daemon
+
+One daemon serves one vdir. The TUI and the commands that write or sync start it when they
+find none (`tdo daemon --detach`, in a session of its own; its log is
+`$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`, mode 0600), so nothing has to be set up.
+`tdo daemon stop` stops it once it is idle; the next client starts it again. A client that
+finds the daemon gone (stopped, crashed) shows `daemon not running: <reason>; retrying`,
+reconnects when it is back and says `daemon restarted`.
+
+- **The socket.** `--socket`, else `TWYDO_SOCKET`, else `$XDG_RUNTIME_DIR/twydo/tdo.sock`
+  (under `$TMPDIR` on macOS). Another setup that must not meet the usual daemon, such as a
+  test setup with its own `XDG_CONFIG_HOME`, sets `TWYDO_SOCKET` as well. Both sides check
+  that the other end is the same user.
+- **Who reads the configuration.** Only the daemon. A client sends the path of its config file
+  (and `--vdir`) in `hello`; a daemon that serves another configuration refuses it, so a
+  misdirected command never reads or writes the wrong data. Changes to `vdir`, `state_dir`,
+  `[writes]` and `[sync]`, and to `timezone` and `work_days`, take effect after a daemon
+  restart ([config.md](config.md)); the rest is reloaded live.
+- **What it does.** It holds the loaded snapshot and tells clients when it changes (an edit, a
+  sync, a change made outside, a reloaded configuration). It applies every write through the
+  [write path](#the-write-path), one at a time on the vdir, together with syncs and list
+  operations. It syncs at startup, every 60 s, after edits (in batches), after a recorded
+  conflict choice, when automatic sync is switched on and after the machine wakes
+  ([sync.md](sync.md#when-edits-sync)).
+- **What still reads files directly.** `tdo check`, `export-json`, `status`, `conflicts`,
+  `conflicts show` and `tdo op check` read the vdir and state themselves, as before. They
+  work without the daemon.
+- **Upgrades.** A client that is newer than the running daemon asks it to stop once it is
+  idle and starts its own version. A client that is older than the daemon says
+  `tdo was upgraded; restart it`.
+
+The daemon speaks JSON-RPC over the socket, one message per line; see
+[protocol.md](protocol.md) for people writing their own client.
+
+Its protocol is described by `schema/tdo.openrpc.json`, generated from the Rust types; a test
+compares it with `schema/released.openrpc.json` and fails on a change that would break a
+released client. The release PR refreshes `released.openrpc.json`. The protocol's own enums that
+clients receive (outcomes, operation states,
+error kinds, events) are open (`"x-open": true`): a client reads a value it does not know as
+`Unknown` and acts conservatively (refetches, or shows the message as is), so a newer daemon
+may add values. Every other change a client could not read needs a new protocol generation
+([design §6.2](superpowers/specs/2026-11-09-daemon-design.md#62-schema-and-versioning)).
+The design is [here](superpowers/specs/2026-11-09-daemon-design.md).
+
 ## Crates
 
-The repository is a Cargo workspace with two crates.
+The repository is a Cargo workspace with three crates.
 
 **`twydo-core`**, the library. Nothing in it draws to a terminal.
 
@@ -71,8 +105,12 @@ The repository is a Cargo workspace with two crates.
 | `sync` | The sync runner around vdirsyncer: output parsing, the conflict hook and store, reconciliation, status and backoff |
 | `config` | `config.toml` |
 
+**`twydo-daemon`**: the wire protocol (types and the generated schema), the server (the vdir
+lane, the write queue's scheduling, sync jobs, events) and the client library.
+
 **`tdo`**, the binary: the CLI subcommands (`cli/`), the TUI's state and keys (`app.rs`), the
-edit card's state (`form.rs`), the terminal loop with live reload (`term.rs`), and rendering (`ui/`).
+edit card's state (`form.rs`), the terminal loop and its link to the daemon (`term.rs`,
+`term/link.rs`), and rendering (`ui/`).
 
 ## Permission reports
 
@@ -90,7 +128,10 @@ verdicts never imply that every operation is allowed.
 
 ## The write path
 
-Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same way:
+Every write, from a TUI key, `tdo op` or a conflict resolution, goes the same way. The client
+sends the operation to the daemon, together with the snapshot revision it planned against and a
+request id (a resent request gets the same answer, never a second write); the daemon runs these
+steps and answers:
 
 1. **Gate.** `gate::check` decides whether the operation is allowed for this task. It looks up
    the task's case (one-time, monthly, yearly, checklist, project, …), the matrix rows for that
@@ -133,9 +174,10 @@ refused, so `Store::submit` never reports "busy". The queue lives under `<vdir-s
 - `refused/<id>.json`: why an item was refused (with `shown`, whether the user was told),
   pruned after `retention_days`.
 
-Draining (oldest id first) happens in any writer that gets the lock, in the sync runner (after
-recovery and after reconcile), in the TUI when a sync ends and at startup, and in `tdo op --wait`
-([sync.md](sync.md#what-tdo-sync-does)). Each item has the gate re-checked on the current files and its
+Draining (oldest id first) happens in the daemon: after each write that gets the lock, in the
+sync runner (after recovery and after reconcile), when a sync or list job ends, and at startup
+([sync.md](sync.md#what-tdo-sync-does)). A client is told when its item was applied or
+refused. Each item has the gate re-checked on the current files and its
 base compared strictly, whole file by whole file; a mismatch refuses the item. A stuck journal
 stops the drain and the items stay queued. An I/O failure also stops the drain without
 recording a refusal: a prepared journal entry may still recover. A later drain finishes
@@ -145,7 +187,7 @@ The journal entry an item produces records
 batching ages the entry by `queued`, not by the drain time.
 
 `queue::view` lays queued writes over the loaded files while their base still matches, so the
-TUI and `tdo op` read their own queued edits; the TUI marks those rows ` (queued)` and counts
+snapshot the daemon serves shows queued edits; the TUI marks those rows ` (queued)` and counts
 them in `N pending`.
 
 ## Collection operation coordination
@@ -339,8 +381,9 @@ applied writes are skipped, applying an entry twice has the same effect as apply
 
 ### Recovery
 
-Recovery runs at the start of every command that reads the vdir (`tdo` / `tdo tui`,
-`export-json`, `check`, `op`), before every sync, and before every write:
+Recovery runs in the daemon at startup, before every sync, and before every write. The
+commands that still read the vdir themselves (`export-json`, `check`, `op check`) run it at
+their start too:
 
 - with no journal directory, it does nothing and creates nothing;
 - otherwise, under the exclusive lock, every `prepared` entry is rolled forward and marked
@@ -353,8 +396,8 @@ Recovery runs at the start of every command that reads the vdir (`tdo` / `tdo tu
 
 Recovery is idempotent: a second run finds nothing to apply and changes nothing.
 
-At the start of a command, recovery does not wait for a running sync: when a sync holds the vdir
-lock, it is skipped, so `tdo` opens at once. Nothing is lost by that. The sync recovered before
+At the start of one of those commands, recovery does not wait for a running sync: when a sync
+holds the vdir lock, it is skipped, so the command runs at once. Nothing is lost by that. The sync recovered before
 vdirsyncer started, and the next write recovers under the lock before it changes anything.
 
 ### Undo, redo and retention
@@ -373,25 +416,23 @@ undo keeps working until then. `prepared` and `abandoned` entries are never prun
 
 `<state>/vdir.lock` is an advisory lock, one per vdir. Writers hold it exclusively for the whole
 protocol above. The sync runner holds it shared while vdirsyncer runs, so readers continue and
-writers wait; the TUI does not wait for it: a write during a sync is queued, so the screen never
-freezes. The lock is released when the
-process lets go of it, or by the kernel if the process dies.
+writers wait; a write during a sync is queued by the daemon, so the TUI never freezes. The lock is
+released when the process lets go of it, or by the kernel if the process dies. The daemon itself
+is a single instance per vdir, held by `<state>/daemon.lock`; a second daemon for the same
+vdir exits, and its client says `another daemon serves <vdir>`.
 
 The sync runner takes its locks in a fixed order: its own run lock (`<state>/sync/run.lock`, so
 only one sync runs at a time), then the vdir lock, then the conflicts lock.
 
-The batch waiter (`tdo sync --background --when-due`, [sync.md](sync.md#when-edits-sync)) holds
-`<state>/sync/waiter.lock` without waiting, so at most one waits per vdir; it takes the run lock
-only when it syncs. Two plain files steer the background syncs: `<state>/sync/off`, present
-while automatic sync is off (every background run then skips), and `<state>/sync/ended`, which
-every run that is not skipped rewrites atomically when it ends.
+One plain file steers the syncs: `<state>/sync/off`, present while automatic sync is off (every
+automatic run then skips).
 
 ## Reading
 
-The TUI loads the whole vdir into a snapshot, renders views from it, and reloads when files in
-the vdir change (for example after a sync) and when `<state>/sync/ended` changes (any sync
-ended), without waiting for the watcher. Once a minute it moves its clock on, so "today" and the date groups stay
-current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
+The daemon loads the whole vdir into a snapshot and sends it to the TUI, which renders views
+from it. The daemon watches the vdir; when files change (an edit, a sync, another program) it
+reloads and tells every client, and the TUI fetches the new snapshot. Once a minute the TUI moves
+its clock on, so "today" and the date groups stay current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.
 
 ### Explicit sibling order

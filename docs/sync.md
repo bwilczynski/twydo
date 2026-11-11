@@ -1,7 +1,7 @@
 # Sync
 
-Twydo does not talk to the network. It runs [vdirsyncer](https://vdirsyncer.pimutils.org/) against
-the vdir, records what it changed in the operation journal ([architecture.md](architecture.md#the-operation-journal)), and keeps
+Twydo does not talk to the network. Its daemon (`tdo daemon`, [architecture.md](architecture.md#the-daemon))
+runs [vdirsyncer](https://vdirsyncer.pimutils.org/) against the vdir, records what it changed in the operation journal ([architecture.md](architecture.md#the-operation-journal)), and keeps
 both versions of anything that was changed on two devices until you choose. Configuration keys are
 in [config.md](config.md) (`[sync]`).
 
@@ -14,8 +14,10 @@ in [config.md](config.md) (`[sync]`).
    ```
 
    It is not `a wins` / `b wins`. The hook keeps both versions in the conflict store and changes
-   nothing until you choose. `tdo` must be on the `PATH` of whatever runs vdirsyncer (the timer,
-   the agent, your shell).
+   nothing until you choose. `tdo` must be on the `PATH` of vdirsyncer, which the daemon starts.
+   **Do not run `vdirsyncer sync` by hand while the daemon runs.** The daemon does not know
+   about that run: it cannot confirm edits, close conflicts or notice a delete-versus-edit that
+   vdirsyncer settled silently (see [Known limits](#known-limits)). Use `tdo sync`.
 
 2. **Twydo config.** Add a `[sync]` table to the config. An empty table turns sync on with the
    defaults:
@@ -34,9 +36,16 @@ in [config.md](config.md) (`[sync]`).
    test setup), vdirsyncer cannot find its own config: set `vdirsyncer_config`, which Twydo passes
    to vdirsyncer as `VDIRSYNCER_CONFIG`.
 
-3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result.
+3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result. The
+   daemon starts when needed.
 
-4. **Background sync.** Pick one:
+4. **Background sync.** Nothing to set up: while the daemon runs it syncs by itself (at startup,
+   every 60 seconds, after edits, after a conflict choice, when automatic sync is switched on
+   and after the machine wakes), and the TUI and the commands start it. A timer or agent is
+   only needed to keep the daemon (and so the sync) running while no `tdo` is open. An
+   installed one keeps working: `tdo sync --background` now only starts the daemon and
+   returns. The service unit that keeps the daemon alive, and `tdo daemon install`, come in a
+   later release. Pick one:
 
    - Linux, systemd user units:
 
@@ -57,8 +66,8 @@ in [config.md](config.md) (`[sync]`).
      (launchd does not expand `~`), then
      `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.twydo.sync.plist`.
 
-   Both run `tdo sync --background` every minute. The timer also pulls changes made on other
-   devices; edits made here sync without it too ([When edits sync](#when-edits-sync)).
+   Both run `tdo sync --background` every minute, which starts the daemon if it is not
+   running. Once it runs, it syncs and pulls changes made on other devices itself.
 
 ## When edits sync
 
@@ -72,52 +81,45 @@ pause keeps a run of quick edits (closing checklist items one by one) from being
 its own sync. A save made while a sync is running is queued and written when the sync ends
 ([tui.md](tui.md#when-a-write-is-refused)).
 
-After every write (the TUI, `tdo op`, a `tdo conflicts resolve` that writes the vdir) the
-writer checks that rule:
-
-- **Due now** (edits have paused, or the oldest is overdue): it starts a detached
-  `tdo sync --background` at once.
-- **Otherwise:** it starts the **batch waiter**, a detached `tdo sync --background --when-due`.
-  The waiter takes `sync/waiter.lock` without waiting; if another waiter holds it, it exits at
-  once, so there is one per vdir. While waiting, it rechecks once per second: more edits can
-  fill the batch and bring the deadline forward, or push the quiet period out; the timer or
-  `:sync` may have sent everything meanwhile. Deadlines use wall clock, so an overdue sync
-  starts after the laptop wakes. It syncs when due and loops while edits keep arriving,
-  exiting when nothing is unsynced or automatic sync is off.
-
-Background syncs and the batch waiter run in their own process group, so closing the terminal
-or pressing Ctrl-C does not stop them. A waiter that fails (it cannot read the journal, say)
-exits silently: the timer or the next edit catches up. Quitting the TUI starts no sync: a waiter
-started by the last edit outlives it and sends that edit within `max_wait_secs`.
+The daemon checks that rule after every write (from the TUI, `tdo op` or a `tdo conflicts
+resolve` that writes the vdir). When a sync is due it runs one at once; otherwise it waits for
+the batch to fill or the quiet period to pass, rechecking as more edits arrive, so a run of quick
+edits is sent in one sync. Deadlines use wall clock, so an overdue sync starts after the laptop
+wakes. Quitting the TUI does not lose anything: the daemon outlives it and sends the last edits
+within `max_wait_secs`.
 
 A conflict choice recorded for a held conflict is not an edit and only applies on a sync, so
-`resolve` starts one at once. `:sync` and `tdo sync` sync now, whatever the count.
+`resolve` starts one at once. Choosing again before that sync replaces the choice (the latest
+wins). `:sync` and `tdo sync` sync now, whatever the count; if a sync is already running, they wait for it and then run theirs.
 
 **Turning automatic sync off.** `tdo sync off` (or `:sync off` in the TUI) stores
 `sync/off`, so it lasts across restarts and every process sees it. While off, every automatic
-sync skips quietly and records no failure: the timer, the TUI's startup sync, the batch waiter
-and the batch-full sync. Edits stay local and pending; the TUI's status line shows `sync off`
+sync skips quietly and records no failure: the daemon's scheduled syncs (startup, every 60
+seconds, wake, batches) and a background run. Edits stay local and pending; the TUI's status line shows `sync off`
 with the pending count, and `tdo status` prints `automatic sync: off`. `:sync` and `tdo sync`
 still run once. `tdo sync on` (`:sync on`) removes the file and, with unsynced edits, starts a
 sync at once.
 
-**The "sync ended" event.** Every run that is not skipped ends, clean, failed or stopped, by
-atomically writing `sync/ended` (a run id and the time). The TUI checks it and reloads when it
-changes, so it shows what any sync brought in (startup, waiter, timer, systemd or `tdo sync`
-in another terminal), even when no file change was reported.
+**What the TUI sees.** The daemon tells the TUI when a sync starts and ends and when files
+change, so the TUI shows what any sync brought in, whoever asked for it (`tdo sync` in another
+terminal, a timer, the daemon itself).
 
 ## What `tdo sync` does
 
-`tdo sync` exits 0 when every list is fine, 1 when the run had conflicts, emptied lists or a
-failure, and 2 on a configuration or IO error. Problems are printed to stderr as `tdo: ...`.
-`--background` prints nothing on success, does not wait for another runner, and honours backoff.
+`tdo sync` asks the daemon to sync and waits for the result (`tdo sync on` and `off` switch
+automatic sync; `tdo sync --background` only starts the daemon). Exit codes: 0 when every list is fine; 1 when the run had problems (conflicts or
+emptied lists), failed or was stopped; 2 when the daemon refused the call, could not be
+reached, or the sync job itself failed or was interrupted. Problems are printed to stderr as `tdo: ...`.
+`--background` prints nothing and does not wait. A run the daemon makes by itself honours
+backoff; `tdo sync` and `:sync` run once whatever the backoff.
 
 One run, in order:
 
-1. **Run lock.** At most one runner per vdir (`run.lock` in the state directory). A foreground run
-   waits for the lock. A background run that finds it taken leaves a request (`requested`) and
-   exits; the running runner then does one more pass, at most twice.
-2. **Backoff.** A background run does nothing while the status says `next_attempt` is in the
+1. **Run lock.** At most one runner per vdir (`run.lock` in the state directory). The daemon
+   runs syncs one at a time on its vdir lane, so `:sync` and `tdo sync` wait behind a running
+   sync. A run that finds the lock taken leaves a request (`requested`); the running runner
+   then does one more pass, at most twice.
+2. **Backoff.** A scheduled run does nothing while the status says `next_attempt` is in the
    future.
 3. **Recovery.** Under the exclusive vdir lock (taken on every run, so the run first waits for a
    vdirsyncer left over from a killed run), unfinished journal entries are rolled forward before
@@ -312,7 +314,7 @@ network.
 The queue's layout, claiming and the strict checks are in
 [architecture.md](architecture.md#the-write-queue). From the outside: a write that finds the
 lock taken is queued and applied at the next drain point, which is the sync runner (step 3 after
-recovery, step 5 after reconcile), the TUI when a sync ends or starts, any writer that gets the
+recovery, step 5 after reconcile), the daemon when a sync or job ends, any writer that gets the
 lock, or `tdo op --wait`. Rebasing is strict for now: an item whose file changed on another
 device is refused, never merged. A queued edit counts as unsynced from when it was queued, so a
 batch ages from then, not from the drain.
@@ -324,29 +326,55 @@ waiting for a password prompt) holds the vdir meanwhile; saves are queued until 
 `tdo op` queues too: it prints `queued (a sync is running): <queue id>` and exits 0, or with
 `--wait` waits (saying so once on stderr), then prints the journal entry id (exit 0) or the
 refusal on stderr (exit 1). A queued write that is refused is reported once on stderr by the
-next `tdo op` or `tdo sync`. `tdo` can stop a
-running sync, though no TUI key does today:
+next `tdo op` or `tdo sync`.
 
-- While vdirsyncer runs, the runner keeps `sync/running.json`: its own process id, vdirsyncer's
-  process group, when each of those processes started, and when the sync started. A runner
-  ended with Ctrl-C leaves the file behind until the next sync replaces it.
+When a `tdo op`, `tdo sync` or `tdo conflicts` command gets no answer from the daemon for a
+minute, it says `the daemon did not answer; ... (request <request-id>)` and names the check
+that tells what happened:
+
+- A task write, `tdo op undo` or `tdo sync` (a sync run): `tdo op status <request-id>`. It
+  prints one line: `pending` (queued behind a sync), `applied <journal id>`, `refused: <reason>`,
+  `cancelled`, `satisfied <journal id>`, or, for a sync, `queued`, `running`, `finished`,
+  `failed: <reason>` or `interrupted`. It exits 0 when the daemon knows the request and 1 when
+  it does not (`no record of request <id>: only task writes and syncs are looked up; it may not
+  have reached the daemon, or may still be applied`). No record does not prove the change
+  never ran: a request still on its way can be applied after the lookup, and old records are
+  pruned. Look at the task itself (or `tdo status` for a sync) before you run a write again,
+  since a new run can add a second task.
+- `tdo sync on|off`: check with `tdo status`; running it again is safe (it sets the same value).
+- `tdo conflicts resolve`: check with `tdo conflicts`; choosing again is safe (the same side is
+  recorded again, or the daemon says the conflict is already resolved).
+- `tdo op abandon`: check with `tdo op journal`; running it again is safe (an entry that is
+  already abandoned answers `abandoned: false`).
+
+No `tdo` command or TUI key stops a running sync today. The daemon can: its `sync.stop` method
+(see [protocol.md](protocol.md#data-writes-and-events)) asks the running sync to stop, and the daemon does the same when
+it shuts down during a sync, after `shutdown_grace`. Ctrl-C on `tdo sync` only stops that client
+from waiting: the daemon's sync runs to its end, and its result shows in `tdo status` and the TUI.
+A slow sync (a password prompt) therefore holds the vdir until vdirsyncer exits or `timeout_secs`
+kills it.
+
+How a stop works:
+
+- While vdirsyncer runs, the daemon's runner keeps `sync/running.json`: its own process id,
+  vdirsyncer's process group, when each of those processes started, and when the sync started. The
+  record can outlive the runner only when the daemon itself is killed.
 - A record counts only while its runner or vdirsyncer is still the process it names: same id
   and same start time (`ps -o lstart=`). A record whose ids now belong to other processes is
-  stale: `tdo` removes it and signals nothing.
-- To stop it, `tdo` creates `sync/stop`. The runner checks for that file while it waits for
-  vdirsyncer (or metasync), kills vdirsyncer and its child processes, and records the run as
-  failed with `sync stopped`: it backs off, its lists show `error`, and no edit is confirmed. The edits stay
-  pending and go to the server with the next sync that works. A stopped run is not rerun even if
-  another runner asked for one.
-- If the runner itself is gone (for example `tdo sync` was ended with Ctrl-C and left vdirsyncer
-  running, see Known limits), `tdo` kills the recorded process group itself and records the
-  stopped sync, with its backoff, so the sync started after the save does not get stuck again
-  at once.
-- The request stays until the save that asked for it is done, and `tdo` then removes it (it is
-  written even when no sync is recorded at that moment, for a pass about to start). Meanwhile
-  any sync that starts (one that was waiting behind the stopped one, or the timer) stops before it
-  runs vdirsyncer, so it cannot take the vdir first. A request older than 30 seconds is left over
-  from a `tdo` that is gone: it is ignored and removed.
+  stale: it is removed and nothing is signalled.
+- To stop a sync, the daemon creates `sync/stop`. The runner checks for that file while it waits
+  for vdirsyncer (or metasync), kills vdirsyncer and its child processes, and records the run as
+  failed with `sync stopped`: it backs off, its lists show `error`, and no edit is confirmed. The
+  edits stay pending and go to the server with the next sync that works. A stopped run is not
+  rerun even if another runner asked for one.
+- If the daemon was killed during a sync and left vdirsyncer running, the next daemon start
+  finds the record, kills the recorded process group before recovery and records the stopped
+  sync, with its backoff (`tdo daemon: stopped a vdirsyncer left by an earlier run` in the
+  log). If another process is syncing the vdir, it leaves that alone and writes wait for it.
+- The request stays until the sync that was asked to stop has ended, and the daemon then removes
+  it. Meanwhile any sync that starts (one that was waiting behind the stopped one, or a scheduled
+  one) stops before it runs vdirsyncer, so it cannot take the vdir first. A request older than 30
+  seconds is left over from a process that is gone: it is ignored and removed.
 - Each stop also records when it was asked for (`sync/last_stop`, never removed). A runner
   that began before that time stops before starting vdirsyncer, even if it was delayed taking
   the run lock, reading status, or waiting for the vdir. Every pass in that run honors the stop
@@ -361,16 +389,14 @@ read; do not edit them while a sync runs.
 | Path | Content |
 |---|---|
 | `sync/off` | exists while automatic sync is off (`tdo sync off`); see [When edits sync](#when-edits-sync) |
-| `sync/waiter.lock` | the batch waiter's lock (one waiter per vdir) |
-| `sync/ended` | the last run that ended: `run_id` and `at`; the TUI reloads when it changes |
 | `sync/rediscover` | a confirmed list retirement requires ordinary discovery before another sync; removed only when discovery succeeds |
 | `retired/<id>/` | permanent local-list backup, journal/conflict evidence, and recovery operation; see [deleted lists and recovery](#deleted-lists-and-recovery) |
 | `sync/status.json` | `last_attempt`, `last_success`, `failures`, `next_attempt`, `last_error`, `metasync_error`, and per list `state`: `ok`, `conflict`, `emptied-local`, `emptied-remote` or `error` (with `message`) |
 | `sync/run.lock` | the run lock (one runner per vdir) |
 | `sync/requested` | exists while another runner asked for one more pass |
-| `sync/running.json` | exists while vdirsyncer runs (and after a runner ended with Ctrl-C, until the next sync): `runner_pid`, `runner_start`, `child_pgid` (vdirsyncer's process group, `null` between calls), `child_start`, `started` |
+| `sync/running.json` | exists while vdirsyncer runs (and after a killed daemon, until the next daemon start reaps it): `runner_pid`, `runner_start`, `child_pgid` (vdirsyncer's process group, `null` between calls), `child_start`, `started` |
 | `sync/last_stop` | when the last stop was asked for (RFC 3339); a run begun before it does not start vdirsyncer |
-| `sync/stop` | a request to stop the running sync, and to start none, until the save that asked is done (at most 30 s) |
+| `sync/stop` | the daemon's request to stop the running sync (`sync.stop`, or a shutdown during a sync) and to start none meanwhile; the requester withdraws it once its save is done, and one older than 30 s is stale and ignored |
 | `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
@@ -390,7 +416,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
   (`Deleting an item with no etag`), and the iPhone may show a one-off "Remote server returned an
   invalid task reference during incremental sync" on its next refresh; a retry succeeds and the data
   is right ([plan4-baseline.md](reference/phase0/plan4-baseline.md)). Twydo cannot prevent this.
-- **Do not run vdirsyncer by hand while Twydo has pending edits.** The hook still records
+- **Do not run vdirsyncer by hand while the daemon runs (unsupported).** The hook still records
   both-changed conflicts (it runs inside vdirsyncer), but nothing confirms journal entries or
   closes conflicts until the next `tdo sync`, and a delete-versus-edit that vdirsyncer settles
   silently in that run (it re-uploads Twydo's edit, or restores the other device's edit) leaves
@@ -400,13 +426,12 @@ Lock order is always run lock, vdir lock, conflicts lock.
   vdirsyncer reads the hook's temporary files in text mode and writes the chosen task back with LF
   instead of CRLF. 2Do on the iPhone and Synology read such a task correctly, and 2Do can edit it
   again.
-- **Ctrl-C does not stop vdirsyncer.** Pressing Ctrl-C (or closing the terminal) during an
-  interactive `tdo sync` stops `tdo` but not vdirsyncer: it runs in its own process group so that
-  a timeout can kill it together with its child processes. It finishes on its own, still holding
-  its shared vdir lock, so writers (`tdo op`, the TUI) and the next `tdo sync` wait until it
-  exits, unless you stop it from the TUI. Its result is not reconciled by the killed run: the next `tdo sync` checks the journal
-  again, but a delete-versus-edit it settled leaves no trace (as for vdirsyncer run by hand), and
-  the `timeout_secs` limit no longer applies to it.
+- **A killed daemon leaves vdirsyncer running.** vdirsyncer runs in its own process group so that
+  a timeout can kill it together with its child processes. If the daemon is killed during a sync,
+  vdirsyncer finishes on its own, still holding its shared vdir lock, so writes wait until it
+  exits or the next daemon start stops it. Its result is not reconciled: the next sync checks the
+  journal again, but a delete-versus-edit it settled leaves no trace (as for vdirsyncer run by
+  hand), and the `timeout_secs` limit no longer applies to it.
 - **A create edited before it was confirmed.** A task created in Twydo whose create reached the
   server in a run that did not count (it failed or timed out), then edited in Twydo and deleted
   on the phone before the next clean sync, is re-uploaded without a conflict: Twydo cannot tell

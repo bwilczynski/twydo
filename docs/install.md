@@ -72,8 +72,18 @@ regenerate it into an empty folder to start over.
 3. **Check your data.** `tdo check` reports each kind of repeat in your data, whether Twydo has
    verified it against 2Do, and any task it cannot read.
 4. **Open it.** `tdo`. Keys: [tui.md](tui.md).
-5. **Sync.** Add `[sync]` to the config so `tdo sync` and the TUI's `:sync` run vdirsyncer, and set
-   up the background timer: [sync.md](sync.md).
+5. **Sync.** Add `[sync]` to the config so `tdo sync` and the TUI's `:sync` run vdirsyncer:
+   [sync.md](sync.md).
+
+## The daemon
+
+`tdo` starts its daemon the first time it needs it (the TUI, `tdo op`, `tdo sync`,
+`tdo conflicts resolve`), in the background; it keeps running when you close the TUI, syncs, and
+is started again on demand. Its log is `$XDG_STATE_HOME/twydo/daemon-<id>.log`. After upgrading
+`tdo` or changing `timezone`, `vdir` or `[sync]` in the config, run `tdo daemon stop`; the next
+`tdo` starts a new one. A service unit that starts it at login comes in a later release.
+Setups that must not share the usual daemon (a test setup) set `TWYDO_SOCKET` next to
+`XDG_CONFIG_HOME`. For writing your own client, see [protocol.md](protocol.md).
 
 ## Where Twydo keeps things
 
@@ -81,6 +91,7 @@ regenerate it into an empty folder to start over.
 |---|---|
 | Config | `$XDG_CONFIG_HOME/twydo/config.toml`, else `~/.config/twydo/config.toml` (also on macOS) |
 | State: operation journal, sync status, conflicts | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo`; one folder per vdir ([architecture.md](architecture.md#the-operation-journal)) |
+| The daemon's socket | `$XDG_RUNTIME_DIR/twydo/tdo.sock` (`$TMPDIR/twydo/tdo.sock` on macOS); `--socket` or `TWYDO_SOCKET` change it |
 | Your tasks | only in the vdir; Twydo has no other copy |
 
 ## Scripting
