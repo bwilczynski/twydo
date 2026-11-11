@@ -110,6 +110,18 @@ evidence = ["edit-title/resource"]
 ''')
         self.assertTrue(any("observation" in e for e in validate(self.root)))
 
+    def test_protocol_only_cannot_prove_a_phone_direction(self):
+        self.case(origin="protocol")
+        (self.root / "compat/matrix.toml").write_text('''matrix_version = 2
+[[contract]]
+id = "edit-title.resource"
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["edit-title/resource"]
+''')
+        self.assertTrue(any("device observation" in e for e in validate(self.root)))
+
     def test_contract_evidence_must_resolve(self):
         self.case()
         (self.root / "compat/matrix.toml").write_text('''matrix_version = 2

@@ -361,7 +361,7 @@ id = "list-create.collection"
 iphone_baseline = "pass"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["list-metadata/archive-observation", "list-metadata/server-preconditions"]
+evidence = ["list-create/phone-confirmation"]
 notes = "Phone-to-Twydo creation remains unverified."
 
 [[contract]]

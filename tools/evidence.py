@@ -126,7 +126,7 @@ def validate(root: Path) -> list[str]:
                     errors.append(f"unknown or duplicate contract ID: {cid}")
                 seen.add(cid)
                 refs = contract.get("evidence", [])
-                observation = False
+                device = False
                 protocol = False
                 for ref in refs:
                     case = cases.get(ref)
@@ -135,13 +135,13 @@ def validate(root: Path) -> list[str]:
                         continue
                     if not ref.startswith(operation + "/") and cid not in case.get("supports", []):
                         errors.append(f"{cid}: cross-operation evidence {ref} needs an explicit supports claim")
-                    observation |= case.get("origin") in {"device", "protocol"}
+                    device |= case.get("origin") == "device"
                     protocol |= case.get("origin") == "protocol"
                 if contract.get("atomicity") == "pass" and not protocol:
                     errors.append(f"{cid}: atomicity needs a protocol observation")
                 if any(contract.get(c) == "pass" for c in
-                       ("iphone_baseline", "twydo_to_iphone", "iphone_to_twydo")) and not observation:
-                    errors.append(f"{cid}: passing device requirement needs an observation")
+                       ("iphone_baseline", "twydo_to_iphone", "iphone_to_twydo")) and not device:
+                    errors.append(f"{cid}: passing phone requirement needs a device observation")
             # A case may own parser/model assertions without supplying admission proof.
             # It is still owned through its checked regression references.
         except (OSError, ValueError, KeyError, TypeError) as error:
