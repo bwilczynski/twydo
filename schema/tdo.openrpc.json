@@ -330,6 +330,15 @@
       "Config": {
         "additionalProperties": false,
         "properties": {
+          "daemon": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DaemonPrefs"
+              }
+            ],
+            "description": "Never on the wire: a client one release older rejects keys it does not know. It\ntravels as `WireSnapshot.unit_warning`.",
+            "writeOnly": true
+          },
           "default_list": {
             "default": null,
             "type": [
@@ -644,6 +653,18 @@
           "vdir",
           "epoch"
         ],
+        "type": "object"
+      },
+      "DaemonPrefs": {
+        "additionalProperties": false,
+        "description": "`[daemon]` table: preferences about the daemon that clients act on.",
+        "properties": {
+          "unit_warning": {
+            "default": true,
+            "description": "Warn in the TUI while no service unit is installed.",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "DeletedBackupView": {
@@ -3605,6 +3626,11 @@
               "$ref": "#/components/schemas/WireTask"
             },
             "type": "array"
+          },
+          "unit_warning": {
+            "default": true,
+            "description": "`daemon.unit_warning` of the configuration, which is not serialised inside `config`\n(an older client would reject the key). Absent means `true`.",
+            "type": "boolean"
           }
         },
         "required": [

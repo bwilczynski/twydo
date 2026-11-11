@@ -92,6 +92,15 @@ impl Session {
     }
 }
 
+/// Warns once that the daemon will not start at login, unless the configuration turns the
+/// warning off (`[daemon] unit_warning = false`). Without a first snapshot the switch is
+/// unknown and the connection message stays.
+pub fn unit_notice(app: &mut App, unit_installed: bool) {
+    if !unit_installed && app.snapshot_revision != 0 && app.snapshot.config.daemon.unit_warning {
+        app.notice("daemon won't start at login; run tdo daemon install");
+    }
+}
+
 /// The app to start with: built from the first snapshot the link delivers within `wait`.
 /// Without one (the daemon is down, or slow to start) the app starts empty with a message
 /// about the connection; the loop fills it in when the link connects. Configuration warnings

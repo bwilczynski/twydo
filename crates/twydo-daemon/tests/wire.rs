@@ -112,3 +112,29 @@ fn an_empty_wire_rev_stays_unknown() {
     let back = from_wire(wire);
     assert_eq!(back.rev(back.find("u1").unwrap()), None);
 }
+
+#[test]
+fn wire_config_never_carries_the_daemon_table() {
+    let fx = common::Fixture::new(&[("inbox", "u1", "Synthetic", None)]);
+    let mut snap = fx.snapshot();
+    snap.config.daemon.unit_warning = false;
+    let wire = to_wire(&snap, 1);
+    let json = serde_json::to_value(&wire.config).unwrap();
+    assert!(json.get("daemon").is_none(), "{json}");
+    assert!(!wire.unit_warning);
+    let back = from_wire(serde_json::from_str(&serde_json::to_string(&wire).unwrap()).unwrap());
+    assert!(!back.config.daemon.unit_warning);
+}
+
+#[test]
+fn a_snapshot_without_unit_warning_decodes_as_true() {
+    let fx = common::Fixture::new(&[("inbox", "u1", "Synthetic", None)]);
+    let mut json = serde_json::to_value(to_wire(&fx.snapshot(), 1)).unwrap();
+    json.as_object_mut()
+        .unwrap()
+        .remove("unit_warning")
+        .unwrap();
+    let wire: twydo_daemon::protocol::wire::WireSnapshot = serde_json::from_value(json).unwrap();
+    assert!(wire.unit_warning);
+    assert!(from_wire(wire).config.daemon.unit_warning);
+}

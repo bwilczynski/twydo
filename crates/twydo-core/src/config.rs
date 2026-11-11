@@ -143,6 +143,20 @@ impl Default for SyncConfig {
     }
 }
 
+/// `[daemon]` table: preferences about the daemon that clients act on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DaemonPrefs {
+    /// Warn in the TUI while no service unit is installed.
+    pub unit_warning: bool,
+}
+
+impl Default for DaemonPrefs {
+    fn default() -> Self {
+        DaemonPrefs { unit_warning: true }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -174,6 +188,10 @@ pub struct Config {
     pub state_dir: Option<PathBuf>,
     #[serde(default)]
     pub sync: Option<SyncConfig>,
+    /// Never on the wire: a client one release older rejects keys it does not know. It
+    /// travels as `WireSnapshot.unit_warning`.
+    #[serde(default, skip_serializing)]
+    pub daemon: DaemonPrefs,
 }
 
 fn default_week_start() -> Weekday {
@@ -280,6 +298,7 @@ impl Config {
             writes: Writes::default(),
             state_dir: None,
             sync: None,
+            daemon: DaemonPrefs::default(),
         }
     }
 

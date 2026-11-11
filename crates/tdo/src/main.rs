@@ -95,8 +95,10 @@ fn main() {
             }
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            let unit_installed = tdo::service::unit_for_current(&target.socket).file.exists();
             let link = term::link::Link::start(target);
             let mut app = term::first_app(&link, cli.vdir.as_deref(), FIRST_SNAPSHOT);
+            term::unit_notice(&mut app, unit_installed);
             app.lookup = Box::new(tdo::app::DaemonLookup(link.caller_source()));
             let tz = app.snapshot.tz();
             if let Err(e) = term::run(app, link, tz) {

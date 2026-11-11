@@ -20,6 +20,14 @@ pub struct WireSnapshot {
     pub collections: Vec<WireCollection>,
     pub tasks: Vec<WireTask>,
     pub errors: Vec<WireError>,
+    /// `daemon.unit_warning` of the configuration, which is not serialised inside `config`
+    /// (an older client would reject the key). Absent means `true`.
+    #[serde(default = "yes")]
+    pub unit_warning: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -91,13 +99,16 @@ pub fn to_wire(snap: &Snapshot, revision: u64) -> WireSnapshot {
                 message: m.clone(),
             })
             .collect(),
+        unit_warning: snap.config.daemon.unit_warning,
     }
 }
 
 /// Rebuilds a snapshot on the client: paths are joined with the configured vdir, pending
 /// flags and revisions restored. It has no file bytes (no sources).
 pub fn from_wire(w: WireSnapshot) -> Snapshot {
-    let vdir = w.config.vdir.clone();
+    let mut config = w.config;
+    config.daemon.unit_warning = w.unit_warning;
+    let vdir = config.vdir.clone();
     let mut revs = HashMap::new();
     let mut pending = HashSet::new();
     let mut tasks = Vec::with_capacity(w.tasks.len());
@@ -133,7 +144,7 @@ pub fn from_wire(w: WireSnapshot) -> Snapshot {
             .collect(),
         sources: HashMap::new(),
     };
-    Snapshot::new(report, w.config)
+    Snapshot::new(report, config)
         .with_pending(pending)
         .with_revs(revs)
 }
