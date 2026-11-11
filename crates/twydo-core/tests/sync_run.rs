@@ -21,6 +21,7 @@ use twydo_core::store::{DrainOutcome, Store, Submitted};
 use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
+use twydo_core::sync::report::messages;
 use twydo_core::sync::run::{RunOptions, Skip, run};
 use twydo_core::sync::running::{
     Reaped, Running, StopResult, clear_stop, process_start, reap_orphan, request_stop, running,
@@ -2353,4 +2354,514 @@ fn a_held_run_waiting_for_the_vdir_lock_in_recovery_writes_nothing() {
     );
     assert!(!state.join("sync/status.json").exists(), "status written");
     assert_eq!(SyncStatus::load(&state).unwrap(), SyncStatus::default());
+}
+
+// ---- discovery inside the run ----
+
+const DISCOVERY_SCRIPT: &str = r#"
+    dir=$(dirname "$TWYDO_SYNC_HOOKLOG")
+    if [ "$1" = discover ]; then
+        echo "discover:$(ls "$TWYDO_SYNC_VDIR" | tr '\n' ',')" >> "$dir/calls"
+    else
+        echo "$1" >> "$dir/calls"
+    fi
+    [ "$1" = sync ] && echo 'Syncing synthetic/c1' >&2
+    exit 0
+"#;
+
+impl Fx {
+    /// Routes the list helper to the offline fake backend over this fixture's vdir.
+    fn with_helper(mut self, discover: serde_json::Value) -> Fx {
+        let (donor, donor_cfg) = common::lists::offline();
+        let donor_sync = donor_cfg.sync.clone().unwrap();
+        let keep = self.path("helper");
+        fs::create_dir_all(&keep).unwrap();
+        fs::copy(donor.path().join("python"), keep.join("python")).unwrap();
+        let connection = keep.join("connection.json");
+        fs::write(
+            &connection,
+            serde_json::json!({"vdir": self.cfg.vdir}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            keep.join("server.json"),
+            serde_json::json!({"calls":[],"collections":{},"flags":{},"discover":discover})
+                .to_string(),
+        )
+        .unwrap();
+        let sync = self.sync_mut();
+        sync.pair = donor_sync.pair;
+        sync.local_storage = donor_sync.local_storage;
+        sync.list_python = keep.join("python").to_str().unwrap().into();
+        sync.vdirsyncer_config = Some(connection);
+        self
+    }
+
+    fn discoveries(&self) -> usize {
+        let store: serde_json::Value =
+            serde_json::from_slice(&fs::read(self.path("helper/server.json")).unwrap()).unwrap();
+        store["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c.as_str() == Some("DISCOVER"))
+            .count()
+    }
+
+    fn calls(&self) -> String {
+        fs::read_to_string(self.state().join("sync/calls")).unwrap_or_default()
+    }
+}
+
+fn discover_opts() -> RunOptions {
+    RunOptions {
+        discover: true,
+        ..manual()
+    }
+}
+
+#[test]
+fn discover_option_adopts_before_sync() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["phone-list"],"local_only":[]}));
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert_eq!(report.adopted, ["phone-list"]);
+    assert!(fx.cfg.vdir.join("phone-list").is_dir());
+    assert!(fx.calls().contains("sync"), "{}", fx.calls());
+    let m = messages(&fx.cfg, &report);
+    assert!(
+        m.notes.iter().any(|n| n.contains("found new list")),
+        "{m:?}"
+    );
+    assert!(m.problems.is_empty(), "{m:?}");
+}
+
+#[test]
+fn discover_failure_on_manual_run_is_a_problem_and_sync_still_runs() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert!(fx.calls().contains("sync"), "{}", fx.calls());
+    let m = messages(&fx.cfg, &report);
+    assert_eq!(m.problems.len(), 1, "{m:?}");
+    assert!(m.problems[0].contains("stale"), "{m:?}");
+    assert!(m.problems[0].contains(":forget-list stale"), "{m:?}");
+}
+
+#[test]
+fn discover_failure_on_background_run_is_a_warning() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    let opts = RunOptions {
+        background: true,
+        ..discover_opts()
+    };
+    let report = run(&fx.cfg, &opts, now()).unwrap();
+    let m = messages(&fx.cfg, &report);
+    assert!(m.problems.is_empty(), "{m:?}");
+    assert!(m.warnings.iter().any(|w| w.contains("stale")), "{m:?}");
+}
+
+#[test]
+fn discovery_runs_once_across_rerun_passes() {
+    let fx = Fx::new(
+        r#"
+        dir=$(dirname "$TWYDO_SYNC_HOOKLOG")
+        echo "$1" >> "$dir/calls"
+        [ "$1" = sync ] && [ ! -f "$dir/once" ] && touch "$dir/once" "$dir/requested"
+        [ "$1" = sync ] && echo 'Syncing synthetic/c1' >&2
+        exit 0
+    "#,
+    )
+    .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert_eq!(fx.calls().matches("sync").count(), 2, "{}", fx.calls());
+    assert_eq!(fx.discoveries(), 1);
+}
+
+#[test]
+fn ordinary_run_does_not_discover() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["phone-list"],"local_only":[]}));
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(report.adopted.is_empty());
+    assert_eq!(fx.discoveries(), 0);
+}
+
+#[test]
+fn rediscover_gate_helper_success_skips_the_plain_discover() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["phone-list"],"local_only":[]}));
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(report.adopted, ["phone-list"]);
+    assert_eq!(fx.calls().trim(), "sync", "{}", fx.calls());
+    assert!(!state.join("sync/rediscover").exists());
+}
+
+#[test]
+fn rediscover_gate_runs_the_plain_discover_when_the_helper_fails() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let calls = fx.calls();
+    let discover = calls
+        .lines()
+        .position(|l| l.starts_with("discover:"))
+        .unwrap_or_else(|| panic!("no plain discover: {calls}"));
+    assert_eq!(calls.lines().nth(discover + 1), Some("sync"), "{calls}");
+    assert!(!state.join("sync/rediscover").exists());
+}
+
+#[test]
+fn discovery_error_is_persisted_and_cleared_by_a_successful_discovery() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    run(&fx.cfg, &discover_opts(), now()).unwrap();
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert!(
+        st.discovery_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("stale"),
+        "{st:?}"
+    );
+    // A run that does not discover leaves it alone.
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert!(st.discovery_error.is_some(), "{st:?}");
+    // Once the server and local lists agree, discovery succeeds and clears it.
+    let script = fx.path("helper/server.json");
+    let mut store: serde_json::Value = serde_json::from_slice(&fs::read(&script).unwrap()).unwrap();
+    store["discover"] = serde_json::json!({"remote_only":[],"local_only":[]});
+    fs::write(&script, store.to_string()).unwrap();
+    run(&fx.cfg, &discover_opts(), now()).unwrap();
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.discovery_error, None);
+}
+
+#[test]
+fn failed_discovery_rolls_back_the_folders_it_created() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["new-list"],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert!(report.discovery_error.is_some(), "{report:?}");
+    assert!(report.adopted.is_empty(), "{report:?}");
+    assert!(
+        !fx.cfg.vdir.join("new-list").exists(),
+        "partially adopted folder left behind"
+    );
+    assert!(fx.cfg.vdir.join("stale").is_dir());
+}
+
+fn unavailable_helpers(fx: &Fx) -> Vec<String> {
+    let broken = fx.path("helper/broken-python");
+    write_script(
+        &broken,
+        "#!/bin/sh\ncat >/dev/null\nprintf '{\"version\":1,\"ok\":false,\"code\":\"dependency\"}'\nexit 1\n",
+    );
+    // An interpreter that starts, then dies without a word (a broken venv, say).
+    let silent = fx.path("helper/silent-python");
+    write_script(&silent, "#!/bin/sh\nexit 3\n");
+    vec![
+        fx.path("helper/no-such-python").to_str().unwrap().into(),
+        broken.to_str().unwrap().into(),
+        silent.to_str().unwrap().into(),
+    ]
+}
+
+#[test]
+fn unavailable_helper_is_a_warning_when_discovery_was_not_requested() {
+    for index in 0..3 {
+        let mut fx = Fx::new(DISCOVERY_SCRIPT)
+            .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+        let python = unavailable_helpers(&fx)[index].clone();
+        fx.sync_mut().list_python = python;
+        let state = fx.state();
+        fs::create_dir_all(state.join("sync")).unwrap();
+        fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+        let report = run(&fx.cfg, &manual(), now()).unwrap();
+        assert!(report.discovery_error.is_some(), "{index}: {report:?}");
+        assert!(report.discovery_is_warning, "{index}: {report:?}");
+        let m = messages(&fx.cfg, &report);
+        assert!(m.problems.is_empty(), "{index}: {m:?}");
+        assert!(!m.warnings.is_empty(), "{index}: {m:?}");
+        let st = SyncStatus::load(&fx.state()).unwrap();
+        assert_eq!(st.discovery_error, None, "{index}: not persisted");
+    }
+}
+
+#[test]
+fn unavailable_helper_is_a_problem_and_persisted_for_an_explicit_discover() {
+    for index in 0..3 {
+        let mut fx = Fx::new(DISCOVERY_SCRIPT)
+            .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+        let python = unavailable_helpers(&fx)[index].clone();
+        fx.sync_mut().list_python = python;
+        let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+        let m = messages(&fx.cfg, &report);
+        assert_eq!(m.problems.len(), 1, "{index}: {m:?}");
+        let st = SyncStatus::load(&fx.state()).unwrap();
+        assert!(st.discovery_error.is_some(), "{index}: {st:?}");
+    }
+}
+
+#[test]
+fn stop_request_interrupts_a_hanging_discovery_promptly() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let script = fx.path("helper/server.json");
+    let mut store: serde_json::Value = serde_json::from_slice(&fs::read(&script).unwrap()).unwrap();
+    store["flags"]["discover_sleep"] = 60.into();
+    fs::write(&script, store.to_string()).unwrap();
+    // Bind the state before the run starts: two first-time binds race on its identity file.
+    let state = fx.state();
+    let cfg = fx.cfg.clone();
+    let started = Instant::now();
+    let runner = std::thread::spawn(move || run(&cfg, &discover_opts(), now()).unwrap());
+    // Wait until the helper child is recorded as the running process.
+    let recorded = |state: &Path| {
+        fs::read(state.join("sync/running.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .is_some_and(|v| !v["child_pgid"].is_null())
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !recorded(&state) {
+        assert!(Instant::now() < deadline, "helper child never recorded");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    twydo_core::sync::running::request_stop(&fx.cfg).unwrap();
+    let report = runner.join().unwrap();
+    assert!(started.elapsed() < Duration::from_secs(30), "not prompt");
+    assert!(report.stopped, "{report:?}");
+    assert_eq!(report.discovery_error, None, "{report:?}");
+    assert!(!fx.calls().contains("sync"), "sync ran: {}", fx.calls());
+}
+
+#[test]
+fn discovery_marker_is_consumed_by_the_next_run_even_when_it_fails() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    let marker = fx.state().join("sync/discover");
+    fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    fs::write(&marker, "").unwrap();
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(fx.discoveries(), 1);
+    assert!(!marker.exists());
+    assert!(report.discovery_is_warning, "{report:?}");
+    // The marker is gone: later runs do not retry a broken discovery.
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(fx.discoveries(), 1);
+}
+
+#[test]
+fn discovery_marker_waits_while_the_run_is_skipped() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["phone-list"],"local_only":[]}));
+    let state = fx.state();
+    let marker = state.join("sync/discover");
+    fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    fs::write(&marker, "").unwrap();
+    SyncStatus {
+        next_attempt: Some(now() + chrono::Duration::hours(1)),
+        ..SyncStatus::default()
+    }
+    .save(&state)
+    .unwrap();
+    let skipped = run(
+        &fx.cfg,
+        &RunOptions {
+            background: true,
+            ..RunOptions::default()
+        },
+        now(),
+    )
+    .unwrap();
+    assert!(skipped.skipped.is_some(), "{skipped:?}");
+    assert!(marker.exists());
+    assert_eq!(fx.discoveries(), 0);
+    // The next run that gets through (here a manual one) discovers.
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(report.adopted, ["phone-list"]);
+    assert!(!marker.exists());
+}
+
+#[test]
+fn discovery_error_names_the_list_in_the_report_and_in_the_status() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":["stale"]}));
+    fs::create_dir_all(fx.cfg.vdir.join("stale")).unwrap();
+    fs::write(fx.cfg.vdir.join("stale/displayname"), "Old Groceries\n").unwrap();
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    let text = report.discovery_error.clone().unwrap();
+    assert!(text.contains("\"Old Groceries\" (stale)"), "{text}");
+    assert!(text.contains(":forget-list stale"), "{text}");
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.discovery_error.as_deref(), Some(text.as_str()));
+    let m = messages(&fx.cfg, &report);
+    assert_eq!(m.problems, [text]);
+}
+
+fn set_helper_flag(fx: &Fx, flag: &str, value: serde_json::Value) {
+    let script = fx.path("helper/server.json");
+    let mut store: serde_json::Value = serde_json::from_slice(&fs::read(&script).unwrap()).unwrap();
+    store["flags"][flag] = value;
+    fs::write(&script, store.to_string()).unwrap();
+}
+
+fn wait_for_recorded_child(state: &Path) {
+    let recorded = |state: &Path| {
+        fs::read(state.join("sync/running.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .is_some_and(|v| !v["child_pgid"].is_null())
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !recorded(state) {
+        assert!(Instant::now() < deadline, "helper child never recorded");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn hung_adoption_fixture() -> (Fx, PathBuf) {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["new-list"],"local_only":[]}));
+    set_helper_flag(&fx, "hang_after_adopt", 60.into());
+    let marker = fx.state().join("sync/discover");
+    fs::create_dir_all(marker.parent().unwrap()).unwrap();
+    fs::write(&marker, "").unwrap();
+    (fx, marker)
+}
+
+#[test]
+fn stopped_discovery_removes_the_empty_folders_it_adopted_and_keeps_the_marker() {
+    let (fx, marker) = hung_adoption_fixture();
+    let cfg = fx.cfg.clone();
+    let runner = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
+    // The folder exists once the helper is hanging after the adoption.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !fx.cfg.vdir.join("new-list").is_dir() {
+        assert!(Instant::now() < deadline, "folder never adopted");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    wait_for_recorded_child(&fx.state());
+    twydo_core::sync::running::request_stop(&fx.cfg).unwrap();
+    let report = runner.join().unwrap();
+    assert!(report.stopped, "{report:?}");
+    assert!(!fx.cfg.vdir.join("new-list").exists(), "orphaned folder");
+    assert!(marker.exists());
+}
+
+#[test]
+fn timed_out_discovery_removes_the_empty_folders_it_adopted_and_keeps_the_marker() {
+    let (mut fx, marker) = hung_adoption_fixture();
+    fx.sync_mut().timeout_secs = 2;
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(report.discovery_error.is_some(), "{report:?}");
+    assert!(!fx.cfg.vdir.join("new-list").exists(), "orphaned folder");
+    assert!(marker.exists(), "marker consumed by a timed out discovery");
+}
+
+#[test]
+fn queue_hold_does_not_interrupt_a_running_discovery() {
+    let fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":["phone-list"],"local_only":[]}));
+    set_helper_flag(&fx, "discover_sleep", 3.into());
+    let opts = discover_opts();
+    let hold = opts.hold_queue.clone();
+    // Bind the state before the run starts: two first-time binds race on its identity file.
+    let state = fx.state();
+    let cfg = fx.cfg.clone();
+    let runner = std::thread::spawn(move || run(&cfg, &opts, now()).unwrap());
+    wait_for_recorded_child(&state);
+    hold.store(true, std::sync::atomic::Ordering::SeqCst);
+    let report = runner.join().unwrap();
+    assert!(!report.stopped, "{report:?}");
+    assert_eq!(report.adopted, ["phone-list"], "{report:?}");
+}
+
+#[test]
+fn discovery_helper_inherits_the_vdir_lock_as_stdin() {
+    let mut fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let lock = fx.state().join("vdir.lock");
+    let script = fx.path("helper/lock-python");
+    write_script(
+        &script,
+        &format!(
+            "#!/bin/sh\nif [ /dev/stdin -ef '{}' ] && [ -n \"$TWYDO_HELPER_REQUEST\" ]; then printf '{{\"version\":1,\"ok\":true,\"result\":{{\"adopted\":[\"lock-ok\"]}}}}'; else printf '{{\"version\":1,\"ok\":false,\"code\":\"protocol\"}}'; exit 1; fi\n",
+            lock.display()
+        ),
+    );
+    fx.sync_mut().list_python = script.to_str().unwrap().into();
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert_eq!(report.adopted, ["lock-ok"], "{report:?}");
+}
+
+#[test]
+fn a_timed_out_discovery_is_retried_once_then_the_marker_is_spent() {
+    let (mut fx, marker) = hung_adoption_fixture();
+    fx.sync_mut().timeout_secs = 2;
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(marker.exists(), "first timeout keeps the marker");
+    assert_eq!(fx.discoveries(), 1);
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(report.discovery_error.is_some(), "{report:?}");
+    assert_eq!(fx.discoveries(), 2);
+    assert!(!marker.exists(), "second timeout spends the marker");
+    run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(fx.discoveries(), 2, "no third discovery");
+}
+
+fn scripted_helper(fx: &mut Fx, body: &str) {
+    let script = fx.path("helper/odd-python");
+    write_script(&script, &format!("#!/bin/sh\n{body}\n"));
+    fx.sync_mut().list_python = script.to_str().unwrap().into();
+}
+
+#[test]
+fn a_helper_killed_by_a_signal_leaves_no_empty_adopted_folder() {
+    let mut fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let vdir = fx.cfg.vdir.display().to_string();
+    scripted_helper(&mut fx, &format!("mkdir '{vdir}/new-list'\nkill -9 $$"));
+    run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert!(!fx.cfg.vdir.join("new-list").exists());
+}
+
+#[test]
+fn a_helper_that_exited_cleanly_with_a_broken_reply_keeps_its_folders() {
+    let mut fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let vdir = fx.cfg.vdir.display().to_string();
+    scripted_helper(&mut fx, &format!("mkdir '{vdir}/new-list'\necho garbage"));
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert!(report.discovery_error.is_some(), "{report:?}");
+    assert!(fx.cfg.vdir.join("new-list").is_dir());
+}
+
+#[test]
+fn a_signalled_helper_whose_grandchild_holds_stdout_still_gets_cleanup() {
+    let mut fx = Fx::new(DISCOVERY_SCRIPT)
+        .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let vdir = fx.cfg.vdir.display().to_string();
+    // The grandchild keeps the pipe open, so the reader never sees EOF.
+    scripted_helper(
+        &mut fx,
+        &format!("mkdir '{vdir}/new-list'\nsetsid sleep 5 &\nkill -9 $$"),
+    );
+    run(&fx.cfg, &discover_opts(), now()).unwrap();
+    assert!(!fx.cfg.vdir.join("new-list").exists());
 }

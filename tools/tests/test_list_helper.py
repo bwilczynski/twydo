@@ -134,6 +134,96 @@ class ListHelperTests(unittest.TestCase):
             self.h.pair_context(request,(api,None,None,None))
             self.assertEqual(len(calls),1)
 
+    def test_discover_request_needs_no_collection_or_operation(self):
+        request = dict(version=1, action="discover", pair="test", local_storage="local", vdir="/tmp/x")
+        self.assertIs(self.h.validate_request(request), request)
+        with self.assertRaises(self.h.Refused) as caught:
+            self.h.validate_request(dict(request, mode="refresh"))
+        self.assertEqual(caught.exception.code, "protocol")
+
+    def test_discover_policy_creates_only_local_filesystem(self):
+        calls, adopted = [], []
+
+        async def original(*args, **kwargs):
+            calls.append((args, kwargs))
+            return {"type": "filesystem", "collection": args[1]}
+
+        policy = self.h.local_only_policy("local", original, adopted)
+        local = {"type": "filesystem", "instance_name": "local"}
+        remote = {"type": "caldav", "instance_name": "remote"}
+        result = asyncio.run(policy(local, "phone-list"))
+        self.assertEqual(result, {"type": "filesystem", "collection": "phone-list"})
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][1]["implicit_create"], True)
+        self.assertEqual(adopted, ["phone-list"])
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(policy(remote, "stale"))
+        self.assertEqual((caught.exception.code, caught.exception.missing), ("discovery", ["stale"]))
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(policy(local, "../x"))
+        self.assertEqual(caught.exception.code, "mapping")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(adopted, ["phone-list"])
+
+    def test_discover_rejects_operation_but_allows_state(self):
+        base = {"version": 1, "action": "discover", "pair": "p", "local_storage": "l", "vdir": "/x"}
+        self.h.validate_request(dict(base))
+        self.h.validate_request(dict(base, state="/s"))
+        with self.assertRaises(self.h.Refused) as caught:
+            self.h.validate_request(dict(base, operation="/o"))
+        self.assertEqual(caught.exception.code, "protocol")
+
+    def test_discover_guard_holds_the_shared_vdir_lock_only(self):
+        import fcntl
+        import os
+        with tempfile.TemporaryDirectory() as raw:
+            state = Path(raw)
+            request = {"action": "discover", "state": str(state)}
+            with self.h.discover_guard(request):
+                fd = os.open(state / "vdir.lock", os.O_RDWR)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    os.close(fd)
+                self.assertFalse((state / "sync/run.lock").exists())
+            fd = os.open(state / "vdir.lock", os.O_RDWR)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(fd)
+
+    def test_discover_guard_takes_no_lock_of_its_own_when_the_parent_handed_one_down(self):
+        with tempfile.TemporaryDirectory() as raw:
+            request = {"action": "discover", "state": raw}
+            with self.h.discover_guard(request, inherited_lock=True):
+                self.assertFalse((Path(raw) / "vdir.lock").exists())
+
+    def test_discover_guard_without_state_or_for_other_actions_is_a_noop(self):
+        with self.h.discover_guard({"action": "discover"}):
+            pass
+        with self.h.discover_guard({"action": "probe", "state": "/nonexistent-state"}):
+            pass
+
+    def test_discover_policy_classifies_local_side_mapping_failures(self):
+        async def original(*_args, **_kwargs):
+            raise AssertionError("must not create")
+
+        policy = self.h.local_only_policy("local", original, [])
+        # The configured local storage, but not a filesystem one: a configuration problem.
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(policy({"type": "caldav", "instance_name": "local"}, "x"))
+        self.assertEqual((caught.exception.code, caught.exception.missing), ("mapping", None))
+        # Some other storage that is not the CalDAV remote: also not "missing on the server".
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(policy({"type": "filesystem", "instance_name": "other"}, "x"))
+        self.assertEqual(caught.exception.code, "mapping")
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(policy({"type": "caldav", "instance_name": "remote"}, "x"))
+        self.assertEqual((caught.exception.code, caught.exception.missing), ("discovery", ["x"]))
+
     def test_operation_guard_refuses_stale_collection_before_remote_work(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

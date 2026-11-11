@@ -119,12 +119,37 @@ async def missing(*_args, **_kwargs):
     raise AssertionError("missing collection policy was not overridden")
 
 
+async def create_missing(config, collection, e=None, implicit_create=False):
+    """Stand-in for vdirsyncer's own handler: only an explicit local filesystem create."""
+    assert implicit_create and config["type"] == "filesystem", "unexpected creation"
+    Path(config["path"], collection).mkdir()
+    # Like vdirsyncer 0.21, the handler's return value becomes the collection's storage args.
+    return dict(config, path=str(Path(config["path"], collection)), collection=collection)
+
+
 async def collections_for_pair(status, pair, from_cache=True, *, connector):
     assert from_cache is False
     store = load()
+    store["calls"].append("DISCOVER")
     if store["flags"].pop("fail_refresh_once", False):
         save(store)
         raise RuntimeError("synthetic interrupted discovery")
+    save(store)
+    if store["flags"].get("discover_sleep"):
+        time.sleep(store["flags"]["discover_sleep"])
+    script = store.get("discover", {})
+    config = Config.from_filename_or_environment(STORE.parent / "connection.json")
+    local, remote = config.get_storage_args("local"), config.get_storage_args("remote")
+    for name in script.get("remote_only", []):
+        if not Path(local["path"], name).exists():
+            args = await discovery.handle_collection_not_found(local, name)
+            assert isinstance(args, dict) and "type" in args, "handler must return storage args"
+    if store["flags"].get("hang_after_adopt"):
+        # vdirsyncer has created the folders and has not saved its cache yet.
+        time.sleep(store["flags"]["hang_after_adopt"])
+    for name in script.get("local_only", []):
+        args = await discovery.handle_collection_not_found(remote, name)
+        assert isinstance(args, dict) and "type" in args, "handler must return storage args"
     Path(status, "synthetic.collections").write_text("verified synthetic discovery")
     return []
 
@@ -132,7 +157,7 @@ async def collections_for_pair(status, pair, from_cache=True, *, connector):
 api = types.SimpleNamespace(Config=Config, expand_path=os.path.expanduser)
 utils = types.SimpleNamespace(storage_class_from_config=lambda _options: (Storage, {}),
                               storage_instance_from_config=storage_instance_from_config,
-                              handle_collection_not_found=missing,
+                              handle_collection_not_found=create_missing,
                               prepare_status_path=lambda path: Path(path).mkdir(parents=True, exist_ok=True))
 discovery = types.SimpleNamespace(collections_for_pair=collections_for_pair, handle_collection_not_found=missing)
 aiohttp = types.SimpleNamespace(TCPConnector=Connector)

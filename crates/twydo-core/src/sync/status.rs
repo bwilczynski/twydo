@@ -35,6 +35,10 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
     pub collections: BTreeMap<String, CollState>,
     pub metasync_error: Option<String>,
+    /// Why the last list discovery failed; cleared when a discovery succeeds, untouched by
+    /// runs that do not discover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_error: Option<String>,
 }
 
 fn status_path(state: &Path) -> PathBuf {
