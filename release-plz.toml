@@ -20,10 +20,21 @@ release_commits = "^(feat|fix)"
 [[package]]
 name = "tdo"
 changelog_path = "./CHANGELOG.md"
-changelog_include = ["twydo-core"]
+changelog_include = ["twydo-core", "twydo-daemon"]
 
 [[package]]
 name = "twydo-core"
+git_tag_enable = false
+changelog_update = false
+
+# Released like twydo-core: untagged, in tdo's changelog. Until a release tag contains this
+# crate, it needs a tag name of its own that never exists: with the shared `v{{ version }}`,
+# release-plz looks for it in the tree of v0.1.8 (where it does not exist yet) and fails with
+# "cannot find package twydo-daemon". Once v0.1.9 is tagged, delete `git_tag_name` here: an
+# untagged package stays an "initial release" and would open a release PR on every push.
+[[package]]
+name = "twydo-daemon"
+git_tag_name = "twydo-daemon-v{{ version }}"
 git_tag_enable = false
 changelog_update = false
 
