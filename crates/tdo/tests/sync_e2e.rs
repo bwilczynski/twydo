@@ -50,6 +50,13 @@ struct Pair {
     sock_dir: tempfile::TempDir,
 }
 
+impl Drop for Pair {
+    /// Stops any daemon a `tdo` call started on demand on this pair's socket, panics included.
+    fn drop(&mut self) {
+        common::stop_daemon_at(&self.sock_dir.path().join("tdo.sock"));
+    }
+}
+
 #[allow(dead_code)]
 impl Pair {
     fn new() -> Pair {
@@ -66,6 +73,8 @@ impl Pair {
         fs::create_dir_all(p.server().join(COLL)).unwrap();
         fs::create_dir_all(p.vdir().join(COLL)).unwrap();
         fs::create_dir_all(p.root().join("vdirsyncer")).unwrap();
+        // Allowed by the socket scan in term.rs: the conflict hook runs under vdirsyncer with
+        // `Pair::env`'s own TWYDO_SOCKET and never talks to a daemon.
         let hook = env!("CARGO_BIN_EXE_tdo");
         fs::write(
             p.vdirsyncer_config(),
@@ -164,6 +173,14 @@ impl Pair {
         fs::read_to_string(self.vdir().join(COLL).join(format!("{uid}.ics"))).ok()
     }
 
+    fn base_cmd(&self) -> Command {
+        common::tdo_bin(
+            &self.sock_dir.path().join("tdo.sock"),
+            &self.root().join("config"),
+            &self.state(),
+        )
+    }
+
     fn env(&self, cmd: &mut Command) {
         cmd.env("VDIRSYNCER_CONFIG", self.vdirsyncer_config())
             .env("XDG_CONFIG_HOME", self.root().join("config"))
@@ -205,7 +222,7 @@ impl Pair {
         let client = matches!(args.first(), Some(&"op" | &"sync"))
             || args.starts_with(&["conflicts", "resolve"]);
         let daemon = client.then(|| self.start_daemon());
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tdo"));
+        let mut cmd = self.base_cmd();
         cmd.args(args);
         self.env(&mut cmd);
         let out = cmd.output().expect("run tdo");
@@ -215,7 +232,7 @@ impl Pair {
 
     fn start_daemon(&self) -> Daemon {
         let m = self.root().join("matrix.toml");
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_tdo"));
+        let mut cmd = self.base_cmd();
         cmd.args(["daemon", "--matrix", m.to_str().unwrap()])
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -1108,6 +1125,8 @@ fn hook_uses_the_vdir_of_tdo_sync() {
     let (local, remote) = make_conflict(&p);
     let vdir = p.vdir();
     let o = p.tdo(&["--vdir", vdir.to_str().unwrap(), "sync"]);
+    // `--vdir` makes this the one call that starts its own daemon on demand; `Pair`'s Drop
+    // stops it.
     let err = String::from_utf8_lossy(&o.stderr);
     assert_eq!(o.status.code(), Some(1), "{err}");
     assert!(err.contains("\"c1\": conflict"), "{err}");

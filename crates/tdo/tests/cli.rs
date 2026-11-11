@@ -1,10 +1,9 @@
 mod common;
 
-use std::process::Command;
-
 #[test]
 fn version_flag_prints_name() {
-    let out = Command::new(env!("CARGO_BIN_EXE_tdo"))
+    let none = tempfile::tempdir().unwrap();
+    let out = common::tdo_bin(&none.path().join("none.sock"), none.path(), none.path())
         .arg("--version")
         .output()
         .expect("run tdo");
@@ -15,7 +14,7 @@ fn version_flag_prints_name() {
 
 mod gate {
     use std::path::PathBuf;
-    use std::process::{Command, Output};
+    use std::process::Output;
 
     fn root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -36,13 +35,15 @@ mod gate {
             std::fs::create_dir_all(cfg.path().join("twydo")).unwrap();
             std::fs::write(cfg.path().join("twydo/config.toml"), text).unwrap();
         }
-        Command::new(env!("CARGO_BIN_EXE_tdo"))
-            .args(args)
-            .current_dir(root())
-            .env("XDG_CONFIG_HOME", cfg.path())
-            .env("XDG_STATE_HOME", cfg.path().join("state"))
-            .output()
-            .expect("run tdo")
+        crate::common::tdo_bin(
+            &cfg.path().join("none.sock"),
+            cfg.path(),
+            &cfg.path().join("state"),
+        )
+        .args(args)
+        .current_dir(root())
+        .output()
+        .expect("run tdo")
     }
 
     fn stdout(o: &Output) -> String {
@@ -131,13 +132,15 @@ mod gate {
     fn check_without_matrix_flag_uses_embedded_matrix() {
         let elsewhere = tempfile::tempdir().unwrap();
         let cfg = tempfile::tempdir().unwrap();
-        let o = Command::new(env!("CARGO_BIN_EXE_tdo"))
-            .args(["--vdir", root().join(sample()).to_str().unwrap(), "check"])
-            .current_dir(elsewhere.path())
-            .env("XDG_CONFIG_HOME", cfg.path())
-            .env("XDG_STATE_HOME", cfg.path().join("state"))
-            .output()
-            .expect("run tdo");
+        let o = crate::common::tdo_bin(
+            &cfg.path().join("none.sock"),
+            cfg.path(),
+            &cfg.path().join("state"),
+        )
+        .args(["--vdir", root().join(sample()).to_str().unwrap(), "check"])
+        .current_dir(elsewhere.path())
+        .output()
+        .expect("run tdo");
         let out = stdout(&o);
         assert!(!out.contains("matrix not found"), "{out}");
         assert!(
@@ -427,12 +430,9 @@ mod sync {
         }
 
         fn tdo(&self, args: &[&str]) -> Output {
-            Command::new(env!("CARGO_BIN_EXE_tdo"))
+            crate::common::tdo_bin(&self.socket(), &self.path("xdg"), &self.path("xdg-state"))
                 .args(args)
-                .env("XDG_CONFIG_HOME", self.path("xdg"))
-                .env("XDG_STATE_HOME", self.path("xdg-state"))
                 .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
-                .env("TWYDO_SOCKET", self.socket())
                 .env("HOME", self.dir.path())
                 .output()
                 .expect("run tdo")
@@ -578,12 +578,9 @@ mod sync {
         // Start the daemon first, so both commands find it.
         assert_eq!(fx.tdo(&["sync", "off"]).status.code(), Some(0));
         let spawn = || {
-            Command::new(env!("CARGO_BIN_EXE_tdo"))
+            crate::common::tdo_bin(&fx.socket(), &fx.path("xdg"), &fx.path("xdg-state"))
                 .arg("sync")
-                .env("XDG_CONFIG_HOME", fx.path("xdg"))
-                .env("XDG_STATE_HOME", fx.path("xdg-state"))
                 .env("XDG_RUNTIME_DIR", fx.sock_dir.path().join("run"))
-                .env("TWYDO_SOCKET", fx.socket())
                 .env("HOME", fx.dir.path())
                 .stdin(std::process::Stdio::null())
                 .spawn()
@@ -758,14 +755,16 @@ fn check_finishes_permissions_for_a_large_collection() {
         .unwrap();
     }
     let output = temp.path().join("check.txt");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
-        .args(["--vdir", vdir.to_str().unwrap(), "check"])
-        .env("XDG_CONFIG_HOME", temp.path().join("config"))
-        .env("XDG_STATE_HOME", temp.path().join("state"))
-        .stdout(fs::File::create(&output).unwrap())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut child = common::tdo_bin(
+        &temp.path().join("none.sock"),
+        &temp.path().join("config"),
+        &temp.path().join("state"),
+    )
+    .args(["--vdir", vdir.to_str().unwrap(), "check"])
+    .stdout(fs::File::create(&output).unwrap())
+    .stderr(Stdio::null())
+    .spawn()
+    .unwrap();
     let started = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {

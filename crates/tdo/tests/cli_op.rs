@@ -100,11 +100,12 @@ impl Env {
 
     /// A `tdo` command in this env: its own config, state and socket (never the user's).
     fn cmd(&self) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_tdo"));
-        c.env("TWYDO_SOCKET", self.socket())
-            .env("XDG_CONFIG_HOME", self.dir.path().join("config"))
-            .env("XDG_STATE_HOME", self.state())
-            .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
+        let mut c = common::tdo_bin(
+            &self.socket(),
+            &self.dir.path().join("config"),
+            &self.state(),
+        );
+        c.env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
             .env("HOME", self.dir.path());
         c
     }
@@ -400,10 +401,9 @@ fn export_waits_for_writer_lock() {
         .open(sdir.join("vdir.lock"))
         .unwrap();
     lock.lock().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
+    let mut child = env
+        .cmd()
         .arg("export-json")
-        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
-        .env("XDG_STATE_HOME", env.state())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -494,10 +494,9 @@ fn op_snapshot_waits_for_writer_lock() {
     let env = Env::new("verified");
     let lock = VdirLock::exclusive(&env.vdir_state()).unwrap();
     let m = env.dir.path().join("matrix.toml");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tdo"))
+    let mut child = env
+        .cmd()
         .args(["op", "check", TASK_E, "--matrix", m.to_str().unwrap()])
-        .env("XDG_CONFIG_HOME", env.dir.path().join("config"))
-        .env("XDG_STATE_HOME", env.state())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
