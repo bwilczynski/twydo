@@ -6,6 +6,7 @@ pub mod client;
 pub mod editor;
 pub mod form;
 pub mod listform;
+pub mod service;
 pub mod term;
 pub mod ui;
 pub mod write;

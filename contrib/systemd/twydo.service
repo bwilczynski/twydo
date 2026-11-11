@@ -1,0 +1,14 @@
+# Written by tdo daemon install; reference copy in contrib/
+[Unit]
+Description=Twydo daemon
+
+[Service]
+ExecStart=/home/you/.local/share/mise/shims/tdo daemon
+Environment="PATH=/home/you/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin"
+Restart=always
+RestartSec=1
+RestartPreventExitStatus=10
+TimeoutStopSec=90
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Written by tdo daemon install; reference copy in contrib/ -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>app.twydo.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/home/you/.local/share/mise/shims/tdo</string>
+    <string>daemon</string>
+    <string>--socket</string>
+    <string>/Users/you/Library/Caches/twydo/tdo.sock</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/home/you/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ExitTimeOut</key>
+  <integer>90</integer>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/.local/state/twydo/daemon.log</string>
+</dict>
+</plist>
