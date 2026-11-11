@@ -131,16 +131,19 @@ impl Conflict {
         }
     }
 
+    /// The first VTODO property `name` of an `.ics` text, as written.
+    pub fn field(text: &str, name: &str) -> Option<String> {
+        let cal = crate::ical::parse(text.as_bytes()).ok()?;
+        let todo = cal.root.children_named("VTODO").next()?;
+        todo.prop(name).map(|p| p.value.clone())
+    }
+
     /// The task's `SUMMARY` from either version (local first).
     pub fn title_opt(&self) -> Option<String> {
         [&self.local, &self.remote]
             .into_iter()
             .flatten()
-            .find_map(|t| {
-                let cal = crate::ical::parse(t.as_bytes()).ok()?;
-                let todo = cal.root.children_named("VTODO").next()?;
-                todo.prop("SUMMARY").map(|p| p.value.clone())
-            })
+            .find_map(|t| Self::field(t, "SUMMARY"))
     }
 
     /// The title from either version (local first), else the UID.
