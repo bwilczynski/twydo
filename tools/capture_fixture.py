@@ -14,6 +14,7 @@ confirmation before promotion. No previous-state lookup, diffs, network or sourc
 import argparse
 import re
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -63,6 +64,9 @@ def cmd_capture(args) -> int:
             raise ValueError("source and capture destination must be separate")
         if state.exists():
             raise ValueError(f"state already exists: {state}")
+        manifest = inside(case, "case.toml")
+        if manifest.is_symlink():
+            raise ValueError("symlink case manifest")
         collections = sorted(set(args.collection))
         for collection in collections:
             if not re.fullmatch(r"[A-Za-z0-9_-]+", collection):
@@ -81,7 +85,6 @@ def cmd_capture(args) -> int:
             if path.is_symlink():
                 raise ValueError(f"symlink resource: {member}")
             captured[member] = path.read_bytes()
-        manifest = case / "case.toml"
         if manifest.exists():
             metadata = tomllib.loads(manifest.read_text())
             if metadata["claim"] != args.claim or metadata["origin"] != args.origin:
@@ -105,7 +108,18 @@ def cmd_capture(args) -> int:
         for collection in collections:
             if not any(Path(m).parts[0] == collection for m in members):
                 inside(state, collection + "/.gitkeep").write_bytes(b"")
-        manifest.write_text(prefix + record, encoding="utf-8")
+        # Replacing the directory entry also breaks hardlinks: updating capture
+        # metadata must never mutate a source or another case sharing its inode.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=case,
+                                             prefix=".case-", delete=False) as output:
+                temporary = Path(output.name)
+                output.write(prefix + record)
+            temporary.replace(manifest)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     except (ValueError, OSError, KeyError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

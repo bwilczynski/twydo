@@ -90,6 +90,29 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(self.capture("other", ["--resource", "list2/alias.ics"])[0], 2)
         self.assertFalse((self.out / "move/family/other").exists())
 
+    def source_manifest(self):
+        source = self.src / "source-case.toml"
+        source.write_text('claim = "Move preserves fields"\norigin = "device"\n')
+        case = self.out / "move/family"
+        case.mkdir(parents=True)
+        return source, case
+
+    def test_manifest_symlink_cannot_modify_source_or_create_a_state(self):
+        source, case = self.source_manifest()
+        before = source.read_bytes()
+        (case / "case.toml").symlink_to(source)
+        code, _ = self.capture()
+        self.assertEqual((code, source.read_bytes()), (2, before))
+        self.assertFalse((case / "before").exists())
+
+    def test_manifest_update_breaks_hardlinks_instead_of_mutating_source(self):
+        source, case = self.source_manifest()
+        before = source.read_bytes()
+        os.link(source, case / "case.toml")
+        self.assertEqual(self.capture()[0], 0)
+        self.assertEqual(source.read_bytes(), before)
+        self.assertNotEqual(source.stat().st_ino, (case / "case.toml").stat().st_ino)
+
 
 class ScanTests(unittest.TestCase):
     def setUp(self):
