@@ -665,9 +665,12 @@ mod during_a_job {
             let started = sync_run(&c);
             shutter.join().unwrap();
             // `Closed`: teardown shut the connection's read side before the request was read,
-            // so it never reached dispatch (nothing was recorded either).
+            // so it never reached dispatch (nothing was recorded either). A broken pipe is the
+            // same race lost earlier: the connection closed while the request was being sent.
             if let Err(e) = &started
                 && !matches!(e, twydo_daemon::client::ClientError::Closed)
+                && !matches!(e, twydo_daemon::client::ClientError::Io(io)
+                    if io.kind() == std::io::ErrorKind::BrokenPipe)
             {
                 assert_eq!(kind(e), ErrorKind::Unavailable, "round {round}: {e}");
             }
