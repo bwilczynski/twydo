@@ -2,7 +2,12 @@
 
 File: `$XDG_CONFIG_HOME/twydo/config.toml`, else `~/.config/twydo/config.toml` (Linux and macOS
 alike). An empty `XDG_CONFIG_HOME` counts as unset. Unknown keys are an error and the message
-names the key. Twydo only reads this file.
+names the key. Twydo only reads this file, and only the daemon reads it (`tdo daemon`, started
+by the first `tdo` that needs it; [architecture.md](architecture.md#the-daemon)). Most changes
+apply to the running daemon at once. `vdir`, `state_dir`, `[writes]`, `[sync]`, `timezone` and
+`work_days` need a restart: run `tdo daemon stop`; the next `tdo` starts a new one.
+Read-only commands (`check`, `export-json`, `status`, `conflicts`) still read the file
+themselves.
 
 ## Top-level keys
 
@@ -43,8 +48,8 @@ applied, or the refusal on stderr and exit 1 if it was not saved. Refusals of qu
 nobody has been told about yet are printed on stderr by the next `tdo op` other than
 `op check` ([sync.md](sync.md#stopping-a-sync)). Permission reports leave these
 notifications pending; use `tdo op journal` to display their details.
-`tui`, `export-json`, `check` and `op` first roll forward unfinished journal entries of
-their vdir, kept under `state_dir`.
+The daemon rolls forward unfinished journal entries of its vdir, kept under `state_dir`, at
+startup and before each write; `export-json` and `check` do so themselves.
 
 `tdo daemon --matrix <path>` and `tdo op check <uid> --matrix <path>` are hidden test-only hooks:
 they replace the compatibility matrix built into `tdo` with the file at `<path>` (writes go

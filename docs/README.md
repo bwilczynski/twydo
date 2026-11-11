@@ -15,8 +15,9 @@
 
 | Page | What it covers |
 |---|---|
-| [architecture.md](architecture.md) | The crates, the write path, the operation journal and recovery, locking |
+| [architecture.md](architecture.md) | The daemon, the crates, the write path, the operation journal and recovery, locking |
 | [data-model.md](data-model.md) | What a task looks like on disk, 2Do's metadata, how families and repeats are stored |
+| [protocol.md](protocol.md) | The daemon's socket protocol, for people writing their own client |
 
 ## Background
 
