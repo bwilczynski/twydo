@@ -492,6 +492,7 @@ mod during_a_job {
             SyncRunParams {
                 request_id: c.next_request_id(),
                 force_delete: Vec::new(),
+                discover: false,
             },
         )
     }

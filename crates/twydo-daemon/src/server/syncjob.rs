@@ -162,6 +162,7 @@ pub fn sync_run(
                 RunOptions {
                     background: false,
                     force_delete,
+                    discover: p.discover,
                     ..RunOptions::default()
                 },
             );

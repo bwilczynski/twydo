@@ -657,6 +657,16 @@ fn startup(
             return;
         }
     }
+    // Lists created on the server since the last run: the first sync that gets to it,
+    // whatever starts it, looks for them (the startup sync may be skipped).
+    if shared.cfg.sync.is_some() {
+        let marker = shared.state_dir.join("sync/discover");
+        if let Err(e) = std::fs::create_dir_all(shared.state_dir.join("sync"))
+            .and_then(|()| twydo_core::store::fsio::write_atomic(&marker, b""))
+        {
+            eprintln!("tdo daemon: cannot schedule the startup list discovery: {e}");
+        }
+    }
     shared.set_ready();
     if shared.is_ready() {
         shared.runner.start(shared);

@@ -765,6 +765,7 @@ fn recover_waits_behind_a_sync_instead_of_failing() {
             SyncRunParams {
                 request_id: e.c.next_request_id(),
                 force_delete: Vec::new(),
+                discover: false,
             },
         )
         .unwrap();

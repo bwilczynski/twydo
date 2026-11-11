@@ -488,6 +488,7 @@ pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
                 .map(|(k, v)| (k.clone(), v.into()))
                 .collect(),
             metasync_error: s.status.metasync_error.clone(),
+            discovery_error: s.status.discovery_error.clone(),
         }),
         unsynced: s.pending,
         queued: s.queued,

@@ -418,6 +418,9 @@ fn sync_message_matches_tdo_sync_wording() {
 fn a_sync_through_the_link_reports_its_message() {
     let env = TestEnv::with_sync("exit 0");
     let _daemon = env.in_process_daemon(None);
+    // The daemon's startup discovery marker would make this first sync discover (and this
+    // environment has no list helper): the message under test is the plain sync's.
+    std::fs::remove_file(env.state().join("sync/discover")).unwrap();
     let link = link_for(&env);
     until(&link, |u| matches!(u, Update::Status(_)).then_some(()));
     link.send(Command::Sync {

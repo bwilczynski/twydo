@@ -417,6 +417,7 @@ impl Publisher {
                         .map(|(k, v)| (k.clone(), v.into()))
                         .collect(),
                     metasync_error: m.status.metasync_error.clone(),
+                    discovery_error: m.status.discovery_error.clone(),
                 }),
                 m.queued,
                 m.conflicts.len(),

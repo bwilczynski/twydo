@@ -279,6 +279,7 @@ fn resolve_during_a_sync_waits_for_it() {
             SyncRunParams {
                 request_id: "s1".into(),
                 force_delete: Vec::new(),
+                discover: false,
             },
         )
         .unwrap();

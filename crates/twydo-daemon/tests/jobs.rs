@@ -39,6 +39,7 @@ fn sync_run(c: &Client, request_id: &str) -> JobStarted {
         SyncRunParams {
             request_id: request_id.into(),
             force_delete: Vec::new(),
+            discover: false,
         },
     )
     .unwrap()

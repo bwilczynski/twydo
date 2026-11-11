@@ -559,6 +559,7 @@ impl Thread {
                     &SyncRunParams {
                         request_id: format!("sync-{id}"),
                         force_delete,
+                        discover: false,
                     },
                 );
                 self.started(caller, started, Job::Sync, Update::SyncDone)
