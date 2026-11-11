@@ -47,7 +47,7 @@ default way to make a test task.
 | Move | [Standalone destination](../../fixtures/move/standalone-destination/case.toml), [family round trips](../../fixtures/move/family-roundtrip/case.toml) | Whole resource/family identity maps; foreign series identities remain unchanged |
 | Delete | [Family items](../../fixtures/delete/family-items/case.toml), [mixed families](../../fixtures/complete/family-lifecycle/case.toml) | Standalone, whole-family and individual-item removal; open, completed and last items |
 | Insert/reorder | [Checklist append](../../fixtures/insert/checklist-items/case.toml), [project append](../../fixtures/insert/project-items/case.toml), [saved ranks](../../fixtures/reorder/family-items/case.toml) | DisplayOrder-only changes; phone must select **Manually** to display saved ranks |
-| Collections | [Archive observation](../../fixtures/list-metadata/archive-observation/case.toml), [server preconditions](../../fixtures/list-metadata/server-preconditions/case.toml) | Archive is local; successful round trips alone do not establish atomic writes |
+| Collections | [Creation confirmation](../../fixtures/list-create/phone-confirmation/case.toml), [archive observation](../../fixtures/list-metadata/archive-observation/case.toml), [server preconditions](../../fixtures/list-metadata/server-preconditions/case.toml) | Archive is local; successful round trips alone do not establish atomic writes |
 
 ## Remaining restrictions and consent
 
