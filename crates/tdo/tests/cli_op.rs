@@ -953,10 +953,15 @@ fn op_wait_survives_a_daemon_restart() {
     use twydo_daemon::protocol::sync::SyncRunParams;
     let env = Env::new("test");
     let release = env.dir.path().join("release");
+    let running = env.dir.path().join("running");
     let fake = env.dir.path().join("sleeper.sh");
     common::write_script(
         &fake,
-        &format!("while [ ! -f '{}' ]; do sleep 0.1; done", release.display()),
+        &format!(
+            ": > '{}'; while [ ! -f '{}' ]; do sleep 0.1; done",
+            running.display(),
+            release.display()
+        ),
     );
     fs::OpenOptions::new()
         .append(true)
@@ -1012,6 +1017,13 @@ fn op_wait_survives_a_daemon_restart() {
         }
     };
     let _ = started;
+    // `sync.run` answers once the job is recorded, before the runner takes the lane; until
+    // the script runs, the edit could still be applied directly instead of queued.
+    let deadline = Instant::now() + common::WAIT;
+    while !running.exists() {
+        assert!(Instant::now() < deadline, "the sync never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 
     let child = env.spawn_op(&["edit", TASK_A, "--title", "Queued title", "--wait"]);
     let qdir = env.vdir_state().join("queue");
