@@ -68,7 +68,9 @@ jobs:
       - name: Refresh the released protocol schema on the release PR branch
         if: ${{ steps.release-plz.outputs.pr != '' && steps.release-plz.outputs.pr != '{}' }}
         env:
-          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr).head_branch }}
+          # `|| '{}'`: the env is evaluated even when the step is skipped (a failed release-plz
+          # leaves the output empty, and fromJSON('') fails the job a second time).
+          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr || '{}').head_branch }}
           TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
         run: |
           git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
