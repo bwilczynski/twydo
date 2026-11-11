@@ -18,6 +18,20 @@ Messages are JSON-RPC 2.0, one per line (UTF-8, `\n`-terminated), in both direct
 may be pipelined; responses carry the request's `id`. Messages without an `id` from the daemon
 are notifications.
 
+To see the traffic, use [`tools/tdo-sniff.sh`](../tools/tdo-sniff.sh) (needs `socat` and
+`jq`). It logs each message as one JSON line, `{"t", "conn", "from": "tdo"|"daemon", "msg"}`.
+Run without arguments, it is a standalone proxy that writes the traffic to stdout until Ctrl-C:
+start `tdo` (the TUI too) in another terminal with the `TWYDO_SOCKET` it prints, and filter with
+jq, for example `tools/tdo-sniff.sh | jq -c '{from, m: .msg.method, id: .msg.id}'`.
+`tools/tdo-sniff.sh status` runs one command and writes its traffic to stderr, or to a file with
+`TDO_SNIFF_LOG=<file>`. To ask a running daemon directly, `daemon.info` answers before any
+`hello`:
+
+```sh
+echo '{"jsonrpc":"2.0","id":1,"method":"daemon.info","params":{}}' \
+  | socat - UNIX-CONNECT:"$XDG_RUNTIME_DIR/twydo/tdo.sock"
+```
+
 ## `hello`
 
 The first call. It names the client and the instance it means:
