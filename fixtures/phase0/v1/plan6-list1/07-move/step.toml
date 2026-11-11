@@ -1,5 +1,0 @@
-scenario = "plan6-list1"
-step = "07-move"
-device = "iphone"
-action = "move K, P and live R to Twydo test 2"
-captured_at = "2026-11-02T15:59:57Z"

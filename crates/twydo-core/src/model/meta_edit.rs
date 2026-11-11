@@ -89,7 +89,7 @@ impl MetaJson {
         self.get_i64("TaskType").unwrap_or(0)
     }
 
-    /// Change `TaskType` the way the phone's type selector does (`plan7-list1/03-phone-convert`,
+    /// Change `TaskType` the way the phone's type selector does (`set-repeat/phone-encodings/phone-convert/list1`,
     /// `04-phone-convert-empty`). Between checklist and project only the code changes. A
     /// task becoming a checklist or project gets `uid` = `own_uid` right after
     /// `RecurrenceEndRepetitionsOrig` and `TaskType` before `TaskDuration`; the reverse drops
@@ -173,7 +173,7 @@ pub fn default_task_meta() -> MetaJson {
 /// The key set of a new task as the phone writes it. `task_type` is 0 task, 1 checklist,
 /// 2 project. A checklist or project gets `uid` (its own id) after
 /// `RecurrenceEndRepetitionsOrig` and `TaskType` before `TaskDuration`; an item gets
-/// `parentuid` before `RUID` (`plan6-list1/01-create`).
+/// `parentuid` before `RUID` (`complete/family-lifecycle/create/list1`).
 pub fn new_task_meta(task_type: i64, uid: Option<&str>, parent_uid: Option<&str>) -> MetaJson {
     let mut obj = Map::new();
     let zero = |obj: &mut Map<String, Value>, keys: &[&str]| {

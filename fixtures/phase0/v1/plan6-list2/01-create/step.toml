@@ -1,5 +1,0 @@
-scenario = "plan6-list2"
-step = "01-create"
-device = "iphone"
-action = "create K+k1-3 checklist, P+p1-3 project, R+r1-3 monthly project, L missed monthly, S start monthly, T timed+start+alert monthly, Y timed+start+alert yearly (L and Y fixed by edit before capture)"
-captured_at = "2026-11-02T15:40:08Z"

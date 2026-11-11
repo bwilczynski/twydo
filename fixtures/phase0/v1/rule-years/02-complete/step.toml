@@ -1,5 +1,0 @@
-scenario = "rule-years"
-step = "02-complete"
-device = "iphone"
-action = "complete the yearly task once"
-captured_at = "2026-11-01T12:21:41Z"

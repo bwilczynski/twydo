@@ -4,7 +4,7 @@ use twydo_core::ical::parse;
 use twydo_core::model::meta_edit::{MetaJson, default_task_meta};
 
 fn fixtures() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/phase0/v1")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
 }
 
 fn meta_value(path: &Path) -> Option<String> {
@@ -29,10 +29,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-const A: &str = "plan4-list1/01-create/0a04f22aeb294b719633c978fe1975e5.ics";
-const B: &str = "plan4-list1/01-create/41b9cdfea48e46fd9da52f9337c3f6c4.ics";
-const C: &str = "plan4-list1/01-create/3b93fba16ec74e24b2da63a73c29ca8c.ics";
-const D: &str = "plan4-list1/01-create/855a275473c34da9840a6a76c5f18385.ics";
+const A: &str = "complete/standalone-lifecycle/create/list1/0a04f22aeb294b719633c978fe1975e5.ics";
+const B: &str = "complete/standalone-lifecycle/create/list1/41b9cdfea48e46fd9da52f9337c3f6c4.ics";
+const C: &str = "complete/standalone-lifecycle/create/list1/3b93fba16ec74e24b2da63a73c29ca8c.ics";
+const D: &str = "complete/standalone-lifecycle/create/list1/855a275473c34da9840a6a76c5f18385.ics";
 
 #[test]
 fn encode_parse_is_identity_on_fixtures() {
@@ -57,15 +57,15 @@ fn encode_parse_is_identity_on_fixtures() {
 
 #[test]
 fn set_keeps_key_order() {
-    let base = "rule-months-day-1-28";
-    let one = std::fs::read_dir(fixtures().join(base).join("01-create"))
+    let base = "complete/monthly-calendar";
+    let one = std::fs::read_dir(fixtures().join(base).join("create/list1"))
         .unwrap()
         .map(|e| e.unwrap().path())
         .find(|p| p.extension().is_some_and(|x| x == "ics"))
         .unwrap();
     let name = one.file_name().unwrap().to_str().unwrap().to_string();
     let v1 = meta_value(&one).unwrap();
-    let v3 = value_of(&format!("{base}/03-edit/{name}"));
+    let v3 = value_of(&format!("{base}/edit/list1/{name}"));
     let mut m = MetaJson::parse(&v1).unwrap();
     m.set_i64("RecurrenceValue", 2);
     assert_eq!(m.get_i64("RecurrenceValue"), Some(2));

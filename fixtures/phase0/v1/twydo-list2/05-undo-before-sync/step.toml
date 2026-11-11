@@ -1,5 +1,0 @@
-scenario = "twydo-list2"
-step = "05-undo-before-sync"
-device = "twydo"
-action = "tdo: complete T then undo before sync; reopen P3; move Q to list2"
-captured_at = "2026-11-01T15:47:22Z"

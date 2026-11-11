@@ -64,7 +64,7 @@ def validate(root: Path) -> list[str]:
             owned = {manifest.resolve()}
             state_paths = set()
             for name, state in case.get("states", {}).items():
-                unknown = set(state) - {"path", "collections", "members"}
+                unknown = set(state) - {"path", "collections", "members", "action", "device", "captured_at"}
                 if unknown:
                     errors.append(f"{case_id}/{name}: unknown state fields: {sorted(unknown)}")
                 base = inside(manifest.parent, state["path"])

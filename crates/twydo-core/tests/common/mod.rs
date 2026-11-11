@@ -40,7 +40,7 @@ pub fn matrix(cases: &[&str], twydo: &str, edges: &[(&str, &str)]) -> Matrix {
 }
 
 /// A vdir in a tempdir with lists `list1` (the `.ics` files of fixture step `fixture`, e.g.
-/// `plan4-list1/02-edit`) and an empty `list2`, and a state dir beside it.
+/// `complete/standalone-lifecycle/edit/list1`) and an empty `list2`, and a state dir beside it.
 pub struct Env {
     _tmp: tempfile::TempDir,
     pub vdir: PathBuf,
@@ -54,7 +54,7 @@ impl Env {
         let vdir = tmp.path().join("vdir");
         let state = tmp.path().join("state");
         let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/phase0/v1")
+            .join("../../fixtures")
             .join(fixture);
         let list1 = vdir.join("list1");
         fs::create_dir_all(&list1).unwrap();
@@ -118,7 +118,7 @@ impl Env {
 
 pub fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(scenario)
         .join(step)
         .join(format!("{uid}.ics"));

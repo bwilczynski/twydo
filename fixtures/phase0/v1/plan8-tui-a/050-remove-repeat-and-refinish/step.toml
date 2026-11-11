@@ -1,5 +1,0 @@
-scenario = "plan8-tui-a"
-step = "050-remove-repeat-and-refinish"
-device = "iphone"
-action = "User reported synced: FCa monthly to weekly; RDa and RYa repeat removed; reopened U1a/U2a completed once; b twins untouched"
-captured_at = "2026-11-04T13:50:32Z"

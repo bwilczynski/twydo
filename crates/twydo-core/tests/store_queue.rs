@@ -38,7 +38,7 @@ fn matrix() -> Matrix {
 }
 
 fn env() -> Env {
-    Env::new(WriteMode::Test, "plan4-list1/02-edit")
+    Env::new(WriteMode::Test, "complete/standalone-lifecycle/edit/list1")
 }
 
 fn title(uid: &str, text: &str) -> Op {
@@ -987,7 +987,10 @@ fn individual_item_deletes_queue_and_refuse_changed_family_bytes() {
 
 #[test]
 fn capability_move_queue_reuses_prepared_identities() {
-    let env = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+    let env = Env::new(
+        WriteMode::Verified,
+        "complete/family-lifecycle/reopen-child/list1",
+    );
     let mut store = env.store(Matrix::embedded().clone());
     let sync = VdirLock::exclusive(&env.state).unwrap();
     let result = store
@@ -1026,7 +1029,10 @@ fn capability_move_stale_family_and_destination_refuse() {
         "source-remove",
         "source-join",
     ] {
-        let env = Env::new(WriteMode::Verified, "plan6-list1/04-reopen-child");
+        let env = Env::new(
+            WriteMode::Verified,
+            "complete/family-lifecycle/reopen-child/list1",
+        );
         let mut store = env.store(Matrix::embedded().clone());
         let sync = VdirLock::exclusive(&env.state).unwrap();
         let Submitted::Queued(item) = store

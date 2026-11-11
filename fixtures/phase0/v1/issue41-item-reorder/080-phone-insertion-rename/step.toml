@@ -1,7 +1,0 @@
-scenario = "issue41-item-reorder"
-step = "080-phone-insertion-rename"
-device = "iphone"
-action = "User renamed Before/After to BEFORE/AFTER in both families, synced and retained MIKE/BEFORE/Zulu/Alpha/AFTER with Manually selected. Identity/links/created/ranks/full JSON metadata preserved. Phone also replaced Twydo PRODID with 2Do PRODID and added X-2DOAPP-SYNC-IMAGE:1, X-2DOAPP-SYNC-AUDIO:1, X-2DOAPP-AUDIO-DURATION:0.000000, matching documented initialization; all other fields preserved. Only four changed resources stored; eight unchanged referenced."
-base_step = "070-phone-insertion-display"
-unchanged_files = ["2a01813b8ed34b9ebe0a83fa0bcb339b.ics", "3873be9bf6d64de590d591cc787044bb.ics", "25606a40735741cba229db38d41f40c7.ics", "42d75a3f97c0457dbb65648803cddca9.ics", "d528606ffbed438db6ecf175c0ccb7cb.ics", "72e7cd12fd744219aef31707cc158978.ics", "03fff855c20b4ddd960f0a594036aae7.ics", "7a038ef0c3114b2b8e0757be9b1d3d34.ics"]
-captured_at = "2026-11-06T22:43:30.526874+00:00"

@@ -1,5 +1,0 @@
-scenario = "plan6-twydo-list2"
-step = "01-phone-edit"
-device = "iphone"
-action = "R -> R2 (recurring project title); p3 -> p3b (repeating project item title); C date -> 2026-12-11"
-captured_at = "2026-11-02T18:36:32Z"

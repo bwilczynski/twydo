@@ -1,5 +1,0 @@
-scenario = "twydo-list1"
-step = "12-phone-complete"
-device = "iphone"
-action = "phone: complete X, Y, U (timed monthly), V (monthly with start)"
-captured_at = "2026-11-01T16:20:42Z"

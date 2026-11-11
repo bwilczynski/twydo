@@ -1,5 +1,0 @@
-scenario = "plan8-tui-a"
-step = "060-remove-checklist-repeat-and-history-reopen"
-device = "iphone"
-action = "User confirmed 2Do 3.91 and synced: FCa repeat removed; first U1a/U2a history copies reopened; ended originals and b twins untouched"
-captured_at = "2026-11-04T13:57:23Z"

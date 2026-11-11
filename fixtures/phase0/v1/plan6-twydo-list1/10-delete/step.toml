@@ -1,5 +1,0 @@
-scenario = "plan6-twydo-list1"
-step = "10-delete"
-device = "twydo"
-action = "tdo op delete C, P, R3 (list 2, families), plain R2 copy (list 1, with items), live M, S, T, Y, A; list 2 emptied locally, synced with --force-delete"
-captured_at = "2026-11-02T19:28:37Z"

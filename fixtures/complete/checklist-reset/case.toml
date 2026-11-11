@@ -1,0 +1,86 @@
+claim = "Recurring checklist completion resets live items and preserves completed family history across successive occurrences."
+origin = "device"
+observed = "Recurring checklist completion resets live items and preserves completed family history across successive occurrences."
+tests = ["crates/tdo/tests/cli_op.rs::op_blocked_in_verified_mode_exits_1", "crates/tdo/tests/write.rs::complete_then_undo_then_redo", "crates/twydo-core/tests/edit_complete.rs::one_time_complete_and_reopen_match_2do", "crates/twydo-core/tests/edit_fields.rs::text_capability_preserves_full_resources_including_alarms_and_metadata", "crates/twydo-core/tests/gate.rs::create_item_under_plain_task_is_refused", "crates/twydo-core/tests/store_family.rs::completing_checklist_writes_parent_and_open_items", "crates/twydo-daemon/tests/reports.rs::check_report_summarizes_health_evidence_and_permissions"]
+supports = ["create.recurring-checklist", "edit-notes.resource", "edit-title.resource"]
+
+[provenance]
+source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
+source_path = "fixtures/phase0/v1/plan8-checklist-b"
+
+[environment]
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
+
+[states."seeded"]
+path = "seeded"
+collections = ["list1"]
+members = ["list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "Only b and d monthly dated task prerequisites seeded into empty B."
+device = "twydo"
+
+[states."phone-create-convert"]
+path = "phone-create-convert"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "Phone creates a monthly checklist and converts monthly task b to checklist; d untouched. Capture B only."
+device = "iphone"
+
+[states."phone-items-and-text"]
+path = "phone-items-and-text"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/2cb7991c71624ddda29877c098acad43.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/96ee97f3cc8c403391c57ec8b8e5d192.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "In B only: add x and q under a/b; capitalize parent titles A/B; parent note x; rename x to z. All remain open; d unchanged."
+device = "iphone"
+
+[states."phone-delete-items"]
+path = "phone-delete-items"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "Delete only open q item from each open monthly checklist A/B in capture B. Exactly two children removed; all five surviving resources byte-unchanged."
+device = "iphone"
+
+[states."phone-family-complete"]
+path = "phone-family-complete"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "In B only: tick z under A/B, observe parent remains open, manually tick each parent. Live families advance to January 10 and reopen z; deleted q absent; two completed parent/child history pairs."
+device = "iphone"
+
+[states."twydo-upload"]
+path = "twydo-upload"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/23f38c7e8dbf41a9be783a794b9af3c3.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/347814287323446ea8382d68614b0812.ics", "list1/55180c631f304b44be543382c0b85b94.ics", "list1/86496b2daf5842d9bffddf99a875a528.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/9da8c0647e454d63849ec9bcb7fc3d25.ics", "list1/ae9638c7a7064361aaa5ae35762e7499.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/cec6aa5012284393bba019fa8518da03.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "B-only scoped upload confirms all candidate bytes unchanged, all 16 journal operations synced, no conflicts. C/D open monthly due Jan 10 with z reopened and q absent. Phone return pending."
+device = "twydo"
+
+[states."phone-writer-note-followup"]
+path = "phone-writer-note-followup"
+collections = ["list1"]
+members = ["list1/12d762a5639e406c8ec865517882f130.ics", "list1/23f38c7e8dbf41a9be783a794b9af3c3.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/347814287323446ea8382d68614b0812.ics", "list1/55180c631f304b44be543382c0b85b94.ics", "list1/86496b2daf5842d9bffddf99a875a528.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/9da8c0647e454d63849ec9bcb7fc3d25.ics", "list1/ae9638c7a7064361aaa5ae35762e7499.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/cec6aa5012284393bba019fa8518da03.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "Phone inspects Twydo-created/converted C/D monthly checklists due Jan10 with open z/no q, then changes parent notes x to z. Only C/D parent notes, modification stamps and explicitly asserted first-phone-save PRODID/sync decorations change; all other B resources exact."
+device = "iphone"
+
+[states."phone-second-family-reset"]
+path = "phone-second-family-reset"
+collections = ["list1"]
+members = ["list1/05d4ffea9ee24c1f89a091bb0507bccf.ics", "list1/0629400e7b1e44ba814d1987b8fdecde.ics", "list1/12d762a5639e406c8ec865517882f130.ics", "list1/2275ef474d3b4f7cafe1cec6cd598a3f.ics", "list1/23f38c7e8dbf41a9be783a794b9af3c3.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/347814287323446ea8382d68614b0812.ics", "list1/55180c631f304b44be543382c0b85b94.ics", "list1/86496b2daf5842d9bffddf99a875a528.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/9da8c0647e454d63849ec9bcb7fc3d25.ics", "list1/ae9638c7a7064361aaa5ae35762e7499.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/cec6aa5012284393bba019fa8518da03.ics", "list1/d952a24e29fe41fd90dfd05cd0aa92ed.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "In B only, tick each C/D live z then manually tick each parent. Parents advance Jan10 to Feb10, z reopen, four correctly linked new history resources; deleted q stays absent and all previous history unchanged."
+device = "iphone"
+
+[states."phone-parent-note-return"]
+path = "phone-parent-note-return"
+collections = ["list1"]
+members = ["list1/05d4ffea9ee24c1f89a091bb0507bccf.ics", "list1/0629400e7b1e44ba814d1987b8fdecde.ics", "list1/12d762a5639e406c8ec865517882f130.ics", "list1/2275ef474d3b4f7cafe1cec6cd598a3f.ics", "list1/23f38c7e8dbf41a9be783a794b9af3c3.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/347814287323446ea8382d68614b0812.ics", "list1/55180c631f304b44be543382c0b85b94.ics", "list1/86496b2daf5842d9bffddf99a875a528.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/9da8c0647e454d63849ec9bcb7fc3d25.ics", "list1/ae9638c7a7064361aaa5ae35762e7499.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/cec6aa5012284393bba019fa8518da03.ics", "list1/d952a24e29fe41fd90dfd05cd0aa92ed.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "B-only phone return changes C/D parent notes z to x instead of the requested item rename. Only notes/stamps change; children remain titled z. Preserve this state; final planned item rename still pending."
+device = "iphone"
+
+[states."phone-reset-item-edits"]
+path = "phone-reset-item-edits"
+collections = ["list1"]
+members = ["list1/05d4ffea9ee24c1f89a091bb0507bccf.ics", "list1/0629400e7b1e44ba814d1987b8fdecde.ics", "list1/12d762a5639e406c8ec865517882f130.ics", "list1/2275ef474d3b4f7cafe1cec6cd598a3f.ics", "list1/23f38c7e8dbf41a9be783a794b9af3c3.ics", "list1/3199749e2ea64f10bdaebc00197768ca.ics", "list1/347814287323446ea8382d68614b0812.ics", "list1/55180c631f304b44be543382c0b85b94.ics", "list1/86496b2daf5842d9bffddf99a875a528.ics", "list1/9743bfee962046f5a1d9c96088541c5f.ics", "list1/9da8c0647e454d63849ec9bcb7fc3d25.ics", "list1/ae9638c7a7064361aaa5ae35762e7499.ics", "list1/b3c5feaf64ee46e6a5ec325de7fc3a2c.ics", "list1/c73764e2f37140829c3f36d495afbc80.ics", "list1/cec6aa5012284393bba019fa8518da03.ics", "list1/d952a24e29fe41fd90dfd05cd0aa92ed.ics", "list1/f9ae2ffd776e42919f9696f37dd6e849.ics", "list1/fd6a1d06a24943ac8f6526902cc32665.ics", "list1/twydo-p8-c29-b.ics", "list1/twydo-p8-c29-d.ics"]
+action = "Final B-only phone action: rename each live reset C/D child z to x. Exactly those two items change SUMMARY and modification stamps; all parent/history/identity/metadata bytes otherwise preserved. Phone rounds complete."
+device = "iphone"

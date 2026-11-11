@@ -22,8 +22,8 @@ const MONTHLY: &str = "5c072ad90a8f44f1a974e170a8a950e7";
 const MONTHLY_COPY: &str = "6f19ef6b404644a38451520da5804e9f";
 const YEARLY: &str = "c3e7283649dd413abf3f73745121bce5";
 const YEARLY_COPY: &str = "8c164aa9120c42df846a5680e1788e5f";
-const L1: &str = "plan4-list1";
-const P6: &str = "plan6-list1";
+const L1: &str = "complete/standalone-lifecycle";
+const P6: &str = "complete/family-lifecycle";
 const L: &str = "441bfb76e9e14d93a024aceaebee05e7";
 const L_COPY1: &str = "e6e12fe5069f4f7895a8d2f61f34e8fb";
 const L_COPY2: &str = "8a33f149c12143b183bcdbf446cb5268";
@@ -66,14 +66,14 @@ fn one_time_complete_and_reopen_match_2do() {
     type Op = fn(&mut Calendar, DateTime<Utc>) -> Result<(), EditError>;
     let cases: [(&str, &str, Op, &[&str]); 2] = [
         (
-            "02-edit",
-            "03-complete",
+            "edit/list1",
+            "complete/list1",
             complete_one_time,
             &["STATUS", "PERCENT-COMPLETE", "COMPLETED"],
         ),
         (
-            "03-complete",
-            "04-reopen",
+            "complete/list1",
+            "reopen/list1",
             reopen_one_time,
             &["STATUS", "PERCENT-COMPLETE", "COMPLETED"],
         ),
@@ -98,7 +98,7 @@ fn one_time_complete_and_reopen_match_2do() {
 
 #[test]
 fn complete_places_percent_and_completed_after_status() {
-    let mut cal = parse(&fixture(L1, "02-edit", A)).unwrap();
+    let mut cal = parse(&fixture(L1, "edit/list1", A)).unwrap();
     complete_one_time(&mut cal, now()).unwrap();
     let out = String::from_utf8(serialize(&cal)).unwrap();
     assert!(
@@ -111,8 +111,8 @@ fn complete_places_percent_and_completed_after_status() {
 
 #[test]
 fn history_copy_reopen_matches_2do() {
-    let input = fixture(L1, "03-complete", E_COPY);
-    let evidence = parse(&fixture(L1, "04-reopen", E_COPY)).unwrap();
+    let input = fixture(L1, "complete/list1", E_COPY);
+    let evidence = parse(&fixture(L1, "reopen/list1", E_COPY)).unwrap();
     let now = dtstamp(&evidence);
     let mut cal = parse(&input).unwrap();
     reopen_one_time(&mut cal, now).unwrap();
@@ -198,8 +198,8 @@ fn check_copy_and_advance_with(
 fn monthly_copy_and_advance_matches_2do_plan4() {
     check_copy_and_advance(
         L1,
-        "02-edit",
-        "03-complete",
+        "edit/list1",
+        "complete/list1",
         E,
         E_COPY,
         "20270110",
@@ -210,24 +210,29 @@ fn monthly_copy_and_advance_matches_2do_plan4() {
 #[test]
 fn monthly_copy_and_advance_matches_2do() {
     check_copy_and_advance(
-        "rule-months-day-1-28",
-        "01-create",
-        "02-complete",
+        "complete/monthly-calendar",
+        "create/list1",
+        "complete/list1",
         MONTHLY,
         MONTHLY_COPY,
         "20261210",
         &["DTSTART", "DUE"],
     );
-    let evidence = parse(&fixture("rule-months-day-1-28", "02-complete", MONTHLY)).unwrap();
+    let evidence = parse(&fixture(
+        "complete/monthly-calendar",
+        "complete/list1",
+        MONTHLY,
+    ))
+    .unwrap();
     assert_eq!(stamp(dtstamp(&evidence)), "20261101T121650Z");
 }
 
 #[test]
 fn yearly_copy_and_advance_matches_2do() {
     check_copy_and_advance(
-        "rule-years",
-        "01-create",
-        "02-complete",
+        "complete/yearly-calendar",
+        "create/list1",
+        "complete/list1",
         YEARLY,
         YEARLY_COPY,
         "20271115",
@@ -328,7 +333,12 @@ fn reopen_inserts_percent_after_status_when_absent() {
 
 /// The monthly fixture with `f` applied to its text.
 fn monthly_with(f: impl Fn(String) -> String) -> Calendar {
-    let s = String::from_utf8(fixture("rule-months-day-1-28", "01-create", MONTHLY)).unwrap();
+    let s = String::from_utf8(fixture(
+        "complete/monthly-calendar",
+        "create/list1",
+        MONTHLY,
+    ))
+    .unwrap();
     parse(f(s).as_bytes()).unwrap()
 }
 
@@ -443,8 +453,8 @@ fn missed_monthly_advances_one_interval() {
     let d = &["DTSTART", "DUE"];
     check_copy_and_advance(
         P6,
-        "02-edit",
-        "03-complete-child",
+        "edit/list1",
+        "complete-child/list1",
         L,
         L_COPY1,
         "20260915",
@@ -452,8 +462,8 @@ fn missed_monthly_advances_one_interval() {
     );
     check_copy_and_advance(
         P6,
-        "03-complete-child",
-        "04-reopen-child",
+        "complete-child/list1",
+        "reopen-child/list1",
         L,
         L_COPY2,
         "20261015",
@@ -465,8 +475,8 @@ fn missed_monthly_advances_one_interval() {
 fn monthly_with_start_shifts_start_date() {
     check_copy_and_advance(
         P6,
-        "02-edit",
-        "03-complete-child",
+        "edit/list1",
+        "complete-child/list1",
         S,
         S_COPY,
         "20270105",
@@ -478,8 +488,8 @@ fn monthly_with_start_shifts_start_date() {
 fn timed_monthly_with_start_and_alert_matches_2do() {
     check_copy_and_advance(
         P6,
-        "02-edit",
-        "03-complete-child",
+        "edit/list1",
+        "complete-child/list1",
         T,
         T_COPY,
         "20270120T090000",
@@ -491,8 +501,8 @@ fn timed_monthly_with_start_and_alert_matches_2do() {
 fn timed_yearly_with_start_and_alert_matches_2do() {
     check_copy_and_advance(
         P6,
-        "02-edit",
-        "03-complete-child",
+        "edit/list1",
+        "complete-child/list1",
         Y,
         Y_COPY,
         "20280228T090000",
@@ -500,7 +510,7 @@ fn timed_yearly_with_start_and_alert_matches_2do() {
     );
 }
 
-const GAP: &str = "gap-list1";
+const GAP: &str = "delete/mixed-families";
 const GAP_Y: &str = "6f510e7fceb9423585a74beee2d2c108";
 const GAP_Y_COPY: &str = "c676c622cacf4cfaa351327fffdc3cf3";
 
@@ -508,12 +518,12 @@ const GAP_Y_COPY: &str = "c676c622cacf4cfaa351327fffdc3cf3";
 /// moves the start 366 days too: 2027-02-13 -> 2028-02-14, not one calendar year to 02-13.
 #[test]
 fn start_date_moves_by_the_due_dates_days() {
-    let input = parse(&fixture(GAP, "03-twydo-reopen", GAP_Y)).unwrap();
+    let input = parse(&fixture(GAP, "twydo-reopen/list1", GAP_Y)).unwrap();
     let created = todo(&input).prop("CREATED").unwrap().value.clone();
     check_copy_and_advance_with(
         GAP,
-        "03-twydo-reopen",
-        "04-phone-complete",
+        "twydo-reopen/list1",
+        "phone-complete/list1",
         GAP_Y,
         GAP_Y_COPY,
         "20280301T090000",
@@ -538,7 +548,7 @@ fn start_date_moves_by_the_due_dates_days() {
 }
 
 fn p6_text(uid: &str) -> String {
-    String::from_utf8(fixture(P6, "02-edit", uid)).unwrap()
+    String::from_utf8(fixture(P6, "edit/list1", uid)).unwrap()
 }
 
 #[test]
@@ -621,14 +631,14 @@ fn json_uid(cal: &Calendar) -> Option<String> {
 fn recurring_project_copy_rewrites_json_uid() {
     check_copy_and_advance(
         P6,
-        "04-reopen-child",
-        "05-complete-parent",
+        "reopen-child/list1",
+        "complete-parent/list1",
         R,
         R_COPY,
         "20270115",
         &["DTSTART", "DUE"],
     );
-    let input = parse(&fixture(P6, "04-reopen-child", R)).unwrap();
+    let input = parse(&fixture(P6, "reopen-child/list1", R)).unwrap();
     assert_eq!(json_uid(&input).as_deref(), Some(R), "fixture carries uid");
     let (live, copy) = advance(&input, now(), R_COPY);
     assert_eq!(json_uid(&live).as_deref(), Some(R));
@@ -637,7 +647,7 @@ fn recurring_project_copy_rewrites_json_uid() {
 
 #[test]
 fn foreign_json_uid_is_kept_in_the_copy() {
-    let mut cal = parse(&fixture(P6, "04-reopen-child", R)).unwrap();
+    let mut cal = parse(&fixture(P6, "reopen-child/list1", R)).unwrap();
     {
         let t = cal.root.children_named_mut("VTODO").next().unwrap();
         let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
@@ -715,7 +725,7 @@ fn next_due_month_day_29_31() {
         next(date(2026, 12, 31), "FREQ=MONTHLY", None),
         Some(date(2027, 1, 31))
     );
-    // Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `M31a`): the phone adds
+    // Confirmed by session C (`complete/recurrence-profiles/phone-complete/list1`, `M31a`): the phone adds
     // a calendar month and keeps the last day of a shorter month: Jan 31 -> Feb 28 (Feb 29
     // in a leap year, by the same arithmetic).
     assert_eq!(
@@ -730,7 +740,7 @@ fn next_due_month_day_29_31() {
         next(date(2026, 12, 31), "FREQ=MONTHLY;INTERVAL=2", None),
         Some(date(2027, 2, 28))
     );
-    // Confirmed by session C (`plan7-twydo-list2/04-phone-m31-again`, `M31a` again): 2Do
+    // Confirmed by session C (`complete/recurrence-profiles/phone-m31-again/list1`, `M31a` again): 2Do
     // keeps no memory of the 31st. The next date comes from the current due alone, so after
     // a short month the day drifts: Feb 28 -> Mar 28, not Mar 31.
     assert_eq!(
@@ -770,7 +780,7 @@ fn next_due_nth_weekday() {
 
 #[test]
 fn next_due_feb_29() {
-    // Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `Y29a`): 2Do moves the
+    // Confirmed by session C (`complete/recurrence-profiles/phone-complete/list1`, `Y29a`): 2Do moves the
     // due by a calendar year, so 29 Feb lands on 28 Feb in a common year (not 2032-02-29),
     // and then stays on the 28th (stateless, as monthly on the 31st).
     assert_eq!(
@@ -836,7 +846,7 @@ fn next_due_count_and_until() {
     );
 }
 
-const B: &str = "plan7-twydo-list1";
+const B: &str = "set-repeat/encoding-roundtrip";
 const M31: &str = "2efdb1dfa22440b3ba534691e1af4cc9";
 const M31_COPY: &str = "98227f2a00e6492489f6e19e700c1260";
 const FC: &str = "6b70ef35984e4d7596f49aeca80446ba";
@@ -866,9 +876,9 @@ fn without_layout(v: Vec<Line>) -> Vec<Line> {
 /// copy the time it first received the task as CREATED; Twydo copies the file's CREATED.
 fn check_phone_completion(uid: &str, copy_uid: &str, live_due: &str, changed: &[&str]) {
     let ctx = format!("{B} {uid}");
-    let input = fixture(B, "02-twydo-reshape", uid);
-    let want_live = parse(&fixture(B, "03-phone-act", uid)).unwrap();
-    let want_copy = parse(&fixture(B, "03-phone-act", copy_uid)).unwrap();
+    let input = fixture(B, "twydo-reshape/list1", uid);
+    let want_live = parse(&fixture(B, "phone-act/list1", uid)).unwrap();
+    let want_copy = parse(&fixture(B, "phone-act/list1", copy_uid)).unwrap();
     let now = dtstamp(&want_live);
     let cal = parse(&input).unwrap();
     let (live, copy) = advance(&cal, now, copy_uid);
@@ -914,7 +924,7 @@ fn count_counts_down() {
         "20270107",
         &["DTSTART", "DUE", "RRULE", "X-2DOAPP-METADATA"],
     );
-    let want = parse(&fixture(B, "03-phone-act", CT)).unwrap();
+    let want = parse(&fixture(B, "phone-act/list1", CT)).unwrap();
     assert_eq!(
         todo(&want).prop("RRULE").unwrap().value,
         "FREQ=MONTHLY;COUNT=2"
@@ -922,7 +932,7 @@ fn count_counts_down() {
 }
 
 /// Complete `cal` where the series ends: the task itself is completed in place, no copy.
-/// Confirmed by session C (`plan7-twydo-list2/01-phone-complete`, `C1a` and `UNa`): `RRULE`,
+/// Confirmed by session C (`complete/recurrence-profiles/phone-complete/list1`, `C1a` and `UNa`): `RRULE`,
 /// due, start and metadata kept, no history copy.
 fn check_series_ends(cal: &Calendar, rrule: &str, due: &str) {
     let before = cal.clone();
@@ -946,7 +956,7 @@ fn check_series_ends(cal: &Calendar, rrule: &str, due: &str) {
 
 #[test]
 fn count_at_one_ends_the_series() {
-    let s = String::from_utf8(fixture(B, "02-twydo-reshape", CT))
+    let s = String::from_utf8(fixture(B, "twydo-reshape/list1", CT))
         .unwrap()
         .replace("COUNT=3", "COUNT=1");
     let mut cal = parse(s.as_bytes()).unwrap();
@@ -955,7 +965,7 @@ fn count_at_one_ends_the_series() {
 }
 
 fn un_with_due(due: &str) -> Calendar {
-    let s = String::from_utf8(fixture(B, "01-twydo-create", UN))
+    let s = String::from_utf8(fixture(B, "twydo-create/list1", UN))
         .unwrap()
         .replace("20261207", due);
     parse(s.as_bytes()).unwrap()
@@ -1007,7 +1017,7 @@ fn every_kind_completes_with_its_metadata() {
         ("FREQ=YEARLY", 259, 1, "20271207"),
     ];
     for (rule, kind, value, due) in cases {
-        let s = String::from_utf8(fixture(B, "02-twydo-reshape", M31))
+        let s = String::from_utf8(fixture(B, "twydo-reshape/list1", M31))
             .unwrap()
             .replace("20261231", "20261207")
             .replace("RRULE:FREQ=MONTHLY", &format!("RRULE:{rule}"));
@@ -1031,7 +1041,7 @@ fn every_kind_completes_with_its_metadata() {
 
 // ---- Session C: Twydo's completion of each `b` twin against the phone's of its `a` twin ----
 
-const C: &str = "plan7-twydo-list2";
+const C: &str = "complete/recurrence-profiles";
 
 /// A twin pair seeded by Twydo in `00-seed`: the phone completed `a` (`01-phone-complete`),
 /// leaving the history copy `a_copy` (none when the series ended).
@@ -1246,8 +1256,8 @@ fn check_twin_step(
 fn check_twin(name: &str) {
     let t = twin(name);
     // The twins were seeded alike: same lines but for the mapped ones.
-    let a = parse(&fixture(C, "00-seed", t.a)).unwrap();
-    let input = fixture(C, "00-seed", t.b);
+    let a = parse(&fixture(C, "seed/list1", t.a)).unwrap();
+    let input = fixture(C, "seed/list1", t.b);
     let b = parse(&input).unwrap();
     let created = todo(&b).prop("CREATED").unwrap().value.clone();
     assert_eq!(
@@ -1255,7 +1265,7 @@ fn check_twin(name: &str) {
         twin_lines(&b, t, &created),
         "{name}: seeds"
     );
-    check_twin_step(t, &input, "01-phone-complete", t.a_copy, t.live_due);
+    check_twin_step(t, &input, "phone-complete/list1", t.a_copy, t.live_due);
 }
 
 #[test]
@@ -1336,9 +1346,15 @@ fn twin_due_off_its_rule_matches_the_phone() {
 #[test]
 fn twin_monthly_on_the_31st_matches_the_phone_twice() {
     let t = twin("M31");
-    let input = fixture(C, "00-seed", t.b);
-    let once = check_twin_step(t, &input, "01-phone-complete", t.a_copy, "20270228");
-    check_twin_step(t, &once, "04-phone-m31-again", Some(M31A_COPY2), "20270328");
+    let input = fixture(C, "seed/list1", t.b);
+    let once = check_twin_step(t, &input, "phone-complete/list1", t.a_copy, "20270228");
+    check_twin_step(
+        t,
+        &once,
+        "phone-m31-again/list1",
+        Some(M31A_COPY2),
+        "20270328",
+    );
 }
 
 /// 2Do's own code for "last" in the Nth-weekday class is `RecurrenceValue` 6 (the phone
@@ -1349,7 +1365,7 @@ fn twin_monthly_on_the_31st_matches_the_phone_twice() {
 #[test]
 fn last_weekday_with_the_phones_code_completes() {
     let t = twin("LF");
-    let cal = parse(&fixture(C, "01-phone-complete", t.a)).unwrap();
+    let cal = parse(&fixture(C, "phone-complete/list1", t.a)).unwrap();
     let m = MetaJson::parse(&todo(&cal).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(m.get_i64("RecurrenceValue"), Some(6));
     let (live, _) = advance(&cal, now(), "0123456789abcdef0123456789abcdef");
@@ -1368,7 +1384,7 @@ fn last_weekday_with_the_phones_code_completes() {
 #[test]
 fn until_must_match_the_json_end_date() {
     let t = twin("UN");
-    let seed = parse(&fixture(C, "00-seed", t.b)).unwrap();
+    let seed = parse(&fixture(C, "seed/list1", t.b)).unwrap();
     let copy = "0123456789abcdef0123456789abcdef";
     // Another time on the same UTC day is the same end.
     let mut same_day = seed.clone();
@@ -1545,47 +1561,47 @@ fn edited_from_completion_tasks_advance_and_copy_history_like_phone() {
     use std::collections::BTreeMap;
     use twydo_core::edit::{Change, apply_changes};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-rfra");
+        .join("../../fixtures/set-due/from-completion");
     for (case, from, to, clear_start, expected_due) in [
         (
             "interval-p",
-            "210-phone-first-actions",
-            "280-phone-start-and-completions",
+            "phone-first-actions/list1",
+            "phone-start-and-completions/list1",
             false,
             "20270104",
         ),
         (
             "offset-p",
-            "210-phone-first-actions",
-            "280-phone-start-and-completions",
+            "phone-first-actions/list1",
+            "phone-start-and-completions/list1",
             false,
             "20261204",
         ),
         (
             "fields-p",
-            "290-phone-start-changed",
-            "300-phone-fields-completed",
+            "phone-start-changed/list1",
+            "phone-fields-completed/list1",
             true,
             "20261204",
         ),
         (
             "interval-t",
-            "330-twydo-weekly-and-removal",
-            "340-phone-weekly-removal-and-completions",
+            "twydo-weekly-and-removal/list1",
+            "phone-weekly-removal-and-completions/list1",
             false,
             "20270104",
         ),
         (
             "offset-t",
-            "330-twydo-weekly-and-removal",
-            "340-phone-weekly-removal-and-completions",
+            "twydo-weekly-and-removal/list1",
+            "phone-weekly-removal-and-completions/list1",
             false,
             "20261204",
         ),
     ] {
         let uid = format!("twydo-p8-rfra-{case}");
-        let mut input = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
-        let want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
+        let mut input = parse(&fixture("set-due/from-completion", from, &uid)).unwrap();
+        let want = parse(&fixture("set-due/from-completion", to, &uid)).unwrap();
         let history = std::fs::read_dir(root.join(to))
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -1627,10 +1643,20 @@ fn edited_from_completion_live_and_history_match_phone_after_followup_note_expor
     use std::collections::BTreeMap;
     use twydo_core::edit::{Change, apply_changes};
     let uid = "twydo-p8-rfra-fields-t";
-    let before = parse(&fixture("plan8-rfra", "350-twydo-weekly-due-anchor", uid)).unwrap();
-    let want = parse(&fixture("plan8-rfra", "363-phone-fields-live-note", uid)).unwrap();
+    let before = parse(&fixture(
+        "set-due/from-completion",
+        "twydo-weekly-due-anchor/list1",
+        uid,
+    ))
+    .unwrap();
+    let want = parse(&fixture(
+        "set-due/from-completion",
+        "phone-fields-live-note/list1",
+        uid,
+    ))
+    .unwrap();
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan8-rfra/363-phone-fields-live-note");
+        .join("../../fixtures/set-due/from-completion/phone-fields-live-note/list1");
     let history = std::fs::read_dir(dir)
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -1674,16 +1700,16 @@ fn edited_from_completion_live_and_history_match_phone_after_followup_note_expor
 fn converted_checklist_history_gets_new_parent_identity_while_live_keeps_its_own() {
     use common::recurrence::same;
     use std::collections::BTreeMap;
-    const CHECKLIST_B: &str = "plan8-checklist-b";
+    const CHECKLIST_B: &str = "complete/checklist-reset";
     const CHECKLIST_B_UID: &str = "twydo-p8-c29-b";
     const COPY: &str = "c73764e2f37140829c3f36d495afbc80";
     let input = parse(&fixture(
         CHECKLIST_B,
-        "011d-phone-delete-items",
+        "phone-delete-items/list1",
         CHECKLIST_B_UID,
     ))
     .unwrap();
-    let want = parse(&fixture(CHECKLIST_B, "012-phone-family-complete", COPY)).unwrap();
+    let want = parse(&fixture(CHECKLIST_B, "phone-family-complete/list1", COPY)).unwrap();
     let at = common::completed(&want);
     let (live, copy) = complete_recurring(&input, at, at.date_naive(), COPY).unwrap();
     let copy = copy.unwrap();
@@ -1695,7 +1721,7 @@ fn converted_checklist_history_gets_new_parent_identity_while_live_keeps_its_own
     );
     let after = parse(&fixture(
         CHECKLIST_B,
-        "012-phone-family-complete",
+        "phone-family-complete/list1",
         CHECKLIST_B_UID,
     ))
     .unwrap();
@@ -1716,7 +1742,7 @@ fn history_task_capability_preserves_schedule_and_series() {
         "DTSTART:20261110T090000\r\nDUE:20261110T100000\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;RELATED=END:-PT15M\r\nDESCRIPTION:Synthetic\r\nEND:VALARM\r\n",
         "DTSTART:20261110T090000Z\r\nDUE:20261110T100000Z\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER;VALUE=DATE-TIME:20261110T090000Z\r\nDESCRIPTION:Synthetic\r\nEND:VALARM\r\n",
     ] {
-        let input = fixture(L1, "03-complete", E_COPY);
+        let input = fixture(L1, "complete/list1", E_COPY);
         let mut cal = parse(&input).unwrap();
         let component = cal
             .root

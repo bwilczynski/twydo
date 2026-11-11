@@ -2,13 +2,13 @@
 use super::Env;
 use twydo_core::{compat::Matrix, config::WriteMode};
 
-pub const SEED: &str = "001-seeded";
-pub const FIRST: &str = "010-phone-delete-q";
-pub const CLOSED: &str = "020-phone-complete-project";
-pub const EMPTY: &str = "030-phone-delete-last-items";
+pub const SEED: &str = "seeded/list1";
+pub const FIRST: &str = "phone-delete-q/list1";
+pub const CLOSED: &str = "phone-complete-project/list1";
+pub const EMPTY: &str = "phone-delete-last-items/list1";
 
 pub fn env(step: &str) -> Env {
-    Env::new(WriteMode::Verified, &format!("issue27-items/{step}"))
+    Env::new(WriteMode::Verified, &format!("delete/family-items/{step}"))
 }
 
 /// Deliberately has no task/family operation or recurrence-rule rows: removal

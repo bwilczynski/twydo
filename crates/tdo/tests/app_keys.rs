@@ -2324,7 +2324,7 @@ fn reopening_detached_child_keeps_selection_under_a_collapsed_parent() {
 
 fn structure_app() -> App {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan6-list1/04-reopen-child");
+        .join("../../fixtures/complete/family-lifecycle/reopen-child/list1");
     let mut report = twydo_core::vdir::LoadReport::default();
     // Use a synthetic collection while retaining the existing synthetic family captures.
     for p in std::fs::read_dir(root).unwrap().map(|e| e.unwrap().path()) {
@@ -2552,7 +2552,7 @@ fn structure_confirmation_is_invalidated_by_reload() {
 /// compatibility, written bytes, history/reset behavior and undo of these same families.
 fn captured_report(scenario: &str, step: &str) -> twydo_core::vdir::LoadReport {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(scenario)
         .join(step);
     let mut r = twydo_core::vdir::LoadReport {
@@ -2577,7 +2577,7 @@ fn captured_report(scenario: &str, step: &str) -> twydo_core::vdir::LoadReport {
 
 #[test]
 fn done_history_selection_requests_reopen_of_the_selected_uid() {
-    let r = captured_report("plan6-list1", "05-complete-parent");
+    let r = captured_report("complete/family-lifecycle", "complete-parent/list1");
     let uid = "14b5a37a52224e8c959b5002e2275fc9";
     let mut a = App::new(snapshot_of(r), now());
     a.handle_key(key('4'));
@@ -2595,14 +2595,14 @@ fn done_history_selection_requests_reopen_of_the_selected_uid() {
 #[test]
 fn delete_targets_the_selected_item_and_reload_keeps_its_empty_parent() {
     for (step, prefix, child, done) in [
-        ("001-seeded", "c", "q", false),
-        ("001-seeded", "p", "q", false),
-        ("020-phone-complete-project", "c", "x", false),
-        ("020-phone-complete-project", "p", "x", true),
-        ("020-phone-complete-project", "m", "q", false),
-        ("020-phone-complete-project", "w", "q", false),
+        ("seeded/list1", "c", "q", false),
+        ("seeded/list1", "p", "q", false),
+        ("phone-complete-project/list1", "c", "x", false),
+        ("phone-complete-project/list1", "p", "x", true),
+        ("phone-complete-project/list1", "m", "q", false),
+        ("phone-complete-project/list1", "w", "q", false),
     ] {
-        let mut r = captured_report("issue27-items", step);
+        let mut r = captured_report("delete/family-items", step);
         let parent = format!("twydo-i27-{prefix}-a");
         let uid = format!("{parent}-{child}");
         let at = NY.with_ymd_and_hms(2026, 11, 7, 11, 0, 0).unwrap();

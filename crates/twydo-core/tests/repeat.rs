@@ -257,7 +257,7 @@ fn until_date_time_and_anchorless_defaults() {
     assert_eq!(describe(&m, None, false), "Monthly");
 }
 
-/// What the iPhone's 2Do wrote for each repeat kind (fixtures `plan7-list1`), read back as
+/// What the iPhone's 2Do wrote for each repeat kind (fixtures `set-repeat/phone-encodings`), read back as
 /// 2Do labels it (01-features §6). Monthly and yearly labels name the day (deliberate: see
 /// `describe_and_classify`), so "Monthly" reads "Monthly on the 31st".
 #[test]
@@ -291,9 +291,9 @@ fn plan7_captures_read_as_2do_shows_them() {
         ),
     ];
     let phone = [
-        ("plan7-list1/01-phone-repeat", rows),
+        ("set-repeat/phone-encodings/phone-repeat/list1", rows),
         (
-            "plan7-list1/02-phone-repeat-no-due",
+            "set-repeat/phone-encodings/phone-repeat-no-due/list1",
             &[("R17", "Weekly", "weeks")][..],
         ),
     ];
@@ -321,7 +321,10 @@ fn plan7_captures_read_as_2do_shows_them() {
         }
     }
     // The picker offered no repeat for these (R09, R11, R12): they stay plain tasks.
-    let env = common::Env::new(WriteMode::Test, "plan7-list1/01-phone-repeat");
+    let env = common::Env::new(
+        WriteMode::Test,
+        "set-repeat/phone-encodings/phone-repeat/list1",
+    );
     let snap = env.snap();
     for s in ["R09", "R11", "R12"] {
         let t = snap.tasks.iter().find(|t| t.summary == s).unwrap();

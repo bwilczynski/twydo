@@ -1,5 +1,0 @@
-scenario = "plan8-tui-a"
-step = "010-first-phone-actions"
-device = "iphone"
-action = "User reported synced: FCa monthly; RDa daily; RYa yearly; U1a and U2a complete once; b twins untouched"
-captured_at = "2026-11-04T13:23:51Z"

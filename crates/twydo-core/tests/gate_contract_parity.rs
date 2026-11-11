@@ -16,12 +16,12 @@ use twydo_core::{
 fn current_contract_decisions_are_preserved_in_both_modes() {
     let mut results = String::new();
     for state in [
-        "plan4-list1/02-edit",
-        "plan6-list1/04-reopen-child",
-        "plan7-twydo-list2/00-seed",
-        "plan8-tui-a/030-end-series-and-items",
-        "plan8-tui-a/040-reopen-ended-and-complete-parent",
-        "plan8-rfra/202-seeded-after-upload",
+        "complete/standalone-lifecycle/edit/list1",
+        "complete/family-lifecycle/reopen-child/list1",
+        "complete/recurrence-profiles/seed/list1",
+        "complete/checklist-and-until/end-series-and-items/list1",
+        "complete/checklist-and-until/reopen-ended-and-complete-parent/list1",
+        "set-due/from-completion/seeded-after-upload/list1",
     ] {
         let env = common::Env::new(WriteMode::Verified, state);
         let report = twydo_core::vdir::load(&env.vdir).unwrap();

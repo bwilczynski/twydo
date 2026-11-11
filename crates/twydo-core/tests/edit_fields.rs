@@ -23,9 +23,9 @@ const YEARLY: &str = "c3e7283649dd413abf3f73745121bce5";
 fn text_capability_preserves_full_resources_including_alarms_and_metadata() {
     use common::text_edit as text;
     for fixture in [
-        "plan8-checklist-b/031-phone-reset-item-edits",
-        "plan6-list1/05-complete-parent",
-        "plan8-rfra/202-seeded-after-upload",
+        "complete/checklist-reset/phone-reset-item-edits/list1",
+        "complete/family-lifecycle/complete-parent/list1",
+        "set-due/from-completion/seeded-after-upload/list1",
     ] {
         let env = common::Env::new(twydo_core::config::WriteMode::Verified, fixture);
         for before in env.files().values() {
@@ -75,7 +75,7 @@ fn text_capability_preserves_full_resources_including_alarms_and_metadata() {
 
 fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1")
+        .join("../../fixtures")
         .join(scenario)
         .join(step)
         .join(format!("{uid}.ics"));
@@ -208,14 +208,14 @@ fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
-const L1: &str = "plan4-list1";
+const L1: &str = "complete/standalone-lifecycle";
 
 #[test]
 fn summary_edit_matches_2do() {
     check(
         L1,
-        "01-create",
-        "02-edit",
+        "create/list1",
+        "edit/list1",
         A,
         &[Change::Summary("A2".into())],
         &["SUMMARY"],
@@ -226,16 +226,16 @@ fn summary_edit_matches_2do() {
 fn notes_edit_and_clear_match_2do() {
     check(
         L1,
-        "01-create",
-        "02-edit",
+        "create/list1",
+        "edit/list1",
         B,
         &[Change::Description(Some("x, y\nz".into()))],
         &["DESCRIPTION"],
     );
     check(
         L1,
-        "02-edit",
-        "03-complete",
+        "edit/list1",
+        "complete/list1",
         B,
         &[Change::Description(None)],
         &["DESCRIPTION"],
@@ -246,16 +246,16 @@ fn notes_edit_and_clear_match_2do() {
 fn due_edit_and_remove_match_2do() {
     check(
         L1,
-        "03-complete",
-        "04-reopen",
+        "complete/list1",
+        "reopen/list1",
         B,
         &[Change::Due(Some(Due::Date(date(2026, 12, 5))))],
         &["DUE", "DTSTART"],
     );
     check(
         L1,
-        "04-reopen",
-        "05-move",
+        "reopen/list1",
+        "move/list1",
         B,
         &[Change::Due(None)],
         &["DUE", "DTSTART"],
@@ -267,16 +267,16 @@ fn timed_due_edit_matches_2do() {
     let t = date(2026, 12, 3).and_hms_opt(18, 45, 0).unwrap();
     check(
         L1,
-        "01-create",
-        "02-edit",
+        "create/list1",
+        "edit/list1",
         C,
         &[Change::Due(Some(Due::Time(t)))],
         &["DUE", "DTSTART", "X-2DOAPP-METADATA"],
     );
     check(
         L1,
-        "02-edit",
-        "03-complete",
+        "edit/list1",
+        "complete/list1",
         C,
         &[Change::Due(Some(Due::Date(date(2026, 12, 3))))],
         &[
@@ -299,16 +299,16 @@ fn timed_due_edit_matches_2do() {
 fn start_edit_and_remove_match_2do() {
     check(
         L1,
-        "01-create",
-        "02-edit",
+        "create/list1",
+        "edit/list1",
         D,
         &[Change::Start(Some(date(2026, 12, 2)))],
         &["X-2DOAPP-METADATA"],
     );
     check(
         L1,
-        "02-edit",
-        "03-complete",
+        "edit/list1",
+        "complete/list1",
         D,
         &[Change::Start(None)],
         &["X-2DOAPP-METADATA"],
@@ -317,11 +317,14 @@ fn start_edit_and_remove_match_2do() {
 
 #[test]
 fn repeat_interval_edit_matches_2do() {
-    for (scenario, uid) in [("rule-months-day-1-28", MONTHLY), ("rule-years", YEARLY)] {
+    for (scenario, uid) in [
+        ("complete/monthly-calendar", MONTHLY),
+        ("complete/yearly-calendar", YEARLY),
+    ] {
         check(
             scenario,
-            "02-complete",
-            "03-edit",
+            "complete/list1",
+            "edit/list1",
             uid,
             &[Change::RepeatInterval(2)],
             &["RRULE", "X-2DOAPP-METADATA"],
@@ -341,7 +344,7 @@ fn now() -> DateTime<Utc> {
 
 #[test]
 fn midnight_due_time_writes_duetime_0() {
-    let mut cal = parse(&fixture(L1, "01-create", A)).unwrap();
+    let mut cal = parse(&fixture(L1, "create/list1", A)).unwrap();
     let t = date(2026, 12, 3).and_hms_opt(0, 0, 0).unwrap();
     apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
     let cal = parse(&serialize(&cal)).unwrap();
@@ -364,7 +367,7 @@ fn midnight_due_time_writes_duetime_0() {
 
 #[test]
 fn empty_title_rejected() {
-    let input = fixture(L1, "01-create", A);
+    let input = fixture(L1, "create/list1", A);
     let mut cal = parse(&input).unwrap();
     let before = cal.clone();
     let err = apply_changes(
@@ -489,7 +492,7 @@ fn start_on_task_with_own_dtstart_and_no_meta_is_unsupported() {
 
 #[test]
 fn due_time_seconds_are_zeroed() {
-    let mut cal = parse(&fixture(L1, "01-create", C)).unwrap();
+    let mut cal = parse(&fixture(L1, "create/list1", C)).unwrap();
     let t = date(2026, 12, 3).and_hms_opt(18, 45, 30).unwrap();
     apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
     let todo = todo(&cal);
@@ -534,8 +537,8 @@ fn date_only_to_timed_adds_auto_alarm_like_2do() {
     let t = date(2026, 12, 3).and_hms_opt(18, 45, 0).unwrap();
     check(
         L1,
-        "03-complete",
-        "02-edit",
+        "complete/list1",
+        "edit/list1",
         C,
         &[Change::Due(Some(Due::Time(t)))],
         &[
@@ -557,7 +560,7 @@ fn date_only_to_timed_adds_auto_alarm_like_2do() {
 /// Timed -> timed keeps the one existing auto alarm as is (2Do did, `01-create` -> `02-edit`).
 #[test]
 fn timed_to_timed_keeps_one_auto_alarm() {
-    let input = fixture(L1, "01-create", C);
+    let input = fixture(L1, "create/list1", C);
     let mut cal = parse(&input).unwrap();
     let t = date(2026, 12, 4).and_hms_opt(9, 15, 0).unwrap();
     apply_changes(&mut cal, &[Change::Due(Some(Due::Time(t)))], now()).unwrap();
@@ -569,7 +572,7 @@ fn timed_to_timed_keeps_one_auto_alarm() {
 /// Ruling R14: a title edit leaves an existing auto alarm's DESCRIPTION unchanged.
 #[test]
 fn retitle_keeps_auto_alarm_description() {
-    let mut cal = parse(&fixture(L1, "01-create", C)).unwrap();
+    let mut cal = parse(&fixture(L1, "create/list1", C)).unwrap();
     apply_changes(&mut cal, &[Change::Summary("C2".into())], now()).unwrap();
     assert_eq!(todo(&cal).prop("SUMMARY").unwrap().value, "C2");
     assert_eq!(auto_alarms(todo(&cal)), vec![auto_alarm("C")]);
@@ -586,7 +589,7 @@ fn timed_due_without_json_meta_adds_no_alarm() {
 
 // ---- Repeat rules (Plan 7 Task 4), against the iPhone's repeat picker ----
 
-const P7: &str = "plan7-list1";
+const P7: &str = "set-repeat/phone-encodings";
 
 fn percent_decode(s: &str) -> String {
     let b = s.as_bytes();
@@ -672,8 +675,8 @@ fn spec(input: &str) -> twydo_core::repeatinput::RepeatSpec {
 /// Apply `Change::Repeat(spec(input))` to the plain `00-seed` task `uid` and compare with the
 /// phone's `01-phone-repeat` file; `RRULE` must sit right after `DUE`.
 fn check_repeat(uid: &str, input: &str) {
-    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
-    let want = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "seed/list1", uid)).unwrap();
+    let want = parse(&fixture(P7, "phone-repeat/list1", uid)).unwrap();
     apply_changes(&mut cal, &[Change::Repeat(Some(spec(input)))], now()).unwrap();
     let got = parse(&serialize(&cal)).unwrap();
     assert_eq!(repeat_lines(&got), repeat_lines(&want), "{input}");
@@ -744,8 +747,8 @@ fn set_repeat_matches_phone_edit_end_on_date() {
 fn repeat_without_due_matches_phone() {
     // R17: the caller gives a due-less task today's date first (2Do's repeat picker does).
     let uid = "cfd0a124f69a4f55a8180158fb118d6d";
-    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
-    let want = parse(&fixture(P7, "02-phone-repeat-no-due", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "seed/list1", uid)).unwrap();
+    let want = parse(&fixture(P7, "phone-repeat-no-due/list1", uid)).unwrap();
     let changes = [
         Change::Due(Some(Due::Date(date(2026, 11, 3)))),
         Change::Repeat(Some(spec("weekly"))),
@@ -755,7 +758,7 @@ fn repeat_without_due_matches_phone() {
     assert_eq!(repeat_lines(&got), repeat_lines(&want));
 
     // Without a due date the repeat alone is refused, and nothing changes.
-    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "seed/list1", uid)).unwrap();
     let before = cal.clone();
     let err = apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now());
     assert!(matches!(err, Err(EditError::Unsupported(_))));
@@ -767,7 +770,7 @@ fn remove_repeat_matches_phone() {
     // R09 (the picker set back to none) shows what the phone leaves: no RRULE, `RecurrenceType`
     // 0, and `RecurrenceValue`, `RecurrenceFrom` and `RUID` as the repeat had them.
     let uid = "a8d833aa427849239c35cb2d8cfef721"; // R01, daily
-    let mut cal = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "phone-repeat/list1", uid)).unwrap();
     let before = cal.clone();
     apply_changes(&mut cal, &[Change::Repeat(None)], now()).unwrap();
     assert!(todo(&cal).prop("RRULE").is_none());
@@ -788,7 +791,7 @@ fn remove_repeat_matches_phone() {
     assert_eq!(rest(&cal), rest(&before));
 
     // Removing a repeat that is not there changes nothing but the stamps.
-    let seed = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let seed = parse(&fixture(P7, "seed/list1", uid)).unwrap();
     let mut plain = seed.clone();
     apply_changes(&mut plain, &[Change::Repeat(None)], now()).unwrap();
     assert_eq!(rest(&plain), rest(&seed));
@@ -851,13 +854,13 @@ fn set_repeat_keeps_a_foreign_ruid_and_fills_an_empty_one() {
             .to_string()
     };
     // Already repeating (phone-written series id): changing the rule keeps it.
-    let mut cal = parse(&fixture(P7, "01-phone-repeat", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "phone-repeat/list1", uid)).unwrap();
     let series = ruid(&cal);
     assert!(!series.is_empty() && series != uid);
     apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now()).unwrap();
     assert_eq!(ruid(&cal), series);
     // A plain task (empty RUID) gets its own UID.
-    let mut cal = parse(&fixture(P7, "00-seed", uid)).unwrap();
+    let mut cal = parse(&fixture(P7, "seed/list1", uid)).unwrap();
     apply_changes(&mut cal, &[Change::Repeat(Some(spec("weekly")))], now()).unwrap();
     assert_eq!(ruid(&cal), uid);
 }
@@ -914,8 +917,8 @@ fn check_kind(from: &str, to: &str, uid: &str, kind: twydo_core::model::TaskKind
 #[test]
 fn task_to_checklist() {
     check_kind(
-        "02-phone-repeat-no-due",
-        "03-phone-convert",
+        "phone-repeat-no-due/list1",
+        "phone-convert/list1",
         K1,
         TaskKind::Checklist,
     );
@@ -924,8 +927,8 @@ fn task_to_checklist() {
 #[test]
 fn task_to_project() {
     check_kind(
-        "02-phone-repeat-no-due",
-        "03-phone-convert",
+        "phone-repeat-no-due/list1",
+        "phone-convert/list1",
         K2,
         TaskKind::Project,
     );
@@ -935,8 +938,8 @@ fn task_to_project() {
 fn checklist_to_project() {
     check(
         P7,
-        "02-phone-repeat-no-due",
-        "03-phone-convert",
+        "phone-repeat-no-due/list1",
+        "phone-convert/list1",
         CHECKLIST_C,
         &[Change::Kind(TaskKind::Project)],
         &["X-2DOAPP-METADATA"],
@@ -946,8 +949,8 @@ fn checklist_to_project() {
 #[test]
 fn empty_parent_to_task() {
     check_kind(
-        "03-phone-convert",
-        "04-phone-convert-empty",
+        "phone-convert/list1",
+        "phone-convert-empty/list1",
         K1,
         TaskKind::Task,
     );
@@ -957,7 +960,7 @@ fn empty_parent_to_task() {
 fn empty_project_to_checklist() {
     // No capture: the mirror of checklist -> project. Only `TaskType` changes, `uid` and the
     // parent key order stay.
-    let mut cal = parse(&fixture(P7, "03-phone-convert", K2)).unwrap();
+    let mut cal = parse(&fixture(P7, "phone-convert/list1", K2)).unwrap();
     let before = kind_pairs(&cal);
     apply_changes(&mut cal, &[Change::Kind(TaskKind::Checklist)], now()).unwrap();
     let after = kind_pairs(&cal);
@@ -974,7 +977,7 @@ fn empty_project_to_checklist() {
 
 #[test]
 fn same_kind_changes_only_the_stamps() {
-    let input = fixture(P7, "03-phone-convert", K1);
+    let input = fixture(P7, "phone-convert/list1", K1);
     let mut cal = parse(&input).unwrap();
     let before = cal.clone();
     apply_changes(&mut cal, &[Change::Kind(TaskKind::Checklist)], now()).unwrap();
@@ -989,7 +992,7 @@ fn same_kind_changes_only_the_stamps() {
 
 #[test]
 fn tokens_metadata_refused() {
-    let mut cal = parse(&fixture(P7, "02-phone-repeat-no-due", K1)).unwrap();
+    let mut cal = parse(&fixture(P7, "phone-repeat-no-due/list1", K1)).unwrap();
     let meta = cal.root.children_named_mut("VTODO").next().unwrap();
     meta.prop_mut("X-2DOAPP-METADATA")
         .unwrap()
@@ -1006,7 +1009,7 @@ const READ_ONLY: &str = "this task's 2Do metadata format is read-only";
 /// rule would go stale beside them, so it is refused and nothing changes.
 #[test]
 fn repeat_refused_without_json_metadata() {
-    let base = parse(&fixture(P7, "02-phone-repeat-no-due", K1)).unwrap();
+    let base = parse(&fixture(P7, "phone-repeat-no-due/list1", K1)).unwrap();
     let mut tokens = base.clone();
     let todo = tokens.root.children_named_mut("VTODO").next().unwrap();
     todo.prop_mut("X-2DOAPP-METADATA")
@@ -1037,8 +1040,8 @@ fn repeat_refused_without_json_metadata() {
 #[test]
 fn interval_of_an_nth_weekday_repeat_is_refused() {
     let input = fixture(
-        "plan7-twydo-list2",
-        "00-seed",
+        "complete/recurrence-profiles",
+        "seed/list1",
         "200243c3e116428e8eb384093bd6d3a4",
     );
     for n in [1, 2] {
@@ -1061,8 +1064,8 @@ fn interval_of_an_nth_weekday_repeat_is_refused() {
 #[test]
 fn interval_of_a_weekday_set_repeat_is_refused() {
     let input = fixture(
-        "plan7-twydo-list2",
-        "00-seed",
+        "complete/recurrence-profiles",
+        "seed/list1",
         "9f4b28de4b9d4bc895137fa09bb684e3",
     );
     for n in [2, 3] {
@@ -1161,8 +1164,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn twydo_uploads_and_phone_followups_match_the_writers() {
-        const LOCAL: &str = "070-twydo-first-transitions";
-        const PHONE: &str = "080-phone-check-twydo-first";
+        const LOCAL: &str = "twydo-first-transitions/list1";
+        const PHONE: &str = "phone-check-twydo-first/list1";
         let seeds = step_files(SEED);
         let uid = |title: &str| {
             seeds
@@ -1186,8 +1189,8 @@ mod recurrence_phone_captures {
                 1,
             ),
             (
-                "111-twydo-ended-originals-reopened",
-                "120-phone-second-round-followup",
+                "twydo-ended-originals-reopened/list1",
+                "phone-second-round-followup/list1",
                 [("FCb", "note-y"), ("RDb", "daily"), ("RYb", "yearly")],
                 0,
             ),
@@ -1260,8 +1263,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn phone_accepts_repeat_removals_and_history_reopen_with_explicit_inactive_metadata_cleanup() {
-        const BEFORE: &str = "142-twydo-repeat-removal-and-history-reopen";
-        const AFTER: &str = "144-phone-removal-and-history-followup";
+        const BEFORE: &str = "followup-twydo-repeat-removal-and-history-reopen/list1";
+        const AFTER: &str = "phone-removal-and-history-followup/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = |title: &str, due: &str| {
@@ -1348,8 +1351,8 @@ mod recurrence_phone_captures {
 
     #[test]
     fn phone_note_after_checklist_repeat_removal_preserves_all_recurrence_metadata() {
-        const BEFORE: &str = "151-twydo-checklist-repeat-removed";
-        const AFTER: &str = "153-phone-checklist-removal-followup";
+        const BEFORE: &str = "twydo-checklist-repeat-removed/list1";
+        const AFTER: &str = "phone-checklist-removal-followup/list1";
         let before = step_files(BEFORE);
         let want = step_files(AFTER);
         let uid = before
@@ -1442,52 +1445,52 @@ mod recurrence_phone_captures {
 fn existing_from_completion_field_edits_match_phone() {
     let steps: &[(&str, &str, Change)] = &[
         (
-            "202-seeded-after-upload",
-            "210-phone-first-actions",
+            "seeded-after-upload/list1",
+            "phone-first-actions/list1",
             Change::Summary("RFRA fields p edited".into()),
         ),
         (
-            "210-phone-first-actions",
-            "220-phone-second-actions",
+            "phone-first-actions/list1",
+            "phone-second-actions/list1",
             Change::Description(Some("RFRA notes".into())),
         ),
         (
-            "220-phone-second-actions",
-            "230-phone-third-actions",
+            "phone-second-actions/list1",
+            "phone-third-actions/list1",
             Change::Description(None),
         ),
         (
-            "230-phone-third-actions",
-            "240-phone-fourth-actions",
+            "phone-third-actions/list1",
+            "phone-fourth-actions/list1",
             Change::Due(Some(Due::Date(date(2026, 12, 9)))),
         ),
         (
-            "240-phone-fourth-actions",
-            "250-phone-time-added",
+            "phone-fourth-actions/list1",
+            "phone-time-added/list1",
             Change::Due(Some(Due::Time(
                 date(2026, 12, 9).and_hms_opt(9, 0, 0).unwrap(),
             ))),
         ),
         (
-            "250-phone-time-added",
-            "260-phone-time-changed",
+            "phone-time-added/list1",
+            "phone-time-changed/list1",
             Change::Due(Some(Due::Time(
                 date(2026, 12, 9).and_hms_opt(11, 0, 0).unwrap(),
             ))),
         ),
         (
-            "260-phone-time-changed",
-            "270-phone-time-removed",
+            "phone-time-changed/list1",
+            "phone-time-removed/list1",
             Change::Due(Some(Due::Date(date(2026, 12, 9)))),
         ),
         (
-            "270-phone-time-removed",
-            "280-phone-start-and-completions",
+            "phone-time-removed/list1",
+            "phone-start-and-completions/list1",
             Change::Start(Some(date(2026, 12, 7))),
         ),
         (
-            "280-phone-start-and-completions",
-            "290-phone-start-changed",
+            "phone-start-and-completions/list1",
+            "phone-start-changed/list1",
             Change::Start(Some(date(2026, 12, 8))),
         ),
     ];
@@ -1498,8 +1501,8 @@ fn existing_from_completion_field_edits_match_phone() {
 
 fn check_after_done_edit(from: &str, to: &str, case: &str, change: Change) {
     let uid = format!("twydo-p8-rfra-{case}-p");
-    let mut got = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
-    let mut want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
+    let mut got = parse(&fixture("set-due/from-completion", from, &uid)).unwrap();
+    let mut want = parse(&fixture("set-due/from-completion", to, &uid)).unwrap();
     let before_meta =
         MetaJson::parse(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     apply_changes(&mut got, &[change], dtstamp(&want)).unwrap();
@@ -1535,8 +1538,8 @@ fn existing_from_completion_interval_edit_matches_phone() {
         Change::Repeat(Some(spec("every 2 months after done"))),
     ] {
         check_after_done_edit(
-            "202-seeded-after-upload",
-            "210-phone-first-actions",
+            "seeded-after-upload/list1",
+            "phone-first-actions/list1",
             "interval",
             change,
         );
@@ -1547,18 +1550,18 @@ fn existing_from_completion_interval_edit_matches_phone() {
 fn completion_anchor_and_class_changes_match_phone() {
     for (from, to, rule) in [
         (
-            "202-seeded-after-upload",
-            "210-phone-first-actions",
+            "seeded-after-upload/list1",
+            "phone-first-actions/list1",
             "monthly after done",
         ),
         (
-            "210-phone-first-actions",
-            "220-phone-second-actions",
+            "phone-first-actions/list1",
+            "phone-second-actions/list1",
             "weekly after done",
         ),
         (
-            "220-phone-second-actions",
-            "230-phone-third-actions",
+            "phone-second-actions/list1",
+            "phone-third-actions/list1",
             "weekly",
         ),
     ] {
@@ -1569,8 +1572,8 @@ fn completion_anchor_and_class_changes_match_phone() {
 #[test]
 fn setting_completion_anchor_on_plain_task_matches_phone() {
     check_after_done_edit(
-        "202-seeded-after-upload",
-        "210-phone-first-actions",
+        "seeded-after-upload/list1",
+        "phone-first-actions/list1",
         "direct",
         Change::Repeat(Some(spec("monthly after done"))),
     );
@@ -1584,18 +1587,18 @@ fn removing_completion_related_repeat_preserves_series_and_only_differs_in_inact
     for (case, from, to) in [
         (
             "direct",
-            "210-phone-first-actions",
-            "220-phone-second-actions",
+            "phone-first-actions/list1",
+            "phone-second-actions/list1",
         ),
         (
             "anchor",
-            "230-phone-third-actions",
-            "240-phone-fourth-actions",
+            "phone-third-actions/list1",
+            "phone-fourth-actions/list1",
         ),
     ] {
         let uid = format!("twydo-p8-rfra-{case}-p");
-        let mut got = parse(&fixture("plan8-rfra", from, &uid)).unwrap();
-        let mut want = parse(&fixture("plan8-rfra", to, &uid)).unwrap();
+        let mut got = parse(&fixture("set-due/from-completion", from, &uid)).unwrap();
+        let mut want = parse(&fixture("set-due/from-completion", to, &uid)).unwrap();
         let before = MetaJson::parse(&todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
         apply_changes(&mut got, &[Change::Repeat(None)], dtstamp(&want)).unwrap();
         let t = got.root.children_named_mut("VTODO").next().unwrap();
@@ -1632,8 +1635,18 @@ fn phone_note_followups_preserve_twydo_written_from_completion_tasks() {
     use std::collections::BTreeMap;
     for case in ["fields", "interval", "anchor", "direct", "offset"] {
         let uid = format!("twydo-p8-rfra-{case}-t");
-        let before = parse(&fixture("plan8-rfra", "310-twydo-edited-twins", &uid)).unwrap();
-        let want = parse(&fixture("plan8-rfra", "320-phone-note-followups", &uid)).unwrap();
+        let before = parse(&fixture(
+            "set-due/from-completion",
+            "twydo-edited-twins/list1",
+            &uid,
+        ))
+        .unwrap();
+        let want = parse(&fixture(
+            "set-due/from-completion",
+            "phone-note-followups/list1",
+            &uid,
+        ))
+        .unwrap();
         let mut got = before.clone();
         apply_changes(
             &mut got,
@@ -1652,10 +1665,15 @@ fn phone_accepts_weekly_completion_anchor_and_retained_inactive_codes_after_remo
     use std::collections::BTreeMap;
     for case in ["anchor", "direct"] {
         let uid = format!("twydo-p8-rfra-{case}-t");
-        let mut got = parse(&fixture("plan8-rfra", "330-twydo-weekly-and-removal", &uid)).unwrap();
+        let mut got = parse(&fixture(
+            "set-due/from-completion",
+            "twydo-weekly-and-removal/list1",
+            &uid,
+        ))
+        .unwrap();
         let want = parse(&fixture(
-            "plan8-rfra",
-            "340-phone-weekly-removal-and-completions",
+            "set-due/from-completion",
+            "phone-weekly-removal-and-completions/list1",
             &uid,
         ))
         .unwrap();
@@ -1683,8 +1701,18 @@ fn phone_accepts_switch_back_from_completion_to_weekly_due_anchor() {
     use common::recurrence::same;
     use std::collections::BTreeMap;
     let uid = "twydo-p8-rfra-anchor-t";
-    let mut got = parse(&fixture("plan8-rfra", "350-twydo-weekly-due-anchor", uid)).unwrap();
-    let want = parse(&fixture("plan8-rfra", "360-phone-weekly-due-anchor", uid)).unwrap();
+    let mut got = parse(&fixture(
+        "set-due/from-completion",
+        "twydo-weekly-due-anchor/list1",
+        uid,
+    ))
+    .unwrap();
+    let want = parse(&fixture(
+        "set-due/from-completion",
+        "phone-weekly-due-anchor/list1",
+        uid,
+    ))
+    .unwrap();
     apply_changes(
         &mut got,
         &[Change::Description(Some("RFRA return 3".into()))],
@@ -1703,14 +1731,14 @@ fn phone_accepts_final_due_anchored_repeat_removal_with_series_identity_preserve
     use std::collections::BTreeMap;
     let uid = "twydo-p8-rfra-anchor-t";
     let mut got = parse(&fixture(
-        "plan8-rfra",
-        "370-twydo-final-anchor-removal",
+        "set-due/from-completion",
+        "twydo-final-anchor-removal/list1",
         uid,
     ))
     .unwrap();
     let want = parse(&fixture(
-        "plan8-rfra",
-        "380-phone-final-anchor-followup",
+        "set-due/from-completion",
+        "phone-final-anchor-followup/list1",
         uid,
     ))
     .unwrap();
@@ -1734,8 +1762,13 @@ fn checklist_phone_return_notes_preserve_created_converted_families() {
     use common::recurrence::{CHECKLIST_B, same};
     use std::collections::BTreeMap;
     for uid in ["55180c631f304b44be543382c0b85b94", "twydo-p8-c29-d"] {
-        let mut got = parse(&fixture(CHECKLIST_B, "027-twydo-upload", uid)).unwrap();
-        let want = parse(&fixture(CHECKLIST_B, "028-phone-writer-note-followup", uid)).unwrap();
+        let mut got = parse(&fixture(CHECKLIST_B, "twydo-upload/list1", uid)).unwrap();
+        let want = parse(&fixture(
+            CHECKLIST_B,
+            "phone-writer-note-followup/list1",
+            uid,
+        ))
+        .unwrap();
         let before_meta =
             MetaJson::parse(&common::todo(&got).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
         let after_meta =
@@ -1776,35 +1809,35 @@ fn checklist_phone_return_notes_preserve_created_converted_families() {
 
 #[test]
 fn checklist_phone_edits_after_second_reset_preserve_family_links() {
-    const SCENARIO: &str = "plan8-checklist-b";
+    const SCENARIO: &str = "complete/checklist-reset";
     check(
         SCENARIO,
-        "030-phone-parent-note-return",
-        "031-phone-reset-item-edits",
+        "phone-parent-note-return/list1",
+        "phone-reset-item-edits/list1",
         "ae9638c7a7064361aaa5ae35762e7499",
         &[Change::Summary("x".into())],
         &["SUMMARY"],
     );
     check(
         SCENARIO,
-        "030-phone-parent-note-return",
-        "031-phone-reset-item-edits",
+        "phone-parent-note-return/list1",
+        "phone-reset-item-edits/list1",
         "86496b2daf5842d9bffddf99a875a528",
         &[Change::Summary("x".into())],
         &["SUMMARY"],
     );
     check(
         SCENARIO,
-        "029-phone-second-family-reset",
-        "030-phone-parent-note-return",
+        "phone-second-family-reset/list1",
+        "phone-parent-note-return/list1",
         "55180c631f304b44be543382c0b85b94",
         &[Change::Description(Some("x".into()))],
         &["DESCRIPTION"],
     );
     check(
         SCENARIO,
-        "029-phone-second-family-reset",
-        "030-phone-parent-note-return",
+        "phone-second-family-reset/list1",
+        "phone-parent-note-return/list1",
         "twydo-p8-c29-d",
         &[Change::Description(Some("x".into()))],
         &["DESCRIPTION"],
@@ -1819,8 +1852,13 @@ fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_ident
         "twydo-i27-m-b",
         "twydo-i27-w-b",
     ] {
-        let input = fixture("issue27-items", "038-twydo-upload", uid);
-        let phone = parse(&fixture("issue27-items", "040-phone-return-notes", uid)).unwrap();
+        let input = fixture("delete/family-items", "twydo-upload/list1", uid);
+        let phone = parse(&fixture(
+            "delete/family-items",
+            "phone-return-notes/list1",
+            uid,
+        ))
+        .unwrap();
         let before = parse(&input).unwrap();
         let mut edited = before.clone();
         apply_changes(
@@ -1851,7 +1889,7 @@ fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_ident
         );
         assert_eq!(
             serialize(&phone),
-            fixture("issue27-items", "040-phone-return-notes", uid),
+            fixture("delete/family-items", "phone-return-notes/list1", uid),
             "native folding must round-trip exactly"
         );
     }
@@ -1860,7 +1898,11 @@ fn phone_edits_after_item_deletion_preserve_empty_parent_type_schedule_and_ident
 #[test]
 fn checklist_schedule_parent_writes_preserve_lifecycle_and_unknown_fields() {
     let uid = "61ed74be3ba34212ab7476b698de1263";
-    let bytes = fixture("plan8-tui-a", "010-first-phone-actions", uid);
+    let bytes = fixture(
+        "complete/checklist-and-until",
+        "first-phone-actions/list1",
+        uid,
+    );
     let mut original = parse(&bytes).unwrap();
     original
         .root
@@ -1916,8 +1958,11 @@ fn checklist_schedule_parent_writes_preserve_lifecycle_and_unknown_fields() {
 
 #[test]
 fn capability_move_rewrites_only_identity_and_stamps() {
-    for (scenario, uid) in [("rule-months-day-1-28", MONTHLY), ("rule-years", YEARLY)] {
-        let input = fixture(scenario, "02-complete", uid);
+    for (scenario, uid) in [
+        ("complete/monthly-calendar", MONTHLY),
+        ("complete/yearly-calendar", YEARLY),
+    ] {
+        let input = fixture(scenario, "complete/list1", uid);
         let cal = parse(&input).unwrap();
         let moved =
             twydo_core::edit::moved_copy(&cal, "synthetic-moved", None, Utc::now()).unwrap();

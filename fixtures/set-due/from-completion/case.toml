@@ -1,0 +1,156 @@
+claim = "Completion-anchored date and interval edits preserve the observed anchors, offsets and phone return behavior."
+origin = "device"
+observed = "Completion-anchored date and interval edits preserve the observed anchors, offsets and phone return behavior."
+tests = ["crates/tdo/tests/cli_op.rs::op_blocked_in_verified_mode_exits_1", "crates/twydo-core/tests/edit_complete.rs::one_time_complete_and_reopen_match_2do", "crates/twydo-core/tests/edit_fields.rs::text_capability_preserves_full_resources_including_alarms_and_metadata", "crates/twydo-core/tests/gate.rs::create_item_under_plain_task_is_refused", "crates/twydo-core/tests/gate_contract_parity.rs::current_contract_decisions_are_preserved_in_both_modes"]
+supports = []
+
+[provenance]
+source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
+source_path = "fixtures/phase0/v1/plan8-rfra"
+
+[environment]
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
+
+[states."seeded-after-upload"]
+path = "seeded-after-upload"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-p.ics", "list1/twydo-p8-rfra-direct-p.ics", "list1/twydo-p8-rfra-fields-p.ics", "list1/twydo-p8-rfra-interval-p.ics", "list1/twydo-p8-rfra-offset-p.ics"]
+action = "Seeded initial five synthetic phone baselines; Twydo twins remain private until return captures."
+device = "twydo"
+
+[states."phone-first-actions"]
+path = "phone-first-actions"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-p.ics", "list1/twydo-p8-rfra-direct-p.ics", "list1/twydo-p8-rfra-fields-p.ics", "list1/twydo-p8-rfra-interval-p.ics", "list1/twydo-p8-rfra-offset-p.ics"]
+action = "Title, interval, anchor, direct repeat and offset due edits."
+device = "iphone"
+
+[states."phone-second-actions"]
+path = "phone-second-actions"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-p.ics", "list1/twydo-p8-rfra-direct-p.ics", "list1/twydo-p8-rfra-fields-p.ics"]
+action = "Notes set, monthly-to-weekly after completion, direct repeat removed."
+device = "iphone"
+
+[states."phone-third-actions"]
+path = "phone-third-actions"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-p.ics", "list1/twydo-p8-rfra-fields-p.ics"]
+action = "Notes cleared and weekly switched to due anchoring."
+device = "iphone"
+
+[states."phone-fourth-actions"]
+path = "phone-fourth-actions"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-p.ics", "list1/twydo-p8-rfra-fields-p.ics"]
+action = "Due date changed and weekly due-anchored repeat removed."
+device = "iphone"
+
+[states."phone-time-added"]
+path = "phone-time-added"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-fields-p.ics"]
+action = "Due time added at 09:00 with automatic alarm."
+device = "iphone"
+
+[states."phone-time-changed"]
+path = "phone-time-changed"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-fields-p.ics"]
+action = "Existing due time changed to 11:00."
+device = "iphone"
+
+[states."phone-time-removed"]
+path = "phone-time-removed"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-fields-p.ics"]
+action = "Due time removed, retaining due date and removing automatic alarm."
+device = "iphone"
+
+[states."phone-start-and-completions"]
+path = "phone-start-and-completions"
+collections = ["list1"]
+members = ["list1/0b32f468fed84970abbe6601ef2aa23a.ics", "list1/5bf319cc6906422a9d11558055cf9dff.ics", "list1/twydo-p8-rfra-fields-p.ics", "list1/twydo-p8-rfra-interval-p.ics", "list1/twydo-p8-rfra-offset-p.ics"]
+action = "Start added; interval and offset tasks completed once."
+device = "iphone"
+
+[states."phone-start-changed"]
+path = "phone-start-changed"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-fields-p.ics"]
+action = "Existing start changed from December 7 to December 8."
+device = "iphone"
+
+[states."phone-fields-completed"]
+path = "phone-fields-completed"
+collections = ["list1"]
+members = ["list1/193009d31b4f429daa6ee54518db3cc3.ics", "list1/twydo-p8-rfra-fields-p.ics"]
+action = "Start cleared, then fields task completed once; history proves cleared start."
+device = "iphone"
+
+[states."twydo-edited-twins"]
+path = "twydo-edited-twins"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics", "list1/twydo-p8-rfra-direct-t.ics", "list1/twydo-p8-rfra-fields-t.ics", "list1/twydo-p8-rfra-interval-t.ics", "list1/twydo-p8-rfra-offset-t.ics"]
+action = "Fourteen captured edits on five synthetic twins; uploaded without changing normal config."
+device = "twydo"
+
+[states."phone-note-followups"]
+path = "phone-note-followups"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics", "list1/twydo-p8-rfra-direct-t.ics", "list1/twydo-p8-rfra-fields-t.ics", "list1/twydo-p8-rfra-interval-t.ics", "list1/twydo-p8-rfra-offset-t.ics"]
+action = "Phone inspected all five Twydo-written tasks and set RFRA return 1 notes; metadata unchanged."
+device = "iphone"
+
+[states."twydo-weekly-and-removal"]
+path = "twydo-weekly-and-removal"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics", "list1/twydo-p8-rfra-direct-t.ics", "list1/twydo-p8-rfra-interval-t.ics", "list1/twydo-p8-rfra-offset-t.ics"]
+action = "Weekly after completion and direct removal uploaded; interval and offset before completion."
+device = "twydo"
+
+[states."phone-weekly-removal-and-completions"]
+path = "phone-weekly-removal-and-completions"
+collections = ["list1"]
+members = ["list1/1e218cb4dee04fdf8343528f690db15b.ics", "list1/6f6bb214bf774d6fb6e9d708f722d5a6.ics", "list1/twydo-p8-rfra-anchor-t.ics", "list1/twydo-p8-rfra-direct-t.ics", "list1/twydo-p8-rfra-interval-t.ics", "list1/twydo-p8-rfra-offset-t.ics"]
+action = "Phone note checks and interval/offset completions. Fields excluded: user reported reopening an occurrence; clean retry pending."
+device = "iphone"
+
+[states."twydo-weekly-due-anchor"]
+path = "twydo-weekly-due-anchor"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics", "list1/twydo-p8-rfra-fields-t.ics"]
+action = "Weekly due anchor and fields Due December 10 retry uploaded."
+device = "twydo"
+
+[states."phone-weekly-due-anchor"]
+path = "phone-weekly-due-anchor"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics"]
+action = "Weekly due anchor phone note followup; metadata preserved. Fields retry excluded pending reconciliation."
+device = "iphone"
+
+[states."phone-fields-live-note"]
+path = "phone-fields-live-note"
+collections = ["list1"]
+members = ["list1/213cadd773aa4a8e8553f4663c2a8ccb.ics", "list1/twydo-p8-rfra-fields-t.ics"]
+action = "December 10 completion history first captured in 360; advanced live December 4 resource arrived with RFRA live check note in 363. Same UID/RUID; history unchanged."
+device = "iphone"
+
+[states."twydo-final-anchor-removal"]
+path = "twydo-final-anchor-removal"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics"]
+action = "Final weekly due-anchored repeat removal uploaded."
+device = "twydo"
+
+[states."phone-final-anchor-followup"]
+path = "phone-final-anchor-followup"
+collections = ["list1"]
+members = ["list1/twydo-p8-rfra-anchor-t.ics"]
+action = "Final weekly due-anchored repeat removal inspected as non-recurring; RFRA return 4 note preserves inactive codes and identity."
+device = "iphone"

@@ -1,5 +1,0 @@
-scenario = "issue27-items"
-step = "000-empty"
-device = "twydo"
-action = "Read-only identity and depth-1 checks verified the synthetic collection empty before the approved 20-record seed."
-captured_at = "2026-11-07T13:50:00Z"

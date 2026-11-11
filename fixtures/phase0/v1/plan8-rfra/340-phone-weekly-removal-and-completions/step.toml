@@ -1,2 +1,0 @@
-device = "iphone"
-action = "Phone note checks and interval/offset completions. Fields excluded: user reported reopening an occurrence; clean retry pending."

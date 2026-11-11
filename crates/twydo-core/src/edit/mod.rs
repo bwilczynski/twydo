@@ -1,7 +1,7 @@
 //! Edit operations and the field edits they make.
 //!
 //! An edit changes a parsed resource the way the 2Do iPhone app does (captured in
-//! `fixtures/phase0/v1/plan4-list1` and `rule-*/03-edit`): only the target properties,
+//! `fixtures/complete/standalone-lifecycle` and `rule-*/03-edit`): only the target properties,
 //! `DTSTAMP`, `LAST-MODIFIED` and their verified `<2Do Meta>` counterparts change. Every
 //! other line keeps its original bytes.
 
@@ -219,7 +219,7 @@ pub fn touch(todo: &mut Component, now: DateTime<Utc>) {
 /// - `parent` = `None`: a JSON `RUID` that names the old UID (a live task's self-reference)
 ///   is set to `new_uid`. Any other `RUID` (a history copy's link to its series) is kept.
 /// - `parent` = `Some(p)` (a member moved with its parent): `RELATED-TO` and JSON
-///   `parentuid` = `p`, and `RUID` is left alone (`plan6-list2/07-move`: a moved repeating
+///   `parentuid` = `p`, and `RUID` is left alone (`move/family-destination/move/list1`: a moved repeating
 ///   member keeps its old UID there).
 ///
 /// Every other line keeps its bytes; `cal` is not changed.
@@ -499,7 +499,7 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
     Ok(())
 }
 
-/// 2Do's automatic at-due-time alert, exactly as 2Do writes it (H8, `plan4-list1/01-create`
+/// 2Do's automatic at-due-time alert, exactly as 2Do writes it (H8, `complete/standalone-lifecycle/create/list1`
 /// task C). `summary` is the raw (escaped) `SUMMARY` value. A later title edit leaves its
 /// `DESCRIPTION` unchanged (Ruling R14; how 2Do treats that is unverified).
 fn auto_alarm(summary: &str) -> Component {
@@ -634,7 +634,7 @@ fn set_interval(todo: &mut Component, n: u32) -> Result<(), EditError> {
     Ok(())
 }
 
-/// The date `RecurrenceEndDate` stores: the end date at 12:00 UTC, as epoch seconds (`plan7-list1`
+/// The date `RecurrenceEndDate` stores: the end date at 12:00 UTC, as epoch seconds (`set-repeat/phone-encodings`
 /// R16: 2027-06-30 is 1814356800).
 fn end_date_stamp(u: &IcalDateTime) -> i64 {
     let d = match u {
@@ -649,7 +649,7 @@ fn end_date_stamp(u: &IcalDateTime) -> i64 {
         .timestamp()
 }
 
-/// Set or remove the repeat rule as 2Do's repeat picker does (`plan7-list1/01-phone-repeat`).
+/// Set or remove the repeat rule as 2Do's repeat picker does (`set-repeat/phone-encodings/phone-repeat/list1`).
 ///
 /// - Set: `RRULE` goes right after `DUE`; JSON `RecurrenceType`/`RecurrenceValue` per
 ///   [`repeat::twodo_codes`], `RecurrenceFrom` 1 (2 from completion), the end keys, and `RUID`
@@ -732,7 +732,7 @@ fn set_repeat(todo: &mut Component, spec: Option<&RepeatSpec>) -> Result<(), Edi
 }
 
 /// Turn the task into a task, checklist or project: `TaskType` in the JSON metadata, plus the
-/// JSON `uid` a checklist or project carries (`plan7-list1/03-phone-convert`). Twydo writes
+/// JSON `uid` a checklist or project carries (`set-repeat/phone-encodings/phone-convert/list1`). Twydo writes
 /// the task's own UID there; the phone writes its internal id, which Twydo cannot know. The
 /// task's items are not touched: whether they allow the change is the gate's call.
 fn set_kind(todo: &mut Component, kind: TaskKind) -> Result<(), EditError> {

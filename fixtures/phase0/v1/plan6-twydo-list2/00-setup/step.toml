@@ -1,5 +1,0 @@
-scenario = "plan6-twydo-list2"
-step = "00-setup"
-device = "iphone"
-action = "setup: checklist C (c1-c3 got their own DUE copy), project P (p1-p3, p3 monthly), recurring project R (r1-r3), M missed monthly, S start monthly, T timed+start+alert monthly, Y timed+start+alert yearly (fixed by edit), A timed monthly with -15m alert"
-captured_at = "2026-11-02T18:34:32Z"

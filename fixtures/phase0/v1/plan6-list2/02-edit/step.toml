@@ -1,5 +1,0 @@
-scenario = "plan6-list2"
-step = "02-edit"
-device = "iphone"
-action = "k1 -> k1b; K date -> 2026-12-11; p1 date -> 2026-12-06; r1 notes -> n"
-captured_at = "2026-11-02T15:44:46Z"

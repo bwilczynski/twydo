@@ -1,0 +1,58 @@
+claim = "Phone recurrence encodings preserve their raw representation and parse as the phone displays them."
+origin = "device"
+observed = "Phone recurrence encodings preserve their raw representation and parse as the phone displays them."
+tests = ["crates/twydo-core/tests/edit_fields.rs::text_capability_preserves_full_resources_including_alarms_and_metadata", "crates/twydo-core/tests/repeat.rs::describe_and_classify", "crates/twydo-core/tests/store.rs::text_capability_closed_parent_and_item_are_single_undoable_edits"]
+supports = ["complete.days", "complete.leap-year", "complete.month-overflow", "complete.nth-weekday", "complete.weekdays", "complete.weeks", "convert.checklist-project", "convert.empty-parent-task", "convert.parent-task", "convert.project-checklist", "convert.task-checklist", "convert.task-project", "set-repeat.days", "set-repeat.leap-year", "set-repeat.month-overflow", "set-repeat.nth-weekday", "set-repeat.task", "set-repeat.weekdays", "set-repeat.weeks"]
+
+[provenance]
+source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
+source_path = "fixtures/phase0/v1/plan7-list1"
+
+[environment]
+iphone_2do = "3.91 build 38246"
+ios = "27.0.1"
+server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
+server_version = "2.4.8-10948"
+vdirsyncer = "0.21.0"
+
+[states."seed"]
+path = "seed"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "tdo op add R01-R17,K1,K2; seed_fixture C,c1-c3,P,p1-p3 and P,p1,p2 renamed Q,q1,q2"
+device = "twydo"
+
+[states."phone-repeat"]
+path = "phone-repeat"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "repeat picker on R01-R16 (R09, R11, R12 not offered)"
+device = "iphone"
+
+[states."phone-repeat-no-due"]
+path = "phone-repeat-no-due"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "R17 (no due): Weekly"
+device = "iphone"
+
+[states."phone-convert"]
+path = "phone-convert"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "K1->checklist, K2->project, C->project; P->checklist and Q->task greyed out on the iPhone"
+device = "iphone"
+
+[states."phone-item-under-converted"]
+path = "phone-item-under-converted"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/1630d4401a57498f940cc4617727cdae.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "add item y to K2 (converted from a Twydo-created task)"
+device = "iphone"
+
+[states."phone-convert-empty"]
+path = "phone-convert-empty"
+collections = ["list1"]
+members = ["list1/08aa0eefe10e484d8221dcda095a911b.ics", "list1/1173aff2ca524f8e9b1afd9198dceed0.ics", "list1/154afd7a0c5546a490883e69de1b7925.ics", "list1/1630d4401a57498f940cc4617727cdae.ics", "list1/18669d33edad43c7a70152cd1b49fc0c.ics", "list1/2536bc54c8fd494bb2028c82951e46f8.ics", "list1/25d045b0ebce4f2aa593b7136c67e28d.ics", "list1/2bfb9a8175984140a5ca016a68548b8c.ics", "list1/391a95aa2b524602847685a7276aefab.ics", "list1/51a8fb3fccb04e488eab3acd59fffd9a.ics", "list1/55bab4f5add845729158a006077fa70d.ics", "list1/5864b3930d9f4959a451f8042f538244.ics", "list1/5965cd6bfaa64fc2960f51449c63f5bd.ics", "list1/5bc6f38eabb846d0a9e36498fd2fc3f4.ics", "list1/756c2207a2c043b3902d9353b526c5f9.ics", "list1/7ca468eaff814c459baf0667fe9ba1b3.ics", "list1/921f88b27e2d4563bb29a773cbfe4262.ics", "list1/962ea2a85f75455aafa1102e68e1b92a.ics", "list1/992fea854c4d42baaa0ad2d20f3f65a5.ics", "list1/a8d833aa427849239c35cb2d8cfef721.ics", "list1/b3c9eab3cdd14f2e9f764e5443257856.ics", "list1/b783e95fdb40450aa81cab922cb114f4.ics", "list1/c2ba514e6dcf456bb0a22c78587d2ee5.ics", "list1/ce75b21d989147aab17422d262bf0acd.ics", "list1/cfd0a124f69a4f55a8180158fb118d6d.ics", "list1/dede417596014b62a73e845325156af8.ics", "list1/e9374709e7434c7ca52b9589931cec4d.ics", "list1/f07c68d24c4f476f81b81731141a3192.ics", "list1/f45f2dab11144ad095882c25578a2958.ics", "list1/f7f92e74cc4746a5a9ae41eaae87a54e.ics", "list1/ff4cb0e5073f4486b47812ef8a53e21f.ics"]
+action = "K1 (empty checklist) -> task"
+device = "iphone"

@@ -1,5 +1,0 @@
-scenario = "twydo-list1"
-step = "06-undo-after-sync"
-device = "twydo"
-action = "tdo: undo S completion (synced in 04); undo Q move (synced in 05)"
-captured_at = "2026-11-01T15:58:32Z"

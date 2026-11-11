@@ -1,5 +1,5 @@
 //! Edits of a checklist's or project's members, as the 2Do iPhone app writes them when the
-//! parent changes (`plan6-list1`, `plan6-list2`; `docs/reference/phase0/plan6-baseline.md`).
+//! parent changes (`complete/family-lifecycle`, `move/family-destination`; `docs/reference/phase0/plan6-baseline.md`).
 //!
 //! A member points at its parent with `RELATED-TO:<parent UID>` and JSON `parentuid`.
 //! - Completing the parent completes every open member at the parent's completion time; a
@@ -11,7 +11,7 @@
 //!   keeps its `COMPLETED`.
 //!
 //! - Changing a checklist's date removes its items' own `DUE` and mirrored `DTSTART`
-//!   (`plan6-twydo-list1/01-phone-edit` c1–c3): items take their date from the checklist.
+//!   (`create/family-roundtrip/initial-phone-edit/list1` c1–c3): items take their date from the checklist.
 //!
 //! Each function edits one resource; the store applies them to a whole family.
 

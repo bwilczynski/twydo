@@ -1,5 +1,0 @@
-scenario = "twydo-list2"
-step = "03-phone-edit"
-device = "iphone"
-action = "phone: P2->P3, Q time->19:00 (phone added its auto alert), R remove start"
-captured_at = "2026-11-01T15:41:46Z"

@@ -1,5 +1,0 @@
-scenario = "rule-years"
-step = "03-edit"
-device = "iphone"
-action = "edit repeat to every 2 years"
-captured_at = "2026-11-01T12:22:24Z"

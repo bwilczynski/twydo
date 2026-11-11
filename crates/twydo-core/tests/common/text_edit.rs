@@ -10,7 +10,7 @@ pub const PARENT: &str = "twydo-p8-c29-b";
 pub fn env() -> Env {
     Env::new(
         WriteMode::Verified,
-        "plan8-checklist-b/011-phone-items-and-text",
+        "complete/checklist-reset/phone-items-and-text/list1",
     )
 }
 

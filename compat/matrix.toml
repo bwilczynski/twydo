@@ -14,7 +14,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset"]
 notes = "Direct representative SUMMARY/DESCRIPTION edits on tasks and recurring checklists/items, including phone return edits of Twydo output. Preservation generalization to recognized standalone resources and flat families across unchanged schedules and lifecycle states: only SUMMARY, DESCRIPTION, DTSTAMP and LAST-MODIFIED change. No recurrence execution/edit verdict is inferred. Readable metadata, unique identities and agreeing flat same-list links required; malformed/ambiguous fields, unknown types and nesting refuse. Mixed saves retain existing non-text contracts; missing capability rows retain legacy handling."
 
 [environment]
@@ -31,31 +31,31 @@ class = "days"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): D1 (daily) and D3 (every 3 days). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit)."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): D1 (daily) and D3 (every 3 days). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/complete/recurrence-profiles)."
 
 [[rule]]
 class = "weeks"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): W1 (weekly) and W2 (every 2 weeks). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit)."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): W1 (weekly) and W2 (every 2 weeks). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/complete/recurrence-profiles)."
 
 [[rule]]
 class = "weekdays-set"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): WD (Mon and Thu), WK (work days) and OR (Mon and Thu due on a Wednesday: Wed Dec 9 -> Thu Dec 10). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit)."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): WD (Mon and Thu), WK (work days) and OR (Mon and Thu due on a Wednesday: Wed Dec 9 -> Thu Dec 10). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class. Editing existing daily and weekly tasks rests on their task-level edit rows (Plan 7 session C, fixtures/complete/recurrence-profiles)."
 
 [[rule]]
 class = "months-day-1-28"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/rule-months-day-1-28/01-create", "fixtures/phase0/v1/rule-months-day-1-28/02-complete", "fixtures/phase0/v1/rule-months-day-1-28/03-edit"]
+evidence = ["fixtures/complete/monthly-calendar", "fixtures/complete/monthly-calendar", "fixtures/complete/monthly-calendar"]
 notes = "RRULE:FREQ=MONTHLY with no BYMONTHDAY (day from DUE); edit to every 2 months gives INTERVAL=2 and RecurrenceValue 2. Verified on iPhone 2Do only (no second 2Do device). 2Do writes DTSTART as a copy of DUE on recurring tasks too; Twydo reads the start from <2Do Meta> StartDate, so DTSTART is not treated as a start date. Completing advances the same UID by one interval and adds a new completed copy (new UID, no RRULE, RUID = original)."
 
 [[rule]]
@@ -63,15 +63,15 @@ class = "months-day-29-31"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): M31 (monthly due Jan 31, completed twice: Jan 31 -> Feb 28 -> Mar 28, no memory of the 31st; the second completion in 04-phone-m31-again). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): M31 (monthly due Jan 31, completed twice: Jan 31 -> Feb 28 -> Mar 28, no memory of the 31st; the second completion in 04-phone-m31-again). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "months-last-day"
 preserve = "unverified"
 execute = "unverified"
 edit = "fail"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit FAIL: Plan 7 session B, the iPhone (2Do 3.91, the last version available) misreads a Twydo-written rule of this class (last day: shown as plain monthly; last weekday: 'every workday'; 1st weekend day: 'every weekend day'), and its picker cannot create one. Twydo never writes it."
 
 [[rule]]
@@ -79,15 +79,15 @@ class = "months-nth-weekday"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): N2 (2nd Tuesday: Dec 8 -> Jan 12) and LF (last Friday: Dec 25 -> Jan 29; the phone writes its own RecurrenceValue 6 for last and rewrote the -1 Twydo then wrote; Twydo now writes 6 when it creates, reshapes or completes such a rule). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval changes are refused for this class (gate and edit): 2Do has no interval for an Nth-weekday rule, its RecurrenceValue holds the ordinal (6 for last), so writing an interval would overwrite the ordinal."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): N2 (2nd Tuesday: Dec 8 -> Jan 12) and LF (last Friday: Dec 25 -> Jan 29; the phone writes its own RecurrenceValue 6 for last and rewrote the -1 Twydo then wrote; Twydo now writes 6 when it creates, reshapes or completes such a rule). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval changes are refused for this class (gate and edit): 2Do has no interval for an Nth-weekday rule, its RecurrenceValue holds the ordinal (6 for last), so writing an interval would overwrite the ordinal."
 
 [[rule]]
 class = "months-nth-workday"
 preserve = "unverified"
 execute = "unverified"
 edit = "fail"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit FAIL: Plan 7 session B, the iPhone (2Do 3.91, the last version available) misreads a Twydo-written rule of this class (last day: shown as plain monthly; last weekday: 'every workday'; 1st weekend day: 'every weekend day'), and its picker cannot create one. Twydo never writes it."
 
 [[rule]]
@@ -95,7 +95,7 @@ class = "months-nth-weekend-day"
 preserve = "unverified"
 execute = "unverified"
 edit = "fail"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Not tested in phase 0: class not used by the current data, and only one 2Do device (iPhone) was available. Verify when a task needs it. edit FAIL: Plan 7 session B, the iPhone (2Do 3.91, the last version available) misreads a Twydo-written rule of this class (last day: shown as plain monthly; last weekday: 'every workday'; 1st weekend day: 'every weekend day'), and its picker cannot create one. Twydo never writes it."
 
 [[rule]]
@@ -103,7 +103,7 @@ class = "years"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/rule-years/01-create", "fixtures/phase0/v1/rule-years/02-complete", "fixtures/phase0/v1/rule-years/03-edit"]
+evidence = ["fixtures/complete/yearly-calendar", "fixtures/complete/yearly-calendar", "fixtures/complete/yearly-calendar"]
 notes = "RRULE:FREQ=YEARLY; edit to every 2 years gives INTERVAL=2 and RecurrenceValue 2. Verified on iPhone 2Do only (no second 2Do device). 2Do writes DTSTART as a copy of DUE on recurring tasks too; Twydo reads the start from <2Do Meta> StartDate, so DTSTART is not treated as a start date. Completing advances the same UID by one interval and adds a new completed copy (new UID, no RRULE, RUID = original)."
 
 [[rule]]
@@ -111,8 +111,8 @@ class = "years-feb-29"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/phase0/v1/plan7-list1; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): Y29 (yearly due 2028-02-29 -> 2029-02-28). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: Plan 7 capture (iPhone 2Do, fixtures/set-repeat/phone-encodings; round-trip checked by crates/twydo-core/tests/ical_roundtrip.rs roundtrip_plan7_phone_captures, reading by crates/twydo-core/tests/repeat.rs plan7_captures_read_as_2do_shows_them). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): Y29 (yearly due 2028-02-29 -> 2029-02-28). edit: Plan 7 session B, Twydo wrote the rule and the iPhone showed it right (a set/reshape, not an edit of an existing task of this class). Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "unrecognized"
@@ -127,23 +127,23 @@ class = "mod:from-completion"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14-R16 in fixtures/phase0/v1/plan7-list1/01-phone-repeat) round-trip byte for byte (tests/ical_roundtrip.rs, roundtrip_plan7_phone_captures). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): FC (monthly after done, due Dec 7 completed Nov 4 -> Dec 4) and FS (the same with a start date Dec 20: the phone counts from the completion day all the same and moves the start by as many days, Dec 20 -> Dec 17; Twydo counted from the start until Task 15 fixed it). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+evidence = ["fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14-R16 in fixtures/set-repeat/phone-encodings) round-trip byte for byte (tests/ical_roundtrip.rs, roundtrip_plan7_phone_captures). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): FC (monthly after done, due Dec 7 completed Nov 4 -> Dec 4) and FS (the same with a start date Dec 20: the phone counts from the completion day all the same and moves the start by as many days, Dec 20 -> Dec 17; Twydo counted from the start until Task 15 fixed it). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:count"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete", "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act"]
-notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14-R16 in fixtures/phase0/v1/plan7-list1/01-phone-repeat) round-trip byte for byte (tests/ical_roundtrip.rs, roundtrip_plan7_phone_captures). execute: Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): C1 (monthly, 1 time: the last occurrence is completed in place, RRULE and metadata kept, no history copy); counting down (COUNT=3 -> 2, RecurrenceEndRepetitions with it, end keys zeroed in the copy) rests on Plan 7 session B, CT in fixtures/phase0/v1/plan7-twydo-list1/03-phone-act (crates/twydo-core/tests/edit_complete.rs count_counts_down). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
+evidence = ["fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/set-repeat/encoding-roundtrip"]
+notes = "preserve: phone-written tasks with this modifier (Plan 7 session A, R14-R16 in fixtures/set-repeat/phone-encodings) round-trip byte for byte (tests/ical_roundtrip.rs, roundtrip_plan7_phone_captures). execute: Plan 7 session C (fixtures/complete/recurrence-profiles): the phone completed each `a` twin, Twydo completed its `b` twin, and Twydo's live task and history copy equal the phone's byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*): C1 (monthly, 1 time: the last occurrence is completed in place, RRULE and metadata kept, no history copy); counting down (COUNT=3 -> 2, RecurrenceEndRepetitions with it, end keys zeroed in the copy) rests on Plan 7 session B, CT in fixtures/set-repeat/encoding-roundtrip (crates/twydo-core/tests/edit_complete.rs count_counts_down). edit: Plan 7 session B, Twydo wrote a rule with this modifier and the iPhone showed it right. Interval-only edits of this class are accepted as verified: the INTERVAL encoding is identical to monthly and yearly, whose interval edits the phone verified, and Twydo's gate lets only the interval change within a class."
 
 [[rule]]
 class = "mod:until"
 preserve = "pass"
 execute = "pass"
 edit = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 U1/U2 establish continuation/history end fields, inclusive boundary, final in-place completion and post-reopen execution in both directions. The execute pass is scoped by the compatibility gate to top-level plain interval-1 date-only daily or monthly day1-28, due anchored, no children/start/alerts/delay; the row verdict alone does not express this scope. Other UNTIL contexts stay refused even where offset/base-rule verdicts pass. Preserve/edit evidence from Plan 7 remains; this is not family/timed/from-completion UNTIL enablement."
 
 [[operation]]
@@ -154,7 +154,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -165,7 +165,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -176,7 +176,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/12-phone-complete"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -187,7 +187,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -198,7 +198,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/plan4-list2/05-move", "fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list2/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move", "fixtures/phase0/v1/twydo-list2/13-phone-reopen-move"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/move/standalone-destination", "fixtures/reopen/undo-source", "fixtures/reopen/undo-destination", "fixtures/reopen/undo-source", "fixtures/reopen/undo-destination"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -209,7 +209,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/08-delete", "fixtures/phase0/v1/twydo-list2/14-phone-delete"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/move/standalone-destination", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source", "fixtures/reopen/undo-destination"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -220,7 +220,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/rule-months-day-1-28/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/monthly-calendar", "fixtures/reopen/undo-source", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -231,7 +231,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/rule-months-day-1-28/03-edit", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/07-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/monthly-calendar", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -242,7 +242,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/rule-months-day-1-28/02-complete", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/12-phone-complete"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/monthly-calendar", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -253,7 +253,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -264,7 +264,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/plan4-list2/05-move", "fixtures/phase0/v1/twydo-list1/13-phone-reopen-move", "fixtures/phase0/v1/twydo-list2/13-phone-reopen-move"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/move/standalone-destination", "fixtures/reopen/undo-source", "fixtures/reopen/undo-destination"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -275,7 +275,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/twydo-list1/08-delete", "fixtures/phase0/v1/twydo-list2/14-phone-delete"]
+evidence = ["fixtures/move/standalone-destination", "fixtures/reopen/undo-source", "fixtures/reopen/undo-destination"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -286,7 +286,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/rule-years/01-create", "fixtures/phase0/v1/twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/yearly-calendar", "fixtures/reopen/undo-source", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -297,7 +297,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/rule-years/03-edit", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/gap-list1/02-phone-edit"]
+evidence = ["fixtures/complete/yearly-calendar", "fixtures/reopen/undo-source", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. A new due date on the phone leaves StartDate unchanged. Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -308,7 +308,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/rule-years/02-complete", "fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/complete/yearly-calendar", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. StartDate moves by the same number of days as the due (2027-03-01 -> 2028-03-01 is 366 days, so start 2027-02-13 -> 2028-02-14). Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -319,7 +319,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/gap-list1/05-phone-reopen"]
+evidence = ["fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Round 05 (iphone_baseline): reopening the history copy sets STATUS:NEEDS-ACTION and PERCENT-COMPLETE:0, drops COMPLETED, as for monthly. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -330,7 +330,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list2/02-edit", "fixtures/phase0/v1/gap-list2/06-phone-move"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/move/standalone-destination", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -341,7 +341,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list2/03-complete", "fixtures/phase0/v1/twydo-list1/08-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
+evidence = ["fixtures/move/standalone-destination", "fixtures/reopen/undo-source", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -352,7 +352,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
@@ -363,7 +363,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-rfra"]
+evidence = ["fixtures/set-due/from-completion"]
 notes = "Plan 8 RF: standalone open monthly interval-1 completion-anchored field edits (title, notes, due/date/time, start) and date-only interval 1 to 2. Phone baselines 202-300, Twydo writes and phone note checks 310-320; interval/offset completion returns 330-340 and clean fields live/history 350/363 match the writer. A live advance reached the server with a later note save; history alone is not proof of remote advancement. Guard rejects ordinary weekly/interval-2 edits, day29-31, ends, families, zoned dates and custom alarms. Automatic due alarm only; source/destination date shapes are constrained by gate. Mac round trips remain unverified."
 
 [[operation]]
@@ -374,8 +374,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/03-phone-act", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins FC and FS (monthly after done, without and with a later start date) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone rests on Twydo's completion as fixed in Task 15 being byte-equal to the phone's own completion of the `a` twins, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_from_completion_*). The `b` twins Twydo wrote in round 02 (02-twydo-complete) came from the code before that fix (FSb due 2027-01-20, counted from its start date), so the user's look at them on the phone is not evidence for this row. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B 03: the phone completed FC (monthly after done); next due one month after completion, history copy linked by RUID, Twydo read it back."
+evidence = ["fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Plan 7 session C (fixtures/complete/recurrence-profiles; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins FC and FS (monthly after done, without and with a later start date) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone rests on Twydo's completion as fixed in Task 15 being byte-equal to the phone's own completion of the `a` twins, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_from_completion_*). The `b` twins Twydo wrote in round 02 (02-twydo-complete) came from the code before that fix (FSb due 2027-01-20, counted from its start date), so the user's look at them on the phone is not evidence for this row. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B 03: the phone completed FC (monthly after done); next due one month after completion, history copy linked by RUID, Twydo read it back."
 
 [[operation]]
 case = "from-completion"
@@ -418,7 +418,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -429,8 +429,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
-notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the recurring project itself changes only SUMMARY and stamps; a child edit (plan6-list1 02-edit) is a plain edit. Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/create/family-roundtrip", "fixtures/create/family-roundtrip"]
+notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the recurring project itself changes only SUMMARY and stamps; a child edit (complete/family-lifecycle 02-edit) is a plain edit. Only a child was edited (02-edit: r1 notes, a plain edit); editing the project itself not tested. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "recurring-project"
@@ -440,7 +440,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/move/family-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Completing the project: live parent advances one interval and keeps its UID; a completed copy of the parent and of every child is added (new UIDs, RELATED-TO the copy); live children are reopened, and their dates do not move (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -451,7 +451,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the completed copy: it becomes an open project without RRULE and every child copy is reopened; the live project is untouched. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -462,7 +462,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/move/family-destination", "fixtures/create/family-roundtrip", "fixtures/move/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. New UIDs for the project and its children; RUID becomes the new UID. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -473,7 +473,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/plan6-twydo-list1/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
+evidence = ["fixtures/move/family-destination", "fixtures/complete/family-lifecycle", "fixtures/move/family-roundtrip", "fixtures/create/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the live project deletes its children; the completed copy and its children stay. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -484,7 +484,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -495,7 +495,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/02-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list2/09-phone-edit"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/create/family-roundtrip", "fixtures/move/family-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Item title and checklist date. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -506,7 +506,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Item alone (03); the checklist after a confirmation completes every open item (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -517,7 +517,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the checklist reopens every item (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -528,7 +528,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/move/family-destination", "fixtures/create/family-roundtrip", "fixtures/move/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the checklist recreates it and every item with new UIDs. Moving one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -539,7 +539,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
+evidence = ["fixtures/move/family-destination", "fixtures/move/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the checklist deletes its items. Deleting one item alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -550,7 +550,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -561,7 +561,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/02-edit", "fixtures/phase0/v1/gap-list1/01-twydo-edit", "fixtures/phase0/v1/gap-list1/02-phone-edit"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/delete/mixed-families", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Setting a date on a project or an item writes DUE and DTSTART only. Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Child date only; the project itself was not edited. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -572,7 +572,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-twydo-list1/05-complete-parents", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Child alone (03); the project after a confirmation completes every open child, including a repeating one, which keeps its RRULE and does not advance (05). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -583,7 +583,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/04-reopen-child", "fixtures/phase0/v1/plan6-list1/06-reopen-parent", "fixtures/phase0/v1/plan6-twydo-list1/06-reopen-parents", "fixtures/phase0/v1/gap-list1/05-phone-reopen"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Reopening the project reopens every child, including a repeating child's completed history copy (06). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -594,7 +594,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/plan6-twydo-list1/08-move", "fixtures/phase0/v1/plan6-twydo-list2/08-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/move/family-destination", "fixtures/create/family-roundtrip", "fixtures/move/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Moving the project recreates it and every child with new UIDs. Moving one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -605,7 +605,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-twydo-list2/10-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
+evidence = ["fixtures/move/family-destination", "fixtures/move/family-roundtrip", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Deleting the project deletes its children, history copies included. Deleting one child alone not tested. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -616,7 +616,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/01-create", "fixtures/phase0/v1/plan6-twydo-list1/00-setup"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
@@ -627,7 +627,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-twydo-list1/07-edit"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/create/family-roundtrip"]
 notes = "Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. The phone did it, Twydo read it back right. Plan 6 Task 7 round 01: renaming the repeating item changes only SUMMARY and stamps. The repeating child was not edited. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -638,7 +638,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-twydo-list1/02-phone-complete", "fixtures/phase0/v1/gap-list1/01-twydo-edit"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Like a plain monthly completion; the history copy keeps RELATED-TO and parentuid. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -649,7 +649,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/03-phone-reopen", "fixtures/phase0/v1/gap-list1/03-twydo-reopen"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): Twydo did it, the phone showed it right. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): The phone did it, Twydo read it back right. Plan 6 Task 7 round 03: reopening the repeating item's history copy is a plain reopen (PERCENT-COMPLETE:0, COMPLETED removed); RUID and parent kept. Only reopened through its parent (06-reopen-parent), which also reopened its history copy. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -660,7 +660,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/07-move", "fixtures/phase0/v1/plan6-list2/07-move", "fixtures/phase0/v1/gap-list2/06-phone-move"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/move/family-destination", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Moved with its project. Only moved with its parent: new UID, but RUID keeps the old UID (unlike a top-level repeat). iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
@@ -671,7 +671,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete"]
+evidence = ["fixtures/move/family-destination", "fixtures/move/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Deleted with its project. Only deleted with its parent. iphone_baseline from the Plan 6 iPhone session (docs/reference/phase0/plan6-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Unverified columns: twydo_to_iphone."
 
 [[operation]]
@@ -682,7 +682,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -693,7 +693,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan4-list1/05-move", "fixtures/phase0/v1/twydo-list1/04-complete", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -748,7 +748,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -759,7 +759,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -770,7 +770,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/complete/family-lifecycle", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -814,7 +814,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/01-create", "fixtures/phase0/v1/twydo-list1/01-create", "fixtures/phase0/v1/twydo-list1/10-create-yuv"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -825,7 +825,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/02-edit", "fixtures/phase0/v1/plan4-list1/03-complete", "fixtures/phase0/v1/twydo-list1/02-edit", "fixtures/phase0/v1/twydo-list1/03-phone-edit"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/standalone-lifecycle", "fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 notes = "Twydo columns from the Plan 4 verification session (docs/reference/phase0/plan4-baseline.md). iphone_baseline from the Plan 4 iPhone session (docs/reference/phase0/plan4-baseline.md). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -836,7 +836,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/complete/family-lifecycle", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -902,7 +902,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/04-complete-shapes", "fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/complete/family-lifecycle", "fixtures/delete/mixed-families"]
 notes = "Gap session (docs/reference/phase0/gap-session.md): the phone did it, Twydo read it back right. Yearly Y with a 09:00 due, a start date and the at-due alert. Plan 6 Task 7 session (docs/reference/phase0/plan6-baseline.md): Twydo did it, the phone showed it right. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -946,7 +946,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 captured only setting the repeat, not creating a task with it. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
@@ -957,8 +957,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
-notes = "Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit), Twydo in test mode with a scratch matrix: E1 (an existing daily task) got a new due date (+1 day) and a new title (E1x) in one save; the user checked it on the phone (fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again) and saw no difference. twydo_to_iphone rests on that, generalised to every edit of a daily task: the other fields use the same writes as for monthly and yearly tasks (Plan 4), and every daily kind shares the case (every N days). Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Plan 7 session C (fixtures/complete/recurrence-profiles), Twydo in test mode with a scratch matrix: E1 (an existing daily task) got a new due date (+1 day) and a new title (E1x) in one save; the user checked it on the phone (fixtures/complete/recurrence-profiles) and saw no difference. twydo_to_iphone rests on that, generalised to every edit of a daily task: the other fields use the same writes as for monthly and yearly tasks (Plan 4), and every daily kind shares the case (every N days). Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R01-R03 (every day preset, every 1 day, every 3 days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "daily"
@@ -968,8 +968,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins D1 (daily) and D3 (every 3 days) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone, Twydo completed the `b` twins (02-twydo-complete) and its result is equal to the phone's own completion byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*), and the user saw no difference between the `b` and `a` twins on the phone. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Plan 7 session C (fixtures/complete/recurrence-profiles; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins D1 (daily) and D3 (every 3 days) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone, Twydo completed the `b` twins (02-twydo-complete) and its result is equal to the phone's own completion byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*), and the user saw no difference between the `b` and `a` twins on the phone. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "daily"
@@ -1012,7 +1012,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/01-twydo-create"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 captured only setting the repeat, not creating a task with it. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_baseline and iphone_to_twydo are inferred, by equivalence: the phone set the same repeat on a plain task (session A, 01/02) and Twydo read it back; a Twydo create equals a plain create plus that repeat (tests/edit_create.rs)."
 
 [[operation]]
@@ -1023,8 +1023,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
-notes = "Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit), Twydo in test mode with a scratch matrix: E2 (an existing plain weekly task) got a new interval (every 2 weeks); E3 (weekly -> monthly) and E4 (weekly repeat removed) are reshapes, covered by the weekly and monthly repeat rows; the user checked it on the phone (fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again) and saw no difference. twydo_to_iphone rests on that, generalised to every edit of a weekly task: the other fields use the same writes as for monthly and yearly tasks (Plan 4), and every weekly kind shares the case (every N weeks, and the weekdays-set kinds such as Mon and Thu or work days, which map to the weekly case). Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Plan 7 session C (fixtures/complete/recurrence-profiles), Twydo in test mode with a scratch matrix: E2 (an existing plain weekly task) got a new interval (every 2 weeks); E3 (weekly -> monthly) and E4 (weekly repeat removed) are reshapes, covered by the weekly and monthly repeat rows; the user checked it on the phone (fixtures/complete/recurrence-profiles) and saw no difference. twydo_to_iphone rests on that, generalised to every edit of a weekly task: the other fields use the same writes as for monthly and yearly tasks (Plan 4), and every weekly kind shares the case (every N weeks, and the weekdays-set kinds such as Mon and Thu or work days, which map to the weekly case). Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The phone set the repeat on plain tasks: R04-R07, R17 (weekly, every 2 weeks, Mon+Thu, work days). iphone_to_twydo pass: Twydo reads these captures as 2Do shows them and round-trips them byte-equal (tests repeat.rs plan7_captures_read_as_2do_shows_them, ical_roundtrip.rs roundtrip_plan7_phone_captures). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "weekly"
@@ -1034,8 +1034,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/02-twydo-complete"]
-notes = "Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins W1, W2, WD, WK and OR (weekly, every 2 weeks, Mon and Thu, work days, Mon and Thu due off the rule) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone, Twydo completed the `b` twins (02-twydo-complete) and its result is equal to the phone's own completion byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*), and the user saw no difference between the `b` and `a` twins on the phone. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
+evidence = ["fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Plan 7 session C (fixtures/complete/recurrence-profiles; docs/reference/phase0/plan7-capture.md): iphone_baseline, the phone completed the `a` twins W1, W2, WD, WK and OR (weekly, every 2 weeks, Mon and Thu, work days, Mon and Thu due off the rule) (01-phone-complete); iphone_to_twydo, Twydo read the result back with no warnings; twydo_to_iphone, Twydo completed the `b` twins (02-twydo-complete) and its result is equal to the phone's own completion byte for byte, but for stamps and CREATED, the twins' UIDs and titles, the phone's layout lines and its JSON key order (crates/twydo-core/tests/edit_complete.rs twin_*), and the user saw no difference between the `b` and `a` twins on the phone. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
 case = "weekly"
@@ -1078,7 +1078,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1: TaskType 0 -> 1 and a JSON uid (2Do's internal id, not the UID) inserted after RecurrenceEndRepetitionsOrig, keys reordered to the parent order (TaskType before TaskDuration). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
@@ -1089,7 +1089,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/03b-phone-item-under-converted", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K2: as task-to-checklist with TaskType 2. An item the phone then added (y) has RELATED-TO = the iCalendar UID and JSON parentuid = the internal uid. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
@@ -1100,7 +1100,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. C with three items: only the parent's TaskType 1 -> 2; the items are unchanged. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
@@ -1111,7 +1111,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
+evidence = ["fixtures/set-repeat/phone-encodings"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items (P). Not offered, so Twydo refuses it. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -1122,7 +1122,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Not captured: the phone was not asked to convert an empty project. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -1133,7 +1133,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed"]
+evidence = ["fixtures/set-repeat/phone-encodings"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. The iPhone greys out converting a project with items to a task (Q). Not offered, so Twydo refuses it. Unverified columns: twydo_to_iphone, iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run."
 
 [[operation]]
@@ -1144,7 +1144,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/03-phone-convert", "fixtures/phase0/v1/plan7-list1/04-phone-convert-empty", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Plan 7 capture (docs/reference/phase0/plan7-capture.md), on a throwaway list in the production account. K1 (an empty checklist): TaskType 1 -> 0, the JSON uid removed, keys back in the task order. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
@@ -1155,7 +1155,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip"]
 notes = "Setting, changing or removing the repeat of a task (another class, from completion, or the end), as opposed to changing the interval of a repeat (the edit row). Covers the plain task the repeat is set on: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R01-R17, the phone's repeat picker on one-time tasks. Removing a repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone did it and Twydo read it back with no warnings, nothing blocked, families linked."
 
 [[operation]]
@@ -1166,7 +1166,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup", "fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 RD: setting, class changes to weekly/back and removal accepted and acted on by the phone. Existing nonempty RUIDs retained; initial empty RUID uses the known exported UID. Clean removal retry is 141-144; conflicted 130 is not acceptance evidence. Edit-field/store/gate regressions cover exact metadata and untouched neighbors."
 
 [[operation]]
@@ -1177,8 +1177,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-list1/02-phone-repeat-no-due", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape", "fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
-notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. The pass rests on setting weekly on one-time tasks; Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit): Twydo changed an existing weekly task to monthly (E3) and removed another's weekly repeat (E4), and the user saw both right on the phone (fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again); the phone itself changing or removing a weekly repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Setting a repeat that makes the task weekly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R04-R07 and R17 set on one-time tasks. The pass rests on setting weekly on one-time tasks; Plan 7 session C (fixtures/complete/recurrence-profiles): Twydo changed an existing weekly task to monthly (E3) and removed another's weekly repeat (E4), and the user saw both right on the phone (fixtures/complete/recurrence-profiles); the phone itself changing or removing a weekly repeat was not captured. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "monthly"
@@ -1188,8 +1188,8 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape", "fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
-notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. Plan 7 session C (fixtures/phase0/v1/plan7-twydo-list2/03-twydo-edit): Twydo changed an existing weekly task to monthly (E3), and the user saw it right on the phone (fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
+notes = "Setting a repeat that makes the task monthly: Plan 7 capture (docs/reference/phase0/plan7-capture.md) R08-R12, R15, R16 set on one-time tasks. Changing or removing a monthly repeat (other than its interval, the edit row) was not captured. Plan 7 session C (fixtures/complete/recurrence-profiles): Twydo changed an existing weekly task to monthly (E3), and the user saw it right on the phone (fixtures/complete/recurrence-profiles). Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right. iphone_to_twydo: session A, the phone set this repeat on plain tasks and Twydo read it back clean."
 
 [[operation]]
 case = "yearly"
@@ -1199,7 +1199,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan7-list1/00-seed", "fixtures/phase0/v1/plan7-list1/01-phone-repeat", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup", "fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+evidence = ["fixtures/set-repeat/phone-encodings", "fixtures/set-repeat/phone-encodings", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 RY: setting, class changes to monthly/back and removal accepted and acted on by the phone. Clean retry 141-144 preserves due/RUID; phone note saves then clear only inactive RecurrenceValue/RecurrenceFrom. No from-completion or end-change inference."
 
 [[operation]]
@@ -1210,7 +1210,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-rfra"]
+evidence = ["fixtures/set-due/from-completion"]
 notes = "Plan 8 RA: plain interval-1 date-only monthly/weekly anchor/class transitions and set/remove, top-level open JSON tasks without ends, starts or alarms. Phone baselines 202-240 and Twydo/phone returns 310-380 verify setting completion anchor, monthly-to-weekly after completion, switching weekly back to due and removal. Existing RUID preserved; direct set establishes series identity. Phone accepts retained inactive From/Value after Twydo removal (340 and 380), while phone removal baseline zeros them. The gate admits only the captured transitions involving completion anchoring: plain or monthly due to monthly completion, monthly completion to weekly completion, weekly completion to weekly due, and monthly completion removal. No other transition is inferred from shared serialization; no daily/yearly, selector, ending, family or interval-change inference. Plain sources with a foreign RUID are refused (reopened-history identity transition unverified); existing live opaque series IDs stay supported. Mac round trips remain unverified."
 
 [[operation]]
@@ -1221,7 +1221,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/001-after-upload", "fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/060-remove-checklist-repeat-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/151-twydo-checklist-repeat-removed", "fixtures/phase0/v1/plan8-tui-a/153-phone-checklist-removal-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 FC: monthly setting on an existing plain checklist and removal of its weekly repeat accepted and edited on the phone, through 153. Gate limits checklist repeat transitions to plain date-only interval-1 monthly/weekly/none with no end/from-completion/start/alerts. C29 separately verifies narrowly scoped monthly checklist creation/text edits."
 
 [[operation]]
@@ -1232,7 +1232,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Setting, changing or removing a repeat on a project (making it a recurring project) or its item. Not captured. Unverified columns: iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -1243,7 +1243,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip"]
 notes = "Changing or removing the repeat of a recurring project, or a repeat on its item. Not captured. Unverified columns: iphone_to_twydo. Not tested in phase 0: only one 2Do device (iPhone; Mac 2Do needs a subscription), so mac/iphone round trips could not run. Plan 7 session B (docs/reference/phase0/plan7-capture.md): Twydo wrote it, the iPhone (2Do 3.91) showed it right."
 
 [[operation]]
@@ -1265,7 +1265,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup", "fixtures/phase0/v1/plan8-tui-a/151-twydo-checklist-repeat-removed", "fixtures/phase0/v1/plan8-tui-a/153-phone-checklist-removal-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 FC: clean monthly-to-weekly reshape and weekly removal accepted and edited on the phone in 141-144/151-153. Only plain date-only interval-1 monthly/weekly/none, due anchored, no ends or offsets. No interval, daily/yearly/Nth, family end/from-completion or type conversion inference."
 
 [[operation]]
@@ -1276,7 +1276,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/100-phone-items-and-ended-reopen", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 FC: monthly parent completes with mixed/all-done items; phone accepts both resets and acts on the output. History parent/child IDs are new, earlier item completion times retained, live inherited dates removed after copying. Gate limits parent completion to plain interval-1 date-only monthly day1-28, due anchored, no end/start/alerts/delay/cancelled items. Recovery/undo/redo/atomic-refusal tested; other checklist rules remain refused."
 
 [[operation]]
@@ -1287,7 +1287,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-checklist-b/010-phone-create-convert", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/020-twydo-create-convert", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/024-twydo-d-items-text", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+evidence = ["fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset"]
 notes = "C29 B-only: direct monthly checklist creation and adding items; phone accepts and executes Twydo-created C/D families then edits reset items. Only top-level open JSON monthly interval-1 date-only day1-28 due-anchored parents without start/alert/delay/end. New items inherit parent due mirrors; no independent dates/repeats."
 
 [[operation]]
@@ -1298,7 +1298,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-checklist-b/002-seeded", "fixtures/phase0/v1/plan8-checklist-b/010-phone-create-convert", "fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/012-phone-family-complete", "fixtures/phase0/v1/plan8-checklist-b/020-twydo-create-convert", "fixtures/phase0/v1/plan8-checklist-b/027-twydo-upload", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/030-phone-parent-note-return", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+evidence = ["fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset"]
 notes = "C29 B-only: title/notes on monthly checklist parents/items and top-level recurring task to checklist conversion preserving rule/series identity. Plain date-only monthly interval1 day1-28, open JSON task/parent, due anchored with no end/start/alert/delay. Text writers preserve all schedule/identity metadata; no ordinary due/start/time/interval/repeat/type reshaping or project conversion inference. Phone-converted parents with internal identity distinct from CalDAV UID receive fresh history identities without altering live identity."
 
 [[operation]]
@@ -1309,7 +1309,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-checklist-b/011-phone-items-and-text", "fixtures/phase0/v1/plan8-checklist-b/011d-phone-delete-items", "fixtures/phase0/v1/plan8-checklist-b/012-phone-family-complete", "fixtures/phase0/v1/plan8-checklist-b/021-twydo-c-items-text", "fixtures/phase0/v1/plan8-checklist-b/022-twydo-c-item-deleted", "fixtures/phase0/v1/plan8-checklist-b/024-twydo-d-items-text", "fixtures/phase0/v1/plan8-checklist-b/025-twydo-d-item-deleted", "fixtures/phase0/v1/plan8-checklist-b/028-phone-writer-note-followup", "fixtures/phase0/v1/plan8-checklist-b/029-phone-second-family-reset", "fixtures/phase0/v1/plan8-checklist-b/031-phone-reset-item-edits"]
+evidence = ["fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset", "fixtures/complete/checklist-reset"]
 notes = "C29 B-only: remove one open item with at least one other open item, under an open top-level plain monthly interval1 date-only day1-28 checklist. Only undated/inherited-parent-date items without own repeat/start/alerts/delay; all siblings must be open. Exactly one resource removed, parent/siblings/history unchanged; deleted q never returns on phone reset. Dedicated row does not enable parent/project/last-item/completed-item deletion. Durable parent/sibling dependencies guard stale apply, undo, redo and recovery."
 
 [[operation]]
@@ -1320,7 +1320,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 U1: Twydo reopens the final original, phone reads and completes it again in place without extra history. Only top-level interval-1 date-only plain daily UNTIL, due anchored, no children/start/alerts/delay. Count/family/yearly/timed/offset shapes remain refused."
 
 [[operation]]
@@ -1331,7 +1331,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/040-reopen-ended-and-complete-parent", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/110-twydo-second-reset-reshape-and-end", "fixtures/phase0/v1/plan8-tui-a/111-twydo-ended-originals-reopened", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 U2: Twydo reopens the final original, phone reads and completes it again in place. Only top-level interval-1 date-only plain monthly day1-28 UNTIL, due anchored, no children/start/alerts/delay. Other ended-series shapes remain refused."
 
 [[operation]]
@@ -1342,26 +1342,26 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan8-tui-a/050-remove-repeat-and-refinish", "fixtures/phase0/v1/plan8-tui-a/060-remove-checklist-repeat-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/141-prepared-repeat-and-history-states", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Plan 8 clean retry 141-144: Twydo reopens earliest daily/monthly UNTIL history copies (no RRULE), phone reads/completes them, ended originals remain byte-unchanged. Original rule class is absent from the copy; this row names the non-recurring RUID-linked history operation. Only top-level date-only non-recurring task copies without children/start/alerts/delay are enabled; family/offset history remains refused. Conflicted 130 does not count as acceptance."
 
 [[edge_case]]
 id = "monthly-15th-three-months-late"
 observed = "Plan 6 iPhone session: a monthly task due 2026-08-15 completed on 2026-11-02 advanced one interval to 2026-09-15 (still past), then to 2026-10-15; each completion added a history copy. 2Do never skips missed occurrences."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/plan6-list1/04-reopen-child"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle"]
 
 [[edge_case]]
 id = "monthly-31st"
 observed = "Plan 7 session C, M31 twins: Jan 31 -> Feb 28 -> Mar 28, with a history copy each time; 2Do keeps no memory of the 31st. Twydo matches both phone completions (edit_complete.rs twin_monthly_on_the_31st_matches_the_phone_twice)."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete", "fixtures/phase0/v1/plan7-twydo-list2/04-phone-m31-again"]
+evidence = ["fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
 
 [[edge_case]]
 id = "yearly-feb-29"
 observed = "Plan 7 session C, Y29 twins: yearly due 2028-02-29 advances to 2029-02-28 with a history copy. Twydo matches the phone (edit_complete.rs twin_yearly_on_29_feb_matches_the_phone)."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
+evidence = ["fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
 
 [[edge_case]]
 id = "missing-fifth-weekday"
@@ -1373,25 +1373,25 @@ evidence = []
 id = "from-completion-anchor"
 observed = "Plan 7 session C, FC/FS twins: monthly due Dec 7 completed Nov 4 advances to Dec 4, even with a later start Dec 20; start moves by the due-date delta to Dec 17. Twydo matches the phone (edit_complete.rs twin_from_completion_matches_the_phone and twin_from_completion_with_a_later_start_matches_the_phone). This does not verify zoned due times or other refused date shapes."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
+evidence = ["fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
 
 [[edge_case]]
 id = "end-after-n"
 observed = "Plan 7 session B, CT: COUNT=3 -> 2 and RecurrenceEndRepetitions counts down; the history copy's end fields are zeroed (edit_complete.rs count_counts_down). Session C, C1 twins: COUNT=1 completes in place, keeping RRULE and metadata, with no copy (twin_count_last_occurrence_matches_the_phone). Recurring project ends and reopening an ended series are not covered."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan7-twydo-list1/02-twydo-reshape", "fixtures/phase0/v1/plan7-twydo-list1/03-phone-act", "fixtures/phase0/v1/plan7-twydo-list2/00-seed", "fixtures/phase0/v1/plan7-twydo-list2/01-phone-complete"]
+evidence = ["fixtures/set-repeat/encoding-roundtrip", "fixtures/set-repeat/encoding-roundtrip", "fixtures/complete/recurrence-profiles", "fixtures/complete/recurrence-profiles"]
 
 [[edge_case]]
 id = "end-on-date"
 observed = "Plan 8 U1/U2: date-only daily/plain-monthly UNTIL continues with end fields cleared only on history, advances exactly onto the inclusive end, then completes in place; final originals reopen and end again without extra history. Captured in both directions. Gate retains the exact standalone date-only interval-1 no-offset scope; other UNTIL shapes remain refused."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions", "fixtures/phase0/v1/plan8-tui-a/020-boundary-and-checklist-complete", "fixtures/phase0/v1/plan8-tui-a/030-end-series-and-items", "fixtures/phase0/v1/plan8-tui-a/070-twydo-first-transitions", "fixtures/phase0/v1/plan8-tui-a/080-phone-check-twydo-first", "fixtures/phase0/v1/plan8-tui-a/090-twydo-checklist-reset-and-until-end", "fixtures/phase0/v1/plan8-tui-a/120-phone-second-round-followup"]
+evidence = ["fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 
 [[edge_case]]
 id = "parent-mixed-children"
 observed = "Plan 6 iPhone session: completing a monthly project with r1, r3 done and r2 open asked for confirmation; live parent advanced, completed copies of parent and all three children were added (r1, r3 copies keep their completion time, r2 takes the parent's), live children reopened with dates unchanged."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle"]
 
 [[edge_case]]
 id = "project-child-own-recurrence"
@@ -1403,19 +1403,19 @@ evidence = []
 id = "start-due-alarm-offsets"
 observed = "Plan 6 iPhone session: completing monthly and yearly tasks with a start date, a 09:00 due and the at-due alert shifted DUE and DTSTART by one interval and StartDate by the same number of days as DUE (gap session round 04: due 2027-03-01 -> 2028-03-01 is 366 days, so start 2027-02-13 -> 2028-02-14, not 2028-02-13), kept duetime, and left the relative alert unchanged; the history copy keeps the alert. Absolute alerts were not tested."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/03-complete-child", "fixtures/phase0/v1/gap-list1/04-phone-complete"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/delete/mixed-families"]
 
 [[edge_case]]
 id = "checklist-item-dates"
 observed = "Plan 6 Task 7 round 01: changing checklist C's date on the iPhone removed DUE and DTSTART from its items c1-c3, which carried a copy of the old date (items get the copy when the checklist's date is set before they are added). Checklist-date round: Twydo moved checklist D's date and removed d1/d2's copies; the iPhone showed D on the new date and the items without dates of their own, and its next date change on D left the items as they were, read back by Twydo."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/plan6-twydo-list1/00-setup", "fixtures/phase0/v1/plan6-twydo-list1/01-phone-edit", "fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date", "fixtures/phase0/v1/plan6-checklist-date-list1/02-phone-date"]
+evidence = ["fixtures/create/family-roundtrip", "fixtures/create/family-roundtrip", "fixtures/set-due/checklist-item-cleanup", "fixtures/set-due/checklist-item-cleanup"]
 
 [[edge_case]]
 id = "reopen-undo-before-after-sync"
 observed = "Plan 4 session: Twydo undo of a yearly completion before sync uploaded nothing (iPhone unchanged); undo of a monthly completion after sync restored the live due date and removed the history copy on the iPhone (no stray copy). Covers Twydo undo only, not 2Do reopen semantics."
 verdict = "pass"
-evidence = ["fixtures/phase0/v1/twydo-list1/05-undo-before-sync", "fixtures/phase0/v1/twydo-list1/06-undo-after-sync"]
+evidence = ["fixtures/reopen/undo-source", "fixtures/reopen/undo-source"]
 
 # Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
 [[operation]]
@@ -1426,7 +1426,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/020-twydo-reordered", "fixtures/phase0/v1/issue41-item-reorder/040-manual-display", "fixtures/phase0/v1/issue41-item-reorder/050-phone-rename"]
+evidence = ["docs/reference/phase0/reorder/family-items.md", "fixtures/reorder/family-items", "fixtures/reorder/family-items", "fixtures/reorder/family-items"]
 notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
 
 # Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
@@ -1438,7 +1438,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/060-twydo-inserted", "fixtures/phase0/v1/issue41-item-reorder/070-phone-insertion-display", "fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename"]
+evidence = ["docs/reference/phase0/reorder/family-items.md", "fixtures/reorder/family-items", "fixtures/reorder/family-items", "fixtures/reorder/family-items"]
 notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
 
 # Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
@@ -1450,7 +1450,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/020-twydo-reordered", "fixtures/phase0/v1/issue41-item-reorder/040-manual-display", "fixtures/phase0/v1/issue41-item-reorder/050-phone-rename"]
+evidence = ["docs/reference/phase0/reorder/family-items.md", "fixtures/reorder/family-items", "fixtures/reorder/family-items", "fixtures/reorder/family-items"]
 notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
 
 # Issue 41: Twydo originates ordering; phone reorder controls are unavailable.
@@ -1462,7 +1462,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["docs/reference/phase0/issue41-item-reorder.md", "fixtures/phase0/v1/issue41-item-reorder/060-twydo-inserted", "fixtures/phase0/v1/issue41-item-reorder/070-phone-insertion-display", "fixtures/phase0/v1/issue41-item-reorder/080-phone-insertion-rename"]
+evidence = ["docs/reference/phase0/reorder/family-items.md", "fixtures/reorder/family-items", "fixtures/reorder/family-items", "fixtures/reorder/family-items"]
 notes = "Ordering rows describe the DisplayOrder field operation by declared parent kind, independent of recurrence, dates, alarms or completion state. Direct phone samples are open, undated, non-recurring families with Manually selected, including rename/sync preservation. Extension to recurring/dated/mixed-status families is based on unchanged write representation and exact field-preservation tests over existing recurring checklist/project captures, including queue/undo and supported recurring completion. No recurrence execution/edit verdict is widened. Anchored insertion must additionally pass the existing Create gate. Phone-originated reorder unavailable and not required."
 
 [[operation]]
@@ -1473,7 +1473,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/issue27-items/001-seeded", "fixtures/phase0/v1/issue27-items/010-phone-delete-q", "fixtures/phase0/v1/issue27-items/030-phone-delete-last-items", "fixtures/phase0/v1/issue27-items/031-twydo-delete-checklist-q", "fixtures/phase0/v1/issue27-items/034-twydo-delete-completed-checklist-x", "fixtures/phase0/v1/issue27-items/036-twydo-delete-monthly-last-q", "fixtures/phase0/v1/issue27-items/038-twydo-upload", "fixtures/phase0/v1/issue27-items/040-phone-return-notes"]
+evidence = ["fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items"]
 notes = "Issue 27 representative session (docs/reference/phase0/issue27-item-deletion.md): remove only the selected item; parent, siblings, schedules, identity and history remain byte-unchanged. Four representative pairs establish ordinary/completed/last item deletion, completed parents, monthly/weekly parents and an independently repeating project child; phone subsequently edits all Twydo-empty parents. Generalized to recognized flat same-list families through exact preservation, queue, stale-family, inverse/recovery and shipping-TUI tests; not separate device proof for every status/rule combination. No recurrence execution or whole-parent deletion authority is inferred."
 
 [[operation]]
@@ -1484,7 +1484,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/issue27-items/001-seeded", "fixtures/phase0/v1/issue27-items/010-phone-delete-q", "fixtures/phase0/v1/issue27-items/020-phone-complete-project", "fixtures/phase0/v1/issue27-items/030-phone-delete-last-items", "fixtures/phase0/v1/issue27-items/032-twydo-delete-recurring-project-q", "fixtures/phase0/v1/issue27-items/033-twydo-complete-project", "fixtures/phase0/v1/issue27-items/035-twydo-delete-completed-project-x", "fixtures/phase0/v1/issue27-items/037-twydo-delete-weekly-last-q", "fixtures/phase0/v1/issue27-items/038-twydo-upload", "fixtures/phase0/v1/issue27-items/040-phone-return-notes"]
+evidence = ["fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items", "fixtures/delete/family-items"]
 notes = "Issue 27 representative session (docs/reference/phase0/issue27-item-deletion.md): remove only the selected item; parent, siblings, schedules, identity and history remain byte-unchanged. Four representative pairs establish ordinary/completed/last item deletion, completed parents, monthly/weekly parents and an independently repeating project child; phone subsequently edits all Twydo-empty parents. Generalized to recognized flat same-list families through exact preservation, queue, stale-family, inverse/recovery and shipping-TUI tests; not separate device proof for every status/rule combination. No recurrence execution or whole-parent deletion authority is inferred."
 
 [[operation]]
@@ -1495,7 +1495,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/06-delete", "fixtures/phase0/v1/plan4-list2/06-delete", "fixtures/phase0/v1/gap-list1/07-phone-delete", "fixtures/phase0/v1/gap-list2/07-phone-delete", "fixtures/phase0/v1/gap-list1/08-delete-rest"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/move/standalone-destination", "fixtures/delete/mixed-families", "fixtures/move/mixed-families", "fixtures/delete/mixed-families"]
 notes = "Direct phone captures delete standalone monthly/yearly resources; the selected resource is absent and every other file is unchanged. Generalized to a recognized top-level resource with unique identity, no parent and no children, for any captured task status or repeat rule, because removal deletes that one file and does not execute or rewrite schedules. Representative local tests cover weekly removal plus queue, undo/redo, recovery and stale guards; other recognized status/schedule shapes use the same removal contract. Missing proof: no direct device observation for weekly, daily, from-completion, count/until or alarm-bearing standalone deletion; recognized dates, alarms and opaque metadata are preserved by leaving them untouched. No recurrence execution or field-edit verdict is inferred."
 
 [[operation]]
@@ -1506,7 +1506,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/08-delete", "fixtures/phase0/v1/plan6-list1/09-delete-rest", "fixtures/phase0/v1/plan6-list2/08-delete", "fixtures/phase0/v1/plan6-list2/09-delete-rest"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle", "fixtures/move/family-destination", "fixtures/move/family-destination"]
 notes = "Direct phone captures (Plan 6 H9) delete nonempty plain checklist/project families and a live repeating project while leaving unrelated resources and completed history copies; 09-delete-rest removes the remainder. Generalized to a recognized top-level checklist or project, empty or nonempty, open, completed or cancelled, with flat plain-task children linked unambiguously in the same list, including recurring parents and independently repeating children, because whole-family removal deletes exactly the parent and its linked children and writes nothing else. Local tests cover empty/nonempty recurring checklists, completed families, series history, queue and inverse/recovery. Missing proof: no direct device observation for empty-family deletion or every status/rule combination; recognized dates, alarms, metadata and foreign identities are preserved by deletion-only scope. No recurrence execution or field-edit verdict is inferred."
 
 # Lifecycle-only detached history capabilities. Broad scheduling rows stay unchanged.
@@ -1518,7 +1518,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan4-list1/04-reopen", "fixtures/phase0/v1/plan8-tui-a/142-twydo-repeat-removal-and-history-reopen", "fixtures/phase0/v1/plan8-tui-a/144-phone-removal-and-history-followup"]
+evidence = ["fixtures/complete/standalone-lifecycle", "fixtures/complete/checklist-and-until", "fixtures/complete/checklist-and-until"]
 notes = "Direct: captured detached non-recurring history task reopen. Preservation generalization: starts, timed due, relative/absolute alerts and unrelated metadata held exactly; only lifecycle and stamps change. Foreign RUID retained, live series untouched. Completed top-level readable JSON tasks without RRULE or active recurrence metadata only. No cancelled/ended live series or recurrence restoration authority."
 
 [[operation]]
@@ -1529,7 +1529,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-list1/05-complete-parent", "fixtures/phase0/v1/plan6-list1/06-reopen-parent"]
+evidence = ["fixtures/complete/family-lifecycle", "fixtures/complete/family-lifecycle"]
 notes = "Direct H7: detached recurring-project history parent and every completed child reopen, including children completed before parent; live original unchanged. Preservation generalization to flat checklist history and unchanged dates/starts/alerts; open/cancelled children held. Parent-driven lifecycle-only operation, not independent history-item authority. No RRULE or active recurrence metadata, unknown/nested/cross-list/disagreeing links or ambiguous identities. Individual history items under open parents remain refused: H3 live-child captures do not establish detached history-child behavior."
 
 # Relocation-only capability. Direct family evidence: Plan 6 H8, phone list1/list2
@@ -1565,7 +1565,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
-evidence = ["fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date", "fixtures/phase0/v1/plan6-checklist-date-list1/02-phone-date", "fixtures/phase0/v1/plan8-tui-a/010-first-phone-actions"]
+evidence = ["fixtures/set-due/checklist-item-cleanup", "fixtures/set-due/checklist-item-cleanup", "fixtures/complete/checklist-and-until"]
 notes = "Preservation generalization of checklist-item-dates: plain due-anchored monthly interval-1 date-only parent, day 1-28, inherited/undated plain items; recurrence and lifecycle unchanged. See docs/reference/phase0/checklist-scheduling-capability.md."
 
 [[operation]]
@@ -1618,7 +1618,7 @@ mac_to_iphone = "unverified"
 iphone_to_mac = "unverified"
 twydo_to_iphone = "pass"
 iphone_to_twydo = "unverified"
-evidence = ["fixtures/phase0/v1/issue69-archive/000-seeded", "fixtures/phase0/v1/issue69-lifecycle/010-phone-confirmed"]
+evidence = ["fixtures/list-metadata/archive-observation", "fixtures/list-metadata/server-preconditions"]
 notes = "Phone created one empty VTODO list during issue 69 archive round; collection properties and later synthetic task membership captured privately. Approved lifecycle round: user confirmed helper-created list name/color and both synthetic tasks after phone sync. Reverse creation/discovery remains unverified."
 
 [[operation]]
@@ -1645,10 +1645,10 @@ notes = "Candidate collection deletion with confirmation, complete remote/local 
 id = "list-metadata-atomicity"
 observed = "Approved synthetic lifecycle probe on Synology Calendar: LOCK granted exclusive depth-infinity Second-60, but a same-account PROPPATCH with no token returned 207/property success and changed the name. Lockroot was omitted and lockdiscovery returned property 404 while locked. UNLOCK returned 204. No atomic metadata-write protection is demonstrated."
 verdict = "fail"
-evidence = ["fixtures/phase0/v1/issue69-lifecycle/020-guard-evidence"]
+evidence = ["fixtures/list-metadata/server-preconditions"]
 
 [[edge_case]]
 id = "list-delete-atomicity"
 observed = "Calendar-export ETags changed after adding the remote-only synthetic task and advancing that task's DTSTAMP by one second. A DELETE using the obsolete pre-addition If-Match nevertheless returned 204; exact-target PROPFIND/GET then reported not found, and the user confirmed phone disappearance. Three exact resources remain backed up/exported. Export version coverage alone is not deletion authority."
 verdict = "fail"
-evidence = ["fixtures/phase0/v1/issue69-lifecycle/020-guard-evidence"]
+evidence = ["fixtures/list-metadata/server-preconditions"]

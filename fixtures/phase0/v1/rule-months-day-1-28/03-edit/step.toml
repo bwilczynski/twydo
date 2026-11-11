@@ -1,5 +1,0 @@
-scenario = "rule-months-day-1-28"
-step = "03-edit"
-device = "iphone"
-action = "edit repeat to every 2 months"
-captured_at = "2026-11-01T12:19:08Z"

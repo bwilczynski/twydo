@@ -35,7 +35,7 @@ fn matrix() -> Matrix {
 }
 
 fn env() -> Env {
-    Env::new(WriteMode::Test, "plan4-list1/02-edit")
+    Env::new(WriteMode::Test, "complete/standalone-lifecycle/edit/list1")
 }
 
 fn title(uid: &str, text: &str) -> Op {

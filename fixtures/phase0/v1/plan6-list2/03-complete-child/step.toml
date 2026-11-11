@@ -1,5 +1,0 @@
-scenario = "plan6-list2"
-step = "03-complete-child"
-device = "iphone"
-action = "complete k1b, p1, p3 (repeating child), r1, r3, L (missed), S, T, Y"
-captured_at = "2026-11-02T15:47:32Z"

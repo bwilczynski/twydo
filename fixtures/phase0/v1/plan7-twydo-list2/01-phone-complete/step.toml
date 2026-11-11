@@ -1,5 +1,0 @@
-scenario = "plan7-twydo-list2"
-step = "01-phone-complete"
-device = "iphone"
-action = "phone completes every a task once, M31a twice"
-captured_at = "2026-11-04T09:09:36Z"

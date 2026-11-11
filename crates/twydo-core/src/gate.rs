@@ -1006,7 +1006,7 @@ const DATED_ITEMS: &str = "removing a checklist's date, or giving it a time or a
 
 /// Whether `op` changes the due or start date of the checklist at `idx` while some of its
 /// items carry a date of their own. 2Do then removes the items' dates
-/// (`plan6-twydo-list1/01-phone-edit`), so the op writes the family.
+/// (`create/family-roundtrip/initial-phone-edit/list1`), so the op writes the family.
 pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
     let Op::Edit { changes, .. } = op else {
         return false;

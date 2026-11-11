@@ -1,5 +1,0 @@
-scenario = "twydo-list2"
-step = "08-delete"
-device = "twydo"
-action = "tdo: delete P3, Q2, S, T (list emptied; vdirsyncer --force-delete)"
-captured_at = "2026-11-01T16:02:46Z"

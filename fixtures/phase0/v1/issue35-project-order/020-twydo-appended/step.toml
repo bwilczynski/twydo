@@ -1,8 +1,0 @@
-scenario = "issue35-project-order"
-step = "020-twydo-appended"
-device = "twydo"
-action = "Create only Echo at DisplayOrder 4 with the candidate verified-mode CLI; conditionally upload and verify read-back. All five prior family resources remain byte-unchanged."
-base_step = "010-appended"
-unchanged_files = ["0f3c6f5eb84540df8d96b70fad96db34.ics", "5def84c9a3234ad3bd16e9f3ecd76225.ics", "845d3e481ce54ae8bc2c620e80f95c33.ics", "a5f00e12b7b544e9969438df9ee27c8f.ics", "f939fd8c2a4d48909e52ce1c77fd9a64.ics"]
-writer_revision = "c3130b4870b643d1941c9d7bc3cb6f76b50c0b0b"
-captured_at = "2026-11-05T17:45:01Z"

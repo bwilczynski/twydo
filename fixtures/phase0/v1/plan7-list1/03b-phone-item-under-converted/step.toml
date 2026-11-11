@@ -1,5 +1,0 @@
-scenario = "plan7-list1"
-step = "03b-phone-item-under-converted"
-device = "iphone"
-action = "add item y to K2 (converted from a Twydo-created task)"
-captured_at = "2026-11-03T22:03:00Z"

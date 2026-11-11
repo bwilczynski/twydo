@@ -7,7 +7,7 @@
 //! The gate (rule 1b) has already refused a family with a child it has no case for, so each
 //! child here is a supported shape. Cancelled children are left as they are by complete and
 //! reopen, and go with the family on move and delete. A checklist's new date also removes
-//! its items' own dates (`plan6-twydo-list1/01-phone-edit`).
+//! its items' own dates (`create/family-roundtrip/initial-phone-edit/list1`).
 //!
 //! The loaded files' bytes do not show an item a sync added after the snapshot, so these ops
 //! also rescan the task's list under the lock ([`Store::check_family`]) and are refused if

@@ -1,5 +1,0 @@
-scenario = "plan6-list1"
-step = "06-reopen-parent"
-device = "iphone"
-action = "reopen K, P, and the completed copy of R; no confirmation; phone shows all items open"
-captured_at = "2026-11-02T15:56:34Z"
