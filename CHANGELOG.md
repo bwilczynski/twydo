@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/bwilczynski/twydo/compare/v0.2.0...v0.2.1) - 2026-11-11
+
+### Added
+
+- *(compat)* verify discovery of phone-created lists ([#76](https://github.com/bwilczynski/twydo/pull/76))
+- *(tdo)* add tdo sync --discover and :discover
+- *(daemon)* discover lists at startup and on request
+- *(sync)* discover lists created on other devices
+
 ## [0.2.0](https://github.com/bwilczynski/twydo/compare/v0.1.9...v0.2.0) - 2026-11-11
 
 ### Added
