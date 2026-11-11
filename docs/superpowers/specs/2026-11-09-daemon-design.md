@@ -226,7 +226,9 @@ the live previews of the date and repeat grammars, and computing views.
   daemon never sends `unknown` itself, and the schema does not list it. Enums that are not
   open (the task and configuration types inside the snapshot) gain values only with a new
   generation.
-- `rpc.discover` on a running daemon and `tdo daemon schema` print the same document.
+- `rpc.discover` on a running daemon and `tdo daemon schema` print the same document
+  *(builder decision, plan 3: `tdo daemon schema` is not built yet; use `rpc.discover` or the
+  file)*.
 - A real break needs a new **protocol generation** (an integer, starting at 1), chosen on
   purpose.
 
@@ -327,8 +329,8 @@ the live previews of the date and repeat grammars, and computing views.
 - **Outcome events** report something that finished, for messages and exit codes:
   `sync.started`, `sync.finished` (result `ok`, `failed`, `stopped`, with counts and
   message), `op.finished` (for a queued op: `applied`, `refused` with kind and message, or
-  `satisfied`), `job.progress` (not built yet, see §7.4) / `job.finished` (list jobs, §7.4), and later
-  `reminder.due` (§9). A client never needs them to stay in step with the data.
+  `satisfied`), `job.finished` (list jobs, §7.4) and later `reminder.due` (§9). `job.progress`
+  (§7.4) is not built yet. A client never needs them to stay in step with the data.
 - **Ordering:** `seq` rises by one per event and restarts with the epoch. Events go to every
   subscriber, including the connection that caused them.
 - **Outcome-event contract:**
@@ -553,9 +555,11 @@ In order, before accepting any request other than `hello` and `daemon.info` (whi
 ### 7.4 Long-running jobs
 
 List create, update, delete, recover and forget (#69) and `sync.run` take seconds and talk to
-the network. They answer at once with a `job_id`, report `job.progress` where the adapter can
-*(builder decision, plan 2: no `job.progress` yet; jobs only end)*, and end with `job.finished` carrying the result or the error kind; `job.get` returns the same
-outcome later (§6.5). Jobs run on the vdir lane (§5), one at a time with syncs and writes.
+the network. They answer at once with a `job_id` and end with `job.finished` carrying the result
+or the error kind; `job.get` returns the same outcome later (§6.5). `job.progress`, which would
+report progress where the adapter can, is **not built yet** *(builder decision, plan 2: jobs only
+end; the event's shape is left to the builder, §16)*. Jobs run on the vdir lane (§5), one at a
+time with syncs and writes.
 `:recover` therefore no longer waits on a lock or says "a sync is running; try again": it runs
 after the sync.
 
