@@ -37,7 +37,7 @@ Use existing behavior test targets, not session-named targets. Reuse `tests/comm
 
 ## Evidence and admission boundary
 
-[Plan 6 H8](../../reference/phase0/plan6-baseline.md) directly records phone and Twydo family moves and phone return: `plan6-list1/07-move`, `plan6-list2/07-move`, `plan6-twydo-list2/08-move`, with the actual names confirmed in the fixture tree before referencing them. The independently recurring child keeps its previous RUID. Plan 4 and gap captures add phone-originated standalone monthly/yearly moves; their broad operation rows do not themselves establish Twydo-written moves.
+[Plan 6 H8](../../reference/evidence.md) directly records phone and Twydo family moves and phone return: `plan6-list1/07-move`, `plan6-list2/07-move`, `plan6-twydo-list2/08-move`, with the actual names confirmed in the fixture tree before referencing them. The independently recurring child keeps its previous RUID. Plan 4 and gap captures add phone-originated standalone monthly/yearly moves; their broad operation rows do not themselves establish Twydo-written moves.
 
 Use new operation cases `standalone-resource` / `move` and `flat-family` / `move`, independently of deletion capability rows. Support unique top-level plain tasks and recognized flat checklist/project families, same structural requirements as existing safe families. Destination must exist and differ from source. Preserve all scheduling, completion, unknown properties and rank fields; change only UID, verified self uid/RUID, child parent links and modification stamps. Do not introduce an item detach/reparent bypass. Do not generalize known misread written recurrence or unknown identity metadata without documenting whether relocation exercises that mechanism; retain a narrow refusal where unresolved.
 
@@ -83,7 +83,7 @@ Direct execution closeout: feature and durability changes passed full offline Ru
 ## Integrated closeout (2026-11-08)
 
 Implemented and integrated on `feat/completness`; see the
-[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+[capability implementation review](../../reference/evidence.md)
 for root-branch commit IDs, all final validation results, review corrections,
 execution decisions and remaining shipping refusals. The user's later instruction
 superseded the original OpenCode executor constraint. Implementation commits were

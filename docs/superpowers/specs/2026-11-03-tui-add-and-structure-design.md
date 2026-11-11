@@ -162,7 +162,7 @@ Behaviour follows 2Do (01 §1):
 - **Checklist → project:** items stay; they have no dates.
 - **Project → checklist:** asks first in the status line:
   `Items lose their dates and repeats. Convert? (y/n)`. Items lose dates, repeats and alerts.
-  *Superseded by the Plan 7 capture* ([plan7-capture.md](../../reference/phase0/plan7-capture.md)):
+  *Superseded by the Plan 7 capture* ([plan7-capture.md](../../reference/evidence.md)):
   the iPhone does not offer converting a project with items, so Twydo refuses it permanently
   (`not supported by 2Do`) and nothing asks.
 - **Project or checklist with items → task:** asks first. What 2Do does with the items here is
@@ -374,5 +374,5 @@ These were not discussed; the user may override them.
   `r` opens the card on Repeat; `yy`/`p`/`P` and `>>`/`<<` are reserved as in §5.
 - §10 step 4 ("Natural-language add (`o`) with preview") becomes the three phases above.
 - §3.4's `Items lose their dates and repeats. Convert? (y/n)` question is superseded by the
-  Plan 7 capture ([plan7-capture.md](../../reference/phase0/plan7-capture.md)): the iPhone cannot
+  Plan 7 capture ([plan7-capture.md](../../reference/evidence.md)): the iPhone cannot
   convert a project with items, so the gate refuses it permanently and nothing asks.

@@ -107,7 +107,7 @@ An empty parent starts at zero. Twydo preserves existing sibling resources and c
 timestamps; positions beyond the supported integer range are refused instead of wrapping.
 The ordering writer passed a bounded phone return for undated items under non-recurring
 checklists/projects; exact evidence and remaining limits are in the
-[issue 35 capture notes](reference/phase0/issue35-checklist-order.md).
+[issue 35 capture notes](reference/evidence.md).
 
 Other keys (`TaskDuration`, `StartDayDelay`, …) are kept as they are. When Twydo
 changes a field it changes every representation of it: moving a start date updates
@@ -164,7 +164,7 @@ The copy's JSON end fields are 0 too. When the series ends (`COUNT=1`, or the ne
 A repeating checklist's history parent receives a new JSON `uid` even when its live
 parent has a distinct phone-internal identity. The live identity remains unchanged,
 and the copied items link to the new history parent. This is captured in the
-[B-only checklist session](reference/phase0/plan8-checklist-29-checklist.md).
+[B-only checklist session](reference/evidence.md).
 
 Completing a repeating project also copies each of its items under the project's history copy.
 

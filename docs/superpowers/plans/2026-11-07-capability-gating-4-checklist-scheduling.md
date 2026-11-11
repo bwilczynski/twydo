@@ -37,7 +37,7 @@ Use existing behavior test targets, not session-named targets. Reuse `tests/comm
 
 ## Evidence and scope
 
-Read [Plan 6 checklist-date evidence](../../reference/phase0/plan6-baseline.md), `checklist-item-dates` in the matrix, `fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date` and `02-phone-date`; also [Plan 8 ledger](../../reference/phase0/plan8-tui-completeness-session.md) and C29. The dedicated item-date cleanup edge passes already. `captured_checklist_write` currently rejects ordinary due and interval edits before this existing writer can run. Existing checklist repeat rows cover particular monthly/weekly interval-1 transitions, not arbitrary intervals or execution of them.
+Read [Plan 6 checklist-date evidence](../../reference/evidence.md), `checklist-item-dates` in the matrix, `fixtures/phase0/v1/plan6-checklist-date-list1/01-twydo-date` and `02-phone-date`; also [Plan 8 ledger](../../reference/evidence.md) and C29. The dedicated item-date cleanup edge passes already. `captured_checklist_write` currently rejects ordinary due and interval edits before this existing writer can run. Existing checklist repeat rows cover particular monthly/weekly interval-1 transitions, not arbitrary intervals or execution of them.
 
 First target: open, top-level, readable JSON flat checklists; plain due-anchored monthly date-only due edits with resulting day 1–28, no start/time/alerts/end/delay, and simple inherited or undated plain items. A separate interval-only path initially targets captured/provable monthly interval 1→2 with due-day 1–28 and unchanged anchor/end. If existing captures do not support that interval write contract, implement/test its candidate behind an unverified dedicated row and explicitly report the missing evidence. Do not remove this boundary to make the plan appear complete.
 
@@ -84,7 +84,7 @@ Do not add start/time/removal or arbitrary repeat transitions in this increment.
 ## Integrated closeout (2026-11-08)
 
 Implemented and integrated on `feat/completness`; see the
-[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+[capability implementation review](../../reference/evidence.md)
 for root-branch commit IDs, all final validation results, review corrections,
 execution decisions and remaining shipping refusals. The user's later instruction
 superseded the original OpenCode executor constraint. Implementation commits were

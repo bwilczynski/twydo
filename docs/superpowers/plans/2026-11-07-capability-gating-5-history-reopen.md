@@ -8,7 +8,7 @@
 
 **Tech stack:** Existing Rust workspace, core gate/edit/store/queue/journal, clap, ratatui and synthetic fixture tests; no new dependencies.
 
-**Spec:** [Incremental capability gating](../specs/2026-11-07-capability-gating-design.md); [main spec](../specs/2026-10-31-terminal-tasks-design.md) §6; [Plan 6 H3/H7](../../reference/phase0/plan6-baseline.md).
+**Spec:** [Incremental capability gating](../specs/2026-11-07-capability-gating-design.md); [main spec](../specs/2026-10-31-terminal-tasks-design.md) §6; [Plan 6 H3/H7](../../reference/evidence.md).
 
 **Execution:** Independent branch from the committed planning checkpoint after #60. Other capability branches are integrated and reviewed by the coordinating agent. Read the project AGENTS.md and linked specs first. User approval covers local implementation and separate commits, not device verification or publication.
 
@@ -37,7 +37,7 @@ Use existing behavior test targets, not session-named targets. Reuse `tests/comm
 
 ## Evidence and boundary
 
-Direct evidence: [Plan 6 H7](../../reference/phase0/plan6-baseline.md) phone `plan6-list1/06-reopen-parent` and Twydo parent-reopen round, plus H3/child history captures and the existing narrow `history-copy.reopen` Plan 8 evidence. H7 explicitly reopens all children of the completed project copy and leaves the original live recurring project unchanged. Date/start/alarm combinations generalized through exact preservation are not new direct phone tests.
+Direct evidence: [Plan 6 H7](../../reference/evidence.md) phone `plan6-list1/06-reopen-parent` and Twydo parent-reopen round, plus H3/child history captures and the existing narrow `history-copy.reopen` Plan 8 evidence. H7 explicitly reopens all children of the completed project copy and leaves the original live recurring project unchanged. Date/start/alarm combinations generalized through exact preservation are not new direct phone tests.
 
 Start with completed top-level non-repeating history tasks and recognized flat history projects/checklists. Preserve UID, RUID, RELATED-TO/parentuid, all recurrence metadata, dates, alarms, ranks and unrelated content. Change only STATUS→NEEDS-ACTION, remove COMPLETED, PERCENT-COMPLETE→0 and normal stamps on reopened resources, using existing writer representations. Open/cancelled resources remain held. No ended-series-with-RRULE, cancelled reopening, restoration of recurrence, live-series rollback or independently reopening children of completed parents is admitted here.
 
@@ -135,7 +135,7 @@ Individual history items under open parents are a separate capability. Enable on
 ## Integrated closeout (2026-11-08)
 
 Implemented and integrated on `feat/completness`; see the
-[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+[capability implementation review](../../reference/evidence.md)
 for root-branch commit IDs, all final validation results, review corrections,
 execution decisions and remaining shipping refusals. The user's later instruction
 superseded the original OpenCode executor constraint. Implementation commits were

@@ -7,7 +7,7 @@ See the session's regression map and local closeout for exact enabled/refused sh
 ## Resume checkpoint — start here after the required project/spec reading
 
 - Latest increment: **issue 27 individual-item deletion**, branch `issue27-item-delete`
-  based on `9f9f40d`. The [four-example session](../../reference/phase0/issue27-item-deletion.md)
+  based on `9f9f40d`. The [four-example session](../../reference/evidence.md)
   completed phone baseline 000–030, Twydo writer/upload 031–038 and phone return 040.
   `checklist-item.delete` / `project-item.delete` generalize the single-resource removal
   invariant to recognized flat families, including completed/last items, without enabling
@@ -30,7 +30,7 @@ See the session's regression map and local closeout for exact enabled/refused sh
 - Assertions live in existing behavior suites (`edit_fields`, `edit_complete`, `store`,
   `store_family`, `gate`, `ical_roundtrip`; TUI in `tdo/tests/write.rs`). Shared fixture helpers
   are in `common/recurrence.rs`. **Do not create session/batch-named test targets.** See the
-  [regression map](../../reference/phase0/plan8-tui-completeness-session.md#regression-test-map).
+  [regression map](../../reference/evidence.md).
 - Matrix accounting after issue 27: 115 operation rows, with 81 iPhone-baseline passes,
   28 unverified and 6 unsupported; Twydo-to-iPhone has 81 passing and 34 unverified.
   This includes the four intervening ordering rows; unsupported phone reorder controls
@@ -49,7 +49,7 @@ See the session's regression map and local closeout for exact enabled/refused sh
 The user approved a minimum RF/RA evidence set: five twin pairs, ten tasks, with
 batched phone actions. Baselines 202–300 and returns 310–380 are complete. **Do not
 repeat them.** Scoped `from-completion.edit` and `from-completion.repeat` now pass;
-see [the RF/RA checklist](../../reference/phase0/plan8-rf-ra-checklist.md) for exact
+see [the RF/RA checklist](../../reference/evidence.md) for exact
 capabilities, fixture/test map, writer-equivalence argument and refusal neighbors.
 Tests use the shipping matrix directly, including CLI/card interval changes,
 date-key undo/redo and atomic grouped-save refusals retaining typed text.
@@ -68,7 +68,7 @@ forced deletion prohibited. Normal config, account and write mode are unchanged.
 Private manifests/backups and all extra synthetic copies remain outside cleanup.
 
 The next approved bounded increment prioritizes issue #29: see the
-[bounded repeating-checklist checklist](../../reference/phase0/plan8-checklist-29-checklist.md).
+[bounded repeating-checklist checklist](../../reference/evidence.md).
 It includes individual checklist-item deletion, an empty-list preflight and two
 bounded phone rounds. The user approved that exact scope and confirmed backup/
 empty-list readiness. B-only baseline captures 000–012 and candidate writer/upload
@@ -116,7 +116,7 @@ its original unchecked step boxes are not evidence that those tasks remain unimp
 
 Sources: [main spec](../specs/2026-10-31-terminal-tasks-design.md),
 [add-and-reshape design](../specs/2026-11-03-tui-add-and-structure-design.md),
-[current compatibility](../../compatibility.md), [session C](../../reference/phase0/plan7-capture.md),
+[current compatibility](../../compatibility.md), [session C](../../reference/evidence.md),
 [`gate.rs`](../../../crates/twydo-core/src/gate.rs),
 [`edit/complete.rs`](../../../crates/twydo-core/src/edit/complete.rs),
 [`store/family.rs`](../../../crates/twydo-core/src/store/family.rs), and
@@ -235,7 +235,7 @@ No device, server or production task data was accessed for this audit.
 
 ### Task 2 — First device batch: everyday repeat editing and completion
 
-**Expanded session plan:** [finish the existing TUI write surface](../../reference/phase0/plan8-tui-completeness-session.md).
+**Expanded session plan:** [finish the existing TUI write surface](../../reference/evidence.md).
 The user requested enough evidence to use all existing TUI features, not only the seven
 repeat-editing rounds below. The session plan supersedes that narrow round list and combines
 Tasks 2–4's device work into resumable baseline → implementation → final-device-check blocks.

@@ -1,104 +1,45 @@
 # Agent handoff
 
-You are picking up a project whose **design is done and implementation is in progress** (plans in
-`docs/superpowers/plans/`). Your job is to continue building Twydo (command `tdo`), a terminal task
-app replacing 2Do for one user, plan by plan.
+Continue building Twydo (`tdo`), a terminal task app sharing CalDAV tasks with 2Do.
 
 ## Read in this order
 
-1. [`docs/superpowers/specs/2026-10-31-terminal-tasks-design.md`](docs/superpowers/specs/2026-10-31-terminal-tasks-design.md):
-   the spec. It is the source of truth: goals, non-goals, user decisions (§4), proposals (§5), data
-   model and compatibility gate (§6), behaviour and notification contract (§7), screen and keys
-   (§8), tests (§9), phases (§10), and what's left to you (§11).
-2. [`docs/README.md`](docs/README.md): the as-is documentation (how Twydo works today: TUI,
-   task behaviour, sync, compatibility, architecture, data model). When you change behaviour,
-   update the matching page there in the same change; `python3 tools/check_links.py` must pass.
-3. [`docs/reference/2do/`](docs/reference/2do/README.md): consult as needed. It holds exact 2Do
-   encodings, e.g. the repeat-rule table (01 §6), date-group thresholds and sort codes (01 §12), and
-   CalDAV/`X-2DOAPP-*` metadata (06 §1.7, §2.6). Markers: **[obs]** observed, **[inf]** inferred,
-   **[?]** unresolved. If it disagrees with the spec, the spec wins.
+1. [Main design](docs/superpowers/specs/2026-10-31-terminal-tasks-design.md): fixed user
+   decisions and preservation, compatibility, conflict, recovery and notification contracts.
+2. [Current documentation](docs/README.md): update the matching page when behavior changes;
+   `python3 tools/check_links.py` must pass.
+3. [Evidence guide](docs/reference/evidence.md): operation cases, known failures, unresolved
+   questions and device consent boundaries. Consult [2Do format references](docs/reference/2do/README.md)
+   for exact encodings; observed/inferred/unknown labels remain significant. The spec wins.
 
-## What to do next
+## Current work and roadmap
 
-1. Read the current plan under `docs/superpowers/plans/` and continue from its first unfinished
-   task. Write the next plan (if you use the superpowers workflow: `superpowers:writing-plans`) only
-   when the current one is done.
-2. **Phase 0 gate: passed and approved (2026-11-01).** See the Result section of
-   [`docs/reference/phase0/README.md`](docs/reference/phase0/README.md). Only one 2Do device was
-   available, so many matrix rows are still `unverified` with a reason in `compat/matrix.toml`.
-   Before writable work depends on one of them (cross-device operations, edge cases, conflicts,
-   unused rule classes), verify it with the user's help first (spec §6, §10).
-3. Ask the user before any action that touches their production 2Do data, NAS or iPhone.
-4. **Done so far:** Plan 1 (read-only foundation), Plan 4 (writable core, `tdo op`), Plan 3 (sync
-   runner and conflicts, `tdo sync`; verified against the iPhone in
-   [`docs/reference/phase0/plan3-sync.md`](docs/reference/phase0/plan3-sync.md)) and Plan 5 (TUI
-   editing: write keys, move, edit form, notes in `$EDITOR`; keys in [`docs/tui.md`](docs/tui.md),
-   verified in [`docs/reference/phase0/plan5-tui.md`](docs/reference/phase0/plan5-tui.md)) and Plan
-   6 (checklists, projects, recurring projects and the real repeat shapes, mirroring 2Do's family
-   semantics; verified in
-   [`docs/reference/phase0/plan6-baseline.md`](docs/reference/phase0/plan6-baseline.md)), and the
-   gap session that verified the real task shapes both ways
-   ([`docs/reference/phase0/gap-session.md`](docs/reference/phase0/gap-session.md); seed test data
-   with `tools/seed_fixture.py` instead of typing on the phone), and the public-repository docs
-   (`docs/superpowers/plans/2026-11-02-public-repo-docs.md`: README, `docs/` pages, MIT licence, VHS
-   demo from `tools/demo_vdir.py`), and issue #10 (a save blocked by a stuck sync offers to stop it;
-   `docs/superpowers/plans/2026-11-03-issue-10-stop-stuck-sync.md`), and the release pipeline
-   (`docs/superpowers/plans/2026-11-03-release-pipeline.md`: CI on PRs, release-plz release PRs from
-   conventional commits, cargo-dist binaries, `mise use github:bwilczynski/twydo`), and Plan 7 phase
-   1 (adding and reshaping tasks: inline add with `o`/`O`/`a`, the in-place edit card, type changes
-   `ct`/`cp`/`cc`, all repeat kinds; plan
-   `docs/superpowers/plans/2026-11-03-plan-7-add-and-reshape.md`, design
-   `docs/superpowers/specs/2026-11-03-tui-add-and-structure-design.md`, iPhone capture in
-   [`docs/reference/phase0/plan7-capture.md`](docs/reference/phase0/plan7-capture.md)). **Current
-   follow-up:** Plan 8's
-   [resume checkpoint](docs/superpowers/plans/2026-11-04-plan-8-editing-completeness.md) and
-   [session coverage ledger](docs/reference/phase0/plan8-tui-completeness-session.md) record
-   completed evidence and remaining work across all existing TUI actions. Batch 1 and RF/RA phone
-   rounds are complete; do not repeat them. See [compatibility](docs/compatibility.md) for exact
-   enabled and refused shapes, including date-only daily/plain-monthly until execution. Prepare a
-   bounded checklist and obtain fresh approval before additional device rounds. Private session
-   state and backups are outside git. Do not touch other data, change accounts or global write mode,
-   or delete the synthetic test lists without the agreed consent. Next on the roadmap: those
-   follow-ups as needed, then the design's later features (indent and outdent, yank and paste, list
-   management, Project View; these fold in most of Plan 5b), natural-language input on the new row
-   (phase 3, reusing `twydo_core::dateinput` and the repeat parser), the write queue in `twydo-core`
-   (edits during a sync are queued instead of refused; design
-   [`docs/superpowers/specs/2026-11-06-write-queue-design.md`](docs/superpowers/specs/2026-11-06-write-queue-design.md),
-   issue #38; write-queue plan 1, batched sync with `tdo sync on|off`, merged (PR #50); plan 2 (the
-   queue with strict whole-file checks) done
-   (`docs/superpowers/plans/2026-11-06-write-queue-2-queue.md`). **Decided 2026-11-09:** `tdo` gets
-   a daemon that owns the data, sync and scheduling; the TUI and CLI are clients over a Unix socket
-   ([daemon design](docs/superpowers/specs/2026-11-09-daemon-design.md); protocol intro in
-   [`docs/protocol.md`](docs/protocol.md)). **Daemon plans 1 to 4 are done** (plan 1 PR #78, plan 2
-   PR #79; `docs/superpowers/plans/2026-11-09-daemon-1-core-and-writes.md`,
-   `2026-11-10-daemon-2-sync-and-jobs.md`, `2026-11-10-daemon-3-clients-switch.md`). The daemon runs
-   syncs and list jobs on its vdir lane and schedules syncs (startup, every 60 s, batched, after a
-   conflict choice, switch turned on, wake). Plan 3 switched the clients: the TUI, `tdo op`,
-   `tdo sync` (and `on`/`off`) and `tdo conflicts resolve` talk to it and start it on demand; the
-   cross-process queue waiter, the sync-ended file, the TUI's file watcher and
-   `tdo sync --background --when-due` stay only as hidden flags so an installed old timer stays
-   harmless; only the daemon reads `config.toml`. The read-only
-   commands (`check`, `export-json`, `status`, `conflicts`, `op check`) go through it too (plan 4).
-   The socket is `--socket`, else `TWYDO_SOCKET`, else the per-user default, so **the test setup
-   needs `TWYDO_SOCKET` next to `XDG_CONFIG_HOME`**; stop a daemon with `tdo daemon stop`. The
-   `op --matrix` hook is now `tdo daemon --matrix`. **Daemon plan 4 is done**
-   (`docs/superpowers/plans/2026-11-11-daemon-4-reads-and-service.md`): the read-only commands go
-   through the daemon, `tdo daemon install`/`uninstall`/`status`/`schema`, service-manager start, a
-   warning when no unit is installed, the contrib units and the documentation. **Next:** write-queue
-   plan 3 (rebasing, inside the daemon), then Plan 2 (the notifier).
+The [operation-evidence plan](docs/superpowers/plans/2026-11-11-operation-evidence.md)
+implements the approved [operation-contract design](docs/superpowers/specs/2026-11-11-operation-evidence-design.md).
+Continue its first unfinished task and execution ledger; do not start another plan over it.
+This is breaking `tdo` version `0.2.0`: custom matrices use version 2. Fixtures live under
+`fixtures/<operation>/<case>/`, with complete named states and case metadata. Do not revive
+numbered session snapshots, inherited states, stored diffs or the old global rule/edge gate.
 
-## Issue 41 checkpoint
+The phase-0 gate passed and was approved on 2026-11-01. Writable task operations, TUI editing,
+flat families/recurrence, ordering, list management, the durable write queue and daemon plans
+1–4 are implemented. The daemon owns configuration, data, sync and scheduling; TUI/CLI clients
+use its Unix socket. Tests must isolate both `XDG_CONFIG_HOME` and `TWYDO_SOCKET`. Stop only
+an isolated test daemon with `tdo daemon stop`. A custom write-policy matrix is supplied to
+`tdo daemon --matrix`; per-report overrides do not alter the daemon's write policy.
 
-Checklist/project item reordering (`J`/`K`) and saved `o`/`O` placement are implemented;
-see `docs/superpowers/plans/2026-11-06-issue41-item-reorder.md` and the session record in
-`docs/reference/phase0/issue41-item-reorder.md`. Ordering is a DisplayOrder-only operation
-for recurring and non-recurring families; it preserves dates, recurrence, alarms and
-completion state rather than requiring unrelated operation verdicts. Anchored creation
-also passes the existing Create gate. The phone must select **Manually** to display the
-saved ranks. Both bounded phone rounds passed; direct samples were plain families and
-recurring-family coverage uses exact preservation tests over existing captures. Do not
-repeat uploads/phone actions or delete the synthetic families. Additional device scope
-requires fresh approval.
+After this refactor: write-queue plan 3 (rebasing inside the daemon), then Plan 2 (notifier).
+Later features include indent/outdent, yank/paste, list management, Project View and natural
+language input. Read the current plan and as-is documentation before choosing new work.
+
+## Device and data boundaries
+
+No new phone/server rounds are authorized by this handoff. Plan 8 batch 1, RF/RA, item deletion
+and both item-reordering/insertion rounds are complete; do not repeat them. Saved phone ranks
+require **Manually**. Preserve the synthetic lists/families and private backups/session state
+outside git. Do not change accounts, global write mode or other data. Any further device scope
+needs a bounded unresolved question and fresh approval; ask before production 2Do, NAS or iPhone
+access. Existing captures and local preservation tests should be reused first.
 
 ## Ground rules
 

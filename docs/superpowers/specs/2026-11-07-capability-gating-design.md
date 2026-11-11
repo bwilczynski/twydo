@@ -2,6 +2,10 @@
 
 Date: 2026-11-07 · Status: approved (2026-11-07)
 
+The [operation-contract rebuild](2026-11-11-operation-evidence-design.md), approved
+on 2026-11-11, supersedes this document's decision to retain the old matrix and gate
+paths. Its proportional-verification and safety policies remain in force.
+
 ## Intent and chosen approach
 
 Make ordinary Twydo actions available without requiring a Cartesian product of
@@ -39,8 +43,8 @@ Keep the current matrix and existing gate paths during migration. Add narrow
 capability paths as needed; do not flip broad rows to pass and thereby enable
 unrelated operations. Established item deletion and DisplayOrder-only reordering
 are precedents, not new work to repeat. Their evidence is recorded in the
-[item-deletion session](../../reference/phase0/issue27-item-deletion.md) and
-[item-reordering session](../../reference/phase0/issue41-item-reorder.md).
+[item-deletion session](../../reference/evidence.md) and
+[item-reordering session](../../reference/evidence.md).
 
 ## Proportional verification
 

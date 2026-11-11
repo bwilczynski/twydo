@@ -37,7 +37,7 @@ Use existing behavior test targets, not session-named targets. Reuse `tests/comm
 
 ## Evidence and admission boundary
 
-Direct evidence: [Plan 6 H9](../../reference/phase0/plan6-baseline.md) and `fixtures/phase0/v1/plan6-list2/08-delete`, `plan6-list1/08-delete`, `09-delete-rest`; standalone monthly/yearly deletion in Plan 4/gap captures. [Issue 27](../../reference/phase0/issue27-item-deletion.md) proves individual removal and recurring empty-parent retention, not whole-family deletion by itself.
+Direct evidence: [Plan 6 H9](../../reference/evidence.md) and `fixtures/phase0/v1/plan6-list2/08-delete`, `plan6-list1/08-delete`, `09-delete-rest`; standalone monthly/yearly deletion in Plan 4/gap captures. [Issue 27](../../reference/evidence.md) proves individual removal and recurring empty-parent retention, not whole-family deletion by itself.
 
 New cases: `standalone-resource` / `delete` and `flat-family` / `delete`. A standalone resource has unique identity, no parent and no children. A family has a recognized top-level checklist/project and flat plain-task children, each unique, with unambiguous same-list standard/JSON links. Use existing structural validation or strengthen it locally; a known label in the parsed model is insufficient if raw links are ambiguous. A nonempty plain-task parent remains refused. Recognized recurrence/date/alarm/status fields are not executed or rewritten. Unknown properties remain opaque. Keep unrecognized/malformed structural or repeat shapes refused in this first increment. Document exact generalized support without claiming direct phone coverage for every shape.
 
@@ -92,7 +92,7 @@ to the final combined-branch review before publication; no push or production wr
 ## Integrated closeout (2026-11-08)
 
 Implemented and integrated on `feat/completness`; see the
-[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+[capability implementation review](../../reference/evidence.md)
 for root-branch commit IDs, all final validation results, review corrections,
 execution decisions and remaining shipping refusals. The user's later instruction
 superseded the original OpenCode executor constraint. Implementation commits were

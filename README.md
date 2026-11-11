@@ -89,7 +89,7 @@ Then point it at your own tasks and set up sync: [install.md](docs/install.md),
 | [Configuration](docs/config.md) | every key |
 | [Architecture](docs/architecture.md) | the write path, journal and recovery, locking |
 | [Data model](docs/data-model.md) | what a task looks like on disk, 2Do's metadata |
-| [Reference](docs/reference/README.md) | 2Do's behaviour and formats as observed, test session logs |
+| [Reference](docs/reference/README.md) | 2Do's observed formats, operation evidence and known restrictions |
 
 ## Contributing
 

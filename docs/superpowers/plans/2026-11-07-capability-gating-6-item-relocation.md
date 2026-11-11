@@ -88,7 +88,7 @@ Initial scope: one open plain leaf, recognized open top-level destination checkl
 ## Integrated closeout (2026-11-08)
 
 Implemented and integrated on `feat/completness`; see the
-[capability implementation review](../../reference/phase0/capability-implementation-review.md)
+[capability implementation review](../../reference/evidence.md)
 for root-branch commit IDs, all final validation results, review corrections,
 execution decisions and remaining shipping refusals. The user's later instruction
 superseded the original OpenCode executor constraint. Implementation commits were
