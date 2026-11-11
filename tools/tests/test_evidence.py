@@ -14,6 +14,12 @@ class EvidenceTests(unittest.TestCase):
         (self.root / "tests").mkdir()
         (self.root / "tests/claim.rs").write_text("fn preserves_identity() {}\n")
         (self.root / "compat").mkdir()
+        vocabulary = self.root / "crates/twydo-core/src/compat/contracts.rs"
+        vocabulary.parent.mkdir(parents=True)
+        vocabulary.write_text('''contracts! {
+    EditTitleResource => EditTitle, "edit-title.resource";
+    EditNotesResource => EditNotes, "edit-notes.resource";
+}''')
 
     def case(self, extra="", origin="device", members='["list1/task.ics"]'):
         case = self.root / "fixtures/edit-title/resource"
@@ -61,6 +67,15 @@ members = {members}
         (case / "before/list1/task.ics").unlink()
         self.assertEqual(validate(self.root), [])
 
+    def test_empty_collection_marker_is_not_a_task_resource(self):
+        case = self.case(members="[]")
+        (case / "before/list1/task.ics").unlink()
+        marker = case / "before/list1/.gitkeep"
+        marker.write_bytes(b"")
+        self.assertEqual(validate(self.root), [])
+        marker.write_text("hidden content")
+        self.assertTrue(validate(self.root))
+
     def test_rejects_inherited_states_and_verdicts(self):
         self.case(extra='base_step = "previous"\nverdict = "pass"\n')
         self.assertTrue(any("unknown" in e for e in validate(self.root)))
@@ -103,6 +118,33 @@ id = "edit-title.resource"
 evidence = ["edit-title/missing"]
 ''')
         self.assertTrue(any("missing" in e for e in validate(self.root)))
+
+    def test_contract_vocabulary_comes_from_the_typed_gate(self):
+        self.case()
+        (self.root / "compat/matrix.toml").write_text('''matrix_version = 2
+[[contract]]
+id = "edit-title.anything"
+evidence = ["edit-title/resource"]
+''')
+        self.assertTrue(any("unknown" in e for e in validate(self.root)))
+
+    def test_resources_outside_any_case_are_rejected(self):
+        self.case()
+        (self.root / "fixtures/stray.ics").write_text("SUMMARY:Synthetic stray\n")
+        self.assertTrue(any("unowned" in e for e in validate(self.root)))
+
+    def test_phone_roundtrip_cannot_prove_atomicity(self):
+        self.case()
+        (self.root / "compat/matrix.toml").write_text('''matrix_version = 2
+[[contract]]
+id = "list-metadata.collection"
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+atomicity = "pass"
+evidence = ["edit-title/resource"]
+''')
+        self.assertTrue(any("protocol observation" in e for e in validate(self.root)))
 
     def test_cross_operation_reuse_requires_an_explicit_claim(self):
         self.case()

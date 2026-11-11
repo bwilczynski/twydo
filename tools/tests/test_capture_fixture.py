@@ -30,62 +30,65 @@ class CaptureTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.tmp = Path(self._tmp.name)
         self.src = self.tmp / "src"
-        self.src.mkdir()
+        (self.src / "list1").mkdir(parents=True)
+        (self.src / "list2").mkdir()
         self.out = self.tmp / "out"
-        (self.src / "displayname").write_text("Test List")
-        (self.src / "color").write_text("#112233")
-        (self.src / "ignored.txt").write_text("x")
+        (self.src / "list1/a.ics").write_bytes(ICS.format(due="20261104T100000Z").encode())
+        (self.src / "list1/ignored.ics").write_text("SUMMARY:Unselected synthetic bystander\n")
 
-    def capture(self, step):
-        return run(["capture", str(self.src), str(self.out), "--scenario", "s1",
-                    "--step", step, "--device", "mac", "--action", 'Did "a" thing'])
+    def capture(self, state="before", extra=()):
+        return run(["capture", str(self.src), str(self.out), "--operation", "move",
+                    "--case", "family", "--state", state, "--collection", "list1",
+                    "--collection", "list2", "--resource", "list1/a.ics",
+                    "--device", "iphone", "--origin", "device", "--claim", "Move preserves fields",
+                    "--test", "tests/move.rs::preserves_fields", "--action", 'Did "a" thing', *extra])
 
-    def test_capture_writes_step_and_diff(self):
-        (self.src / "a.ics").write_text(ICS.format(due="20261104T100000Z"))
-        code, _ = self.capture("01-first")
-        self.assertEqual(code, 0)
-        d1 = self.out / "s1" / "01-first"
-        self.assertFalse((d1 / "ignored.txt").exists())
-        diff1 = (d1 / "changes.diff").read_text()
-        for name in ("a.ics", "color", "displayname"):
-            self.assertIn(f"added: {name}", diff1)
-        toml = (d1 / "step.toml").read_text()
-        self.assertIn('action = "Did \\"a\\" thing"', toml)
-        self.assertIn('device = "mac"', toml)
-        self.assertIn("captured_at = ", toml)
+    def test_capture_requires_explicit_state_and_selection(self):
+        self.assertEqual(self.capture()[0], 0)
+        state = self.out / "move/family/before"
+        self.assertEqual((state / "list1/a.ics").read_bytes(), (self.src / "list1/a.ics").read_bytes())
+        self.assertFalse((state / "list1/ignored.ics").exists())
+        manifest = (state.parent / "case.toml").read_text()
+        import tomllib
+        data = tomllib.loads(manifest)
+        self.assertEqual(data["states"]["before"]["members"], ["list1/a.ics"])
+        self.assertEqual(data["states"]["before"]["action"], 'Did "a" thing')
+        self.assertEqual(data["origin"], "device")
 
-        (self.src / "a.ics").write_text(ICS.format(due="20261105T100000Z"))
-        self.capture("02-second")
-        diff2 = (self.out / "s1" / "02-second" / "changes.diff").read_text()
-        self.assertIn("-DUE:20261104T100000Z", diff2)
-        self.assertIn("+DUE:20261105T100000Z", diff2)
-        self.assertNotIn("added:", diff2)
+    def test_capture_multiple_collections_and_empty_destination(self):
+        self.assertEqual(self.capture()[0], 0)
+        self.assertTrue((self.out / "move/family/before/list2").is_dir())
+        self.assertEqual((self.out / "move/family/before/list2/.gitkeep").read_bytes(), b"")
+        (self.src / "list2/b.ics").write_text("SUMMARY:Synthetic destination\n")
+        self.assertEqual(self.capture("after", ["--resource", "list2/b.ics"])[0], 0)
+        self.assertTrue((self.out / "move/family/after/list2/b.ics").is_file())
 
-    def test_removed_and_previous_is_greatest_lower(self):
-        (self.src / "a.ics").write_text(ICS.format(due="1"))
-        self.capture("01-a")
-        self.capture("03-c")
-        (self.src / "a.ics").unlink()
-        self.capture("02-b")  # previous is 01-a
-        self.assertIn("removed: a.ics", (self.out / "s1" / "02-b" / "changes.diff").read_text())
+    def test_capture_does_not_read_previous_steps(self):
+        self.assertEqual(self.capture("after")[0], 0)
+        (self.src / "list1/a.ics").write_bytes(b"SUMMARY:Earlier state\r\n")
+        self.assertEqual(self.capture("before")[0], 0)
+        self.assertEqual((self.out / "move/family/before/list1/a.ics").read_bytes(), b"SUMMARY:Earlier state\r\n")
+        self.assertFalse(list(self.out.rglob("changes.diff")))
+        self.assertFalse(list(self.out.rglob("step.toml")))
 
-    def test_capture_never_modifies_source(self):
-        (self.src / "a.ics").write_text(ICS.format(due="1"))
-        os.utime(self.src / "a.ics", (1000000000, 1000000000))
-        files = sorted(self.src.iterdir())
-        before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in files}
-        self.capture("01-first")
-        after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in sorted(self.src.iterdir())}
-        self.assertEqual(before, after)
+    def test_capture_preserves_selected_bytes_and_source(self):
+        path = self.src / "list1/a.ics"
+        os.utime(path, (1000000000, 1000000000))
+        before = path.read_bytes(), path.stat().st_mtime_ns
+        self.assertEqual(self.capture()[0], 0)
+        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
 
-    def test_refuses_nonempty_step_and_bad_names(self):
-        (self.src / "a.ics").write_text(ICS.format(due="1"))
-        self.assertEqual(self.capture("01-x")[0], 0)
-        self.assertEqual(self.capture("01-x")[0], 2)
-        self.assertEqual(self.capture("../x")[0], 2)
-        code, _ = run(["capture", str(self.src), str(self.out), "--scenario", "a/b",
-                       "--step", "01", "--device", "mac", "--action", "x"])
-        self.assertEqual(code, 2)
+    def test_refuses_existing_state_bad_names_and_escaping_selection(self):
+        self.assertEqual(self.capture()[0], 0)
+        self.assertEqual(self.capture()[0], 2)
+        self.assertEqual(self.capture("../escape")[0], 2)
+        self.assertEqual(self.capture("other", ["--resource", "../private.ics"])[0], 2)
+        self.assertFalse((self.out / "move/family/other").exists())
+
+    def test_refuses_symlinks_and_missing_selection_without_partial_capture(self):
+        (self.src / "list2/alias.ics").symlink_to(self.tmp / "outside.ics")
+        self.assertEqual(self.capture("other", ["--resource", "list2/alias.ics"])[0], 2)
+        self.assertFalse((self.out / "move/family/other").exists())
 
 
 class ScanTests(unittest.TestCase):
@@ -121,8 +124,7 @@ class ScanTests(unittest.TestCase):
             "DESCRIPTION:see https://example.com/x @tasktype:0 @startdate:2026-11-04\r\n"
             "END:VTODO\r\n")
         (self.dir / "displayname").write_text("Test")
-        (self.dir / "step.toml").write_text('scenario = "s1"\n')
-        (self.dir / "changes.diff").write_text("added: a.ics\n")
+        (self.dir / "case.toml").write_text('claim = "Synthetic claim"\n')
         code, out = run(["scan", str(self.dir)])
         self.assertEqual(code, 0, out)
         self.assertIn("Synthetic one", out)
@@ -133,7 +135,7 @@ class ScanTests(unittest.TestCase):
         code, out = run(["scan", str(self.dir)])
         self.assertEqual(code, 1)
         self.assertIn("changes.diff:1:", out)
-        self.assertIn("changes.diff:2:", out)
+        self.assertIn("file type not allowed", out)
 
     def test_scan_missing_or_empty_dir_is_error(self):
         code, _ = run(["scan", str(self.dir / "nope")])
