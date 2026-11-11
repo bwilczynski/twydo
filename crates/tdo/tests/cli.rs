@@ -92,9 +92,9 @@ mod gate {
         // Verdicts come from the live compat/matrix.toml, so check the row's shape, not its values.
         assert!(
             out.lines()
-                .any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=")
-                    && l.contains(" execute=")
-                    && l.contains(" edit=")),
+                .any(|l| l.starts_with("months-day-1-28  1 tasks  complete=")
+                    && l.contains(" complete=")
+                    && l.contains(" set-repeat=")),
             "{out}"
         );
         assert!(out.contains("parse errors: 0"), "{out}");
@@ -166,7 +166,7 @@ mod gate {
         assert!(!out.contains("matrix not found"), "{out}");
         assert!(
             out.lines()
-                .any(|l| l.starts_with("months-day-1-28  1 tasks  preserve=pass")),
+                .any(|l| l.starts_with("months-day-1-28  1 tasks  complete=pass")),
             "{out}"
         );
     }
@@ -557,7 +557,7 @@ mod sync {
         assert!(!auto());
     }
 
-    /// A refusal for a queued edit titled `label`, not yet shown.
+    /// A refusal for a queued edit-titled `label`, not yet shown.
     fn record_refusal(fx: &Fx, label: &str) {
         use chrono::{TimeZone, Utc};
         use twydo_core::edit::Op;

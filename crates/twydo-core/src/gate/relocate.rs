@@ -62,7 +62,15 @@ pub(super) fn check(
         )
         .map_err(|e| Blocked(e.to_string()))?;
     }
-    operation_row(matrix, mode, case(snap, idx), "move")
+    require(
+        matrix,
+        mode,
+        if family {
+            ContractId::MoveFamily
+        } else {
+            ContractId::MoveResource
+        },
+    )
 }
 
 /// Rebuild parsed structure from edited in-memory resources; no speculative disk writes.

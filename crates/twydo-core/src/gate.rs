@@ -1,66 +1,5 @@
-//! The write gate: an operation runs only when the compatibility matrix and the verified
-//! shapes allow it (spec §6). Otherwise [`check`] returns the exact reason.
-//!
-//! The edit functions trust the gate to exclude the cases they were not built for, so the
-//! rules here are the only guard. Rules are applied in order and the first failure wins:
-//!
-//! 0. a save ([`Op::Save`]) is its edit, then its move, each checked by these rules as its
-//!    own op against the loaded tasks; the first refusal wins (an empty edit is skipped).
-//!    Dedicated relocation capabilities validate the parsed post-edit snapshot. Legacy
-//!    matrices also need the `move` rows of the cases an edit leaves;
-//! 1. target lookup (UID, duplicates, `Task::blocked`, destination list);
-//!
-//!    1a. individual deletion with dedicated `checklist-item` / `project-item` rows:
-//!    validate the flat family and check its deletion verdict, without requiring
-//!    unrelated scheduling operations. Matrices without these rows retain the C29 path;
-//!
-//!    1b. family ops: completing, reopening, moving or deleting a parent touches every child,
-//!    so each child must pass the same lookup, then have cases (rule 2) and, if it repeats,
-//!    its class's preserve verdict (rule 4), or the op is refused with the child's reason.
-//!    A checklist's date change whose items have dates of their own is such an op too
-//!    ([`checklist_date_change`]); it may only set a new date-only due, and in verified
-//!    mode needs the `checklist-item-dates` edge case. Individual deletion has a dedicated
-//!    case for open items with open siblings under captured monthly checklists; moving an
-//!    item, reopening one under a completed/cancelled parent, or giving it dates is refused;
-//! 2. [`task_cases`]: the task's own case (`one-time`, `daily`, `weekly`, `monthly`,
-//!    `yearly`, or `from-completion` for any rule repeated from completion) and family case
-//!    (`checklist`, `recurring-checklist`, `project`, `recurring-project`, `project-recurring-child`), or why it has
-//!    none: a JSON `TaskType` (when the JSON metadata is readable) that is not 0, 1 or 2 or
-//!    does not match the task's kind (0 task, 1 checklist, 2 project; a parent without
-//!    `@tasktype` counts as a task) refuses with "this 2Do task type is not verified yet";
-//!    then a broken parent link ("broken parent link"), nested families, independently repeating
-//!    checklist items, a repeating child of a repeating project, children of a plain task, or the
-//!    repeat refusals of the own case.
-//!
-//!    A create has the cases of the new task: its own case from its repeat, and the family
-//!    it starts (a checklist or project) or joins. A repeating task needs a due date. An
-//!    item's parent must exist, be open, be a declared checklist or project with cases of its
-//!    own, not be an item, and be in the item's list; the item is a task, and a checklist
-//!    item takes no due, start or repeat.
-//!
-//!    An edit that changes the type ([`Change::Kind`]) or the repeat rule
-//!    ([`Change::Repeat`]) must also leave a task with cases and a repeat with a due date
-//!    (an item cannot become a parent, and a repeating project cannot
-//!    keep a repeating item);
-//! 3. the `[[operation]]` rows of every case the op touches: own, family, and the due/start
-//!    attribute cases (with rule 6, the only rules the write mode changes); for a type or
-//!    repeat change, the `edit` rows of the cases it leaves too; for a `Change::Repeat`
-//!    that sets, removes or reshapes the repeat (another class, from completion or end:
-//!    anything but a new interval of the same rule, which Plan 4 verified as an edit), the
-//!    `repeat` rows of the own and family cases before and after. A repeat-only reshape
-//!    needs these rows instead of ordinary `edit` rows; a mixed field save still needs both.
-//!    For a type change, the
-//!    `convert` row of its before and after types (none when the type stays). A row whose
-//!    `iphone_baseline` is `unsupported` (2Do does not offer the op) reads "not supported";
-//! 4. the `[[rule]]` verdicts of a repeating task; a rule Twydo writes (a create's, or a
-//!    `Change::Repeat`) needs its class's preserve and edit verdicts, and changing or
-//!    removing a rule needs the old class's edit verdict (on top of rule 3's `repeat` rows);
-//! 5. the verified shape of a repeating completion (a recurring parent's rule must have no
-//!    end and repeat from its due date); reopening an ended series is refused except the
-//!    captured top-level date-only daily/plain-monthly UNTIL shapes, which need dedicated rows
-//!    checked right after rule 2. Count/family/other-ended shapes still use undo;
-//! 6. reopening a repeat's history copy needs its dedicated `history-copy` row (older/custom
-//!    matrices may use the monthly/yearly rows), checked as in rule 3 so write mode applies.
+//! Typed operation admission. Structural and scheduling invariants live here;
+//! compatibility observations are supplied by operation-scoped contracts.
 
 mod checklist_edit;
 mod history_reopen;
@@ -72,7 +11,7 @@ use std::fmt;
 
 use chrono::{Datelike, NaiveDate};
 
-use crate::compat::{Matrix, Verdict, combined_verdicts};
+use crate::compat::{ContractId, Matrix, OperationId};
 use crate::config::WriteMode;
 use crate::edit::{
     Change, Due, NTH_WEEKDAY_INTERVAL, NewTask, Op, REOPEN_ENDED, interval_refusal, next_due,
@@ -196,8 +135,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 uid: uid.clone(),
                 to: to.clone(),
             })?;
-            let idx = lookup(snap, uid)?;
-            if m.operation(relocate::case(snap, idx), "move").is_some() {
+            {
                 let after = relocate::after_edit(snap, uid, changes, today)?;
                 return relocate::check(
                     &after,
@@ -207,12 +145,6 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                     to,
                     &relationships::Index::new(&after),
                 );
-            }
-            // Legacy/custom matrices retain their original post-edit case checks.
-            if let Some(a) = edited_cases(snap, idx, changes)? {
-                for c in std::iter::once(a.own).chain(a.family) {
-                    operation_row(m, mode, c, "move")?;
-                }
             }
         }
         return Ok(());
@@ -243,15 +175,12 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         return result;
     }
 
-    if let (Some(i), Op::Move { to, .. }) = (target, op)
-        && m.operation(relocate::case(snap, i), "move").is_some()
-    {
+    if let (Some(i), Op::Move { to, .. }) = (target, op) {
         return relocate::check(snap, m, mode, i, to, checker.relationships());
     }
 
     // Individual deletion removes a file without editing or executing schedules.
     // Its dedicated evidence therefore precedes the ordinary task/family cases.
-    // Older matrices keep their existing narrow C29 path below.
     if let (Some(i), Op::Delete { .. }) = (target, op)
         && let Some(p) = snap.parent(i)
     {
@@ -260,19 +189,15 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
             TaskKind::Project => Some("project-item"),
             TaskKind::Task => None,
         };
-        if let Some(case) = case
-            && m.operation(case, "delete").is_some()
-        {
+        if let Some(case) = case {
             return check_item_delete(snap, m, mode, p, case);
         }
     }
 
     // A top-level delete removes one resource or one flat family. Its dedicated rows
-    // authorize removal without recurrence-execution or field-edit verdicts. Older
-    // matrices keep their existing path below.
+    // authorize removal without recurrence-execution or field-edit requirements.
     if let (Some(i), Op::Delete { .. }) = (target, op)
         && snap.parent(i).is_none()
-        && m.operation(delete::case(snap, i), "delete").is_some()
     {
         return delete::check(snap, m, mode, i, checker.relationships());
     }
@@ -285,12 +210,11 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
 
     // Rule 1b: family operations.
     if let Some(i) = target {
-        family_op(snap, m, op, i)?;
+        family_op(snap, op, i)?;
         // Twydo's version of 2Do's item-date removal is not checked on the phone yet.
         if mode == WriteMode::Verified
             && checklist_date_change(snap, i, op)
-            && m.edge_case(CHECKLIST_ITEM_DATES)
-                .is_none_or(|c| c.verdict != Verdict::Pass)
+            && m.require(ContractId::SetDueItemCleanup, mode).is_err()
         {
             return blocked(format!(
                 "changing a checklist's date while its items have dates of their own is not \
@@ -341,10 +265,18 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         {
             return blocked(REOPEN_ENDED);
         }
-        if combined_verdicts(m, class.as_deref().unwrap()).0 != Verdict::Pass {
+        if !preserved_schedule(class.as_deref().unwrap()) {
             return blocked("the ended repeat's preservation is not verified yet");
         }
-        return operation_row(m, mode, case, "reopen");
+        return require(
+            m,
+            mode,
+            if case == "ended-until-daily" {
+                ContractId::ReopenEndedDaily
+            } else {
+                ContractId::ReopenEndedMonthly
+            },
+        );
     }
 
     // In every mode: no interval Twydo could not complete or 2Do could not keep.
@@ -392,40 +324,33 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         plain_repeat_transition(&snap.tasks[i], changes)?;
     }
 
-    // Rule 3: a pure repeat reshape uses its dedicated evidence. Ordinary fields mixed
-    // into the save, and interval-only changes, still require the ordinary edit rows.
     let repeat_only = reshaped
         && matches!(op, Op::Edit { changes, .. } if changes.iter().all(|c| matches!(c, Change::Repeat(_))));
-    let name = if repeat_only { "repeat" } else { op_name(op) };
-    for c in op_cases(snap, target, cases, op) {
-        operation_row(m, mode, c, name)?;
-    }
-    // The case an edit leaves needs its `edit` row, except when the repeat is reshaped: the
-    // new case is then checked against its `repeat` row instead (a weekly repeat set on a
-    // plain task says nothing about editing existing weekly tasks).
-    if let Some(a) = after
-        && (!reshaped || !repeat_only)
-    {
-        for c in std::iter::once(a.own).chain(a.family) {
-            operation_row(m, mode, c, "edit")?;
-        }
-    }
-    if let Some(a) = after
-        && reshaped
-    {
-        let before = std::iter::once(cases.own).chain(cases.family);
-        let mut seen = Vec::new();
-        for c in before.chain(std::iter::once(a.own)).chain(a.family) {
-            if !seen.contains(&c) {
-                seen.push(c);
-                operation_row(m, mode, c, "repeat")?;
-            }
+    operation_contracts(m, mode, cases, after, op, reshaped)?;
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op) {
+        if changes.is_empty() {
+            // The writer still touches stamps: missing evidence cannot authorize it.
+            require(m, mode, ContractId::EditTitleResource)?;
+        } else if changes.iter().any(|c| matches!(c, Change::Kind(_)))
+            && convert_case(snap, i, changes).is_none()
+        {
+            require(m, mode, ContractId::ConvertSameKind)?;
         }
     }
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
         && let Some(case) = convert_case(snap, i, changes)
     {
-        operation_row(m, mode, case, "convert")?;
+        let id = match case {
+            "task-to-checklist" => ContractId::ConvertTaskChecklist,
+            "task-to-project" => ContractId::ConvertTaskProject,
+            "checklist-to-project" => ContractId::ConvertChecklistProject,
+            "project-to-checklist" => ContractId::ConvertProjectChecklist,
+            "empty-project-to-checklist" => ContractId::ConvertEmptyProjectChecklist,
+            "parent-with-items-to-task" => ContractId::ConvertParentTask,
+            "empty-parent-to-task" => ContractId::ConvertEmptyParentTask,
+            _ => unreachable!(),
+        };
+        require(m, mode, id)?;
     }
 
     if cases.family == Some("recurring-checklist")
@@ -451,8 +376,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
     // Rules 4 and 5: repeating tasks.
     if let Some(class) = task_rule_class(task, snap) {
         let not_verified = || blocked(format!("{class} repeats are not verified yet"));
-        let (preserve, execute, edit) = combined_verdicts(m, &class);
-        if preserve != Verdict::Pass {
+        if !preserved_schedule(&class) {
             return not_verified();
         }
         if let Op::Edit { changes, .. } = op {
@@ -460,7 +384,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
             if keeps_rule && changes.iter().any(|c| matches!(c, Change::Due(None))) {
                 return blocked("removing the due date of a repeating task is not verified yet");
             }
-            if edit != Verdict::Pass
+            if schedule_contracts(m, OperationId::SetRepeat, &class).is_err()
                 && changes
                     .iter()
                     .any(|c| matches!(c, Change::RepeatInterval(_)))
@@ -527,44 +451,15 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                     "until completion is verified only for top-level date-only daily/plain-monthly tasks without starts or alerts",
                 );
             }
-            if execute != Verdict::Pass {
-                return not_verified();
-            }
+            schedule_contracts(m, OperationId::Complete, &class)?;
             recurring_complete_shape(task, m, today)?;
         }
     }
 
-    // Rule 6: a history copy left by completing a repeat.
-    if let Op::Reopen { .. } = op
-        && is_history_copy(task)
-    {
-        if m.operation("history-copy", "reopen").is_some()
-            && (task.kind != TaskKind::Task
-                || snap.parent(i).is_some()
-                || !snap.children(i).is_empty()
-                || !captured_schedule(task))
-        {
-            return blocked(
-                "history reopening is verified only for top-level date-only task copies without starts or alerts",
-            );
-        }
-        let reopen_ok = if m.operation("history-copy", "reopen").is_some() {
-            operation_row(m, mode, "history-copy", "reopen").is_ok()
-        } else {
-            // Compatibility with older/custom matrices: a history copy no longer carries
-            // its original rule class. New matrices name this operation explicitly.
-            ["monthly", "yearly"]
-                .iter()
-                .any(|c| operation_row(m, mode, c, "reopen").is_ok())
-        };
-        if !reopen_ok {
-            return blocked("reopening a repeat's history copy is not verified yet");
-        }
-    }
     Ok(())
 }
 
-/// The matrix cases of a task: its own case and, for a member of a family (a checklist, a
+/// Structural categories of a task: its own case and, for a member of a family (a checklist, a
 /// project, or one of their items), the family's case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cases {
@@ -885,22 +780,8 @@ fn convert_case(snap: &Snapshot, idx: usize, changes: &[Change]) -> Option<&'sta
     })
 }
 
-/// How a `convert` case reads in a refusal.
-fn convert_label(case: &str) -> &str {
-    match case {
-        "task-to-checklist" => "a task to a checklist",
-        "task-to-project" => "a task to a project",
-        "checklist-to-project" => "a checklist to a project",
-        "project-to-checklist" => "a project with items to a checklist",
-        "empty-project-to-checklist" => "an empty project to a checklist",
-        "parent-with-items-to-task" => "a checklist or project with items to a task",
-        "empty-parent-to-task" => "an empty checklist or project to a task",
-        other => other,
-    }
-}
-
-/// Rule 4 for a rule Twydo writes: a new rule's class needs its `preserve` and `edit`
-/// verdicts; changing or removing a rule needs the old class's `edit` verdict.
+/// A written or removed rule needs the operation-local encoding profiles for both
+/// source and destination; unchanged schedules do not ask for execution evidence.
 fn written_rule(
     snap: &Snapshot,
     m: &Matrix,
@@ -924,28 +805,10 @@ fn written_rule(
         }
         _ => return Ok(()),
     };
-    // A `fail` verdict is not "not verified yet": the phone misreads the rule.
-    let refuse = |class: &str, edit: Verdict| {
-        if edit == Verdict::Fail {
-            blocked(format!(
-                "{class} repeats are not supported by 2Do on the iPhone"
-            ))
-        } else {
-            blocked(format!("{class} repeats are not verified yet"))
-        }
-    };
-    if let Some(c) = old {
-        let edit = combined_verdicts(m, &c).2;
-        if edit != Verdict::Pass {
-            return refuse(&c, edit);
-        }
+    for class in old.into_iter().chain(new) {
+        schedule_contracts(m, OperationId::SetRepeat, &class)?;
     }
-    if let Some(c) = new {
-        let (preserve, _, edit) = combined_verdicts(m, &c);
-        if preserve != Verdict::Pass || edit != Verdict::Pass {
-            return refuse(&c, edit);
-        }
-    }
+
     Ok(())
 }
 
@@ -1059,14 +922,20 @@ fn check_item_delete(
             return blocked("item deletion needs recognized repeat rules");
         }
     }
-    operation_row(m, mode, case, "delete")
+    require(
+        m,
+        mode,
+        if case == "checklist-item" {
+            ContractId::DeleteChecklistItem
+        } else {
+            ContractId::DeleteProjectItem
+        },
+    )
 }
 
-/// Rule 1b: an op on a parent touches every child, so each must pass [`lookup`], then have
-/// cases ([`task_cases`]) and, if it repeats, its class's `[[rule]]` preserve verdict (rule
-/// 4). Individual deletion is scoped to the C29 shape; moving an item or reopening one
+/// Parent writes validate every touched child and its held structural schedule. Individual deletion is scoped to the C29 shape; moving an item or reopening one
 /// under a completed/cancelled parent remains unverified, as do independent checklist-item dates.
-fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blocked> {
+fn family_op(snap: &Snapshot, op: &Op, idx: usize) -> Result<(), Blocked> {
     if let Some(p) = snap.parent(idx) {
         if let Op::Edit { changes, .. } = op
             && snap.tasks[p].kind == TaskKind::Checklist
@@ -1132,7 +1001,7 @@ fn family_op(snap: &Snapshot, m: &Matrix, op: &Op, idx: usize) -> Result<(), Blo
         for &c in snap.children(idx) {
             task_cases(snap, c)?;
             if let Some(class) = task_rule_class(&snap.tasks[c], snap)
-                && combined_verdicts(m, &class).0 != Verdict::Pass
+                && !preserved_schedule(&class)
             {
                 return blocked(format!("{class} repeats are not verified yet"));
             }
@@ -1164,99 +1033,128 @@ fn known_list(snap: &Snapshot, id: &str) -> Result<(), Blocked> {
     }
 }
 
-fn op_name(op: &Op) -> &'static str {
-    match op {
-        Op::Create(_) => "create",
-        Op::CreateAt { .. } => "insert",
-        Op::Reorder { .. } => "reorder",
-        Op::Edit { .. } => "edit",
-        Op::Complete { .. } => "complete",
-        Op::Reopen { .. } => "reopen",
-        Op::Move { .. } => "move",
-        Op::Reparent { .. } => "reparent",
-        Op::Delete { .. } => "delete",
-        Op::Save { .. } => "save",
-    }
+fn require(m: &Matrix, mode: WriteMode, id: ContractId) -> Result<(), Blocked> {
+    m.require(id, mode)
+        .map_err(|error| Blocked(error.to_string()))
 }
 
-fn due_case(timed: bool) -> &'static str {
-    if timed { "timed" } else { "date-only" }
-}
-
-/// The matrix cases `op` touches: the own and family cases, then the attribute cases of a
-/// create (the new task's due and start) or an edit (`Due`: the due before and after; `Start`).
-fn op_cases(snap: &Snapshot, target: Option<usize>, cases: Cases, op: &Op) -> Vec<&'static str> {
-    let family = if matches!(op, Op::Delete { .. })
-        && target.is_some_and(|i| snap.parent(i).is_some())
-        && cases.family == Some("recurring-checklist")
-    {
-        Some("recurring-checklist-item")
-    } else {
-        cases.family
-    };
-    let mut out: Vec<&'static str> = std::iter::once(cases.own).chain(family).collect();
-    let mut add = |c: &'static str| {
-        if !out.contains(&c) {
-            out.push(c);
-        }
-    };
+/// All requested field contracts must pass. Shape interaction guards run on the
+/// combined request; successful individual fields never bypass those guards.
+fn operation_contracts(
+    m: &Matrix,
+    mode: WriteMode,
+    before: Cases,
+    after: Option<Cases>,
+    op: &Op,
+    reshaped: bool,
+) -> Result<(), Blocked> {
+    use ContractId as C;
     match op {
-        Op::Create(n) => {
-            if let Some(d) = n.due {
-                add(due_case(matches!(d, Due::Time(_))));
-            }
-            if n.start.is_some() {
-                add("start-date");
-            }
+        Op::Create(_) => {
+            let id = match before.family {
+                Some("checklist") => C::CreateChecklist,
+                Some("recurring-checklist") => C::CreateRecurringChecklist,
+                Some("project") => C::CreateProject,
+                Some("recurring-project") => C::CreateRecurringProject,
+                Some("project-recurring-child") => C::CreateRecurringProjectItem,
+                _ => C::CreateTask,
+            };
+            require(m, mode, id)
         }
+        Op::Complete { .. } => require(
+            m,
+            mode,
+            match before.family {
+                Some("recurring-checklist") => C::CompleteRecurringChecklist,
+                Some("recurring-project") => C::CompleteRecurringProject,
+                Some("checklist") => C::CompleteChecklist,
+                Some("project" | "project-recurring-child") => C::CompleteProject,
+                _ => C::CompleteTask,
+            },
+        ),
+        Op::Reopen { .. } => require(
+            m,
+            mode,
+            match (before.family, before.own) {
+                (Some("recurring-checklist"), _) => C::ReopenRecurringChecklist,
+                (_, "monthly" | "yearly") => C::ReopenRepeatingCalendar,
+                (_, "daily" | "weekly") => C::ReopenRepeatingOther,
+                (_, "from-completion") => C::ReopenFromCompletion,
+                _ => C::ReopenResource,
+            },
+        ),
         Op::Edit { changes, .. } => {
-            let before = target.and_then(|i| snap.tasks[i].due.as_ref());
-            for c in changes {
-                match c {
-                    Change::Due(after) => {
-                        if let Some(b) = before {
-                            add(due_case(!b.is_date_only()));
+            for change in changes {
+                let id = match change {
+                    Change::Summary(_) => C::EditTitleResource,
+                    Change::Description(_) => C::EditNotesResource,
+                    Change::Due(_) => C::SetDueTask,
+                    Change::Start(_) => C::SetStartTask,
+                    Change::RepeatInterval(_) => C::SetRepeatInterval,
+                    Change::Repeat(_) if !reshaped => C::SetRepeatInterval,
+                    Change::Repeat(_) => {
+                        for shape in std::iter::once(before).chain(after) {
+                            require(
+                                m,
+                                mode,
+                                match shape.family {
+                                    Some("checklist" | "recurring-checklist") => {
+                                        C::SetRepeatChecklist
+                                    }
+                                    Some("project" | "recurring-project") => C::SetRepeatProject,
+                                    Some("project-recurring-child") => C::SetRepeatProjectItem,
+                                    _ => C::SetRepeatTask,
+                                },
+                            )?;
                         }
-                        if let Some(a) = after {
-                            add(due_case(matches!(a, Due::Time(_))));
-                        }
+                        continue;
                     }
-                    Change::Start(_) => add("start-date"),
-                    Change::Summary(_)
-                    | Change::Description(_)
-                    | Change::RepeatInterval(_)
-                    | Change::Repeat(_)
-                    | Change::Kind(_) => {}
-                }
+                    Change::Kind(_) => continue, // exact conversion contract below
+                };
+                require(m, mode, id)?;
             }
+            Ok(())
         }
-        _ => {}
+        _ => unreachable!("resource, history, ordering and membership contracts dispatch earlier"),
     }
-    out
 }
 
-/// Rule 3: the `[[operation]]` row needs an iPhone baseline, and in verified mode both
-/// Twydo round trips. A missing row counts as unverified.
-fn operation_row(m: &Matrix, mode: WriteMode, case: &str, op: &str) -> Result<(), Blocked> {
-    let row = m.operation(case, op);
-    let get = |f: fn(&crate::compat::OperationEntry) -> Verdict| row.map_or(Verdict::Unverified, f);
-    let mut columns = vec![("iphone_baseline", get(|e| e.iphone_baseline))];
-    if mode == WriteMode::Verified {
-        columns.push(("twydo_to_iphone", get(|e| e.twydo_to_iphone)));
-        columns.push(("iphone_to_twydo", get(|e| e.iphone_to_twydo)));
-    }
-    let what = match op {
-        "convert" => format!("converting {}", convert_label(case)),
-        "repeat" => format!("changing the repeat rule of {case} tasks"),
-        _ => format!("{op} for {case} tasks"),
-    };
-    match columns.into_iter().find(|(_, v)| *v != Verdict::Pass) {
-        Some(("iphone_baseline", Verdict::Unsupported)) => {
-            blocked(format!("{what} is not supported by 2Do"))
+/// Recognized held schedules: unchanged fields need structural readability,
+/// not permission to execute or rewrite their recurrence.
+fn preserved_schedule(class: &str) -> bool {
+    let mut parts = class.split('+');
+    matches!(
+        parts.next(),
+        Some(
+            "days"
+                | "weeks"
+                | "weekdays-set"
+                | "months-day-1-28"
+                | "months-day-29-31"
+                | "months-nth-weekday"
+                | "years"
+                | "years-feb-29"
+        )
+    ) && parts.all(|p| matches!(p, "from-completion" | "count" | "until"))
+}
+
+/// Only writers/executors ask for recurrence evidence. Profiles are scoped to
+/// their operation, never a global recurrence permission table.
+fn schedule_contracts(m: &Matrix, operation: OperationId, class: &str) -> Result<(), Blocked> {
+    for part in class.split('+') {
+        let id = ContractId::schedule(operation, part)
+            .ok_or_else(|| Blocked(format!("{class} repeats are not verified yet")))?;
+        if operation == OperationId::SetRepeat
+            && m.get(id)
+                .is_some_and(|r| r.iphone_baseline == crate::compat::Verdict::Fail)
+        {
+            return blocked(format!(
+                "{class} repeats are not supported by 2Do on the iPhone"
+            ));
         }
-        Some((col, _)) => blocked(format!("{what} is not verified yet ({col})")),
-        None => Ok(()),
+        require(m, WriteMode::Verified, id)?;
     }
+    Ok(())
 }
 
 /// Scheduling context observed in Plan 8 batch 1. Offset evidence from other task/family
@@ -1655,8 +1553,8 @@ fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
 /// time, start date or relative alerts need the `start-due-alarm-offsets` edge case to pass;
 /// a next due on or before `today` (a missed occurrence) needs `monthly-15th-three-months-late`.
 fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<(), Blocked> {
-    let passes = |id: &str| m.edge_case(id).is_some_and(|e| e.verdict == Verdict::Pass);
-    let offsets = passes("start-due-alarm-offsets");
+    let passes = |id| m.require(id, WriteMode::Verified).is_ok();
+    let offsets = passes(ContractId::CompleteStartOffsets);
     let (due, timed) = match &t.due {
         None => {
             return blocked("completing a repeating task without a due date is not verified yet");
@@ -1705,7 +1603,7 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
         return blocked("completing a repeating task with a start-day delay is not verified yet");
     }
     // The last occurrence of an ending series has no next date.
-    if next.is_some_and(|n| n <= today) && !passes("monthly-15th-three-months-late") {
+    if next.is_some_and(|n| n <= today) && !passes(ContractId::CompleteLateMonthly) {
         return blocked(
             "completing a repeating task after a missed occurrence is not verified yet \
              (monthly-15th-three-months-late)",
@@ -1788,20 +1686,14 @@ fn check_order(
         // classifications belong to operations that edit or execute those fields,
         // not to this metadata-only write. CreateAt already passed the Create gate.
     }
-    order_row(m, mode, family, name)
-}
-
-fn order_row(m: &Matrix, mode: WriteMode, case: &str, name: &str) -> Result<(), Blocked> {
-    let row = m
-        .operation(case, name)
-        .ok_or_else(|| Blocked(format!("{name} for {case} items is not verified yet")))?;
-    if !matches!(row.iphone_baseline, Verdict::Pass | Verdict::Unsupported)
-        || (mode == WriteMode::Verified
-            && (row.twydo_to_iphone != Verdict::Pass || row.iphone_to_twydo != Verdict::Pass))
-    {
-        return blocked(format!(
-            "{name} for {case} items is not verified yet (phone display/preservation)"
-        ));
-    }
-    Ok(())
+    let _ = family;
+    require(
+        m,
+        mode,
+        if name == "reorder" {
+            ContractId::ReorderItems
+        } else {
+            ContractId::InsertItems
+        },
+    )
 }

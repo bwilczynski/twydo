@@ -1,19 +1,16 @@
 claim = "Recurring completion advances the live resource and creates history as observed on the phone, including month overflow and endings."
 origin = "device"
 observed = "Recurring completion advances the live resource and creates history as observed on the phone, including month overflow and endings."
-tests = ["crates/twydo-core/tests/edit_complete.rs::one_time_complete_and_reopen_match_2do", "crates/twydo-core/tests/edit_fields.rs::text_capability_preserves_full_resources_including_alarms_and_metadata", "crates/twydo-core/tests/gate.rs::create_item_under_plain_task_is_refused", "crates/twydo-core/tests/gate_contract_parity.rs::current_contract_decisions_are_preserved_in_both_modes", "crates/twydo-core/tests/store.rs::text_capability_closed_parent_and_item_are_single_undoable_edits"]
+tests = ["crates/twydo-core/tests/edit_complete.rs::twin_monthly_on_the_31st_matches_the_phone_twice", "crates/twydo-core/tests/edit_complete.rs::twin_yearly_on_29_feb_matches_the_phone", "crates/twydo-core/tests/edit_complete.rs::twin_count_last_occurrence_matches_the_phone", "crates/twydo-core/tests/edit_complete.rs::twin_until_last_occurrence_matches_the_phone"]
 supports = ["complete.count", "complete.days", "complete.from-completion", "complete.leap-year", "complete.month-overflow", "complete.nth-weekday", "complete.weekdays", "complete.weeks", "set-repeat.count", "set-repeat.days", "set-repeat.from-completion", "set-repeat.leap-year", "set-repeat.month-overflow", "set-repeat.nth-weekday", "set-repeat.weekdays", "set-repeat.weeks"]
 
 [provenance]
 source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 source_path = "fixtures/phase0/v1/plan7-twydo-list2"
+environment_source = "compat/matrix.toml at 41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 
 [environment]
-iphone_2do = "3.91 build 38246"
-ios = "27.0.1"
-server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
-server_version = "2.4.8-10948"
-vdirsyncer = "0.21.0"
+client_version = "unknown (not recorded per state; baseline versions are in the source matrix)"
 
 [states."seed"]
 path = "seed"

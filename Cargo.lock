@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "tdo"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1944,7 +1944,7 @@ checksum = "06bdbd8cfc056b8d2e2e85f29b56a3bdbecb527cef81eb39e3e7b98af4652770"
 
 [[package]]
 name = "twydo-core"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-daemon"
-version = "0.1.9"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "libc",

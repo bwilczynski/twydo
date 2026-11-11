@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 
-use crate::compat::{Matrix, Verdict};
+use crate::compat::{ContractId, Matrix};
 use crate::config::{Config, WriteMode};
 use crate::edit::{
     Change, EditError, Op, apply_changes, complete_one_time, complete_recurring, file_name,
@@ -1144,8 +1144,8 @@ impl Store {
         if self.mode == WriteMode::Verified && is_repeat_completion(&e) {
             let ok = self
                 .matrix
-                .edge_case(UNDO_REPEAT_EDGE)
-                .is_some_and(|c| c.verdict == Verdict::Pass);
+                .require(ContractId::CompleteUndo, WriteMode::Verified)
+                .is_ok();
             if !ok {
                 return Err(WriteError::Blocked(Blocked(format!(
                     "undoing the completion of a repeating task is not verified yet \

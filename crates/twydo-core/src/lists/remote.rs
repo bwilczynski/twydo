@@ -4,7 +4,7 @@ use std::fs;
 use chrono::Utc;
 use serde_json::json;
 
-use crate::compat::{Matrix, Verdict};
+use crate::compat::{ContractId, Matrix};
 use crate::config::WriteMode;
 use crate::store::bind_vdir_state;
 
@@ -46,43 +46,17 @@ pub(super) fn capability(
     case: &str,
     action: &str,
 ) -> Result<(), ListError> {
-    let row = matrix.operation(case, action).ok_or_else(|| {
-        ListError::Refused(format!(
-            "{action} for lists is not verified (missing capability)"
-        ))
-    })?;
-    let verdicts = [
-        row.iphone_baseline,
-        row.twydo_to_iphone,
-        row.iphone_to_twydo,
-    ];
-    // The prototype's read/PROPPATCH/read sequence is not atomic. Test mode must
-    // not bypass this row: promotion requires a demonstrated server precondition,
-    // not only a successful name/color round trip.
-    if case == "list-metadata"
-        && (verdicts.iter().any(|v| *v != Verdict::Pass)
-            || matrix
-                .edge_case("list-metadata-atomicity")
-                .is_none_or(|e| e.verdict != Verdict::Pass))
-    {
-        return Err(ListError::Refused(
-            "list metadata editing is not verified: server-enforced protection against concurrent name/color edits is required (including in test mode)".into(),
-        ));
-    }
-    if verdicts
-        .iter()
-        .any(|v| matches!(v, Verdict::Fail | Verdict::Unsupported))
-    {
-        return Err(ListError::Refused(format!(
-            "{action} for lists is refused by its compatibility evidence"
-        )));
-    }
-    if mode == WriteMode::Verified && verdicts.iter().any(|v| *v != Verdict::Pass) {
-        return Err(ListError::Refused(format!(
-            "{action} for lists is not verified against 2Do yet"
-        )));
-    }
-    Ok(())
+    let id = match case {
+        "list-create" => ContractId::ListCreate,
+        "list-metadata" => ContractId::ListMetadata,
+        "list-delete" => ContractId::ListDelete,
+        _ => {
+            return Err(ListError::Refused(format!(
+                "unknown list capability: {action}"
+            )));
+        }
+    };
+    matrix.require(id, mode).map_err(|e| ListError::Refused(if id == ContractId::ListMetadata { "list metadata editing is not verified: server-enforced protection against concurrent name/color edits is required (including in test mode)".into() } else { e.to_string() }))
 }
 
 fn color_hex(color: (u8, u8, u8)) -> String {

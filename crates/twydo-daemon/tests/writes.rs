@@ -359,17 +359,11 @@ fn a_session_expires_after_its_ttl() {
 
 /// Every operation on a plain task is unverified for Twydo.
 fn unverified_matrix() -> Matrix {
-    let mut s = String::from("matrix_version = 1\n");
-    for case in ["one-time"] {
-        for op in ["create", "edit", "complete", "reopen", "move", "delete"] {
-            s.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
-                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-                 twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"
-            ));
-        }
+    let mut matrix = Matrix::embedded().clone();
+    for record in &mut matrix.contract {
+        record.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
     }
-    Matrix::from_toml_str(&s).unwrap()
+    matrix
 }
 
 #[test]

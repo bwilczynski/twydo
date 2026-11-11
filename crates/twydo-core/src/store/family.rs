@@ -41,7 +41,6 @@ struct Child {
 impl Store {
     /// Keep the text capability's structural dependencies through recovery and undo.
     pub(super) fn text_edit_head(&self, snap: &Snapshot, op: &Op) -> Option<usize> {
-        self.matrix.operation("resource-text", "edit")?;
         let (uid, changes) = match op {
             Op::Edit { uid, changes }
             | Op::Save {

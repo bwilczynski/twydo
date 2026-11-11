@@ -1,7 +1,7 @@
 //! Concrete gate probes shared by compatibility reports.
 
 use chrono::{DateTime, Utc};
-use twydo_core::compat::Matrix;
+use twydo_core::compat::{Matrix, OperationId};
 use twydo_core::config::WriteMode;
 use twydo_core::views::Snapshot;
 
@@ -44,21 +44,21 @@ pub fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<P
     };
     let mut out = vec![
         Probe {
-            action: "edit title",
+            action: OperationId::EditTitle.as_str(),
             availability: check(Op::Edit {
                 uid: uid.clone(),
                 changes: vec![Change::Summary(task.summary.clone())],
             }),
         },
         Probe {
-            action: "edit notes",
+            action: OperationId::EditNotes.as_str(),
             availability: check(Op::Edit {
                 uid: uid.clone(),
                 changes: vec![Change::Description(task.description.clone())],
             }),
         },
         Probe {
-            action: "complete",
+            action: OperationId::Complete.as_str(),
             availability: if task.status == Status::Open {
                 check(Op::Complete { uid: uid.clone() })
             } else {
@@ -66,7 +66,7 @@ pub fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<P
             },
         },
         Probe {
-            action: "reopen",
+            action: OperationId::Reopen.as_str(),
             availability: if task.status == Status::Completed {
                 check(Op::Reopen { uid: uid.clone() })
             } else {
@@ -74,22 +74,26 @@ pub fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<P
             },
         },
         Probe {
-            action: "delete",
+            action: OperationId::Delete.as_str(),
             availability: check(Op::Delete { uid }),
         },
     ];
     for (action, input) in [
-        ("create", "new task fields, type and list"),
-        ("edit dates", "proposed due/start values"),
-        ("edit repeat", "proposed repeat rule"),
-        ("convert", "destination task type"),
-        ("move", "destination list"),
-        ("reparent", "destination list and parent/context"),
-        ("reorder", "sibling anchor and placement"),
-        ("insert", "new task fields, sibling anchor and placement"),
+        (OperationId::Create, "new task fields, type and list"),
+        (OperationId::SetDue, "proposed due value"),
+        (OperationId::SetStart, "proposed start value"),
+        (OperationId::SetRepeat, "proposed repeat rule"),
+        (OperationId::Convert, "destination task type"),
+        (OperationId::Move, "destination list"),
+        (OperationId::Reparent, "destination list and parent/context"),
+        (OperationId::Reorder, "sibling anchor and placement"),
+        (
+            OperationId::Insert,
+            "new task fields, sibling anchor and placement",
+        ),
     ] {
         out.push(Probe {
-            action,
+            action: action.as_str(),
             availability: Availability::RequiresInput(input),
         });
     }
@@ -138,7 +142,7 @@ mod tests {
     fn concrete_probes_match_gate_across_shapes_and_modes() {
         let s = snap();
         let mut baseline = Matrix::embedded().clone();
-        for row in &mut baseline.operation {
+        for row in &mut baseline.contract {
             row.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
         }
         for m in [Matrix::embedded(), &baseline] {
@@ -161,14 +165,14 @@ mod tests {
                     let got = probes_with(&checker, i);
                     for (action, op) in [
                         (
-                            "edit title",
+                            "edit-title",
                             Op::Edit {
                                 uid: uid.into(),
                                 changes: vec![Change::Summary(t.summary.clone())],
                             },
                         ),
                         (
-                            "edit notes",
+                            "edit-notes",
                             Op::Edit {
                                 uid: uid.into(),
                                 changes: vec![Change::Description(t.description.clone())],
@@ -224,8 +228,9 @@ mod tests {
             }
             for action in [
                 "create",
-                "edit dates",
-                "edit repeat",
+                "set-due",
+                "set-start",
+                "set-repeat",
                 "convert",
                 "move",
                 "reparent",

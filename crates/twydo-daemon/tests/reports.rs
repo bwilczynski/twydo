@@ -54,7 +54,7 @@ fn check_report_summarizes_health_evidence_and_permissions() {
     assert!(
         r.lines
             .iter()
-            .any(|l| l.contains("  1 tasks  preserve=") && l.contains(" edit=")),
+            .any(|l| l.contains("  1 tasks  complete=") && l.contains(" set-repeat=")),
         "{out}"
     );
     assert!(out.contains("\n\nRecurrence evidence"), "{out}");
@@ -170,7 +170,7 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let single = task_report(&td, uid);
-    assert!(single.contains("edit title: allowed"), "{single}");
+    assert!(single.contains("edit-title: allowed"), "{single}");
     assert_eq!(std::fs::read(queue_path).unwrap(), queue_bytes);
     assert_eq!(fx.snapshot().tasks.len(), count);
     assert_eq!(resource_bytes(&fx), files);
@@ -309,11 +309,20 @@ fn verified_daemon(fx: &Fixture) -> TestDaemon {
 }
 
 fn matrix_file(dir: &std::path::Path, rows: &[(&str, &str, &str)]) -> std::path::PathBuf {
-    let mut text = String::from("matrix_version = 1\n");
-    for (class, preserve_execute, edit) in rows {
-        text += &format!(
-            "[[rule]]\nclass = \"{class}\"\npreserve = \"{preserve_execute}\"\nexecute = \"{preserve_execute}\"\nedit = \"{edit}\"\n"
-        );
+    use twydo_core::compat::{ContractId, OperationId};
+    let mut text = String::from("matrix_version = 2\n");
+    for (class, execute, edit) in rows {
+        for (op, value) in [
+            (OperationId::Complete, execute),
+            (OperationId::SetRepeat, edit),
+        ] {
+            if let Some(id) = ContractId::schedule(op, class.trim_start_matches("mod:")) {
+                text += &format!(
+                    "[[contract]]\nid = {:?}\niphone_baseline = {value:?}\ntwydo_to_iphone = {value:?}\niphone_to_twydo = {value:?}\n",
+                    id.as_str()
+                );
+            }
+        }
     }
     let path = dir.join("matrix.toml");
     std::fs::write(&path, text).unwrap();
@@ -347,15 +356,15 @@ fn healthy_data_and_partial_parse_still_report_refused_operations() {
         assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
         if broken {
             assert!(out.contains("parse errors: 1"), "{out}");
-            assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
+            assert!(out.contains("edit-title: allowed=0 refused=1"), "{out}");
 
             // Rule-edit evidence and operation permission are separate, even with parse errors.
             matrix_file(dir.path(), &[("days", "pass", "unverified")]);
             let out = report(&td, Some(&matrix), false);
-            assert!(out.contains("execute=pass edit=unverified"), "{out}");
-            assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
+            assert!(out.contains("complete=pass set-repeat=unverified"), "{out}");
+            assert!(out.contains("edit-title: allowed=0 refused=1"), "{out}");
             assert!(
-                out.contains("edit for daily tasks is not verified yet"),
+                out.contains("edit-title.resource is not verified yet"),
                 "{out}"
             );
             assert!(!out.contains("b.ics"), "{out}");
@@ -384,7 +393,7 @@ fn unverified_modifier_blocks_class() {
         );
         let out = report(&td, Some(&matrix), false);
         assert!(
-            out.contains(&format!("days+count  1 tasks  preserve={verdict}")),
+            out.contains(&format!("days+count  1 tasks  complete={verdict}")),
             "{out}"
         );
         assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
@@ -555,7 +564,9 @@ fn both_reports_use_the_configured_mode_and_real_gate() {
     // The isolated iPhone baseline passes; cross-device evidence stays unverified.
     // Test mode admits the text edits, while verified mode must refuse them.
     let mut matrix_text = std::fs::read_to_string(&matrix_path).unwrap();
-    matrix_text.push_str("[[operation]]\ncase = \"monthly\"\nop = \"edit\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n");
+    for id in ["edit-title.resource", "edit-notes.resource"] {
+        matrix_text.push_str(&format!("[[contract]]\nid = {id:?}\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"));
+    }
     std::fs::write(&matrix_path, matrix_text).unwrap();
     let matrix = Matrix::load(&matrix_path).unwrap();
     for mode in [WriteMode::Verified, WriteMode::Test] {
@@ -568,22 +579,22 @@ fn both_reports_use_the_configured_mode_and_real_gate() {
         let aggregate = report(&td, None, false);
         assert!(
             single.contains(if mode == WriteMode::Test {
-                "edit title: allowed"
+                "edit-title: allowed"
             } else {
-                "edit title: refused"
+                "edit-title: refused"
             }),
             "{single}"
         );
         for (action, op) in [
             (
-                "edit title",
+                "edit-title",
                 Op::Edit {
                     uid: task.uid.clone(),
                     changes: vec![Change::Summary(task.summary.clone())],
                 },
             ),
             (
-                "edit notes",
+                "edit-notes",
                 Op::Edit {
                     uid: task.uid.clone(),
                     changes: vec![Change::Description(task.description.clone())],
@@ -725,8 +736,8 @@ fn both_reports_admit_text_edits_on_closed_recurring_checklists() {
             !text.contains("checklist creation and text editing"),
             "{text}"
         );
-        assert!(text.contains("edit title: allowed"), "{text}");
-        assert!(text.contains("edit notes: allowed"), "{text}");
+        assert!(text.contains("edit-title: allowed"), "{text}");
+        assert!(text.contains("edit-notes: allowed"), "{text}");
         assert!(!text.contains(uid), "{text}");
     }
 }

@@ -33,8 +33,8 @@ Switching 2Do's sync method replaces what the server holds, so do it carefully:
    `python3 tools/reconcile.py inventory.2do.json export.json` reports tasks and lists that do not
    match. Its output contains list names (and titles with `--show-titles`).
 
-Then run `tdo check`: it reports data health, repeat-class evidence and the actual
-permissions for the tasks it can load. A class verdict is not a promise that every
+Then run `tdo check`: it reports data health, operation-scoped repeat evidence and the actual
+permissions for the tasks it can load. A repeat profile is not a promise that every
 operation on those tasks is available.
 
 ## What Twydo keeps intact
@@ -45,13 +45,41 @@ Twydo does not understand. Details: [data-model.md](data-model.md#what-twydo-pre
 
 Nested checklist/project items use `DisplayOrder`, then creation time, rather than the
 containing list's date/title sort; Details uses the same sequence. The
-[ordering check](reference/phase0/issue35-checklist-order.md) covered undated items under
+[ordering check](reference/evidence.md) covered undated items under
 non-recurring checklist and project parents: phone-created sequences, phone appends,
 Twydo appends displayed last on the phone, and subsequent phone renames preserving identity
 and position. Existing siblings remained byte-unchanged. The later
-[reordering round](reference/phase0/issue41-item-reorder.md) verified explicit ranks with
+[reordering round](reference/evidence.md) verified explicit ranks with
 **Manually** selected on the phone, including preservation through phone renames. This
 does not add phone-side drag reordering or widen recurrence gates.
+
+## Custom matrices in 0.2.0
+
+This is a breaking change to custom compatibility files: version 1 matrices are
+rejected with a migration error. Version 2 uses typed operation contracts instead
+of independent operation/rule/edge tables. For example:
+
+```toml
+matrix_version = 2
+
+[[contract]]
+id = "edit-title.resource"
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/standalone-lifecycle"]
+```
+
+Use the current [matrix](../compat/matrix.toml) and [contract vocabulary](../crates/twydo-core/src/compat/contracts.rs)
+when migrating; do not mechanically mark old rows as passing. Missing contracts
+refuse, unknown IDs/fields and duplicate contracts are errors. Structural, identity,
+conflict and recovery safeguards still apply even to a passing contract. The binary
+embeds its matrix and needs no fixture checkout. A per-report `--matrix` overrides
+only that report; a custom write policy is supplied to `tdo daemon --matrix`.
+
+`tdo check` and `tdo op check` use operation IDs such as `edit-title`, `edit-notes`,
+`set-due`, `set-start` and `set-repeat`. Recurrence summaries project `complete` and
+`set-repeat` evidence from these contracts; they are not another permission table.
 
 ## Verified mode
 
@@ -60,7 +88,7 @@ representation (the `iphone_baseline` column). Twydo-originated item reordering/
 has the bounded exception described [below](#item-reordering), because the phone does not
 offer the reorder operation. A write counts as
 verified once Twydo's own result was also checked on the iPhone: read back correctly, and edited
-again (the `twydo_to_iphone` and `iphone_to_twydo` columns). The results are recorded in
+again (the `twydo_to_iphone` and `iphone_to_twydo` columns). The representative results and their preservation scope are recorded as operation contracts in
 [`compat/matrix.toml`](../compat/matrix.toml), which is built into `tdo` and owned by the daemon. Many writes have a
 baseline but are not verified yet.
 
@@ -88,7 +116,7 @@ reading the iPhone's). Reading is never refused: every task is shown.
 
 - **Data health:** task count, per-file parse errors and model-level read-only resources,
   including completed tasks. These counts alone do not establish write permissions.
-- **Recurrence evidence:** preservation, execution and editing verdicts for repeat classes
+- **Recurrence evidence:** completion and repeat-writing profile verdicts for repeat classes
   on open tasks. Shape restrictions and operation-specific evidence still apply.
 - **Operation availability:** allowed, refused, inapplicable and needs-input counts for
   concrete actions, using the configured write mode and the writer's gate. Refusals are
@@ -119,9 +147,8 @@ journal recovery still applies. This increment improves reporting; it does not
 change which writes are admitted.
 
 `[writes] mode = "test"` relaxes the check: it drops the `twydo_to_iphone` and `iphone_to_twydo`
-columns of the operation rows and the checklist item-dates edge case (both apply only in verified
-mode), but still needs the phone's baseline (`iphone_baseline`, except the bounded
-Twydo-originated ordering operations), the rule verdicts and the safety rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
+columns of ordinary contracts and the checklist item-date cleanup requirement, but still needs the phone's baseline (`iphone_baseline`, except the bounded
+Twydo-originated ordering operations), the operation-scoped scheduling requirements and the safety rules, and still refuses the repeat kinds the iPhone misreads. It exists for testing against a
 separate test account, and must never point at your real data: an unverified write can produce
 something 2Do on the iPhone reads differently. See [config.md](config.md).
 
@@ -137,14 +164,16 @@ editing stays refused in **every write mode** until server-enforced conditional 
 are implemented and demonstrated. The prototype's preflight read and post-write readback
 cannot prevent a concurrent phone rename/color change from being silently overwritten.
 Successful phone round trips alone cannot enable that capability: the independent
-`list-metadata-atomicity` edge must also pass. The [lifecycle probes](reference/phase0/issue69-lifecycle.md)
+`list-metadata.collection` atomicity requirement must also pass. The [lifecycle probes](reference/evidence.md)
 found that the server accepted a tokenless name change while reporting an exclusive lock,
 and accepted a stale-ETag DELETE even though that ETag tracked resource changes.
-The `list-metadata-atomicity` and `list-delete-atomicity` edges record those failures.
+The list metadata and deletion contracts record those independent `atomicity` failures.
+Missing atomicity is unverified even if all device directions pass; neither write mode
+can bypass it.
 Product collection deletion remains unavailable. These verdicts do not change
 task-operation test-mode rules.
 
-The [archive investigation](reference/phase0/issue69-list-management.md) found no changes
+The [archive investigation](reference/evidence.md) found no changes
 to task bytes, ETags or the 14 returned collection properties after phone archive/unarchive.
 Twydo therefore retains local archiving and does not claim to share archive state with
 2Do. On the tested phone, restore was under Settings → Privacy → Archived Lists; the
@@ -156,14 +185,14 @@ is inferred from that archive round.
 The [editing-completeness audit and plan](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining operations, imported-shape restrictions and later editing features. The
 table below summarizes individual matrix cases, not every combination. Relocation has dedicated
-`standalone-resource` / `move` and `flat-family` / `move` rows, so unchanged schedules do not
+`move.resource` and `move.family` contracts, so unchanged schedules do not
 require repeat execution/edit verdicts. Other operations still check their applicable schedule
 contracts. `tdo op check <uid>` reports effective permissions; moving requires a proposed destination.
 
 Relocation changes resource UID, self-referential JSON `uid`/top-level `RUID`, child parent links,
 and modification stamps. It preserves schedules, alarms, completion, ranks, foreign series RUIDs
-and unknown properties. Direct evidence is [Plan 6 H8](reference/phase0/plan6-baseline.md):
-`plan6-list1/07-move`, `plan6-list2/07-move`, and `plan6-twydo-list2/08-move` plus phone return.
+and unknown properties. Direct evidence is retained in [family destination captures](../fixtures/move/family-destination/case.toml)
+and [Twydo/phone family round trips](../fixtures/move/family-roundtrip/case.toml).
 Other schedule combinations and distinct internal JSON parent identities are supported by local
 preservation tests, not additional device observations. An internal parent `uid` differing from
 the standard UID remains unchanged; children's JSON links keep that internal identity while
@@ -174,35 +203,34 @@ project structure. Individual item moves, nesting, broken or disagreeing links, 
 unreadable/ambiguous resources and same/absent destination lists remain refused. Queues and
 recovery retain the original identity map; source and destination family membership, bytes and
 UID collisions are checked before writing, including undo. A mixed card save also needs every
-changed field's contract. Older/custom matrices without these capability rows retain legacy
-move behavior. No device round or broad recurrence verdict was added.
+changed field's contract. Missing contracts refuse; version-1 matrices are rejected. No device round was added.
 
-The [Plan 8 phone session](reference/phase0/plan8-tui-completeness-session.md#regression-test-map)
-finished its first batch: five logical synthetic cases, eight newly passing operation rows,
-and narrowly guarded `until` execution. Its later project/item, lifecycle and native-date
-batches remain unfinished. A passing row is combined with the shape restrictions below.
+[Checklist and UNTIL cases](../fixtures/complete/checklist-and-until/case.toml) retain the
+completed observations. Remaining project/item, lifecycle and native-date questions are
+listed in the [evidence guide](reference/evidence.md). Passing contracts still require
+the shape restrictions below.
 
 | Kind of task | Create | Ordinary edit | Complete | Reopen | Move | Delete |
 |---|---|---|---|---|---|---|
 | One-time task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Monthly repeat (any day, Nth weekday) | ✅ | ✅ | ✅ | — | — | ✅ |
-| Yearly repeat (29 February included) | ✅ | ✅ | ✅ | — | — | ✅ |
-| Daily repeat | ✅ | ✅ | ✅ | — | — | ✅ |
-| Weekly repeat | ✅ | ✅ | ✅ | — | — | ✅ |
-| Repeat from completion | ✅ | Monthly only² | ✅ | — | — | ✅ |
+| Monthly repeat (any day, Nth weekday) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| Yearly repeat (29 February included) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| Daily repeat | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| Weekly repeat | ✅ | ✅ | ✅ | — | ✅ | ✅ |
+| Repeat from completion | ✅ | Monthly only² | ✅ | — | ✅ | ✅ |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring checklist | Monthly only³ | Text; scoped scheduling/conversion below | Monthly only¹ | — | — | ✅ |
+| Recurring checklist | Monthly only³ | Text; scoped scheduling/conversion below | Monthly only¹ | — | ✅ | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | ✅ |
 
-Title/notes-only edits use the separate `resource-text.edit` capability for recognized
+Title/notes-only edits use the separate `edit-title.resource` / `edit-notes.resource` capability for recognized
 standalone resources and flat checklist/project parents/items, including completed
 and recurring families. Scheduling restrictions in this table apply to the other
 fields. Text edits preserve schedules, lifecycle and metadata bytewise and need no
 recurrence execution/edit evidence. Ambiguous identities/fields, unreadable required
 metadata, broken links and nesting remain refused. The
-[text-edit audit](reference/phase0/text-edit-capability.md) distinguishes representative
+[text-edit audit](reference/evidence.md) distinguishes representative
 device observations from preservation generalization and describes durable dependencies.
 
 “—” means not verified yet. Repeat changes use separate rows from ordinary edits. The complete
@@ -218,24 +246,24 @@ The newly enabled operations are:
 
 | Matrix case / operation | Verified scope |
 |---|---|
-| `daily.repeat` | Set, remove or change between plain due-anchored daily/weekly/monthly/yearly rules, without ends or weekday selectors |
-| `yearly.repeat` | Same scope; existing interval encodings are preserved |
-| `checklist.repeat` | Set/remove plain date-only monthly/weekly recurrence on an existing checklist |
-| `recurring-checklist.repeat` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
-| `recurring-checklist.create` | ³Direct plain monthly checklist creation and adding items under an open monthly checklist: interval 1, date-only day 1–28, due anchored, no end/start/alert/delay |
-| `resource-text.edit` | Title/notes-only edits on recognized standalone tasks and flat checklist/project parents/items, independently of unchanged schedules or lifecycle; exact metadata/relationship preservation |
-| `recurring-checklist.edit` | ³Convert a top-level open monthly task to a checklist, preserving recurrence. Legacy title/notes fallback when the text capability is absent. No due/start/time/interval or other type changes |
-| `recurring-checklist-due.edit` | Preservation generalization: open top-level plain monthly interval-1 JSON checklist, source/result date-only day 1–28, no start/alerts/end/delay; open/completed inherited or undated plain items. May compose with title/notes; cleanup preserves item lifecycle |
-| `checklist-item.delete` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
-| `project-item.delete` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
-| `standalone-resource.delete` | Remove one recognized top-level task with unique identity and no parent or children; recognized statuses, schedules, alarms and opaque metadata are deleted with it, never executed or rewritten |
-| `flat-family.delete` | Remove one recognized top-level checklist/project and its flat plain-task items in the same list, empty or nonempty, including completed/cancelled and recurring families; exact family boundary, no outside-family history changes |
-| `recurring-checklist.complete` | ¹Plain monthly day 1–28, interval 1, date-only, due anchored, no end/start/alert/delay; mixed or all-done items, no cancelled items |
-| `ended-until-daily.reopen` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
-| `ended-until-monthly.reopen` | Same for plain monthly day 1–28 |
-| `history-copy.reopen` | Top-level non-recurring, date-only task copies linked by RUID; no children/start/alerts/delay |
-| `from-completion.edit` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly interval 1 → 2 also passes |
-| `from-completion.repeat` | Captured interval-1 transitions: plain or monthly due → monthly completion, monthly completion → weekly completion or none, and weekly completion → weekly due; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
+| `set-repeat.task` | Set, remove or change between plain due-anchored daily/weekly/monthly/yearly rules, without ends or weekday selectors |
+| `set-repeat.task` | Same scope; existing interval encodings are preserved |
+| `set-repeat.checklist` | Set/remove plain date-only monthly/weekly recurrence on an existing checklist |
+| `set-repeat.checklist` | Change/remove those monthly/weekly rules: interval 1, no end, start, alert, delay or completion anchor |
+| `create.recurring-checklist` | ³Direct plain monthly checklist creation and adding items under an open monthly checklist: interval 1, date-only day 1–28, due anchored, no end/start/alert/delay |
+| `edit-title.resource` / `edit-notes.resource` | Title/notes-only edits on recognized standalone tasks and flat checklist/project parents/items, independently of unchanged schedules or lifecycle; exact metadata/relationship preservation |
+| `convert.task-checklist` | ³Convert a top-level open monthly task to a checklist, preserving recurrence. No due/start/time/interval or other type changes |
+| `set-due.recurring-checklist` | Preservation generalization: open top-level plain monthly interval-1 JSON checklist, source/result date-only day 1–28, no start/alerts/end/delay; open/completed inherited or undated plain items. May compose with title/notes; cleanup preserves item lifecycle |
+| `delete.checklist-item` | Remove only the selected item, including completed/last items and items under completed parents; preserve parent/sibling bytes, type, state and schedules |
+| `delete.project-item` | Same operation, including independently recurring children and recurring project parents; no advancement or history mutation |
+| `delete.resource` | Remove one recognized top-level task with unique identity and no parent or children; recognized statuses, schedules, alarms and opaque metadata are deleted with it, never executed or rewritten |
+| `delete.family` | Remove one recognized top-level checklist/project and its flat plain-task items in the same list, empty or nonempty, including completed/cancelled and recurring families; exact family boundary, no outside-family history changes |
+| `complete.recurring-checklist` | ¹Plain monthly day 1–28, interval 1, date-only, due anchored, no end/start/alert/delay; mixed or all-done items, no cancelled items |
+| `reopen.ended-daily` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
+| `reopen.ended-monthly` | Same for plain monthly day 1–28 |
+| `reopen.history-task` | Completed detached JSON task copies with inactive recurrence metadata; held dates, starts and alarms are preserved |
+| `set-due.task` / `set-start.task` / `set-repeat.interval` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly interval 1 → 2 also passes |
+| `set-repeat.task` | Captured interval-1 transitions: plain or monthly due → monthly completion, monthly completion → weekly completion or none, and weekly completion → weekly due; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
 
 `until` completion now passes for top-level plain daily/monthly day 1–28 tasks with interval 1,
 date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,
@@ -246,16 +274,16 @@ Count-ended originals and other ended-series reopen shapes remain refused. Detac
 A recurring checklist's completion copies the family before resetting live items and removing
 inherited dates. Item history keeps earlier individual completion times. Independent item starts
 or due times, including start-only items without a due date, are refused without partial writes.
-The [B-only checklist session](reference/phase0/plan8-checklist-29-checklist.md) verifies
+The [B-only checklist session](reference/evidence.md) verifies
 monthly checklist creation, conversion, title/notes, item addition/ticking and individual item
 deletion within scope ³. New items carry inherited parent-date copies; reset removes those
 live copies. A phone-converted parent's internal identity is retained live, while its history
 parent and copied items receive consistent new identities. Deletion removes exactly one item;
 parent/sibling read dependencies protect apply, undo, redo and recovery against remote changes.
-The [checklist scheduling audit](reference/phase0/checklist-scheduling-capability.md) enables a
+The [checklist scheduling audit](reference/evidence.md) enables a
 narrow date-only due edit by preservation generalization of Plan 6's direct checklist-date
 write and subsequent phone edit. It removes inherited item dates while preserving recurrence,
-item lifecycle and unrelated content. The separate `recurring-checklist-interval.edit` row
+item lifecycle and unrelated content. The separate `set-repeat.checklist-interval` row
 remains unverified and refused, including in test mode; interval 1 → 2 is tested only with an
 explicit candidate matrix and does not grant completion. Weekly/yearly creation/conversion/
 completion, other due/start/time edits, and completed-parent item creation/reopening remain unverified. A mixed card
@@ -264,13 +292,13 @@ monthly/weekly repeat changes remain supported separately.
 
 Existing repeat completion support remains: daily, weekly, weekday sets, monthly including the
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
-The [Plan 7 session](reference/phase0/plan7-capture.md) supplies those fixtures. Recurring projects
+The [Plan 7 session](reference/evidence.md) supplies those fixtures. Recurring projects
 that end or repeat from completion remain refused. Moving one item, editing existing
 weekly/interval-2 from-completion scheduling, project repeat changes, empty-project-to-checklist
 conversion and native alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
-The [issue 27 session](reference/phase0/issue27-item-deletion.md) verifies representative
+The [issue 27 session](reference/evidence.md) verifies representative
 checklist/project item deletions in both directions, including last/completed items, a
 completed parent, monthly/weekly parents and an independently recurring project child.
 All six phone deletions and six Twydo deletions remove exactly one resource; the phone then
@@ -297,7 +325,7 @@ standard/JSON links, cross-list items, unknown types and unrecognized rules stay
 JSON-only or disagreeing parent references are refused, including references added after
 the snapshot or before undo/recovery. The item-delete rows keep their precedence.
 
-The [RF/RA checklist](reference/phase0/plan8-rf-ra-checklist.md) records both-direction
+The [RF/RA checklist](reference/evidence.md) records both-direction
 phone checks and exact writer comparisons for the two from-completion rows. Retained inactive
 repeat codes after removal were accepted and edited by the phone. The interval edit works
 through the card and CLI; mixed interval/field saves are refused atomically and keep typed
@@ -332,15 +360,16 @@ the iPhone`.
 
 ## How far this has been tested
 
-One user's data, one iPhone (2Do 3.91 on iOS 27), one server (Synology Calendar), vdirsyncer
-0.21.0 on Linux. Each verified row was tested both ways: the iPhone's change read by Twydo, and
-Twydo's change read by the iPhone. The session logs are in
-[reference/phase0/](reference/phase0/README.md), with synthetic test data in
-[`fixtures/phase0/`](../fixtures/phase0/).
+Testing used one iPhone (2Do 3.91 on iOS 27), Synology Calendar and vdirsyncer
+0.21.0 on Linux. [Operation cases](reference/evidence.md) retain the useful device
+observations and exact resource transformations. Representative observations plus
+local preservation tests can support broader shapes; those tests do not claim
+additional phone observations. [Fixtures](../fixtures/) contain synthetic content.
 
-Verifying more needs a 2Do device and a test account. The method is in the
-[phase-0 checklist](reference/phase0/README.md); `tools/seed_fixture.py` sets up test tasks on
-the server so they do not have to be typed on the phone.
+Any further device/server verification needs a bounded unresolved question and fresh
+approval. The [evidence guide](reference/evidence.md) describes selection, staging,
+privacy checks and promotion. `tools/seed_fixture.py` can prepare synthetic test tasks
+for a separately approved round.
 
 ## Item reordering
 
@@ -355,7 +384,7 @@ On the phone, select **Manually** to display Twydo's saved sequence. Status sort
 show the intended manual sequence; changing to Manually made it appear. No shared sort
 setting was observed, and Twydo does not change the phone's sort setting or add a picker.
 
-The direct [phone samples](reference/phase0/issue41-item-reorder.md) used open, undated,
+The direct [phone samples](reference/evidence.md) used open, undated,
 non-recurring parents and verified display plus preservation through unrelated renames.
 Applying the same field operation to other recurrence/date/status contexts is supported
 by exact field-preservation tests over the existing recurring checklist/project captures,
@@ -377,9 +406,9 @@ rounds require fresh approval. No account or global write-mode change is perform
 
 ### History lifecycle capabilities
 
-`history-task.reopen` admits completed, top-level detached JSON task occurrences
+`reopen.history-task` admits completed, top-level detached JSON task occurrences
 with foreign RUID, no RRULE and the captured inactive recurrence metadata.
-`history-flat-family.reopen` admits recognized flat history projects/checklists
+`reopen.history-family` admits recognized flat history projects/checklists
 with the same encoding. Only lifecycle fields and normal stamps change; dates,
 starts, alerts, ranks, links, series identities and unrelated properties are held.
 Cancelled/open members stay unchanged. The live original is never written.
@@ -392,18 +421,18 @@ queue, recovery and inverse operations. No broad operation/rule verdict changes.
 
 Individual history children, including under reopened parents, remain refused:
 H3 captured live-child reopening, not detached-history-item reopening. No additional
-device round is proposed. Missing/custom capability rows retain legacy handling.
+device round is proposed. Missing contracts refuse; there is no legacy matrix fallback.
 Malformed/ambiguous identities, unreadable metadata, unknown types, nested,
 cross-list or disagreeing links and active/ambiguous recurrence metadata refuse.
 This capability neither restores recurrence nor rolls back its advancement.
 
 ### Candidate membership capabilities
 
-`item-to-project.reparent`, `item-to-checklist.reparent` and `item-outdent.reparent`
+`reparent.project`, `reparent.checklist` and `reparent.outdent`
 are implemented but all shipping verdicts remain unverified. Even test mode needs
 the missing iPhone baseline. List-move captures do not prove single-item identity
 and parent-link changes. Synthetic tests establish local consistency, preservation
-and recovery; they are not device evidence. See the [bounded proposal](reference/phase0/item-relocation-capability.md).
+and recovery; they are not device evidence. See the [bounded proposal](reference/evidence.md).
 
 Permission reports label `reparent` as needing destination list and parent/context;
 a concrete request always passes the real gate. No broad operation or rule row

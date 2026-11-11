@@ -13,30 +13,78 @@ use twydo_core::store::Store;
 use twydo_core::store::journal::{Entry, Journal};
 use twydo_core::views::Snapshot;
 
-const ALL_OPS: [&str; 6] = ["create", "edit", "complete", "reopen", "move", "delete"];
-
-/// Every op on every case in `cases` has baseline `pass` and the twydo columns `twydo`; the
-/// monthly rule class passes; each `(id, verdict)` in `edges` is an edge case.
-pub fn matrix(cases: &[&str], twydo: &str, edges: &[(&str, &str)]) -> Matrix {
-    let mut s = String::from("matrix_version = 1\n");
-    for case in cases {
-        for op in ALL_OPS {
-            s.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
-                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-                 twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
-            ));
+/// Test policy with affirmative operation observations. Admission uses typed contracts; test
+/// policies isolate structural checks from observation availability.
+pub fn matrix(twydo: &str, edges: &[(twydo_core::compat::ContractId, &str)]) -> Matrix {
+    use twydo_core::compat::{ContractId, OperationId, Verdict};
+    let mut matrix = Matrix::embedded().clone();
+    let verdict = verdict(twydo);
+    for row in &mut matrix.contract {
+        row.iphone_baseline =
+            if matches!(row.id, ContractId::ReorderItems | ContractId::InsertItems) {
+                Verdict::Unsupported
+            } else {
+                Verdict::Pass
+            };
+        row.twydo_to_iphone = verdict;
+        row.iphone_to_twydo = verdict;
+    }
+    for class in [
+        "days",
+        "weeks",
+        "weekdays-set",
+        "months-day-1-28",
+        "months-day-29-31",
+        "months-nth-weekday",
+        "years",
+        "years-feb-29",
+        "from-completion",
+        "count",
+        "until",
+    ] {
+        for operation in [OperationId::Complete, OperationId::SetRepeat] {
+            if let Some(id) = ContractId::schedule(operation, class) {
+                set_contract(&mut matrix, id, Verdict::Pass);
+            }
         }
     }
-    s.push_str(
-        "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
-    );
-    for (id, verdict) in edges {
-        s.push_str(&format!(
-            "[[edge_case]]\nid = \"{id}\"\nverdict = \"{verdict}\"\n"
-        ));
+    for id in [
+        ContractId::CompleteUndo,
+        ContractId::CompleteStartOffsets,
+        ContractId::CompleteLateMonthly,
+        ContractId::SetDueItemCleanup,
+    ] {
+        set_contract(&mut matrix, id, Verdict::Unverified);
     }
-    Matrix::from_toml_str(&s).unwrap()
+    for (id, value) in edges {
+        set_contract(&mut matrix, *id, self::verdict(value));
+    }
+    matrix
+}
+
+pub fn verdict(value: &str) -> twydo_core::compat::Verdict {
+    use twydo_core::compat::Verdict::*;
+    match value {
+        "pass" => Pass,
+        "fail" => Fail,
+        "unsupported" => Unsupported,
+        "unverified" => Unverified,
+        _ => panic!("unknown test verdict: {value}"),
+    }
+}
+pub fn set_contract(
+    matrix: &mut Matrix,
+    id: twydo_core::compat::ContractId,
+    value: twydo_core::compat::Verdict,
+) {
+    let row = matrix
+        .contract
+        .iter_mut()
+        .find(|r| r.id == id)
+        .expect("test contract exists");
+    row.iphone_baseline = value;
+    row.twydo_to_iphone = value;
+    row.iphone_to_twydo = value;
 }
 
 /// A vdir in a tempdir with lists `list1` (the `.ics` files of fixture step `fixture`, e.g.
@@ -116,11 +164,21 @@ impl Env {
     }
 }
 
-pub fn fixture(scenario: &str, step: &str, uid: &str) -> Vec<u8> {
-    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+/// Resolve a declared complete state; no historical session or inherited base.
+pub fn case_state(case: &str, state: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
-        .join(scenario)
-        .join(step)
+        .join(case);
+    let text = std::fs::read_to_string(root.join("case.toml")).unwrap();
+    let manifest: toml::Value = toml::from_str(&text).unwrap();
+    let path = manifest["states"][state]["path"].as_str().unwrap();
+    root.join(path)
+}
+
+pub fn fixture(case: &str, state: &str, uid: &str) -> Vec<u8> {
+    let state = state.strip_suffix("/list1").expect("fixture collection");
+    let p = case_state(case, state)
+        .join("list1")
         .join(format!("{uid}.ics"));
     std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
@@ -304,3 +362,14 @@ pub mod recurrence;
 
 pub mod item_deletion;
 pub mod text_edit;
+
+pub fn only(ids: &[twydo_core::compat::ContractId], baseline: &str, twydo: &str) -> Matrix {
+    let mut matrix = Matrix::embedded().clone();
+    matrix.contract.retain(|r| ids.contains(&r.id));
+    for row in &mut matrix.contract {
+        row.iphone_baseline = verdict(baseline);
+        row.twydo_to_iphone = verdict(twydo);
+        row.iphone_to_twydo = verdict(twydo);
+    }
+    matrix
+}

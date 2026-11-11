@@ -91,12 +91,14 @@ pub(super) fn check(
         chrono::Utc::now(),
     )
     .map_err(|e| Blocked(e.to_string()))?;
-    let case = match destination {
-        None => "item-outdent",
-        Some(p) if declared_kind(&snap.tasks[p]) == TaskKind::Checklist => "item-to-checklist",
-        Some(_) => "item-to-project",
+    let id = match destination {
+        None => ContractId::ReparentOutdent,
+        Some(p) if declared_kind(&snap.tasks[p]) == TaskKind::Checklist => {
+            ContractId::ReparentChecklist
+        }
+        Some(_) => ContractId::ReparentProject,
     };
-    operation_row(matrix, mode, case, "reparent")
+    require(matrix, mode, id)
 }
 
 fn raw(snap: &Snapshot, i: usize) -> Result<crate::ical::Calendar, Blocked> {

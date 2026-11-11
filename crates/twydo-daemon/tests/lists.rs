@@ -112,19 +112,14 @@ fn helper(root: &Path) -> PathBuf {
 fn matrix() -> Matrix {
     let mut matrix = Matrix::embedded().clone();
     let row = matrix
-        .operation
+        .contract
         .iter_mut()
-        .find(|r| r.case == "list-metadata" && r.op == "edit")
+        .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
         .unwrap();
     row.iphone_baseline = Verdict::Pass;
     row.twydo_to_iphone = Verdict::Pass;
     row.iphone_to_twydo = Verdict::Pass;
-    matrix
-        .edge_case
-        .iter_mut()
-        .find(|e| e.id == "list-metadata-atomicity")
-        .unwrap()
-        .verdict = Verdict::Pass;
+    row.atomicity = Some(twydo_core::compat::Verdict::Pass);
     matrix
 }
 

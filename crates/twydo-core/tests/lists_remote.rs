@@ -81,7 +81,7 @@ fn shipping_metadata_gate_requires_server_protection_even_in_test_mode() {
 #[cfg(unix)]
 #[test]
 fn metadata_interoperability_cannot_bypass_missing_or_failed_atomicity() {
-    use twydo_core::compat::{EdgeCase, Verdict};
+    use twydo_core::compat::Verdict;
     use twydo_core::config::WriteMode;
     for mode in [WriteMode::Test, WriteMode::Verified] {
         for atomicity in [
@@ -98,24 +98,15 @@ fn metadata_interoperability_cannot_bypass_missing_or_failed_atomicity() {
             cfg.writes.mode = mode;
             let mut matrix = twydo_core::compat::Matrix::embedded().clone();
             let row = matrix
-                .operation
+                .contract
                 .iter_mut()
-                .find(|r| r.case == "list-metadata" && r.op == "edit")
+                .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
                 .unwrap();
             row.iphone_baseline = Verdict::Pass;
             row.twydo_to_iphone = Verdict::Pass;
             row.iphone_to_twydo = Verdict::Pass;
-            matrix
-                .edge_case
-                .retain(|r| r.id != "list-metadata-atomicity");
-            if let Some(verdict) = atomicity {
-                matrix.edge_case.push(EdgeCase {
-                    id: "list-metadata-atomicity".into(),
-                    observed: "Synthetic admission test".into(),
-                    verdict,
-                    evidence: vec![],
-                });
-            }
+            row.atomicity = Some(twydo_core::compat::Verdict::Pass);
+            row.atomicity = atomicity;
             let before = fs::read(d.path().join("server.json")).unwrap();
             let mut service = ListService::open_with(&cfg, None, matrix).unwrap();
             let expected = service.state("new-id").unwrap();
@@ -205,19 +196,14 @@ fn prototype_metadata_service(cfg: &Config) -> ListService {
     // This synthetic matrix is never loaded by the application or a device round.
     let mut matrix = twydo_core::compat::Matrix::embedded().clone();
     let row = matrix
-        .operation
+        .contract
         .iter_mut()
-        .find(|r| r.case == "list-metadata" && r.op == "edit")
+        .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
         .unwrap();
     row.iphone_baseline = twydo_core::compat::Verdict::Pass;
     row.twydo_to_iphone = twydo_core::compat::Verdict::Pass;
     row.iphone_to_twydo = twydo_core::compat::Verdict::Pass;
-    matrix
-        .edge_case
-        .iter_mut()
-        .find(|e| e.id == "list-metadata-atomicity")
-        .unwrap()
-        .verdict = twydo_core::compat::Verdict::Pass;
+    row.atomicity = Some(twydo_core::compat::Verdict::Pass);
     ListService::open_with(cfg, None, matrix).unwrap()
 }
 
@@ -596,7 +582,9 @@ fn missing_or_failed_capabilities_refuse_test_mode_too() {
     let (_d, mut cfg) = setup();
     cfg.writes.mode = twydo_core::config::WriteMode::Test;
     let mut missing = twydo_core::compat::Matrix::embedded().clone();
-    missing.operation.retain(|r| r.case != "list-create");
+    missing
+        .contract
+        .retain(|r| r.id != twydo_core::compat::ContractId::ListCreate);
     assert!(
         ListService::open_with(&cfg, None, missing)
             .unwrap()
@@ -609,9 +597,9 @@ fn missing_or_failed_capabilities_refuse_test_mode_too() {
     );
     let mut failed = twydo_core::compat::Matrix::embedded().clone();
     failed
-        .operation
+        .contract
         .iter_mut()
-        .find(|r| r.case == "list-create")
+        .find(|r| r.id == twydo_core::compat::ContractId::ListCreate)
         .unwrap()
         .twydo_to_iphone = twydo_core::compat::Verdict::Fail;
     assert!(

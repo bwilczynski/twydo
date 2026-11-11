@@ -4,7 +4,7 @@ mod common;
 use chrono::{TimeZone, Utc};
 use common::Env;
 use std::fs;
-use twydo_core::compat::{Matrix, OperationEntry, Verdict};
+use twydo_core::compat::{ContractId, Matrix, Verdict};
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{NewTask, Op, Placement};
 use twydo_core::model::TaskKind;
@@ -18,24 +18,7 @@ fn now() -> chrono::DateTime<Utc> {
 }
 
 fn matrix() -> Matrix {
-    let mut m = Matrix::embedded().clone();
-    for case in ["checklist", "project"] {
-        for op in ["reorder", "insert"] {
-            m.operation.retain(|r| !(r.case == case && r.op == op));
-            m.operation.push(OperationEntry {
-                case: case.into(),
-                op: op.into(),
-                iphone_baseline: Verdict::Unsupported,
-                mac_to_iphone: Verdict::Unverified,
-                iphone_to_mac: Verdict::Unverified,
-                twydo_to_iphone: Verdict::Pass,
-                iphone_to_twydo: Verdict::Pass,
-                evidence: vec![],
-                notes: String::new(),
-            });
-        }
-    }
-    m
+    Matrix::embedded().clone()
 }
 
 fn setup(kind: TaskKind) -> (Env, Store, String, Vec<String>) {
@@ -237,9 +220,9 @@ fn verified_ordering_requires_phone_display_and_preservation_not_phone_reorderin
     );
     let mut unverified = matrix();
     unverified
-        .operation
+        .contract
         .iter_mut()
-        .filter(|r| r.op == "reorder")
+        .filter(|r| r.id == ContractId::ReorderItems)
         .for_each(|r| r.twydo_to_iphone = Verdict::Unverified);
     assert!(
         twydo_core::gate::check(
@@ -541,8 +524,7 @@ fn anchored_insertion_still_requires_ordinary_creation_compatibility() {
     use twydo_core::edit::Due;
     let (env, _, p, k) = setup(TaskKind::Project);
     let mut m = matrix();
-    m.operation
-        .retain(|r| !(r.case == "project" && r.op == "create"));
+    m.contract.retain(|r| r.id != ContractId::CreateProject);
     let mut store = env.store(m);
     store
         .apply(
@@ -752,9 +734,10 @@ fn ordering_preserves_opaque_recurrence_dates_alarms_and_status_without_enabling
             fs::write(path, text).unwrap();
         }
         let mut m = Matrix::embedded().clone();
-        for rule in &mut m.rule {
-            rule.execute = Verdict::Unverified;
-            rule.preserve = Verdict::Unverified;
+        for record in &mut m.contract {
+            if record.id.operation() == twydo_core::compat::OperationId::Complete {
+                record.iphone_baseline = Verdict::Unverified;
+            }
         }
         let mut store = env.store(m);
         let before = env.files();

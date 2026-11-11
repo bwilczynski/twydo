@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `tdo 0.2.0` requires compatibility matrix version 2. Custom version-1
+  matrices must migrate to operation contracts; legacy rule/operation/edge tables
+  and fallback gate paths are removed. Missing contracts refuse writes.
+- `tdo check` / `tdo op check` use operation names such as `edit-title`, `set-due`
+  and `set-repeat`; recurrence summaries derive from those operation contracts.
+- Evidence lives in complete operation cases under `fixtures/<operation>/<case>/`.
+  Historical session snapshots/logs and generated diffs are replaced by focused
+  observations, provenance and regression references. Capture tooling requires
+  explicit resource selection and named states. See `docs/reference/evidence.md`.
+
+
 ## [0.1.9](https://github.com/bwilczynski/twydo/compare/v0.1.8...v0.1.9) - 2026-11-11
 
 ### Added

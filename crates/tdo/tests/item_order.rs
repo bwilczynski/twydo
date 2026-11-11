@@ -10,7 +10,7 @@ use tdo::{
     write::Request,
 };
 use twydo_core::{
-    compat::{Matrix, OperationEntry, Verdict},
+    compat::Matrix,
     config::Config,
     edit::{Op, Placement},
     model::TaskKind,
@@ -28,24 +28,7 @@ fn now() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 6, 17, 0, 0).unwrap()
 }
 fn matrix() -> Matrix {
-    let mut m = Matrix::embedded().clone();
-    for case in ["checklist", "project"] {
-        for op in ["reorder", "insert"] {
-            m.operation.retain(|r| !(r.case == case && r.op == op));
-            m.operation.push(OperationEntry {
-                case: case.into(),
-                op: op.into(),
-                iphone_baseline: Verdict::Unsupported,
-                mac_to_iphone: Verdict::Unverified,
-                iphone_to_mac: Verdict::Unverified,
-                twydo_to_iphone: Verdict::Pass,
-                iphone_to_twydo: Verdict::Pass,
-                evidence: vec![],
-                notes: String::new(),
-            });
-        }
-    }
-    m
+    Matrix::embedded().clone()
 }
 struct Env {
     _tmp: tempfile::TempDir,

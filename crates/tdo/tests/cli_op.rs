@@ -44,35 +44,23 @@ impl Env {
             ),
         )
         .unwrap();
-        let mut matrix = String::from("matrix_version = 1\n");
-        // every case the tests touch passes the iPhone baseline; the other columns stay
-        // unverified, which test mode accepts
-        for (case, op) in [
-            ("checklist", "complete"),
-            ("one-time", "complete"),
-            ("monthly", "complete"),
-            ("one-time", "create"),
-            ("one-time", "edit"),
-            ("monthly", "create"),
-            ("monthly", "edit"),
-            ("date-only", "create"),
-            ("date-only", "edit"),
-            ("checklist", "create"),
-            ("checklist", "edit"),
-            ("project", "edit"),
-            ("recurring-project", "edit"),
-            ("daily", "create"),
-            ("task-to-project", "convert"),
+        let mut matrix = String::from("matrix_version = 2\n");
+        for id in [
+            "complete.task",
+            "complete.checklist",
+            "create.task",
+            "create.checklist",
+            "edit-title.resource",
+            "edit-notes.resource",
+            "set-due.task",
+            "set-start.task",
+            "set-repeat.interval",
+            "convert.task-project",
         ] {
-            matrix.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
-                 mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-                 twydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"
-            ));
+            matrix.push_str(&format!("[[contract]]\nid = {id:?}\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"));
         }
-        matrix.push_str(
-            "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n",
-        );
+        matrix.push_str("[[contract]]\nid = \"set-repeat.monthly\"\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n");
+        matrix.push_str("[[contract]]\nid = \"complete.monthly\"\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n");
         fs::write(root.join("matrix.toml"), matrix).unwrap();
         Env {
             dir,
@@ -300,14 +288,15 @@ fn op_check_lists_every_kind() {
     assert!(o.status.success(), "{}", err(&o));
     let text = out(&o);
     for action in [
-        "edit title",
-        "edit notes",
+        "edit-title",
+        "edit-notes",
         "complete",
         "reopen",
         "delete",
         "create",
-        "edit dates",
-        "edit repeat",
+        "set-due",
+        "set-start",
+        "set-repeat",
         "convert",
         "move",
         "reorder",
@@ -710,13 +699,7 @@ fn edit_setting_a_repeat_needs_the_repeat_rows() {
     let before = fs::read(file_of(&env)).unwrap();
     let o = env.op(&set);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
-    assert!(
-        err(&o).contains(
-            "changing the repeat rule of one-time tasks is not verified yet (iphone_baseline)"
-        ),
-        "{}",
-        err(&o)
-    );
+    assert!(err(&o).contains("set-repeat.task"), "{}", err(&o));
     assert_eq!(fs::read(file_of(&env)).unwrap(), before);
     // A due change mixed with establishing completion anchoring is outside RF/RA scope.
     let env = Env::new("verified");
@@ -800,14 +783,14 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
     let single = env.tdo(&["op", "check", uid]);
     assert_eq!(single.status.code(), Some(0), "{}", err(&single));
     assert!(
-        out(&single).contains("edit notes: allowed"),
+        out(&single).contains("edit-notes: allowed"),
         "{}",
         out(&single)
     );
     let aggregate = env.tdo(&["check"]);
     assert_eq!(aggregate.status.code(), Some(0), "{}", err(&aggregate));
     assert!(
-        out(&aggregate).contains("edit notes: allowed="),
+        out(&aggregate).contains("edit-notes: allowed="),
         "{}",
         out(&aggregate)
     );
@@ -1240,14 +1223,14 @@ fn reparent_cli_maps_flags_and_shipping_refusal() {
     let before = list_files(&e);
     let result = e.tdo(&["op", "reparent", TASK_A, "--list", "list2"]);
     assert_eq!(result.status.code(), Some(1), "{}", err(&result));
-    assert!(err(&result).contains("item-outdent"));
+    assert!(err(&result).contains("reparent.outdent"));
     assert_eq!(list_files(&e), before);
     let help = e.tdo(&["op", "reparent", "--help"]);
     assert!(help.status.success());
     assert!(out(&help).contains("--wait"));
     assert!(out(&help).contains("--parent"));
     // Only this isolated test's custom matrix admits the candidate. Shipping stays refused.
-    let text = "matrix_version=1\n[[operation]]\ncase=\"item-outdent\"\nop=\"reparent\"\niphone_baseline=\"pass\"\nmac_to_iphone=\"unverified\"\niphone_to_mac=\"unverified\"\ntwydo_to_iphone=\"pass\"\niphone_to_twydo=\"pass\"\n";
+    let text = "matrix_version=2\n[[contract]]\nid=\"reparent.outdent\"\niphone_baseline=\"pass\"\ntwydo_to_iphone=\"pass\"\niphone_to_twydo=\"pass\"\n";
     fs::write(e.dir.path().join("matrix.toml"), text).unwrap();
     e.stop_daemon();
     let moved = e.op(&["reparent", TASK_A, "--list", "list2"]);

@@ -16,7 +16,6 @@ pub(super) fn check(
     {
         return None;
     }
-    matrix.operation("resource-text", "edit")?;
     Some((|| {
         let head = snap.parent(idx).unwrap_or(idx);
         let parent = &snap.tasks[head];
@@ -62,6 +61,16 @@ pub(super) fn check(
                 );
             }
         }
-        operation_row(matrix, mode, "resource-text", "edit")
+        changes.iter().try_for_each(|c| {
+            require(
+                matrix,
+                mode,
+                if matches!(c, Change::Summary(_)) {
+                    ContractId::EditTitleResource
+                } else {
+                    ContractId::EditNotesResource
+                },
+            )
+        })
     })())
 }

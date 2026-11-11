@@ -143,7 +143,7 @@ fn recovery_refuses_unverified_moves_without_writing() {
     let (_dir, mut cfg) = env();
     let backup = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
     cfg.writes.mode = WriteMode::Verified;
-    let matrix = twydo_core::compat::Matrix::from_toml_str("matrix_version = 1\n").unwrap();
+    let matrix = twydo_core::compat::Matrix::from_toml_str("matrix_version = 2\n").unwrap();
     let (mut store, _) = Store::open_with(&cfg, matrix).unwrap();
     assert!(
         store
