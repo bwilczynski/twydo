@@ -39,6 +39,17 @@ fn unfinished_operation_fences_recovery_and_sync_without_running_a_command() {
 }
 
 #[test]
+fn read_only_preview_reconciliation_clears_its_fence_before_refusing() {
+    let (_root, cfg, mut request) = setup();
+    request.action = "preview-delete".into();
+    let record = operation::prepare(&cfg, request, Utc::now()).unwrap();
+    let mut service = twydo_core::lists::ListService::open(&cfg, None).unwrap();
+    let error = service.reconcile(&record.id).unwrap_err().to_string();
+    assert!(error.contains("read-only"), "{error}");
+    assert!(operation::active(&cfg).unwrap().is_none());
+}
+
+#[test]
 fn stale_collection_bytes_cannot_be_confirmed_or_silently_rebased() {
     let (_root, cfg, request) = setup();
     let mut record = operation::prepare(&cfg, request, Utc::now()).unwrap();

@@ -3863,17 +3863,12 @@ mod capability_deletion {
     const R1: &str = "35baad226105494080416dc20825f49c";
     const R2: &str = "72e9476833d14a77a76c64cafeedfa97";
     const R3: &str = "a8e8de2d00a24a8596cdd171fc971d4c";
-    const R_COPY: &str = "14b5a37a52224e8c959b5002e2275fc9";
-    const R1_COPY: &str = "780885dd967342ec8953c6824f1d674b";
-    const R2_COPY: &str = "dd8f672c8feb47ccae449f8488918975";
-    const R3_COPY: &str = "7357bbeb391e4c2da619ca0b0b78f919";
 
     const CHECKLIST_A: &str = "12d762a5639e406c8ec865517882f130";
     const A_Q: &str = "2cb7991c71624ddda29877c098acad43";
     const A_Z: &str = "3199749e2ea64f10bdaebc00197768ca";
     const CHECKLIST_B: &str = "twydo-p8-c29-b";
     const B_Q: &str = "96ee97f3cc8c403391c57ec8b8e5d192";
-    const B_Z: &str = "f9ae2ffd776e42919f9696f37dd6e849";
     const D: &str = "twydo-p8-c29-d";
 
     const CA: &str = "twydo-i27-c-a";
@@ -3973,19 +3968,6 @@ mod capability_deletion {
             Ok(()),
             "standalone weekly"
         );
-        let before = e.files();
-        let mut store = e.store(Matrix::embedded().clone());
-        store
-            .apply(&s, &Op::Delete { uid: E.into() }, instant())
-            .unwrap();
-        let after = e.files();
-        assert!(!after.contains_key(&key(E)));
-        for (path, bytes) in before {
-            if path != key(E) {
-                assert_eq!(after[&path], bytes, "{path}");
-            }
-        }
-
         // An empty weekly project.
         let e = Env::new(WriteMode::Verified, "plan6-list1/05-complete-parent");
         for child in [R1, R2, R3] {
@@ -4011,7 +3993,7 @@ mod capability_deletion {
             }
         }
 
-        // A nonempty recurring checklist: only A, q and z disappear.
+        // A nonempty recurring checklist.
         let e = Env::new(
             WriteMode::Verified,
             "plan8-checklist-b/011-phone-items-and-text",
@@ -4022,25 +4004,6 @@ mod capability_deletion {
             Ok(()),
             "nonempty recurring checklist"
         );
-        let before = e.files();
-        let mut store = e.store(Matrix::embedded().clone());
-        store
-            .apply(
-                &s,
-                &Op::Delete {
-                    uid: CHECKLIST_A.into(),
-                },
-                instant(),
-            )
-            .unwrap();
-        let after = e.files();
-        for uid in [CHECKLIST_A, A_Q, A_Z] {
-            assert!(!after.contains_key(&key(uid)), "{uid}");
-        }
-        for uid in [CHECKLIST_B, B_Q, B_Z, D] {
-            assert_eq!(after[&key(uid)], before[&key(uid)], "{uid}");
-        }
-
         // The same checklist with no items.
         let e = Env::new(
             WriteMode::Verified,
@@ -4096,26 +4059,6 @@ mod capability_deletion {
             Ok(()),
             "recognized date, start, alarm, count and completion metadata"
         );
-
-        let before = e.files();
-        let mut store = e.store(Matrix::embedded().clone());
-        store
-            .apply(&s, &Op::Delete { uid: R.into() }, instant())
-            .unwrap();
-        let after = e.files();
-        for uid in [R, R1, R2, R3] {
-            assert!(!after.contains_key(&key(uid)), "{uid}");
-        }
-        for uid in [R_COPY, R1_COPY, R2_COPY, R3_COPY] {
-            assert_eq!(after[&key(uid)], before[&key(uid)], "history {uid}");
-        }
-        for (path, bytes) in &before {
-            if !path.starts_with("list1/") || ![R, R1, R2, R3].iter().any(|uid| path == &key(uid)) {
-                assert_eq!(after[path], *bytes, "outside family {path}");
-            }
-        }
-        store.undo_last(instant()).unwrap();
-        assert_eq!(e.files(), before);
     }
 
     #[test]

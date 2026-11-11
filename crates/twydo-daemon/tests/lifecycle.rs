@@ -161,6 +161,27 @@ fn lifecycle_methods_answer_without_hello() {
     );
 }
 
+/// A state directory that belongs to another vdir keeps a daemon from starting at all.
+#[test]
+fn daemon_refuses_a_state_dir_of_another_vdir() {
+    let fx = fx();
+    let cfg = fx.config();
+    let state = twydo_core::store::vdir_state_dir(&cfg.state_dir(), &cfg.vdir).unwrap();
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(
+        state.join(twydo_core::store::VDIR_ID_FILE),
+        "/some/other/vdir\n",
+    )
+    .unwrap();
+    let dir = common::short_socket_dir();
+    let opts = DaemonOptions::new(dir.path().join("s").join("tdo.sock"));
+    let err = match Daemon::start(cfg, fx.instance(), opts) {
+        Ok(_) => panic!("the daemon started"),
+        Err(e) => e.to_string(),
+    };
+    assert!(err.contains("belongs to vdir /some/other/vdir"), "{err}");
+}
+
 #[test]
 fn a_second_daemon_on_the_same_vdir_does_not_start() {
     let fx = fx();

@@ -81,29 +81,6 @@ mod gate {
         assert_eq!(v["collections"].as_array().unwrap().len(), 3);
         let tasks = v["tasks"].as_array().unwrap();
         assert_eq!(tasks.len(), 16);
-        let rent = tasks.iter().find(|t| t["summary"] == "Pay rent").unwrap();
-        assert_eq!(rent["rule_class"], "months-day-1-28");
-        assert_eq!(rent["due"], "2026-11-07");
-        assert_eq!(rent["due_is_date"], true);
-        let water = tasks
-            .iter()
-            .find(|t| t["summary"] == "Pay water bill")
-            .unwrap();
-        assert_eq!(water["due"], "2026-11-06T09:00:00-05:00");
-        assert_eq!(water["alarms"][0]["relative_seconds"], -900);
-        assert_eq!(water["alarms"][0]["related_end"], false);
-        let uids: Vec<_> = tasks
-            .iter()
-            .map(|t| {
-                (
-                    t["collection"].as_str().unwrap(),
-                    t["uid"].as_str().unwrap(),
-                )
-            })
-            .collect();
-        let mut sorted = uids.clone();
-        sorted.sort();
-        assert_eq!(uids, sorted);
     }
 
     #[test]
@@ -249,171 +226,19 @@ mod gate {
         );
     }
 
-    fn matrix_file(dir: &std::path::Path, rows: &[(&str, &str)]) -> String {
-        let mut s = String::from("matrix_version = 1\n");
-        for (class, v) in rows {
-            s += &format!(
-                "[[rule]]\nclass = \"{class}\"\npreserve = \"{v}\"\nexecute = \"{v}\"\nedit = \"{v}\"\n"
-            );
+    #[test]
+    fn check_empty_and_partially_parsed_input_exit_successfully() {
+        for broken in [false, true] {
+            let d = tempfile::tempdir().unwrap();
+            if broken {
+                let collection = d.path().join("c");
+                std::fs::create_dir(&collection).unwrap();
+                std::fs::write(collection.join("broken.ics"), "not a calendar").unwrap();
+                std::fs::write(collection.join("valid.ics"), "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:valid\r\nSUMMARY:Synthetic task\r\nEND:VTODO\r\nEND:VCALENDAR\r\n").unwrap();
+            }
+            let result = env_of(d.path().to_str().unwrap()).tdo(&["check"]);
+            assert_eq!(result.status.code(), Some(0), "{result:?}");
         }
-        let p = dir.join("m.toml");
-        std::fs::write(&p, s).unwrap();
-        p.to_str().unwrap().to_string()
-    }
-
-    /// Copy of the sample vdir keeping only the repeating `bills` tasks, plus optional extras.
-    fn mini_vdir(dir: &std::path::Path, broken: bool) -> String {
-        let v = dir.join("vdir/c");
-        std::fs::create_dir_all(&v).unwrap();
-        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:x\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        std::fs::write(v.join("a.ics"), ics).unwrap();
-        if broken {
-            std::fs::write(v.join("b.ics"), "this is not ical").unwrap();
-        }
-        dir.join("vdir").to_str().unwrap().to_string()
-    }
-
-    #[test]
-    fn healthy_data_still_reports_refused_operations() {
-        let d = tempfile::tempdir().unwrap();
-        let m = matrix_file(d.path(), &[("days", "pass")]);
-        let good = mini_vdir(d.path(), false);
-        let out = stdout(&env_of(&good).tdo(&["check", "--matrix", &m]));
-        assert!(!out.contains("GATE:"), "{out}");
-        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
-
-        let d2 = tempfile::tempdir().unwrap();
-        let m2 = matrix_file(d2.path(), &[("days", "pass")]);
-        let bad = mini_vdir(d2.path(), true);
-        let out = stdout(&env_of(&bad).tdo(&["check", "--matrix", &m2]));
-        assert!(out.contains("parse errors: 1"), "{out}");
-        assert!(
-            out.contains("parse errors: 1") && out.contains("edit title: allowed=0 refused=1"),
-            "{out}"
-        );
-    }
-
-    #[test]
-    fn unverified_modifier_blocks_class() {
-        let d = tempfile::tempdir().unwrap();
-        let v = d.path().join("vdir/c");
-        std::fs::create_dir_all(&v).unwrap();
-        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:x\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY;COUNT=3\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        std::fs::write(v.join("a.ics"), ics).unwrap();
-        let vd = d.path().join("vdir");
-        let vd = vd.to_str().unwrap();
-        let env = env_of(vd);
-        let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "unverified")]);
-        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
-        assert!(
-            out.contains("days+count  1 tasks  preserve=unverified"),
-            "{out}"
-        );
-        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
-        let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "pass")]);
-        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
-        assert!(!out.contains("GATE:"), "{out}");
-        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
-    }
-
-    #[test]
-    fn model_read_only_count_includes_completed_tasks() {
-        let d = tempfile::tempdir().unwrap();
-        let v = d.path().join("vdir/c");
-        std::fs::create_dir_all(&v).unwrap();
-        // A daily task with a recurrence override (blocked), and a completed blocked task.
-        let ics = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nRECURRENCE-ID;VALUE=DATE:20261108\r\nDUE;VALUE=DATE:20261109\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        std::fs::write(v.join("a.ics"), ics).unwrap();
-        let done = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t2\r\nSUMMARY:Synthetic done\r\nSTATUS:COMPLETED\r\nRRULE:FREQ=HOURLY\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
-        std::fs::write(v.join("b.ics"), done).unwrap();
-        let vd = d.path().join("vdir");
-        let vd = vd.to_str().unwrap();
-        let env = env_of(vd);
-        let m = matrix_file(d.path(), &[("days", "pass")]);
-        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
-        assert!(out.contains("model read-only resources: 2\n"), "{out}");
-        assert!(
-            out.contains("    recurrence overrides are not supported: 1\n"),
-            "{out}"
-        );
-        assert!(!out.contains("Synthetic override"), "{out}");
-        assert!(
-            out.contains("tasks: 2") && out.contains("reopen: allowed=0 refused=1 inapplicable=1"),
-            "{out}"
-        );
-        let out = stdout(&env.tdo(&["check", "--matrix", &m, "--verbose"]));
-        assert!(out.contains("        Synthetic override\n"), "{out}");
-    }
-    #[test]
-    fn report_separates_rule_edit_evidence_from_permissions_and_partial_parse() {
-        let d = tempfile::tempdir().unwrap();
-        let vd = mini_vdir(d.path(), true);
-        let m = matrix_file(d.path(), &[("days", "pass")]);
-        let text = std::fs::read_to_string(&m)
-            .unwrap()
-            .replace("edit = \"pass\"", "edit = \"unverified\"");
-        std::fs::write(&m, text).unwrap();
-        let env = env_of(&vd);
-        let result = env.tdo(&["check", "--matrix", &m]);
-        assert_eq!(result.status.code(), Some(0));
-        let out = stdout(&result);
-        assert!(out.contains("execute=pass edit=unverified"), "{out}");
-        assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
-        assert!(
-            out.contains("edit for daily tasks is not verified yet"),
-            "{out}"
-        );
-        assert!(!out.contains("b.ics"), "{out}");
-        let verbose = stdout(&env.tdo(&["check", "--matrix", &m, "--verbose"]));
-        assert!(verbose.contains("b.ics"), "{verbose}");
-    }
-
-    #[test]
-    fn empty_input_does_not_claim_all_operations_pass() {
-        let d = tempfile::tempdir().unwrap();
-        let env = env_of(d.path().to_str().unwrap());
-        let result = env.tdo(&["check"]);
-        assert_eq!(result.status.code(), Some(0));
-        let out = stdout(&result);
-        assert!(out.contains("tasks: 0"), "{out}");
-        assert!(out.contains("No tasks to assess"), "{out}");
-        assert!(!out.contains("GATE:"), "{out}");
-    }
-
-    #[test]
-    fn duplicate_and_cancelled_resources_are_not_blanket_permissions() {
-        let d = tempfile::tempdir().unwrap();
-        let c = d.path().join("c");
-        std::fs::create_dir(&c).unwrap();
-        for (file, uid, status) in [
-            ("a", "duplicate", "NEEDS-ACTION"),
-            ("b", "duplicate", "COMPLETED"),
-            ("c", "cancelled", "CANCELLED"),
-        ] {
-            std::fs::write(c.join(format!("{file}.ics")), format!("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:Synthetic private title\r\nDESCRIPTION:Synthetic private note\r\nSTATUS:{status}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n")).unwrap();
-        }
-        let env = env_of(d.path().to_str().unwrap());
-        let result = env.tdo(&["check"]);
-        assert_eq!(result.status.code(), Some(0));
-        let out = stdout(&result);
-        assert!(out.contains("tasks: 3"), "{out}");
-        assert!(out.contains("delete: allowed=1 refused=2"), "{out}");
-        assert!(
-            out.contains("complete: allowed=0 refused=1 inapplicable=2"),
-            "{out}"
-        );
-        assert!(
-            out.contains("reopen: allowed=0 refused=1 inapplicable=2"),
-            "{out}"
-        );
-        assert!(
-            out.contains("move: allowed=0 refused=0 inapplicable=0 needs-input=3"),
-            "{out}"
-        );
-        assert!(!out.contains("Synthetic private"), "{out}");
-        let verbose = stdout(&env.tdo(&["check", "--verbose"]));
-        assert!(verbose.contains("Synthetic private title"), "{verbose}");
-        assert!(!verbose.contains("Synthetic private note"), "{verbose}");
     }
 }
 
@@ -808,64 +633,4 @@ mod sync {
             );
         }
     }
-}
-
-#[test]
-fn check_finishes_permissions_for_a_large_collection() {
-    use std::fs;
-    use std::path::Path;
-    use std::process::Stdio;
-    use std::time::{Duration, Instant};
-
-    let temp = tempfile::tempdir().unwrap();
-    let vdir = temp.path().join("vdir");
-    let list = vdir.join("synthetic");
-    fs::create_dir_all(&list).unwrap();
-    let source =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(
-            "../../fixtures/phase0/v1/plan4-list1/02-edit/0a04f22aeb294b719633c978fe1975e5.ics",
-        ))
-        .unwrap();
-    for n in 0..1000 {
-        let uid = format!("{n:032x}");
-        fs::write(
-            list.join(format!("{uid}.ics")),
-            source.replace("0a04f22aeb294b719633c978fe1975e5", &uid),
-        )
-        .unwrap();
-    }
-    let output = temp.path().join("check.txt");
-    let env = common::VdirEnv::new(&vdir);
-    let mut child = env
-        .cmd(&["check"])
-        .stdout(fs::File::create(&output).unwrap())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            break status;
-        }
-        if started.elapsed() > Duration::from_secs(10) {
-            child.kill().unwrap();
-            child.wait().unwrap();
-            panic!(
-                "permission reporting did not finish within 10 seconds:\n{}",
-                fs::read_to_string(&output).unwrap()
-            );
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    assert!(status.success());
-    let report = fs::read_to_string(output).unwrap();
-    assert!(report.contains("tasks: 1000"));
-    assert!(
-        report.contains("delete: allowed=1000 refused=0"),
-        "{report}"
-    );
-    assert!(
-        report.contains("reparent: allowed=0 refused=0 inapplicable=0 needs-input=1000"),
-        "{report}"
-    );
 }

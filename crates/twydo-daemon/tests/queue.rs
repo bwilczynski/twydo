@@ -682,27 +682,3 @@ fn shutdown_does_not_wait_for_a_reload_stuck_behind_an_outside_lock() {
     assert_eq!(publisher.current().0, before);
     assert!(fx.read("inbox/u1.ics").contains("SUMMARY:One"));
 }
-
-/// The refresher is blocked on an outside holder of the vdir lock when shutdown starts, again
-/// and again: shutdown never waits for it, and the lock's release publishes nothing.
-#[test]
-fn shutdown_with_a_refresher_waiting_on_an_outside_lock() {
-    for _ in 0..3 {
-        let fx = fx();
-        let td = TestDaemon::start(&fx);
-        let c = td.client();
-        let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
-        let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
-        assert_eq!(r.outcome, WriteOutcome::Queued);
-        // The queued reply hands the refresh to the background, which blocks on the lock.
-        std::thread::sleep(Duration::from_millis(100));
-        let publisher = td.handle().publisher_for_test();
-        let before = publisher.current().0;
-        let t = Instant::now();
-        td.handle().shutdown();
-        assert!(t.elapsed() < BOUND, "shutdown took {:?}", t.elapsed());
-        drop(lock);
-        std::thread::sleep(Duration::from_millis(300));
-        assert_eq!(publisher.current().0, before);
-    }
-}

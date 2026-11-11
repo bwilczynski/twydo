@@ -1,4 +1,4 @@
-//! `check.report`. Synthetic fixture content.
+//! `check.report` and `export` semantics over synthetic fixtures.
 
 mod common;
 
@@ -40,7 +40,7 @@ fn params(verbose: bool, uid: Option<&str>) -> CheckReportParams {
 }
 
 #[test]
-fn check_report_matches_the_old_output() {
+fn check_report_summarizes_health_evidence_and_permissions() {
     let fx = fx();
     let td = TestDaemon::start(&fx);
     let c = td.client();
@@ -125,29 +125,56 @@ fn check_report_with_a_missing_matrix_is_invalid() {
 }
 
 #[test]
-fn check_report_counts_queued_edits() {
+fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
+    use twydo_core::{
+        edit::{NewTask, Op},
+        store::queue,
+    };
+    use twydo_daemon::protocol::methods::WriteOutcome;
     let fx = fx();
-    let td = TestDaemon::start(&fx);
+    let marker_dir = tempfile::tempdir().unwrap();
+    let marker = marker_dir.path().join("sync-ran");
+    let mut cfg = fx.with_sync(&format!("touch '{}'", marker.display()));
+    // Keep enqueueing separate from the report's responsibility for leaving sync alone.
+    cfg.sync.as_mut().unwrap().after_edit = Some(false);
+    let td = TestDaemon::start_cfg(&fx, cfg.clone(), |_| {});
     let c = td.client();
     let job = td.handle().hold_long(LongKind::Test);
-    let r = common::submit(
-        &c,
-        twydo_core::edit::Op::Create(twydo_core::edit::NewTask::plain("c", "Queued")),
-    )
-    .unwrap();
-    assert_eq!(
-        r.outcome,
-        twydo_daemon::protocol::methods::WriteOutcome::Queued
-    );
+    let count = fx.snapshot().tasks.len();
+    let title = "Synthetic queued report target";
+    let result = common::submit(&c, Op::Create(NewTask::plain("c", title))).unwrap();
+    assert_eq!(result.outcome, WriteOutcome::Queued);
+    let queued = queue::view(twydo_core::vdir::load(&fx.vdir()).unwrap(), cfg);
+    let uid = &queued
+        .tasks
+        .iter()
+        .find(|t| t.summary == title)
+        .unwrap()
+        .uid;
+    let queue_path = std::fs::read_dir(fx.state().join("queue"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "json"))
+        .unwrap();
+    let queue_bytes = std::fs::read(&queue_path).unwrap();
+    let files = resource_bytes(&fx);
+    // Publication follows write.submit asynchronously; wait for its planning snapshot.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     loop {
-        let r: CheckReport = c.call("check.report", params(false, None)).unwrap();
-        if r.lines.iter().any(|l| l == "tasks: 3") {
+        let aggregate = report(&td, None, true);
+        if aggregate.contains(&format!("tasks: {}", count + 1)) {
+            assert!(aggregate.contains(title), "{aggregate}");
             break;
         }
-        assert!(std::time::Instant::now() < deadline, "{:?}", r.lines);
+        assert!(std::time::Instant::now() < deadline, "{aggregate}");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    let single = task_report(&td, uid);
+    assert!(single.contains("edit title: allowed"), "{single}");
+    assert_eq!(std::fs::read(queue_path).unwrap(), queue_bytes);
+    assert_eq!(fx.snapshot().tasks.len(), count);
+    assert_eq!(resource_bytes(&fx), files);
+    assert!(!marker.exists(), "reporting started sync");
     drop(job);
 }
 
@@ -160,7 +187,11 @@ fn export_matches_schema_v1() {
     let fx = fx();
     fx.write(
         "a/own.ics",
-        &ics("own", "X-2DOAPP-TYPE:0\r\nX-2DOAPP-STAR:1\r\n"),
+        &ics("own", "X-2DOAPP-TYPE:0\r\nX-2DOAPP-STAR:1\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=MONTHLY;BYMONTHDAY=7\r\n"),
+    );
+    fx.write(
+        "c/weekly.ics",
+        &ics("weekly", "DUE;TZID=America/New_York:20261106T090000\r\nRRULE:FREQ=WEEKLY\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n"),
     );
     fx.write("a/displayname", "A");
     fx.write("a/color", "#102030");
@@ -212,6 +243,18 @@ fn export_matches_schema_v1() {
         own["x2do_props"],
         serde_json::json!(["X-2DOAPP-STAR", "X-2DOAPP-TYPE"])
     );
+    assert_eq!(own["rule_class"], "months-day-1-28");
+    assert_eq!(own["due"], "2026-11-07");
+    assert_eq!(own["due_is_date"], true);
+    let timed = d["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["uid"] == "weekly")
+        .unwrap();
+    assert_eq!(timed["due"], "2026-11-06T09:00:00-05:00");
+    assert_eq!(timed["alarms"][0]["relative_seconds"], -900);
+    assert_eq!(timed["alarms"][0]["related_end"], false);
 }
 
 #[test]
@@ -256,4 +299,434 @@ fn export_counts_unparseable_files() {
     let r = export(&td.client());
     assert_eq!(r.skipped, 1);
     assert_eq!(r.document["tasks"].as_array().unwrap().len(), 2);
+}
+
+/// Report semantics run against the daemon's verified-mode policy, independently of the CLI.
+fn verified_daemon(fx: &Fixture) -> TestDaemon {
+    let mut cfg = fx.config();
+    cfg.writes.mode = WriteMode::Verified;
+    TestDaemon::start_cfg(fx, cfg, |_| {})
+}
+
+fn matrix_file(dir: &std::path::Path, rows: &[(&str, &str, &str)]) -> std::path::PathBuf {
+    let mut text = String::from("matrix_version = 1\n");
+    for (class, preserve_execute, edit) in rows {
+        text += &format!(
+            "[[rule]]\nclass = \"{class}\"\npreserve = \"{preserve_execute}\"\nexecute = \"{preserve_execute}\"\nedit = \"{edit}\"\n"
+        );
+    }
+    let path = dir.join("matrix.toml");
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+fn report(td: &TestDaemon, matrix: Option<&std::path::Path>, verbose: bool) -> String {
+    let mut p = params(verbose, None);
+    p.matrix = matrix.map(std::path::Path::to_path_buf);
+    let r: CheckReport = td.client().call("check.report", p).unwrap();
+    // Preserve the trailing newline used by report rendering.
+    format!("{}\n", r.lines.join("\n"))
+}
+
+#[test]
+fn healthy_data_and_partial_parse_still_report_refused_operations() {
+    for broken in [false, true] {
+        let fx = Fixture::new(&[]);
+        fx.write(
+            "c/a.ics",
+            &ics("t1", "DUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY\r\n"),
+        );
+        if broken {
+            fx.write("c/b.ics", "this is not ical");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let matrix = matrix_file(dir.path(), &[("days", "pass", "pass")]);
+        let td = verified_daemon(&fx);
+        let out = report(&td, Some(&matrix), false);
+        assert!(!out.contains("GATE:"), "{out}");
+        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
+        if broken {
+            assert!(out.contains("parse errors: 1"), "{out}");
+            assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
+
+            // Rule-edit evidence and operation permission are separate, even with parse errors.
+            matrix_file(dir.path(), &[("days", "pass", "unverified")]);
+            let out = report(&td, Some(&matrix), false);
+            assert!(out.contains("execute=pass edit=unverified"), "{out}");
+            assert!(out.contains("edit title: allowed=0 refused=1"), "{out}");
+            assert!(
+                out.contains("edit for daily tasks is not verified yet"),
+                "{out}"
+            );
+            assert!(!out.contains("b.ics"), "{out}");
+            let verbose = report(&td, Some(&matrix), true);
+            assert!(verbose.contains("b.ics"), "{verbose}");
+        }
+    }
+}
+
+#[test]
+fn unverified_modifier_blocks_class() {
+    let fx = Fixture::new(&[]);
+    fx.write(
+        "c/a.ics",
+        &ics(
+            "t1",
+            "DUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY;COUNT=3\r\n",
+        ),
+    );
+    let td = verified_daemon(&fx);
+    let dir = tempfile::tempdir().unwrap();
+    for verdict in ["unverified", "pass"] {
+        let matrix = matrix_file(
+            dir.path(),
+            &[("days", "pass", "pass"), ("mod:count", verdict, verdict)],
+        );
+        let out = report(&td, Some(&matrix), false);
+        assert!(
+            out.contains(&format!("days+count  1 tasks  preserve={verdict}")),
+            "{out}"
+        );
+        assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
+        assert!(!out.contains("GATE:"), "{out}");
+    }
+}
+
+#[test]
+fn model_read_only_count_includes_completed_tasks() {
+    let fx = Fixture::new(&[]);
+    fx.write("c/a.ics", "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nDUE;VALUE=DATE:20261107\r\nRRULE:FREQ=DAILY\r\nEND:VTODO\r\nBEGIN:VTODO\r\nUID:t1\r\nSUMMARY:Synthetic override\r\nRECURRENCE-ID;VALUE=DATE:20261108\r\nDUE;VALUE=DATE:20261109\r\nEND:VTODO\r\nEND:VCALENDAR\r\n");
+    fx.write(
+        "c/b.ics",
+        &ics("t2", "STATUS:COMPLETED\r\nRRULE:FREQ=HOURLY\r\n"),
+    );
+    let td = verified_daemon(&fx);
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = matrix_file(dir.path(), &[("days", "pass", "pass")]);
+    let out = report(&td, Some(&matrix), false);
+    assert!(out.contains("model read-only resources: 2\n"), "{out}");
+    assert!(
+        out.contains("    recurrence overrides are not supported: 1\n"),
+        "{out}"
+    );
+    assert!(!out.contains("Synthetic override"), "{out}");
+    assert!(out.contains("tasks: 2"), "{out}");
+    assert!(
+        out.contains("reopen: allowed=0 refused=1 inapplicable=1"),
+        "{out}"
+    );
+    let verbose = report(&td, Some(&matrix), true);
+    assert!(
+        verbose.contains("        Synthetic override\n"),
+        "{verbose}"
+    );
+}
+
+#[test]
+fn empty_input_does_not_claim_all_operations_pass() {
+    let fx = Fixture::new(&[]);
+    let td = verified_daemon(&fx);
+    let out = report(&td, None, false);
+    assert!(out.contains("tasks: 0"), "{out}");
+    assert!(out.contains("No tasks to assess"), "{out}");
+    assert!(!out.contains("GATE:"), "{out}");
+}
+
+#[test]
+fn duplicate_and_cancelled_resources_are_not_blanket_permissions() {
+    let fx = Fixture::new(&[]);
+    for (file, uid, status) in [
+        ("a", "duplicate", "NEEDS-ACTION"),
+        ("b", "duplicate", "COMPLETED"),
+        ("c", "cancelled", "CANCELLED"),
+    ] {
+        fx.write(&format!("c/{file}.ics"), &format!("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:Synthetic private title\r\nDESCRIPTION:Synthetic private note\r\nSTATUS:{status}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n"));
+    }
+    let td = verified_daemon(&fx);
+    let out = report(&td, None, false);
+    assert!(out.contains("tasks: 3"), "{out}");
+    assert!(out.contains("delete: allowed=1 refused=2"), "{out}");
+    assert!(
+        out.contains("complete: allowed=0 refused=1 inapplicable=2"),
+        "{out}"
+    );
+    assert!(
+        out.contains("reopen: allowed=0 refused=1 inapplicable=2"),
+        "{out}"
+    );
+    assert!(
+        out.contains("move: allowed=0 refused=0 inapplicable=0 needs-input=3"),
+        "{out}"
+    );
+    assert!(!out.contains("Synthetic private"), "{out}");
+    let verbose = report(&td, None, true);
+    assert!(verbose.contains("Synthetic private title"), "{verbose}");
+    assert!(!verbose.contains("Synthetic private note"), "{verbose}");
+}
+
+#[test]
+fn check_finishes_permissions_for_a_large_collection() {
+    let fx = Fixture::new(&[]);
+    let source =
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+            "../../fixtures/phase0/v1/plan4-list1/02-edit/0a04f22aeb294b719633c978fe1975e5.ics",
+        ))
+        .unwrap();
+    for n in 0..1000 {
+        let uid = format!("{n:032x}");
+        fx.write(
+            &format!("synthetic/{uid}.ics"),
+            &source.replace("0a04f22aeb294b719633c978fe1975e5", &uid),
+        );
+    }
+    let td = verified_daemon(&fx);
+    let r: CheckReport = td
+        .client()
+        .caller()
+        .call_timeout(
+            "check.report",
+            params(false, None),
+            std::time::Duration::from_secs(10),
+        )
+        .expect("permission reporting finishes within 10 seconds");
+    let out = r.lines.join("\n");
+    assert!(out.contains("tasks: 1000"), "{out}");
+    assert!(out.contains("delete: allowed=1000 refused=0"), "{out}");
+    assert!(
+        out.contains("reparent: allowed=0 refused=0 inapplicable=0 needs-input=1000"),
+        "{out}"
+    );
+}
+
+fn task_report(td: &TestDaemon, uid: &str) -> String {
+    let r: CheckReport = td
+        .client()
+        .call("check.report", params(false, Some(uid)))
+        .unwrap();
+    r.lines.join("\n")
+}
+
+/// Resource content, excluding the daemon's separate state directory.
+fn resource_bytes(fx: &Fixture) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+    let mut result = std::collections::BTreeMap::new();
+    for collection in std::fs::read_dir(fx.vdir()).unwrap() {
+        for entry in std::fs::read_dir(collection.unwrap().path()).unwrap() {
+            let path = entry.unwrap().path();
+            result.insert(path.clone(), std::fs::read(path).unwrap());
+        }
+    }
+    result
+}
+
+fn capture(path: &str) -> Fixture {
+    let fx = Fixture::new(&[]);
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/phase0/v1")
+        .join(path);
+    for file in std::fs::read_dir(source).unwrap() {
+        let path = file.unwrap().path();
+        if path.extension().is_some_and(|e| e == "ics") {
+            fx.write(
+                &format!("c/{}", path.file_name().unwrap().to_str().unwrap()),
+                &std::fs::read_to_string(&path).unwrap(),
+            );
+        }
+    }
+    fx
+}
+
+#[test]
+fn both_reports_use_the_configured_mode_and_real_gate() {
+    use twydo_core::{
+        edit::{Change, Op},
+        gate,
+        views::Snapshot,
+    };
+    let fx = Fixture::new(&[]);
+    fx.write(
+        "c/monthly.ics",
+        &ics(
+            "monthly",
+            "DUE;VALUE=DATE:20261107\r\nRRULE:FREQ=MONTHLY;BYMONTHDAY=7\r\n",
+        ),
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let matrix_path = matrix_file(dir.path(), &[("months-day-1-28", "pass", "pass")]);
+    // The isolated iPhone baseline passes; cross-device evidence stays unverified.
+    // Test mode admits the text edits, while verified mode must refuse them.
+    let mut matrix_text = std::fs::read_to_string(&matrix_path).unwrap();
+    matrix_text.push_str("[[operation]]\ncase = \"monthly\"\nop = \"edit\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n");
+    std::fs::write(&matrix_path, matrix_text).unwrap();
+    let matrix = Matrix::load(&matrix_path).unwrap();
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        let mut cfg = fx.config();
+        cfg.writes.mode = mode;
+        let snap = Snapshot::new(twydo_core::vdir::load(&fx.vdir()).unwrap(), cfg.clone());
+        let task = &snap.tasks[snap.find("monthly").unwrap()];
+        let td = TestDaemon::start_cfg(&fx, cfg.clone(), |o| o.matrix = matrix.clone());
+        let single = task_report(&td, "monthly");
+        let aggregate = report(&td, None, false);
+        assert!(
+            single.contains(if mode == WriteMode::Test {
+                "edit title: allowed"
+            } else {
+                "edit title: refused"
+            }),
+            "{single}"
+        );
+        for (action, op) in [
+            (
+                "edit title",
+                Op::Edit {
+                    uid: task.uid.clone(),
+                    changes: vec![Change::Summary(task.summary.clone())],
+                },
+            ),
+            (
+                "edit notes",
+                Op::Edit {
+                    uid: task.uid.clone(),
+                    changes: vec![Change::Description(task.description.clone())],
+                },
+            ),
+            (
+                "delete",
+                Op::Delete {
+                    uid: task.uid.clone(),
+                },
+            ),
+        ] {
+            match gate::check(
+                &snap,
+                &matrix,
+                mode,
+                &op,
+                Utc::now().with_timezone(&cfg.tz()).date_naive(),
+            ) {
+                Ok(()) => assert!(single.contains(&format!("{action}: allowed")), "{single}"),
+                Err(b) => {
+                    assert!(
+                        single.contains(&format!("{action}: refused: {b}")),
+                        "{single}"
+                    );
+                    assert!(aggregate.contains(&b.0), "{aggregate}");
+                }
+            }
+        }
+        let name = if mode == WriteMode::Verified {
+            "verified"
+        } else {
+            "test"
+        };
+        assert!(aggregate.contains(&format!("mode={name}")), "{aggregate}");
+    }
+}
+
+#[test]
+fn history_reopen_reports_match_real_gate_without_task_content() {
+    use twydo_core::{edit::Op, gate, model::Status, views::Snapshot};
+    let fx = capture("plan6-list1/05-complete-parent");
+    let mut cfg = fx.config();
+    cfg.timezone = Some("America/New_York".into());
+    cfg.writes.mode = WriteMode::Verified;
+    let snap = Snapshot::new(twydo_core::vdir::load(&fx.vdir()).unwrap(), cfg.clone());
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let today = Utc::now().with_timezone(&snap.tz()).date_naive();
+    let mut allowed = 0;
+    let mut refused = 0;
+    for task in snap.tasks.iter().filter(|t| t.status == Status::Completed) {
+        let permits = gate::check(
+            &snap,
+            Matrix::embedded(),
+            WriteMode::Verified,
+            &Op::Reopen {
+                uid: task.uid.clone(),
+            },
+            today,
+        )
+        .is_ok();
+        if permits {
+            allowed += 1;
+        } else {
+            refused += 1;
+        }
+        let single = task_report(&td, &task.uid);
+        assert!(
+            single.contains(if permits {
+                "reopen: allowed"
+            } else {
+                "reopen: refused"
+            }),
+            "{single}"
+        );
+        assert!(
+            !single.contains(&format!("SUMMARY:{}", task.summary)),
+            "{single}"
+        );
+    }
+    assert!(allowed + refused > 0, "capture contains completed tasks");
+    let aggregate = report(&td, None, false);
+    assert!(
+        aggregate.contains(&format!("reopen: allowed={allowed} refused={refused}")),
+        "{aggregate}"
+    );
+    assert!(!aggregate.contains("r1"), "{aggregate}");
+}
+
+#[test]
+fn both_reports_reflect_exact_resource_deletion_without_titles() {
+    let fx = Fixture::new(&[]);
+    fx.write(
+        "c/weekly.ics",
+        &ics("weekly", "DUE;VALUE=DATE:20261107\r\nRRULE:FREQ=WEEKLY\r\n"),
+    );
+    fx.write(
+        "c/parent.ics",
+        &ics(
+            "parent",
+            "STATUS:NEEDS-ACTION\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n",
+        ),
+    );
+    fx.write(
+        "c/child.ics",
+        &ics("child", "RELATED-TO:parent\r\nSTATUS:NEEDS-ACTION\r\n"),
+    );
+    let td = verified_daemon(&fx);
+    for uid in ["weekly", "parent", "child"] {
+        let single = task_report(&td, uid);
+        assert!(single.contains("delete: allowed"), "{single}");
+    }
+    let aggregate = report(&td, None, false);
+    assert!(aggregate.contains("delete: allowed="), "{aggregate}");
+    for title in ["Synthetic parent", "Synthetic child"] {
+        assert!(!aggregate.contains(title), "{aggregate}");
+    }
+    let verbose = report(&td, None, true);
+    for title in ["Synthetic parent", "Synthetic child"] {
+        assert!(verbose.contains(title), "{verbose}");
+    }
+}
+
+#[test]
+fn both_reports_admit_text_edits_on_closed_recurring_checklists() {
+    let fx = capture("plan8-checklist-b/011-phone-items-and-text");
+    let uid = "twydo-p8-c29-b";
+    let rel = format!("c/{uid}.ics");
+    fx.write(
+        &rel,
+        &fx.read(&rel).replace(
+            "STATUS:NEEDS-ACTION",
+            "STATUS:COMPLETED\nCOMPLETED:20261210T120000Z",
+        ),
+    );
+    let td = verified_daemon(&fx);
+    for text in [report(&td, None, false), task_report(&td, uid)] {
+        assert!(
+            !text.contains("checklist creation and text editing"),
+            "{text}"
+        );
+        assert!(text.contains("edit title: allowed"), "{text}");
+        assert!(text.contains("edit notes: allowed"), "{text}");
+        assert!(!text.contains(uid), "{text}");
+    }
 }

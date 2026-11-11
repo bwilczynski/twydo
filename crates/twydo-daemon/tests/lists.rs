@@ -1030,6 +1030,12 @@ fn reconciling_the_operation_lets_recovery_and_writes_go_on() {
     use twydo_daemon::protocol::lists::{ListReconcileParams, PendingListOp};
     use twydo_daemon::protocol::methods::StatusView;
     let (fx, cfg, id) = fenced_fixture();
+    // Startup can finish over the fence, including after a daemon restart.
+    let first = TestDaemon::start_cfg(&fx, cfg.clone(), |_| {});
+    let pending: Option<PendingListOp> = first.client().call("lists.pending", empty()).unwrap();
+    assert_eq!(pending.expect("the operation is pending").operation, id);
+    first.handle().shutdown();
+    drop(first);
     let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
     let c = td.client();
     let _: Value = c.call("events.subscribe", empty()).unwrap();
@@ -1048,6 +1054,12 @@ fn reconciling_the_operation_lets_recovery_and_writes_go_on() {
     assert_eq!(pending, None);
     let st: StatusView = c.call("status.get", empty()).unwrap();
     assert_eq!(st.drain_error, None);
-    submit(&c, edit_title("u1", "Changed")).unwrap();
+    let original = fx.read("inbox/u1.ics");
+    let written = submit(&c, edit_title("u1", "Changed")).unwrap();
+    assert_eq!(written.outcome, WriteOutcome::Applied);
     assert!(fx.read("inbox/u1.ics").contains("Changed"));
+    let undone = common::undo(&c).unwrap();
+    assert_eq!(undone.outcome, WriteOutcome::Applied);
+    assert_eq!(undone.message, "undone: One");
+    assert_eq!(fx.read("inbox/u1.ics"), original);
 }

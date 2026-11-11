@@ -312,6 +312,7 @@ fn op_check_lists_every_kind() {
         "move",
         "reorder",
         "insert",
+        "reparent",
     ] {
         assert!(
             text.lines().any(|l| l.starts_with(&format!("{action}: "))),
@@ -324,7 +325,21 @@ fn op_check_lists_every_kind() {
         text.contains("move: needs input: destination list"),
         "{text}"
     );
+    assert!(
+        text.contains("reparent: needs input: destination list and parent/context"),
+        "{text}"
+    );
     assert!(!text.contains("edit: ok"), "{text}");
+    assert!(!text.contains("SUMMARY:"), "{text}");
+    let resource = fs::read_to_string(env.vdir().join(format!("list1/{TASK_E}.ics"))).unwrap();
+    let title = resource
+        .lines()
+        .find_map(|line| line.strip_prefix("SUMMARY:"))
+        .unwrap();
+    assert!(!text.contains(title), "{text}");
+    let missing = env.op(&["check", "synthetic-missing-uid"]);
+    assert_eq!(missing.status.code(), Some(1), "{}", err(&missing));
+    assert!(out(&missing).is_empty());
 }
 
 #[test]
@@ -499,19 +514,6 @@ fn op_snapshot_waits_for_writer_lock() {
     assert_eq!(status.code(), Some(0));
 }
 
-/// `tdo op check <uid>` until the daemon has seen the task's file (it notices changes made
-/// behind its back through its watcher), within 10 s.
-fn op_check_when_seen(env: &Env, uid: &str) -> Output {
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        let o = env.op(&["check", uid]);
-        if o.status.success() || Instant::now() > deadline {
-            return o;
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
-
 /// A missing vdir is reported as unreadable, not as a journal failure.
 #[test]
 fn missing_vdir_reports_only_read_error() {
@@ -543,31 +545,6 @@ fn op_journal_shows_synced() {
             .ends_with("synced 2026-11-02T08:30:00Z"),
         "{j}"
     );
-}
-
-/// Adds a `[sync]` table whose command is a fake script touching `marker`; returns the marker.
-fn with_fake_sync(env: &Env) -> PathBuf {
-    use std::io::Write;
-    let marker = env.dir.path().join("marker");
-    let fake = env.dir.path().join("fake.sh");
-    common::write_script(&fake, &format!("touch '{}'", marker.display()));
-    let mut cfg = fs::OpenOptions::new()
-        .append(true)
-        .open(env.dir.path().join("config/twydo/config.toml"))
-        .unwrap();
-    write!(
-        cfg,
-        "[sync]\ncommand = \"{}\"\nmetasync = false\n",
-        fake.display()
-    )
-    .unwrap();
-    marker
-}
-
-/// True if `marker` stays absent for a grace period.
-fn marker_stays_absent(marker: &Path) -> bool {
-    std::thread::sleep(std::time::Duration::from_millis(1500));
-    !marker.exists()
 }
 
 #[test]
@@ -1179,158 +1156,6 @@ fn read_only_commands_warn_about_a_stuck_journal() {
 }
 
 #[test]
-fn both_reports_use_the_configured_mode_and_real_gate() {
-    use chrono::Utc;
-    use twydo_core::{
-        compat::Matrix,
-        config::Config,
-        edit::{Change, Op},
-        gate,
-        views::Snapshot,
-    };
-    for mode in ["verified", "test"] {
-        let env = Env::new(mode);
-        let cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
-        let matrix = Matrix::load(&env.dir.path().join("matrix.toml")).unwrap();
-        let snap = Snapshot::new(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg.clone());
-        let task = &snap.tasks[snap.find(TASK_E).unwrap()];
-        let single = env.op(&["check", TASK_E]);
-        let m = env.dir.path().join("matrix.toml");
-        let aggregate = env.tdo(&["check", "--matrix", m.to_str().unwrap()]);
-        assert_eq!(single.status.code(), Some(0));
-        assert_eq!(aggregate.status.code(), Some(0));
-        for (action, op) in [
-            (
-                "edit title",
-                Op::Edit {
-                    uid: TASK_E.into(),
-                    changes: vec![Change::Summary(task.summary.clone())],
-                },
-            ),
-            (
-                "edit notes",
-                Op::Edit {
-                    uid: TASK_E.into(),
-                    changes: vec![Change::Description(task.description.clone())],
-                },
-            ),
-            ("delete", Op::Delete { uid: TASK_E.into() }),
-        ] {
-            match gate::check(
-                &snap,
-                &matrix,
-                cfg.writes.mode,
-                &op,
-                Utc::now().with_timezone(&cfg.tz()).date_naive(),
-            ) {
-                Ok(()) => assert!(
-                    out(&single).contains(&format!("{action}: allowed")),
-                    "{}",
-                    out(&single)
-                ),
-                Err(b) => {
-                    assert!(
-                        out(&single).contains(&format!("{action}: refused: {b}")),
-                        "{}",
-                        out(&single)
-                    );
-                    assert!(out(&aggregate).contains(&b.0), "{}", out(&aggregate));
-                }
-            }
-        }
-        assert!(out(&aggregate).contains(&format!("mode={mode}")));
-        assert_eq!(
-            env.op(&["check", "synthetic-missing-uid"]).status.code(),
-            Some(1)
-        );
-    }
-}
-
-#[test]
-fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
-    use twydo_core::{config::Config, store::queue};
-    use twydo_daemon::server::lane::LongKind;
-    let env = Env::new("test");
-    let cfg = {
-        let mut cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
-        cfg.state_dir = Some(env.state().join("twydo"));
-        cfg
-    };
-    // A long job holds the daemon's lane, so the creation waits in the queue.
-    let daemon = env.in_process_daemon();
-    let job = daemon.hold_long(LongKind::Test);
-    let count = twydo_core::vdir::load(&env.vdir()).unwrap().tasks.len();
-    let added = env.op(&[
-        "add",
-        "--list",
-        "list1",
-        "--title",
-        "Synthetic queued report target",
-    ]);
-    assert!(
-        out(&added).starts_with("queued (a sync is running): "),
-        "{} {}",
-        out(&added),
-        err(&added)
-    );
-    let queued = queue::view(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg);
-    let uid = queued
-        .tasks
-        .iter()
-        .find(|t| t.summary == "Synthetic queued report target")
-        .unwrap()
-        .uid
-        .clone();
-    let queue_dir = env.vdir_state().join("queue");
-    let queue_path = fs::read_dir(&queue_dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| p.extension().is_some_and(|x| x == "json"))
-        .expect("a queued item");
-    let queue_bytes = fs::read(&queue_path).unwrap();
-    // Configure a marker only after enqueueing, so the preparation is not a sync trigger.
-    let marker = with_fake_sync(&env);
-    let files: Vec<_> = fs::read_dir(env.vdir().join("list1"))
-        .unwrap()
-        .map(|e| {
-            let p = e.unwrap().path();
-            let b = fs::read(&p).unwrap();
-            (p, b)
-        })
-        .collect();
-    let single = env.op(&["check", &uid]);
-    assert_eq!(single.status.code(), Some(0), "{}", err(&single));
-    assert!(
-        out(&single).contains("edit title: allowed"),
-        "{}",
-        out(&single)
-    );
-    let m = env.dir.path().join("matrix.toml");
-    let aggregate = env.tdo(&["check", "--matrix", m.to_str().unwrap(), "--verbose"]);
-    assert_eq!(aggregate.status.code(), Some(0), "{}", err(&aggregate));
-    assert!(
-        out(&aggregate).contains(&format!("tasks: {}", count + 1)),
-        "{}",
-        out(&aggregate)
-    );
-    assert!(
-        out(&aggregate).contains("Synthetic queued report target"),
-        "{}",
-        out(&aggregate)
-    );
-    assert_eq!(fs::read(queue_path).unwrap(), queue_bytes);
-    assert_eq!(
-        twydo_core::vdir::load(&env.vdir()).unwrap().tasks.len(),
-        count
-    );
-    for (p, before) in files {
-        assert_eq!(fs::read(p).unwrap(), before);
-    }
-    assert!(marker_stays_absent(&marker), "reporting started sync");
-    drop(job);
-}
-
-#[test]
 fn checklist_due_capability_cli_preserves_items_and_refuses_interval_candidate() {
     let env = Env::new("verified");
     let list = env.vdir().join("list1");
@@ -1365,52 +1190,8 @@ fn checklist_due_capability_cli_preserves_items_and_refuses_interval_candidate()
 }
 
 #[test]
-fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
+fn delete_plain_parent_exits_1_without_writing() {
     let env = Env::new("verified");
-    let e_file = env.vdir().join(format!("list1/{TASK_E}.ics"));
-    let text = fs::read_to_string(&e_file)
-        .unwrap()
-        .replace("RRULE:FREQ=MONTHLY", "RRULE:FREQ=WEEKLY");
-    fs::write(&e_file, text).unwrap();
-
-    let o = env.tdo(&["op", "check", TASK_E]);
-    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
-    assert!(out(&o).contains("delete: allowed"), "{}", out(&o));
-
-    let parent = "synthetic-cap2-parent";
-    let child = "synthetic-cap2-child";
-    fs::write(
-        env.vdir().join(format!("list1/{parent}.ics")),
-        synthetic_task(
-            parent,
-            "Synthetic cap2 parent",
-            "STATUS:NEEDS-ACTION\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n",
-        ),
-    )
-    .unwrap();
-    fs::write(
-        env.vdir().join(format!("list1/{child}.ics")),
-        synthetic_task(
-            child,
-            "Synthetic cap2 child",
-            &format!("RELATED-TO:{parent}\r\nSTATUS:NEEDS-ACTION\r\n"),
-        ),
-    )
-    .unwrap();
-
-    let o = op_check_when_seen(&env, parent);
-    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
-    assert!(out(&o).contains("delete: allowed"), "{}", out(&o));
-    assert!(op_check_when_seen(&env, child).status.success());
-    let o = env.tdo(&["check"]);
-    assert_eq!(o.status.code(), Some(0), "{}", err(&o));
-    assert!(out(&o).contains("delete: allowed="), "{}", out(&o));
-    assert!(!out(&o).contains("Synthetic cap2 parent"), "{}", out(&o));
-    assert!(!out(&o).contains("Synthetic cap2 child"), "{}", out(&o));
-    let v = env.tdo(&["check", "--verbose"]);
-    assert!(out(&v).contains("Synthetic cap2 parent"), "{}", out(&v));
-    assert!(out(&v).contains("Synthetic cap2 child"), "{}", out(&v));
-
     // A plain task with a child remains refused and writes no bytes.
     let plain = "synthetic-cap2-plain";
     let plain_child = "synthetic-cap2-plain-child";
@@ -1428,8 +1209,6 @@ fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
         ),
     )
     .unwrap();
-    assert!(op_check_when_seen(&env, plain_child).status.success());
-    assert!(op_check_when_seen(&env, plain).status.success());
     let before = list_files(&env);
     let o = env.tdo(&["op", "delete", plain]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
@@ -1438,77 +1217,13 @@ fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
 }
 
 #[test]
-fn history_reopen_reports_match_real_gate_without_task_content() {
+fn move_cli_uses_shipping_matrix_and_destination_flag() {
     let env = Env::new("verified");
-    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/phase0/v1/plan6-list1/05-complete-parent");
-    fs::remove_dir_all(env.vdir().join("list1")).unwrap();
-    fs::create_dir(env.vdir().join("list1")).unwrap();
-    for p in fs::read_dir(src).unwrap().map(|p| p.unwrap().path()) {
-        if p.extension().is_some_and(|e| e == "ics") {
-            fs::copy(&p, env.vdir().join("list1").join(p.file_name().unwrap())).unwrap();
-        }
-    }
-    fs::write(
-        env.dir.path().join("matrix.toml"),
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/matrix.toml")).unwrap(),
-    )
-    .unwrap();
-    let mut cfg = twydo_core::config::Config::with_vdir(env.vdir());
-    cfg.timezone = Some("America/New_York".into());
-    let snap = twydo_core::views::Snapshot::new(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg);
-    let today = chrono::Utc::now().with_timezone(&snap.tz()).date_naive();
-    let mut allowed = 0;
-    let mut refused = 0;
-    for t in snap
-        .tasks
-        .iter()
-        .filter(|t| t.status == twydo_core::model::Status::Completed)
-    {
-        let permits = twydo_core::gate::check(
-            &snap,
-            twydo_core::compat::Matrix::embedded(),
-            twydo_core::config::WriteMode::Verified,
-            &twydo_core::edit::Op::Reopen { uid: t.uid.clone() },
-            today,
-        )
-        .is_ok();
-        if permits {
-            allowed += 1;
-        } else {
-            refused += 1;
-        }
-        let output = env.tdo(&["op", "check", &t.uid]);
-        assert!(output.status.success(), "{}", err(&output));
-        assert!(out(&output).contains(if permits {
-            "reopen: allowed"
-        } else {
-            "reopen: refused"
-        }));
-        assert!(!out(&output).contains(&format!("SUMMARY:{}", t.summary)));
-    }
-    let report = env.tdo(&["check"]);
-    assert!(report.status.success(), "{}", err(&report));
-    assert!(
-        out(&report).contains(&format!("reopen: allowed={allowed} refused={refused}")),
-        "{}",
-        out(&report)
-    );
-    assert!(!out(&report).contains("r1"));
-}
-
-#[test]
-fn capability_move_cli_uses_shipping_matrix_and_requires_destination_probe() {
-    let env = Env::new("verified");
-    let report = env.tdo(&["op", "check", TASK_A]);
-    assert!(report.status.success(), "{}", err(&report));
-    assert!(out(&report).contains("move: needs input: destination list"));
     // The existing yearly fixture has no broad shipping move verdict. Its
     // scheduling bytes remain intact under the relocation-specific contract.
     let yearly = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../twydo-core/tests/data/gate/inbox/gate-yearly.ics");
     fs::copy(yearly, env.vdir().join("list1/gate-yearly.ics")).unwrap();
-    assert!(op_check_when_seen(&env, "gate-yearly").status.success());
     let relocated = env.tdo(&["op", "move", "gate-yearly", "--to", "list2"]);
     assert!(relocated.status.success(), "{}", err(&relocated));
     assert!(!env.vdir().join("list1/gate-yearly.ics").exists());
@@ -1520,12 +1235,9 @@ fn capability_move_cli_uses_shipping_matrix_and_requires_destination_probe() {
 }
 
 #[test]
-fn reparent_cli_reports_context_and_shipping_refusal() {
+fn reparent_cli_maps_flags_and_shipping_refusal() {
     let e = Env::new("verified");
     let before = list_files(&e);
-    let report = e.tdo(&["op", "check", TASK_A]);
-    assert!(report.status.success());
-    assert!(out(&report).contains("reparent: needs input: destination list and parent/context"));
     let result = e.tdo(&["op", "reparent", TASK_A, "--list", "list2"]);
     assert_eq!(result.status.code(), Some(1), "{}", err(&result));
     assert!(err(&result).contains("item-outdent"));
@@ -1548,7 +1260,7 @@ fn reparent_cli_reports_context_and_shipping_refusal() {
 }
 
 #[test]
-fn text_capability_reports_and_cli_edit_closed_recurring_checklists() {
+fn edit_cli_maps_title_and_notes_on_closed_recurring_checklist() {
     let env = Env::new("verified");
     let list = env.vdir().join("list1");
     fs::remove_dir_all(&list).unwrap();
@@ -1567,17 +1279,6 @@ fn text_capability_reports_and_cli_edit_closed_recurring_checklists() {
         "STATUS:COMPLETED\nCOMPLETED:20261210T120000Z",
     );
     fs::write(&path, &before).unwrap();
-    for report in [env.tdo(&["check"]), env.tdo(&["op", "check", uid])] {
-        assert!(report.status.success(), "{}", err(&report));
-        let output = out(&report);
-        assert!(
-            !output.contains("checklist creation and text editing"),
-            "{output}"
-        );
-        assert!(output.contains("edit title: allowed"), "{output}");
-        assert!(output.contains("edit notes: allowed"), "{output}");
-        assert!(!output.contains(uid), "{output}");
-    }
     let bad = env.tdo(&["op", "edit", uid, "--title", "   "]);
     assert!(!bad.status.success());
     assert_eq!(fs::read_to_string(&path).unwrap(), before);
