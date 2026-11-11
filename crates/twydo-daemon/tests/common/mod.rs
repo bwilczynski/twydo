@@ -505,10 +505,7 @@ pub mod project {
             let text = std::fs::read_to_string(src.join(format!("{uid}.ics"))).unwrap();
             fx.write(&format!("{LIST}/{uid}.ics"), &text);
         }
-        fx.write(
-            &format!("{LIST}/displayname"),
-            &std::fs::read_to_string(src.join("displayname")).unwrap(),
-        );
+        fx.write(&format!("{LIST}/displayname"), "Synthetic project list");
         fx
     }
 }
