@@ -1,22 +1,20 @@
 //! `tdo op`: the core write operations as scriptable commands.
 //!
 //! Writes go to the daemon over its socket (nothing here reads the vdir or the config file;
-//! `op check` is the exception, a local read). Exit 0 prints the operation id, or
+//! `op check` asks the daemon too). Exit 0 prints the operation id, or
 //! `queued (a sync is running): <queue id>` when the daemon's lane is busy and the write
 //! waits in its queue (`--wait` waits for its outcome instead of returning at once); 1 means
 //! blocked, stale or stuck (reason on stderr); 2 is a usage, daemon or edit error.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use clap::{Args, Subcommand, ValueEnum};
-use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::model::TaskKind;
 use twydo_core::repeatinput::{self, RepeatSpec};
-use twydo_core::views::Snapshot;
 use twydo_daemon::client::{Client, ClientError, Notification};
 use twydo_daemon::protocol::admin::{
     AbandonResult, JournalAbandonParams, JournalEntryView, JournalRevertParams, RecoverResult,
@@ -27,11 +25,12 @@ use twydo_daemon::protocol::methods::{
     AckParams, BasedOn, OpGetParams, OpState, StatusView, SubmitParams, SubscribeResult,
     WriteOutcome, WriteResult,
 };
+use twydo_daemon::protocol::reports::{CheckReport, CheckReportParams};
 use twydo_daemon::protocol::rpc::ErrorKind as RpcKind;
 use twydo_daemon::protocol::wire::{WireSnapshot, from_wire};
 
-use super::permissions::{probes, task_lines};
-use super::{CliError, EXIT_ERROR, permission_snapshot, resolve_config};
+use super::check;
+use super::{CliError, EXIT_ERROR};
 use crate::client::{self, CLI_TIMEOUT, Target};
 
 /// A task type, as `--kind` spells it.
@@ -329,22 +328,10 @@ fn edit_changes(
     Ok(changes)
 }
 
-fn check_lines(
-    snap: &Snapshot,
-    matrix: &Matrix,
-    mode: WriteMode,
-    uid: &str,
-    now: DateTime<Utc>,
-) -> Result<Vec<String>, Failure> {
-    let Some(idx) = snap.find(uid) else {
-        return Err(Failure::Blocked(format!("no task with UID {uid}")));
-    };
-    Ok(task_lines(&probes(snap, matrix, mode, idx, now)))
-}
-
-/// `tdo op check`: a local read of the vdir (no daemon), with `--matrix` for tests.
-pub fn check_command(vdir: Option<&Path>, matrix: Option<&PathBuf>, uid: &str) -> i32 {
-    match check_inner(vdir, matrix, uid) {
+/// `tdo op check`: the daemon's `check.report` for one task, with `--matrix` for tests.
+/// An unknown UID exits 1.
+pub fn check_command(target: &Target, matrix: Option<&PathBuf>, uid: &str) -> i32 {
+    match check_inner(target, matrix, uid) {
         Ok(()) => 0,
         Err(f) => report(f),
     }
@@ -363,26 +350,34 @@ fn report(f: Failure) -> i32 {
     }
 }
 
-fn check_inner(vdir: Option<&Path>, matrix: Option<&PathBuf>, uid: &str) -> Result<(), Failure> {
-    let cfg = resolve_config(vdir)?;
-    let matrix = match matrix {
-        Some(p) => Matrix::load(p).map_err(CliError::from)?,
-        None => Matrix::embedded().clone(),
-    };
-    if cfg.writes.mode == WriteMode::Test {
-        eprintln!("tdo: test write mode: unverified operations are enabled");
-    }
-    let snap = permission_snapshot(&cfg)?;
-    for line in check_lines(&snap, &matrix, cfg.writes.mode, uid, Utc::now())? {
-        println!("{line}");
-    }
+fn check_inner(target: &Target, matrix: Option<&PathBuf>, uid: &str) -> Result<(), Failure> {
+    let (c, _) = client::connect(target, CLIENT, None)?;
+    let matrix = matrix.map(|m| std::path::absolute(m).unwrap_or_else(|_| m.clone()));
+    let r: CheckReport = client::call_ready(
+        &c.caller(),
+        "check.report",
+        &CheckReportParams {
+            verbose: false,
+            matrix,
+            uid: Some(uid.to_string()),
+        },
+        CLI_TIMEOUT,
+        STARTUP_WAIT,
+    )
+    .map_err(|e| match &e {
+        ClientError::Rpc(r) if r.data.as_ref().map(|d| d.kind) == Some(RpcKind::NotFound) => {
+            Failure::Blocked(r.message.clone())
+        }
+        _ => e.into(),
+    })?;
+    check::print(&r);
     Ok(())
 }
 
 /// Run an `op` subcommand; returns the process exit code.
 pub fn run(target: &Target, cmd: OpCommand) -> i32 {
     if let OpCommand::Check { uid, matrix } = &cmd {
-        return check_command(target.vdir.as_deref(), matrix.as_ref(), uid);
+        return check_command(target, matrix.as_ref(), uid);
     }
     match run_inner(target, cmd) {
         Ok(()) => 0,

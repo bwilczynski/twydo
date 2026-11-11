@@ -119,6 +119,7 @@ pub fn dispatch(
         "op.undo" => super::writes::undo(shared, parse(params)?, false),
         "op.redo" => super::writes::undo(shared, parse(params)?, true),
         "op.get" => super::writes::get(shared, parse(params)?),
+        "check.report" => super::reports::check_report(shared, parse(params)?),
         "op.check" => super::writes::check(shared, parse(params)?),
         "sync.run" => super::syncjob::sync_run(shared, conn, parse(params)?),
         "sync.stop" => super::syncjob::sync_stop(shared),

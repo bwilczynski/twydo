@@ -140,17 +140,11 @@ impl Env {
         }
     }
 
-    /// `tdo op <args>` against a daemon running this env's matrix. `op check` is a local read
-    /// and takes the matrix itself.
+    /// `tdo op <args>` against a daemon running this env's matrix.
     fn op(&self, args: &[&str]) -> Output {
-        let m = self.dir.path().join("matrix.toml");
         let mut a = vec!["op"];
         a.extend_from_slice(args);
-        if args.first() == Some(&"check") {
-            a.extend_from_slice(&["--matrix", m.to_str().unwrap()]);
-        } else {
-            self.ensure_daemon();
-        }
+        self.ensure_daemon();
         self.tdo(&a)
     }
 
@@ -514,6 +508,19 @@ fn op_snapshot_waits_for_writer_lock() {
     assert_eq!(status.code(), Some(0));
 }
 
+/// `tdo op check <uid>` until the daemon has seen the task's file (it notices changes made
+/// behind its back through its watcher), within 10 s.
+fn op_check_when_seen(env: &Env, uid: &str) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let o = env.op(&["check", uid]);
+        if o.status.success() || Instant::now() > deadline {
+            return o;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
 /// A missing vdir is reported as unreadable, not as a journal failure.
 #[test]
 fn missing_vdir_reports_only_read_error() {
@@ -521,7 +528,7 @@ fn missing_vdir_reports_only_read_error() {
     let missing = env.dir.path().join("no-such-vdir");
     let o = env.tdo(&["--vdir", missing.to_str().unwrap(), "check"]);
     assert_eq!(o.status.code(), Some(2), "{}", err(&o));
-    assert!(err(&o).contains("cannot read vdir"), "{}", err(&o));
+    assert!(err(&o).contains("no-such-vdir"), "{}", err(&o));
     assert!(!err(&o).contains("journal recovery failed"), "{}", err(&o));
 }
 
@@ -836,12 +843,6 @@ fn verified_from_completion_edits_and_interval_card_vocabulary_respect_scoped_pe
         "{}",
         out(&aggregate)
     );
-}
-
-/// What a running sync does to a writer in the old setup: holds the vdir lock shared. Only the
-/// no-daemon report test uses it now.
-fn sync_holds_vdir(env: &Env) -> twydo_core::store::fsio::VdirLock {
-    twydo_core::store::fsio::VdirLock::shared(&env.vdir_state()).unwrap()
 }
 
 /// Changes a task's file by a byte-visible property, as another device's edit would.
@@ -1175,35 +1176,31 @@ fn both_reports_use_the_configured_mode_and_real_gate() {
 
 #[test]
 fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
-    use twydo_core::{
-        compat::Matrix,
-        config::Config,
-        edit::{NewTask, Op},
-        store::{Store, Submitted, queue},
-        views::Snapshot,
-    };
+    use twydo_core::{config::Config, store::queue};
+    use twydo_daemon::server::lane::LongKind;
     let env = Env::new("test");
-    let mut cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
-    cfg.state_dir = Some(env.state().join("twydo"));
-    let matrix = Matrix::load(&env.dir.path().join("matrix.toml")).unwrap();
-    let (mut store, _) = Store::open_with(&cfg, matrix).unwrap();
-    let lock = sync_holds_vdir(&env);
-    let report = twydo_core::vdir::load(&env.vdir()).unwrap();
-    let count = report.tasks.len();
-    let snap = Snapshot::new(report, cfg.clone());
-    let op = Op::Create(NewTask::plain("list1", "Synthetic queued report target"));
-    let result = store
-        .submit(
-            &snap,
-            &op,
-            "Synthetic queued creation",
-            "test",
-            chrono::Utc::now(),
-        )
-        .unwrap();
-    let Submitted::Queued(item) = result else {
-        panic!("creation was not queued")
+    let cfg = {
+        let mut cfg = Config::load(&env.dir.path().join("config/twydo/config.toml")).unwrap();
+        cfg.state_dir = Some(env.state().join("twydo"));
+        cfg
     };
+    // A long job holds the daemon's lane, so the creation waits in the queue.
+    let daemon = env.in_process_daemon();
+    let job = daemon.hold_long(LongKind::Test);
+    let count = twydo_core::vdir::load(&env.vdir()).unwrap().tasks.len();
+    let added = env.op(&[
+        "add",
+        "--list",
+        "list1",
+        "--title",
+        "Synthetic queued report target",
+    ]);
+    assert!(
+        out(&added).starts_with("queued (a sync is running): "),
+        "{} {}",
+        out(&added),
+        err(&added)
+    );
     let queued = queue::view(twydo_core::vdir::load(&env.vdir()).unwrap(), cfg);
     let uid = queued
         .tasks
@@ -1212,12 +1209,13 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
         .unwrap()
         .uid
         .clone();
-    let queue_path = env
-        .vdir_state()
-        .join("queue")
-        .join(format!("{}.json", item.id));
+    let queue_dir = env.vdir_state().join("queue");
+    let queue_path = fs::read_dir(&queue_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "json"))
+        .expect("a queued item");
     let queue_bytes = fs::read(&queue_path).unwrap();
-    drop(lock);
     // Configure a marker only after enqueueing, so the preparation is not a sync trigger.
     let marker = with_fake_sync(&env);
     let files: Vec<_> = fs::read_dir(env.vdir().join("list1"))
@@ -1257,6 +1255,7 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
         assert_eq!(fs::read(p).unwrap(), before);
     }
     assert!(marker_stays_absent(&marker), "reporting started sync");
+    drop(job);
 }
 
 #[test]
@@ -1327,9 +1326,10 @@ fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
     )
     .unwrap();
 
-    let o = env.tdo(&["op", "check", parent]);
+    let o = op_check_when_seen(&env, parent);
     assert_eq!(o.status.code(), Some(0), "{}", err(&o));
     assert!(out(&o).contains("delete: allowed"), "{}", out(&o));
+    assert!(op_check_when_seen(&env, child).status.success());
     let o = env.tdo(&["check"]);
     assert_eq!(o.status.code(), Some(0), "{}", err(&o));
     assert!(out(&o).contains("delete: allowed="), "{}", out(&o));
@@ -1356,6 +1356,8 @@ fn check_and_op_check_reflect_exact_resource_deletion_without_titles() {
         ),
     )
     .unwrap();
+    assert!(op_check_when_seen(&env, plain_child).status.success());
+    assert!(op_check_when_seen(&env, plain).status.success());
     let before = list_files(&env);
     let o = env.tdo(&["op", "delete", plain]);
     assert_eq!(o.status.code(), Some(1), "{}", err(&o));
@@ -1434,6 +1436,7 @@ fn capability_move_cli_uses_shipping_matrix_and_requires_destination_probe() {
     let yearly = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../twydo-core/tests/data/gate/inbox/gate-yearly.ics");
     fs::copy(yearly, env.vdir().join("list1/gate-yearly.ics")).unwrap();
+    assert!(op_check_when_seen(&env, "gate-yearly").status.success());
     let relocated = env.tdo(&["op", "move", "gate-yearly", "--to", "list2"]);
     assert!(relocated.status.success(), "{}", err(&relocated));
     assert!(!env.vdir().join("list1/gate-yearly.ics").exists());

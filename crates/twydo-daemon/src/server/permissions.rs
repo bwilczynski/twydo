@@ -6,20 +6,20 @@ use twydo_core::config::WriteMode;
 use twydo_core::views::Snapshot;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Availability {
+pub enum Availability {
     Allowed,
     Refused(String),
     Inapplicable(&'static str),
     RequiresInput(&'static str),
 }
 
-pub(super) struct Probe {
+pub struct Probe {
     pub action: &'static str,
     pub availability: Availability,
 }
 
 /// Probe field admission without planning or writing a replacement resource.
-pub(super) fn probes(
+pub fn probes(
     snap: &Snapshot,
     matrix: &Matrix,
     mode: WriteMode,
@@ -32,7 +32,7 @@ pub(super) fn probes(
 }
 
 /// Aggregate reports reuse the gate's snapshot facts without maintaining a second policy.
-pub(super) fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<Probe> {
+pub fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -> Vec<Probe> {
     use twydo_core::edit::{Change, Op};
     use twydo_core::model::Status;
     let snap = checker.snapshot();
@@ -96,7 +96,7 @@ pub(super) fn probes_with(checker: &twydo_core::gate::Checker<'_>, idx: usize) -
     out
 }
 
-pub(super) fn task_lines(probes: &[Probe]) -> Vec<String> {
+pub fn task_lines(probes: &[Probe]) -> Vec<String> {
     let mut out: Vec<_> = probes
         .iter()
         .map(|p| {

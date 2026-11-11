@@ -50,6 +50,20 @@ mod gate {
         String::from_utf8(o.stdout.clone()).unwrap()
     }
 
+    /// An environment for the sample vdir (absolute, so the daemon finds it from anywhere).
+    fn sample_env() -> crate::common::VdirEnv {
+        crate::common::VdirEnv::new(&root().join(sample()))
+    }
+
+    fn matrix_arg() -> String {
+        root().join("compat/matrix.toml").to_str().unwrap().into()
+    }
+
+    /// A vdir given as a string path.
+    fn env_of(vdir: &str) -> crate::common::VdirEnv {
+        crate::common::VdirEnv::new(std::path::Path::new(vdir))
+    }
+
     #[test]
     fn export_json_sample() {
         let o = tdo_cfg(
@@ -89,13 +103,8 @@ mod gate {
 
     #[test]
     fn check_reports_rules_without_titles() {
-        let o = tdo(&[
-            "--vdir",
-            sample(),
-            "check",
-            "--matrix",
-            "compat/matrix.toml",
-        ]);
+        let env = sample_env();
+        let o = env.tdo(&["check", "--matrix", &matrix_arg()]);
         assert_eq!(o.status.code(), Some(0));
         let out = stdout(&o);
         // Verdicts come from the live compat/matrix.toml, so check the row's shape, not its values.
@@ -115,13 +124,47 @@ mod gate {
         );
         assert!(!out.contains("GATE:"), "{out}");
         assert!(!out.contains("Pay rent"), "{out}");
-        let v = tdo(&["--vdir", sample(), "check", "--verbose"]);
+        let v = env.tdo(&["check", "--verbose"]);
         assert!(stdout(&v).contains("Pay rent"));
+    }
+
+    /// Every file under `dir` with its size and mtime.
+    fn listing(dir: &std::path::Path) -> Vec<(PathBuf, u64, std::time::SystemTime)> {
+        let mut out = Vec::new();
+        let mut todo = vec![dir.to_path_buf()];
+        while let Some(d) = todo.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let e = e.unwrap();
+                let m = e.metadata().unwrap();
+                out.push((e.path(), m.len(), m.modified().unwrap()));
+                if m.is_dir() {
+                    todo.push(e.path());
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn check_leaves_the_fixture_untouched() {
+        let env = sample_env();
+        let dir = root().join(sample());
+        let before = listing(&dir);
+        let o = env.tdo(&["check"]);
+        assert_eq!(
+            o.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        assert_eq!(listing(&dir), before);
     }
 
     #[test]
     fn check_missing_matrix_is_a_configuration_error() {
-        let o = tdo(&["--vdir", sample(), "check", "--matrix", "nope.toml"]);
+        let env = sample_env();
+        let o = env.tdo(&["check", "--matrix", "nope.toml"]);
         assert_eq!(o.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&o.stderr).contains("nope.toml"));
     }
@@ -131,16 +174,12 @@ mod gate {
     #[test]
     fn check_without_matrix_flag_uses_embedded_matrix() {
         let elsewhere = tempfile::tempdir().unwrap();
-        let cfg = tempfile::tempdir().unwrap();
-        let o = crate::common::tdo_bin(
-            &cfg.path().join("none.sock"),
-            cfg.path(),
-            &cfg.path().join("state"),
-        )
-        .args(["--vdir", root().join(sample()).to_str().unwrap(), "check"])
-        .current_dir(elsewhere.path())
-        .output()
-        .expect("run tdo");
+        let env = sample_env();
+        let o = env
+            .cmd(&["check"])
+            .current_dir(elsewhere.path())
+            .output()
+            .expect("run tdo");
         let out = stdout(&o);
         assert!(!out.contains("matrix not found"), "{out}");
         assert!(
@@ -152,8 +191,14 @@ mod gate {
 
     #[test]
     fn check_exit_code() {
-        let o = tdo(&["--vdir", "/nonexistent/twydo-vdir", "check"]);
+        let env = env_of("/nonexistent/twydo-vdir");
+        let o = env.tdo(&["check"]);
         assert_eq!(o.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("twydo-vdir"),
+            "{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
         let o = tdo(&["export-json"]);
         assert_eq!(o.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&o.stderr).contains("pass --vdir"));
@@ -176,8 +221,17 @@ mod gate {
 
     #[test]
     fn invalid_config_exits_2() {
-        let o = tdo_cfg(&["--vdir", sample(), "check"], Some("bogus = 1\n"));
+        let env = sample_env();
+        let cfg = env.config_dir();
+        std::fs::create_dir_all(cfg.join("twydo")).unwrap();
+        std::fs::write(cfg.join("twydo/config.toml"), "bogus = 1\n").unwrap();
+        let o = env.tdo(&["check"]);
         assert_eq!(o.status.code(), Some(2));
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(
+            err.contains("config.toml") || err.contains("bogus"),
+            "{err}"
+        );
     }
 
     fn matrix_file(dir: &std::path::Path, rows: &[(&str, &str)]) -> String {
@@ -209,14 +263,14 @@ mod gate {
         let d = tempfile::tempdir().unwrap();
         let m = matrix_file(d.path(), &[("days", "pass")]);
         let good = mini_vdir(d.path(), false);
-        let out = stdout(&tdo(&["--vdir", &good, "check", "--matrix", &m]));
+        let out = stdout(&env_of(&good).tdo(&["check", "--matrix", &m]));
         assert!(!out.contains("GATE:"), "{out}");
         assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
 
         let d2 = tempfile::tempdir().unwrap();
         let m2 = matrix_file(d2.path(), &[("days", "pass")]);
         let bad = mini_vdir(d2.path(), true);
-        let out = stdout(&tdo(&["--vdir", &bad, "check", "--matrix", &m2]));
+        let out = stdout(&env_of(&bad).tdo(&["check", "--matrix", &m2]));
         assert!(out.contains("parse errors: 1"), "{out}");
         assert!(
             out.contains("parse errors: 1") && out.contains("edit title: allowed=0 refused=1"),
@@ -233,15 +287,16 @@ mod gate {
         std::fs::write(v.join("a.ics"), ics).unwrap();
         let vd = d.path().join("vdir");
         let vd = vd.to_str().unwrap();
+        let env = env_of(vd);
         let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "unverified")]);
-        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
+        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
         assert!(
             out.contains("days+count  1 tasks  preserve=unverified"),
             "{out}"
         );
         assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
         let m = matrix_file(d.path(), &[("days", "pass"), ("mod:count", "pass")]);
-        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
+        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
         assert!(!out.contains("GATE:"), "{out}");
         assert!(out.contains("delete: allowed=0 refused=1"), "{out}");
     }
@@ -258,8 +313,9 @@ mod gate {
         std::fs::write(v.join("b.ics"), done).unwrap();
         let vd = d.path().join("vdir");
         let vd = vd.to_str().unwrap();
+        let env = env_of(vd);
         let m = matrix_file(d.path(), &[("days", "pass")]);
-        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m]));
+        let out = stdout(&env.tdo(&["check", "--matrix", &m]));
         assert!(out.contains("model read-only resources: 2\n"), "{out}");
         assert!(
             out.contains("    recurrence overrides are not supported: 1\n"),
@@ -270,7 +326,7 @@ mod gate {
             out.contains("tasks: 2") && out.contains("reopen: allowed=0 refused=1 inapplicable=1"),
             "{out}"
         );
-        let out = stdout(&tdo(&["--vdir", vd, "check", "--matrix", &m, "--verbose"]));
+        let out = stdout(&env.tdo(&["check", "--matrix", &m, "--verbose"]));
         assert!(out.contains("        Synthetic override\n"), "{out}");
     }
     #[test]
@@ -282,7 +338,8 @@ mod gate {
             .unwrap()
             .replace("edit = \"pass\"", "edit = \"unverified\"");
         std::fs::write(&m, text).unwrap();
-        let result = tdo(&["--vdir", &vd, "check", "--matrix", &m]);
+        let env = env_of(&vd);
+        let result = env.tdo(&["check", "--matrix", &m]);
         assert_eq!(result.status.code(), Some(0));
         let out = stdout(&result);
         assert!(out.contains("execute=pass edit=unverified"), "{out}");
@@ -292,14 +349,15 @@ mod gate {
             "{out}"
         );
         assert!(!out.contains("b.ics"), "{out}");
-        let verbose = stdout(&tdo(&["--vdir", &vd, "check", "--matrix", &m, "--verbose"]));
+        let verbose = stdout(&env.tdo(&["check", "--matrix", &m, "--verbose"]));
         assert!(verbose.contains("b.ics"), "{verbose}");
     }
 
     #[test]
     fn empty_input_does_not_claim_all_operations_pass() {
         let d = tempfile::tempdir().unwrap();
-        let result = tdo(&["--vdir", d.path().to_str().unwrap(), "check"]);
+        let env = env_of(d.path().to_str().unwrap());
+        let result = env.tdo(&["check"]);
         assert_eq!(result.status.code(), Some(0));
         let out = stdout(&result);
         assert!(out.contains("tasks: 0"), "{out}");
@@ -319,7 +377,8 @@ mod gate {
         ] {
             std::fs::write(c.join(format!("{file}.ics")), format!("BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:{uid}\r\nSUMMARY:Synthetic private title\r\nDESCRIPTION:Synthetic private note\r\nSTATUS:{status}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n")).unwrap();
         }
-        let result = tdo(&["--vdir", d.path().to_str().unwrap(), "check"]);
+        let env = env_of(d.path().to_str().unwrap());
+        let result = env.tdo(&["check"]);
         assert_eq!(result.status.code(), Some(0));
         let out = stdout(&result);
         assert!(out.contains("tasks: 3"), "{out}");
@@ -337,12 +396,7 @@ mod gate {
             "{out}"
         );
         assert!(!out.contains("Synthetic private"), "{out}");
-        let verbose = stdout(&tdo(&[
-            "--vdir",
-            d.path().to_str().unwrap(),
-            "check",
-            "--verbose",
-        ]));
+        let verbose = stdout(&env.tdo(&["check", "--verbose"]));
         assert!(verbose.contains("Synthetic private title"), "{verbose}");
         assert!(!verbose.contains("Synthetic private note"), "{verbose}");
     }
@@ -755,16 +809,13 @@ fn check_finishes_permissions_for_a_large_collection() {
         .unwrap();
     }
     let output = temp.path().join("check.txt");
-    let mut child = common::tdo_bin(
-        &temp.path().join("none.sock"),
-        &temp.path().join("config"),
-        &temp.path().join("state"),
-    )
-    .args(["--vdir", vdir.to_str().unwrap(), "check"])
-    .stdout(fs::File::create(&output).unwrap())
-    .stderr(Stdio::null())
-    .spawn()
-    .unwrap();
+    let env = common::VdirEnv::new(&vdir);
+    let mut child = env
+        .cmd(&["check"])
+        .stdout(fs::File::create(&output).unwrap())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
     let started = Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
