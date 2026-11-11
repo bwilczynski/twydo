@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/bwilczynski/twydo/compare/v0.1.9...v0.2.0) - 2026-11-11
+
+### Added
+
+- *(compat)* [**breaking**] replace session gates with operation contracts
+- *(compat)* define typed operation contracts and v2 validation
+
+### Fixed
+
+- *(compat)* name the refused write and its matrix entry in refusals
+
 ## [0.1.9](https://github.com/bwilczynski/twydo/compare/v0.1.8...v0.1.9) - 2026-11-11
 
 ### Added
