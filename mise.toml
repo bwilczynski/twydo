@@ -13,6 +13,7 @@ test = [
     "cargo test --workspace",
     "python3 -m unittest discover -s tools/tests -t .",
     "python3 tools/check_links.py",
+    "python3 tools/check_evidence.py",
 ]
 lint = "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
 demo = "docs/demo/render.sh"

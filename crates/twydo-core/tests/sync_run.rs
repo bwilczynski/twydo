@@ -1878,11 +1878,7 @@ fn qa_path(fx: &Fx) -> PathBuf {
 /// Queues a title edit of `QA` the way a writer does while a sync holds the lock; returns
 /// the queue item's file name.
 fn queue_rename(fx: &Fx) -> String {
-    let matrix = common::matrix(
-        &["one-time", "monthly", "date-only", "timed", "start-date"],
-        "unverified",
-        &[],
-    );
+    let matrix = common::matrix("unverified", &[]);
     let (mut store, _) = Store::open_with(&fx.cfg, matrix).unwrap();
     let snap = Snapshot::new(
         twydo_core::vdir::load(&fx.cfg.vdir).unwrap(),

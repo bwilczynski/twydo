@@ -10,31 +10,12 @@
 //! the top-level resource has no parent; children are flat plain tasks in the same list,
 //! linked by both `RELATED-TO` and the parent's JSON identity when JSON metadata is present.
 
-use crate::compat::Matrix;
+use crate::compat::{ContractId, Matrix};
 use crate::config::WriteMode;
 use crate::model::{Task, TaskKind};
 use crate::views::{Snapshot, declared_kind, task_rule_class};
 
-use super::{
-    Blocked, NESTED, PLAIN_PARENT, blocked, json_meta, known_task_type, lookup, operation_row,
-};
-
-/// A top-level task with no children.
-pub(super) const STANDALONE: &str = "standalone-resource";
-/// A top-level checklist or project and its flat plain-task children.
-pub(super) const FLAT_FAMILY: &str = "flat-family";
-
-/// The dedicated case a top-level delete would use. The caller dispatches only when the
-/// matching row exists; a plain task with children is classified as a family so the helper
-/// can refuse it rather than silently treating it as standalone.
-pub(super) fn case(snap: &Snapshot, idx: usize) -> &'static str {
-    let task = &snap.tasks[idx];
-    if declared_kind(task) == TaskKind::Task && snap.children(idx).is_empty() {
-        STANDALONE
-    } else {
-        FLAT_FAMILY
-    }
-}
+use super::{Blocked, NESTED, PLAIN_PARENT, blocked, json_meta, known_task_type, lookup, require};
 
 /// Validate the selected resource (and its family, if any), then check its own delete row.
 pub(super) fn check(
@@ -62,7 +43,7 @@ pub(super) fn check(
             return blocked(PLAIN_PARENT);
         }
         validate(snap, idx)?;
-        return operation_row(matrix, mode, STANDALONE, "delete");
+        return require(matrix, mode, ContractId::DeleteResource);
     }
 
     // Two passes: any member's identity reason wins over a shape reason.
@@ -94,7 +75,7 @@ pub(super) fn check(
             }
         }
     }
-    operation_row(matrix, mode, FLAT_FAMILY, "delete")
+    require(matrix, mode, ContractId::DeleteFamily)
 }
 
 fn validate(snap: &Snapshot, idx: usize) -> Result<(), Blocked> {

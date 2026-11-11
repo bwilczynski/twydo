@@ -107,13 +107,14 @@ impl Pair {
             twydo_core::store::bind_vdir_state(&p.state().join("twydo"), &p.vdir()).unwrap();
         fs::create_dir_all(state.join("sync")).unwrap();
         fs::write(state.join("sync/off"), "").unwrap();
-        let mut matrix = String::from("matrix_version = 1\n");
-        for op in ["create", "edit", "delete"] {
-            matrix.push_str(&format!(
-                "[[operation]]\ncase = \"one-time\"\nop = \"{op}\"\niphone_baseline = \"pass\"\n\
-                 mac_to_iphone = \"pass\"\niphone_to_mac = \"pass\"\n\
-                 twydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"
-            ));
+        let mut matrix = String::from("matrix_version = 2\n");
+        for id in [
+            "create.task",
+            "edit-title.resource",
+            "edit-notes.resource",
+            "delete.resource",
+        ] {
+            matrix.push_str(&format!("[[contract]]\nid = {id:?}\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"));
         }
         fs::write(p.root().join("matrix.toml"), matrix).unwrap();
         for (uid, s) in [("u1", "one"), ("u2", "two"), ("u3", "three")] {

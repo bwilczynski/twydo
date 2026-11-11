@@ -549,7 +549,7 @@ pub fn complete_recurring(
 
     // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
     // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
-    // 2027-02-13 -> 2028-02-14 (`delete/mixed-families/phone-complete/list1`).
+    // 2027-02-13 -> 2028-02-14 (`complete/mixed-families/phone-complete/list1`).
     let mut live_meta = meta.clone();
     if let Some(start) = start {
         let next_start = start

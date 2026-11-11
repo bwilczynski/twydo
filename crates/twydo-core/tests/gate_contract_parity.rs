@@ -70,7 +70,9 @@ fn current_contract_decisions_are_preserved_in_both_modes() {
                         },
                     );
                 }
-                results.push(' ');
+                if mode == WriteMode::Verified {
+                    results.push(' ');
+                }
             }
             results.push('\n');
         }

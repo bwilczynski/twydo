@@ -58,11 +58,6 @@ pub(super) fn check(
                 "checklist interval editing needs recognized monthly recurrence metadata",
             );
         }
-        let case = if due {
-            "recurring-checklist-due"
-        } else {
-            "recurring-checklist-interval"
-        };
         for change in changes {
             let supported = match change {
                 Change::Summary(_) | Change::Description(_) => true,
@@ -85,25 +80,15 @@ pub(super) fn check(
                 return blocked("unsupported mixed checklist scheduling edit");
             }
         }
-        let class = task_rule_class(t, snap)
-            .ok_or_else(|| Blocked("unreadable checklist recurrence".into()))?;
-        if combined_verdicts(matrix, &class).0 != Verdict::Pass
-            || (interval && combined_verdicts(matrix, &class).2 != Verdict::Pass)
-        {
-            return blocked("checklist recurrence preservation is not verified yet");
-        }
-        // Unlike broad edit rows, scheduling rows need affirmative evidence even
-        // in test mode: the interval candidate must never silently ship there.
-        let row = matrix
-            .operation(case, "edit")
-            .ok_or_else(|| Blocked(format!("{case} is not verified yet")))?;
-        if row.iphone_baseline != Verdict::Pass
-            || row.twydo_to_iphone != Verdict::Pass
-            || row.iphone_to_twydo != Verdict::Pass
-        {
-            return blocked(format!("{case} is not verified yet"));
-        }
-        operation_row(matrix, mode, case, "edit")
+        require(
+            matrix,
+            mode,
+            if due {
+                ContractId::SetDueChecklist
+            } else {
+                ContractId::SetRepeatChecklistInterval
+            },
+        )
     })())
 }
 

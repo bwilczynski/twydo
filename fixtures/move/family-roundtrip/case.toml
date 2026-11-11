@@ -1,16 +1,27 @@
 claim = "Twydo-moved flat families retain their meaning after phone edits."
 origin = "device"
 observed = "Twydo-moved flat families retain their meaning after phone edits."
-tests = ["crates/twydo-core/tests/ical_write.rs::unedited_calendar_is_byte_equal"]
-supports = ["complete.recurring-project"]
+tests = ["crates/twydo-core/tests/edit_family.rs::moving_parent_rewrites_json_uid", "crates/twydo-core/tests/gate.rs::capability_move_gate_is_independent_of_schedule_execution"]
+supports = ["complete.recurring-project", "move.family"]
 
 [provenance]
 source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 source_path = "fixtures/phase0/v1/plan6-twydo-list2"
+environment_source = "compat/matrix.toml at 41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 
 [environment]
-iphone_2do = "3.91 build 38246"
-ios = "27.0.1"
-server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
-server_version = "2.4.8-10948"
-vdirsyncer = "0.21.0"
+client_version = "unknown (not recorded per state; baseline versions are in the source matrix)"
+
+[states."twydo-moved"]
+path = "twydo-moved"
+collections = ["list1"]
+members = ["list1/2b9a875667a24311878c9ce69d0dee95.ics", "list1/5590d571c2624fa9967dc25b5b036f9e.ics", "list1/6207d40ce98e4ccb92fdc3ab01335fdb.ics", "list1/6890711bb9a848689edbcd2c66b4cf33.ics", "list1/6cc109cf6ff640df8d8c50e59f39ff8f.ics", "list1/6d587f7b58fb4247bc68fe8873d55a78.ics", "list1/6ec92f3d2ec241af8fba03d93ad6937f.ics", "list1/8402a2bd239d4d7790f8c2442d8363b1.ics", "list1/930fdcbc86344f53b98d690e0755e3ed.ics", "list1/a7851228b54144d2a34f4b0c17696134.ics", "list1/c7ebd9c954144053a0cd733bda71de06.ics", "list1/ccc27cd0c37f493da3a467ef3b93aced.ics", "list1/cf2b5241209e4705bf76e7d63c84b8b3.ics"]
+action = "tdo op move C, P, live R3 to Twydo test 2"
+device = "twydo"
+
+[states."phone-edited"]
+path = "phone-edited"
+collections = ["list1"]
+members = ["list1/2b9a875667a24311878c9ce69d0dee95.ics", "list1/5590d571c2624fa9967dc25b5b036f9e.ics", "list1/6207d40ce98e4ccb92fdc3ab01335fdb.ics", "list1/6890711bb9a848689edbcd2c66b4cf33.ics", "list1/6cc109cf6ff640df8d8c50e59f39ff8f.ics", "list1/6d587f7b58fb4247bc68fe8873d55a78.ics", "list1/6ec92f3d2ec241af8fba03d93ad6937f.ics", "list1/8402a2bd239d4d7790f8c2442d8363b1.ics", "list1/930fdcbc86344f53b98d690e0755e3ed.ics", "list1/a7851228b54144d2a34f4b0c17696134.ics", "list1/c7ebd9c954144053a0cd733bda71de06.ics", "list1/ccc27cd0c37f493da3a467ef3b93aced.ics", "list1/cf2b5241209e4705bf76e7d63c84b8b3.ics"]
+action = "phone: c1b -> c1c; complete r2 under moved R3; M notes m (phone showed 'invalid task reference' once after round 08)"
+device = "iphone"

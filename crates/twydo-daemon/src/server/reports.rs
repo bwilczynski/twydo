@@ -8,7 +8,7 @@ use std::path::Path;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
-use twydo_core::compat::{Matrix, combined_verdicts};
+use twydo_core::compat::{Matrix, OperationId};
 use twydo_core::config::WriteMode;
 use twydo_core::ical::value::{IcalDateTime, Resolved};
 use twydo_core::model::Status;
@@ -99,7 +99,10 @@ pub fn check_lines(
     }
 
     p("".into());
-    p("Recurrence evidence (open tasks; class verdicts are not operation permissions)".into());
+    p(
+        "Recurrence evidence (open tasks; operation profiles, shape restrictions still apply)"
+            .into(),
+    );
     let mut active: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     for task in snap.tasks.iter().filter(|t| t.status == Status::Open) {
         if let Some(class) = task_rule_class(task, snap) {
@@ -110,11 +113,11 @@ pub fn check_lines(
         p("No active repeat classes.".into());
     }
     for (class, titles) in active {
-        let (pv, x, e) = combined_verdicts(matrix, &class);
+        let x = matrix.schedule_verdict(OperationId::Complete, &class);
+        let e = matrix.schedule_verdict(OperationId::SetRepeat, &class);
         p(format!(
-            "{class}  {} tasks  preserve={} execute={} edit={}",
+            "{class}  {} tasks  complete={} set-repeat={}",
             titles.len(),
-            pv.as_str(),
             x.as_str(),
             e.as_str()
         ));

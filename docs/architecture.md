@@ -144,11 +144,12 @@ sends the operation to the daemon, together with the snapshot revision it planne
 request id (a resent request gets the same answer, never a second write); the daemon runs these
 steps and answers:
 
-1. **Gate.** `gate::check` decides whether the operation is allowed for this task. It looks up
-   the task's case (one-time, monthly, yearly, checklist, project, …), the matrix rows for that
-   case and operation, and the verdicts for its repeat rule class. In the default `verified`
-   mode, anything the matrix has not marked as passing is refused with a reason, before
-   anything is written.
+1. **Gate.** `gate::check` selects typed operation contracts for the fields/resources
+   being changed, validates structure and identities, and checks their observations in
+   the embedded version-2 matrix. Mixed saves need each field contract and the combined
+   shape checks. Held schedules require preservation, while execution or rewriting needs
+   the relevant operation profiles. Missing contracts refuse before any write. Collection
+   metadata/deletion also require independently proven atomicity in their own contract.
 2. **Edit.** The `edit` functions produce the new file contents. Only the properties the
    operation is about change, plus `DTSTAMP`, `LAST-MODIFIED` and their counterparts in 2Do's
    metadata; every other line keeps its bytes.
@@ -242,8 +243,9 @@ server's values differ, accepting them requires the explicit Keep server choice.
 The metadata writer remains an unverified prototype: its read/PROPPATCH/read sequence
 has a remote-writer race. The shipping metadata capability stays closed in every mode,
 including test mode, until a server-enforced conditional write is implemented and proven.
-Its independent `list-metadata-atomicity` edge must pass as well as the interoperability
-row; promoting phone verdicts alone cannot admit a known unsafe write.
+The `list-metadata.collection` contract must declare passing `atomicity` as well as
+interoperability. Missing atomicity defaults to unverified; phone verdicts alone cannot
+admit a known unsafe write, including in test mode.
 Offline protocol/reconciliation tests use a synthetic matrix override; the application
 and proposed device round cannot load that override.
 

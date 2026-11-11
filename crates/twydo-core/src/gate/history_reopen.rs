@@ -12,7 +12,6 @@ pub(super) fn check(
     if task.status == Status::Completed
         && let Some(parent) = snap.parent(idx)
         && snap.tasks[parent].rrule.is_none()
-        && matrix.operation("history-flat-family", "reopen").is_some()
         && json_meta(&snap.tasks[parent])
             .and_then(|m| m.get_str("RUID").map(str::to_owned))
             .is_some_and(|ruid| !ruid.is_empty() && ruid != snap.tasks[parent].uid)
@@ -26,11 +25,6 @@ pub(super) fn check(
     }
     // Individual history needs its own evidence: H7 authorizes only the parent operation.
     if snap.parent(idx).is_some() || task.parent.is_some() {
-        if matrix.operation("history-task", "reopen").is_none()
-            && matrix.operation("history-flat-family", "reopen").is_none()
-        {
-            return None;
-        }
         return Some(blocked(
             "individual history reopening needs open-parent history evidence; use the parent operation for a completed family",
         ));
@@ -39,11 +33,17 @@ pub(super) fn check(
         TaskKind::Task => "history-task",
         TaskKind::Project | TaskKind::Checklist => "history-flat-family",
     };
-    matrix.operation(case, "reopen")?;
-    Some(
-        validate(snap, idx, checker.relationships())
-            .and_then(|()| operation_row(matrix, mode, case, "reopen")),
-    )
+    Some(validate(snap, idx, checker.relationships()).and_then(|()| {
+        require(
+            matrix,
+            mode,
+            if case == "history-task" {
+                ContractId::ReopenHistoryTask
+            } else {
+                ContractId::ReopenHistoryFamily
+            },
+        )
+    }))
 }
 
 fn validate(

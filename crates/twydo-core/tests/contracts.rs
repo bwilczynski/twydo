@@ -36,6 +36,7 @@ fn version_is_checked_before_v2_fields() {
 #[test]
 fn unknown_duplicate_and_misplaced_fields_are_rejected() {
     assert!(Matrix::from_toml_str(&entry("surprise = true")).is_err());
+    assert!(Matrix::from_toml_str(&entry("atomicity = 'fail'")).is_err());
     assert!(
         Matrix::from_toml_str(&entry("").replace("edit-title.resource", "edit-title.anything"))
             .is_err()
@@ -73,6 +74,27 @@ fn ordering_exception_is_bounded_and_does_not_ignore_failed_evidence() {
     .unwrap();
     assert!(
         m.require(ContractId::EditTitleResource, WriteMode::Test)
+            .is_err()
+    );
+}
+
+#[test]
+fn collection_interoperability_does_not_prove_atomicity() {
+    let text = entry("")
+        .replace("edit-title.resource", "list-metadata.collection")
+        .replace("unverified", "pass");
+    let m = Matrix::from_toml_str(&text).unwrap();
+    for mode in [WriteMode::Verified, WriteMode::Test] {
+        assert!(m.require(ContractId::ListMetadata, mode).is_err());
+    }
+    let m = Matrix::from_toml_str(&(text.clone() + "atomicity = 'pass'\n")).unwrap();
+    assert!(
+        m.require(ContractId::ListMetadata, WriteMode::Verified)
+            .is_ok()
+    );
+    let m = Matrix::from_toml_str(&(text + "atomicity = 'fail'\n")).unwrap();
+    assert!(
+        m.require(ContractId::ListMetadata, WriteMode::Test)
             .is_err()
     );
 }

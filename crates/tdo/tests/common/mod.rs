@@ -575,19 +575,14 @@ pub fn list_env() -> ListEnv {
     let cfg = Config::load(&config).unwrap();
     let mut matrix = Matrix::embedded().clone();
     let row = matrix
-        .operation
+        .contract
         .iter_mut()
-        .find(|r| r.case == "list-metadata" && r.op == "edit")
+        .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
         .unwrap();
     row.iphone_baseline = twydo_core::compat::Verdict::Pass;
     row.twydo_to_iphone = twydo_core::compat::Verdict::Pass;
     row.iphone_to_twydo = twydo_core::compat::Verdict::Pass;
-    matrix
-        .edge_case
-        .iter_mut()
-        .find(|e| e.id == "list-metadata-atomicity")
-        .unwrap()
-        .verdict = twydo_core::compat::Verdict::Pass;
+    row.atomicity = Some(twydo_core::compat::Verdict::Pass);
     let socket = sockets.path().join("s").join("tdo.sock");
     let mut opts = DaemonOptions::new(socket.clone());
     opts.schedule = false;

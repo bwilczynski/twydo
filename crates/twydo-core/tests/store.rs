@@ -22,7 +22,6 @@ use common::Env;
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
 const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
 const FIXTURE: &str = "complete/standalone-lifecycle/edit/list1";
-const CASES: [&str; 5] = ["one-time", "monthly", "date-only", "timed", "start-date"];
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
@@ -169,7 +168,10 @@ fn text_capability_inverse_and_recovery_refuse_new_member_identity_owners() {
 /// Every op on every case has baseline `pass` and the twydo columns `twydo`; the monthly
 /// rule class passes; the undo edge case has `edge`.
 fn matrix(twydo: &str, edge: &str) -> Matrix {
-    common::matrix(&CASES, twydo, &[("reopen-undo-before-after-sync", edge)])
+    common::matrix(
+        twydo,
+        &[(twydo_core::compat::ContractId::CompleteUndo, edge)],
+    )
 }
 
 fn test_env() -> (Env, Store) {
@@ -226,12 +228,11 @@ fn complete_recurring_writes_copy_and_advances_live() {
 /// where `mod:count` passes.
 fn last_occurrence(env: &Env, twydo: &str, edge: &str) -> Store {
     let mut m = matrix(twydo, edge);
-    let count = Matrix::from_toml_str(
-        "matrix_version = 1\n[[rule]]\nclass = \"mod:count\"\npreserve = \"pass\"\n\
-         execute = \"pass\"\nedit = \"pass\"\n",
-    )
-    .unwrap();
-    m.rule.extend(count.rule);
+    common::set_contract(
+        &mut m,
+        twydo_core::compat::ContractId::CompleteCount,
+        twydo_core::compat::Verdict::Pass,
+    );
     let store = env.store(m);
     let path = env.file(E);
     let text = fs::read_to_string(&path)
@@ -560,7 +561,7 @@ fn blocked_op_writes_nothing() {
     match store.apply(&env.snap(), &complete(A), now()) {
         Err(WriteError::Blocked(b)) => assert_eq!(
             b.to_string(),
-            "complete for one-time tasks is not verified yet (twydo_to_iphone)"
+            "complete.task is not verified yet (twydo_to_iphone: unverified)"
         ),
         other => panic!("expected Blocked, got {other:?}"),
     }
@@ -850,7 +851,12 @@ X-2DOAPP-METADATA:@tasktype:project\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
 
 #[test]
 fn save_with_one_refused_part_writes_nothing() {
-    let (env, mut store) = test_env();
+    let env = Env::new(WriteMode::Test, FIXTURE);
+    let mut policy = matrix("pass", "pass");
+    policy
+        .contract
+        .retain(|c| c.id != twydo_core::compat::ContractId::ConvertTaskChecklist);
+    let mut store = env.store(policy);
     let before = env.files();
     let op = Op::Save {
         uid: E.into(),
@@ -911,7 +917,7 @@ mod recurrence_phone_captures {
     use crate::common::recurrence::*;
     use crate::common::{Env, completed, dtstamp, fixture, todo};
     use std::collections::BTreeMap;
-    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::compat::Matrix;
     use twydo_core::config::WriteMode;
     use twydo_core::edit::{Change, Op};
     use twydo_core::ical::parse;
@@ -1218,20 +1224,8 @@ mod recurrence_phone_captures {
                 .clone()
         };
         let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
-        let mut matrix = Matrix::embedded().clone();
-        for (case, op) in [
-            ("recurring-checklist", "repeat"),
-            ("daily", "repeat"),
-            ("yearly", "repeat"),
-            ("history-copy", "reopen"),
-        ] {
-            matrix
-                .operation
-                .iter_mut()
-                .find(|r| r.case == case && r.op == op)
-                .unwrap()
-                .twydo_to_iphone = Verdict::Pass;
-        }
+        let matrix = Matrix::embedded().clone();
+
         let mut store = env.store(matrix);
         for (title, due, repeat) in [
             ("FCb", None, Some("weekly")),
@@ -1320,20 +1314,8 @@ mod recurrence_phone_captures {
                 .clone()
         };
         let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{BEFORE}"));
-        let mut matrix = Matrix::embedded().clone();
-        for (case, op) in [
-            ("recurring-checklist", "repeat"),
-            ("daily", "repeat"),
-            ("yearly", "repeat"),
-            ("history-copy", "reopen"),
-        ] {
-            matrix
-                .operation
-                .iter_mut()
-                .find(|r| r.case == case && r.op == op)
-                .unwrap()
-                .twydo_to_iphone = Verdict::Pass;
-        }
+        let matrix = Matrix::embedded().clone();
+
         let mut store = env.store(matrix);
         for (step, checklist_repeat, daily_repeat, yearly_repeat, history_action) in [
             (PREPARED, "monthly", "daily", "yearly", "complete"),

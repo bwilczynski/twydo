@@ -5,6 +5,16 @@ Run `mise run lint` for Clippy and formatting. Integration tests use synthetic f
 temporary configuration/state directories and their own Unix sockets. The real-vdirsyncer
 suite skips when vdirsyncer is unavailable; a skipped run does not verify that integration.
 
+## Evidence cases
+
+`fixtures/<operation>/<case>/case.toml` declares observations, provenance, tests and
+complete named vdir states. `python3 tools/check_evidence.py` validates membership and
+references; it runs through `mise run test`. Use small local builders for incidental
+setup. Keep exact captured bytes only when a parser, transformation or device behavior
+is the subject of the assertion. The [evidence guide](reference/evidence.md) covers
+pruning and promotion. Historical corpus-size checks were replaced with actual claim
+and byte-preservation checks; removed session files remain available in git.
+
 ## Where a test belongs
 
 Test a behavior at the lowest layer that can observe its contract. Add a client integration

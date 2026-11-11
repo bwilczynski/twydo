@@ -510,7 +510,7 @@ fn timed_yearly_with_start_and_alert_matches_2do() {
     );
 }
 
-const GAP: &str = "delete/mixed-families";
+const GAP: &str = "complete/mixed-families";
 const GAP_Y: &str = "6f510e7fceb9423585a74beee2d2c108";
 const GAP_Y_COPY: &str = "c676c622cacf4cfaa351327fffdc3cf3";
 

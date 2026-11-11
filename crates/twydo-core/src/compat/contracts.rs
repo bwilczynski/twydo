@@ -88,6 +88,10 @@ contracts! {
     CompleteRecurringChecklist => Complete, "complete.recurring-checklist";
     CompleteRecurringProject => Complete, "complete.recurring-project";
     ReopenResource => Reopen, "reopen.resource";
+    ReopenRecurringChecklist => Reopen, "reopen.recurring-checklist";
+    ReopenRepeatingCalendar => Reopen, "reopen.repeating-calendar";
+    ReopenRepeatingOther => Reopen, "reopen.repeating-other";
+    ReopenFromCompletion => Reopen, "reopen.from-completion";
     ReopenHistoryTask => Reopen, "reopen.history-task";
     ReopenHistoryFamily => Reopen, "reopen.history-family";
     ReopenEndedDaily => Reopen, "reopen.ended-daily";
@@ -98,6 +102,7 @@ contracts! {
     DeleteFamily => Delete, "delete.family";
     DeleteChecklistItem => Delete, "delete.checklist-item";
     DeleteProjectItem => Delete, "delete.project-item";
+    ConvertSameKind => Convert, "convert.same-kind";
     ConvertTaskChecklist => Convert, "convert.task-checklist";
     ConvertTaskProject => Convert, "convert.task-project";
     ConvertChecklistProject => Convert, "convert.checklist-project";
@@ -126,7 +131,6 @@ contracts! {
     CompleteUntil => Complete, "complete.until";
     CompleteLateMonthly => Complete, "complete.late-monthly";
     CompleteStartOffsets => Complete, "complete.start-offsets";
-    CompleteMissingFifth => Complete, "complete.missing-fifth-weekday";
     CompleteUndo => Complete, "complete.undo";
     SetRepeatDays => SetRepeat, "set-repeat.days";
     SetRepeatWeeks => SetRepeat, "set-repeat.weeks";
@@ -158,6 +162,9 @@ pub struct Contract {
     pub evidence: Vec<String>,
     #[serde(default)]
     pub notes: String,
+    /// Collection atomicity is independent of successful client round trips.
+    #[serde(default)]
+    pub atomicity: Option<Verdict>,
 }
 fn unverified() -> Verdict {
     Verdict::Unverified
@@ -172,7 +179,7 @@ pub struct Matrix {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{contract} is not verified ({direction}: {verdict})")]
+#[error("{contract} is not verified yet ({direction}: {verdict})")]
 pub struct RequirementFailure {
     pub contract: &'static str,
     pub direction: &'static str,
@@ -196,6 +203,17 @@ impl Matrix {
         let matrix: Self = value.try_into().map_err(MatrixError::Parse)?;
         let mut seen = BTreeSet::new();
         for contract in &matrix.contract {
+            if contract.atomicity.is_some()
+                && !matches!(
+                    contract.id,
+                    ContractId::ListMetadata | ContractId::ListDelete
+                )
+            {
+                return Err(MatrixError::Invalid(format!(
+                    "atomicity is not applicable to {}",
+                    contract.id.as_str()
+                )));
+            }
             if !seen.insert(contract.id) {
                 return Err(MatrixError::Invalid(format!(
                     "duplicate contract {}",
@@ -241,6 +259,22 @@ impl Matrix {
         let Some(record) = record else {
             return Err(fail("missing contract", Verdict::Unverified));
         };
+        if id == ContractId::ListCreate {
+            for (direction, verdict) in [
+                ("twydo_to_iphone", record.twydo_to_iphone),
+                ("iphone_to_twydo", record.iphone_to_twydo),
+            ] {
+                if matches!(verdict, Verdict::Fail | Verdict::Unsupported) {
+                    return Err(fail(direction, verdict));
+                }
+            }
+        }
+        if matches!(id, ContractId::ListMetadata | ContractId::ListDelete) {
+            let protection = record.atomicity.unwrap_or(Verdict::Unverified);
+            if protection != Verdict::Pass {
+                return Err(fail("atomicity", protection));
+            }
+        }
         let ordering = matches!(id, ContractId::ReorderItems | ContractId::InsertItems);
         if record.iphone_baseline != Verdict::Pass
             && !(ordering && record.iphone_baseline == Verdict::Unsupported)
@@ -267,5 +301,68 @@ impl Matrix {
             }
         }
         Ok(())
+    }
+}
+
+impl ContractId {
+    pub fn schedule(operation: OperationId, part: &str) -> Option<Self> {
+        match (operation, part) {
+            (OperationId::Complete, "days") => Some(Self::CompleteDays),
+            (OperationId::Complete, "weeks") => Some(Self::CompleteWeeks),
+            (OperationId::Complete, "weekdays-set") => Some(Self::CompleteWeekdays),
+            (OperationId::Complete, "months-day-1-28") => Some(Self::CompleteMonthly),
+            (OperationId::Complete, "months-day-29-31") => Some(Self::CompleteMonthOverflow),
+            (OperationId::Complete, "months-nth-weekday") => Some(Self::CompleteNthWeekday),
+            (OperationId::Complete, "years") => Some(Self::CompleteYearly),
+            (OperationId::Complete, "years-feb-29") => Some(Self::CompleteLeapYear),
+            (OperationId::Complete, "from-completion") => Some(Self::CompleteFromCompletion),
+            (OperationId::Complete, "count") => Some(Self::CompleteCount),
+            (OperationId::Complete, "until") => Some(Self::CompleteUntil),
+            (OperationId::SetRepeat, "days") => Some(Self::SetRepeatDays),
+            (OperationId::SetRepeat, "weeks") => Some(Self::SetRepeatWeeks),
+            (OperationId::SetRepeat, "weekdays-set") => Some(Self::SetRepeatWeekdays),
+            (OperationId::SetRepeat, "months-day-1-28") => Some(Self::SetRepeatMonthly),
+            (OperationId::SetRepeat, "months-day-29-31") => Some(Self::SetRepeatMonthOverflow),
+            (OperationId::SetRepeat, "months-nth-weekday") => Some(Self::SetRepeatNthWeekday),
+            (OperationId::SetRepeat, "years") => Some(Self::SetRepeatYearly),
+            (OperationId::SetRepeat, "years-feb-29") => Some(Self::SetRepeatLeapYear),
+            (OperationId::SetRepeat, "from-completion") => Some(Self::SetRepeatFromCompletion),
+            (OperationId::SetRepeat, "count") => Some(Self::SetRepeatCount),
+            (OperationId::SetRepeat, "until") => Some(Self::SetRepeatUntil),
+            (OperationId::SetRepeat, "months-last-day") => Some(Self::SetRepeatLastDay),
+            (OperationId::SetRepeat, "months-nth-workday") => Some(Self::SetRepeatNthWorkday),
+            (OperationId::SetRepeat, "months-nth-weekend-day") => Some(Self::SetRepeatNthWeekend),
+            _ => None,
+        }
+    }
+}
+
+impl Matrix {
+    /// Projection of the same profiles used by write admission, not a separate table.
+    pub fn schedule_verdict(&self, operation: OperationId, class: &str) -> Verdict {
+        let rank = |v| match v {
+            Verdict::Pass => 0,
+            Verdict::Unverified => 1,
+            Verdict::Unsupported => 2,
+            Verdict::Fail => 3,
+        };
+        let mut result = Verdict::Pass;
+        for part in class.split('+') {
+            let verdict = match ContractId::schedule(operation, part)
+                .and_then(|id| self.require(id, WriteMode::Verified).err())
+            {
+                Some(e) => match e.verdict {
+                    "fail" => Verdict::Fail,
+                    "unsupported" => Verdict::Unsupported,
+                    _ => Verdict::Unverified,
+                },
+                None if ContractId::schedule(operation, part).is_some() => Verdict::Pass,
+                None => Verdict::Unverified,
+            };
+            if rank(verdict) > rank(result) {
+                result = verdict;
+            }
+        }
+        result
     }
 }

@@ -1,30 +1,27 @@
-claim = "Twydo-created flat families remain editable after the phone reads them."
+claim = "A Twydo-created checklist and its items retain identity through phone date cleanup."
 origin = "device"
-observed = "Twydo-created flat families remain editable after the phone reads them."
-tests = ["crates/twydo-core/tests/edit_family.rs::completing_checklist_completes_open_item", "crates/twydo-core/tests/store_family.rs::completing_checklist_writes_parent_and_open_items"]
-supports = ["complete.checklist", "complete.project", "complete.recurring-project", "create.checklist", "create.project", "create.recurring-project", "create.recurring-project-item", "set-due.checklist-item-cleanup"]
+observed = "Phone date changes on the created checklist clear inherited item dates; exact item and parent transformations are compared by the tests."
+tests = ["crates/twydo-core/tests/edit_create.rs::creates_a_checklist_like_the_phone", "crates/twydo-core/tests/edit_create.rs::creates_a_checklist_item_like_the_phone", "crates/twydo-core/tests/edit_family.rs::dropping_item_dates_matches_2do"]
+supports = ["complete.checklist", "complete.project", "complete.recurring-project", "convert.same-kind", "create.checklist", "create.project", "create.recurring-project", "create.recurring-project-item", "set-due.checklist-item-cleanup", "set-due.recurring-checklist"]
 
 [provenance]
 source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 source_path = "fixtures/phase0/v1/plan6-twydo-list1"
+environment_source = "compat/matrix.toml at 41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 
 [environment]
-iphone_2do = "3.91 build 38246"
-ios = "27.0.1"
-server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
-server_version = "2.4.8-10948"
-vdirsyncer = "0.21.0"
+client_version = "unknown (not recorded per state; baseline versions are in the source matrix)"
 
 [states."setup"]
 path = "setup"
 collections = ["list1"]
-members = ["list1/0796358e4cb342aca558a9003540600e.ics", "list1/12166ecc53ea401aa0ec9a26de804765.ics", "list1/166d1873e95243a48460320637d2d21a.ics", "list1/26dcbacbdff84de187d181f457bef6a2.ics", "list1/5fdb85f17e1a4c4a9de7d989e79857d6.ics", "list1/6713cef3462e4740940b78fe301e5a52.ics", "list1/74a4b2bd7956441c8312af144c4df893.ics", "list1/77475ea490d94777b0153261343088af.ics", "list1/8775fd63eea64b3a858ed94003404ed3.ics", "list1/9e8d9baa64ba4737ad5cdb5566c6a992.ics", "list1/a80ca289da5a4ff88e80ee3754703699.ics", "list1/c05c77f7a0bc42d79f32d95ebf519ea3.ics", "list1/c4b042dbddab46fea6919fc385432c8d.ics", "list1/c88d13a5d7ce4fdb8f6465c1145278fd.ics", "list1/e5b85b2ffea84e87a4d31832933166ee.ics", "list1/f2bcae42b8f84b37b48c18b7f89c5ac0.ics", "list1/fbb52997e2984d7a8bfa89cebeecd06c.ics"]
+members = ["list1/9e8d9baa64ba4737ad5cdb5566c6a992.ics", "list1/a80ca289da5a4ff88e80ee3754703699.ics", "list1/c05c77f7a0bc42d79f32d95ebf519ea3.ics", "list1/f2bcae42b8f84b37b48c18b7f89c5ac0.ics"]
 action = "setup: checklist C (c1-c3 got their own DUE copy), project P (p1-p3, p3 monthly), recurring project R (r1-r3), M missed monthly, S start monthly, T timed+start+alert monthly, Y timed+start+alert yearly (fixed by edit), A timed monthly with -15m alert"
 device = "iphone"
 
 [states."initial-phone-edit"]
 path = "initial-phone-edit"
 collections = ["list1"]
-members = ["list1/0796358e4cb342aca558a9003540600e.ics", "list1/12166ecc53ea401aa0ec9a26de804765.ics", "list1/166d1873e95243a48460320637d2d21a.ics", "list1/26dcbacbdff84de187d181f457bef6a2.ics", "list1/5fdb85f17e1a4c4a9de7d989e79857d6.ics", "list1/6713cef3462e4740940b78fe301e5a52.ics", "list1/74a4b2bd7956441c8312af144c4df893.ics", "list1/77475ea490d94777b0153261343088af.ics", "list1/8775fd63eea64b3a858ed94003404ed3.ics", "list1/9e8d9baa64ba4737ad5cdb5566c6a992.ics", "list1/a80ca289da5a4ff88e80ee3754703699.ics", "list1/c05c77f7a0bc42d79f32d95ebf519ea3.ics", "list1/c4b042dbddab46fea6919fc385432c8d.ics", "list1/c88d13a5d7ce4fdb8f6465c1145278fd.ics", "list1/e5b85b2ffea84e87a4d31832933166ee.ics", "list1/f2bcae42b8f84b37b48c18b7f89c5ac0.ics", "list1/fbb52997e2984d7a8bfa89cebeecd06c.ics"]
+members = ["list1/9e8d9baa64ba4737ad5cdb5566c6a992.ics", "list1/a80ca289da5a4ff88e80ee3754703699.ics", "list1/c05c77f7a0bc42d79f32d95ebf519ea3.ics", "list1/f2bcae42b8f84b37b48c18b7f89c5ac0.ics"]
 action = "R -> R2 (recurring project title); p3 -> p3b (repeating project item title); C date -> 2026-12-11"
 device = "iphone"

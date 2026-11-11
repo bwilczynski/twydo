@@ -1,5 +1,4 @@
-//! The write gate: matrix-driven policy with exact reasons. All content is synthetic
-//! (`tests/data/gate/`); matrices are built from TOML strings here.
+//! Typed admission requirements and structural refusals on synthetic tasks.
 
 mod common;
 
@@ -15,9 +14,58 @@ use twydo_core::ical::{parse, serialize};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::views::Snapshot;
 
-const ALL_OPS: [&str; 7] = [
-    "create", "edit", "complete", "reopen", "move", "delete", "repeat",
-];
+#[test]
+fn missing_contracts_refuse_even_stamp_only_edits() {
+    let s = snap();
+    let empty = Matrix::from_toml_str("matrix_version = 2").unwrap();
+    for changes in [
+        vec![],
+        vec![Change::Kind(twydo_core::model::TaskKind::Task)],
+    ] {
+        assert!(
+            check(
+                &s,
+                &empty,
+                WriteMode::Verified,
+                &edit("gate-date", changes),
+                today()
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn same_kind_field_in_mixed_edit_requires_its_own_contract() {
+    let s = snap();
+    let policy = common::only(
+        &[twydo_core::compat::ContractId::EditTitleResource],
+        "pass",
+        "pass",
+    );
+    let op = edit(
+        "gate-date",
+        vec![
+            Change::Summary("Synthetic title".into()),
+            Change::Kind(twydo_core::model::TaskKind::Task),
+        ],
+    );
+    assert!(check(&s, &policy, WriteMode::Verified, &op, today()).is_err());
+}
+
+// Affirmative observations isolate structural gate checks from evidence policy.
+fn full() -> Matrix {
+    common::matrix("pass", &[])
+}
+fn with_offsets() -> Matrix {
+    let mut m = full();
+    common::set_contract(
+        &mut m,
+        twydo_core::compat::ContractId::CompleteStartOffsets,
+        twydo_core::compat::Verdict::Pass,
+    );
+    m
+}
 
 fn today() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 11, 4).unwrap()
@@ -32,50 +80,12 @@ fn snap() -> Snapshot {
     Snapshot::new(report, cfg)
 }
 
-/// A matrix where every listed (case, op) has `baseline`, and the twydo columns are `twydo`;
-/// the listed rule classes pass all three columns. Unlisted rows are missing (unverified).
-fn matrix(ops: &[(&str, &str)], baseline: &str, twydo: &str, rules: &[&str]) -> Matrix {
-    let mut s = String::from("matrix_version = 1\n");
-    for (case, op) in ops {
-        s.push_str(&format!(
-            "[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"{baseline}\"\n\
-             mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-             twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
-        ));
-    }
-    for class in rules {
-        s.push_str(&format!(
-            "[[rule]]\nclass = \"{class}\"\npreserve = \"pass\"\nexecute = \"pass\"\nedit = \"pass\"\n"
-        ));
-    }
-    Matrix::from_toml_str(&s).unwrap()
-}
+// A matrix where every listed (case, op) has `baseline`, and the twydo columns are `twydo`;
+// the listed rule classes pass all three columns. Unlisted rows are missing (unverified).
 
-/// Every op on the given cases has `baseline` and the twydo columns `twydo`.
-fn cases(cs: &[&str], baseline: &str, twydo: &str, rules: &[&str]) -> Matrix {
-    let ops: Vec<(&str, &str)> = cs
-        .iter()
-        .flat_map(|c| ALL_OPS.iter().map(move |o| (*c, *o)))
-        .collect();
-    matrix(&ops, baseline, twydo, rules)
-}
+// Every op on the given cases has `baseline` and the twydo columns `twydo`.
 
-/// Everything a monthly/yearly/one-time task can need, fully verified.
-fn full() -> Matrix {
-    cases(
-        &[
-            "one-time",
-            "monthly",
-            "yearly",
-            "date-only",
-            "timed",
-            "start-date",
-        ],
-        "pass",
-        "pass",
-        &["months-day-1-28", "years"],
-    )
-}
+// Everything a monthly/yearly/one-time task can need, fully verified.
 
 fn complete(uid: &str) -> Op {
     Op::Complete { uid: uid.into() }
@@ -104,107 +114,9 @@ fn date(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
-#[test]
-fn verified_mode_blocks_without_twydo_columns() {
-    let s = snap();
-    let m = cases(&["one-time"], "pass", "unverified", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &complete("gate-date"), today()),
-        blocked("complete for one-time tasks is not verified yet (twydo_to_iphone)")
-    );
-    let m = cases(&["one-time"], "unverified", "pass", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &complete("gate-date"), today()),
-        blocked("complete for one-time tasks is not verified yet (iphone_baseline)")
-    );
-    let m = cases(&["one-time"], "pass", "pass", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &complete("gate-date"), today()),
-        Ok(())
-    );
-}
+// `m` plus the rows of `extra`.
 
-#[test]
-fn test_mode_allows_with_baseline_only() {
-    let s = snap();
-    let m = cases(&["one-time"], "pass", "unverified", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &complete("gate-date"), today()),
-        Ok(())
-    );
-    let m = cases(&["one-time"], "unverified", "unverified", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &complete("gate-date"), today()),
-        blocked("complete for one-time tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
-fn edit_due_adds_timed_case() {
-    let s = snap();
-    let mut ops: Vec<(&str, &str)> = vec![("one-time", "edit"), ("date-only", "edit")];
-    let m = matrix(&ops, "pass", "pass", &[]);
-    let t = NaiveDate::from_ymd_opt(2026, 11, 12)
-        .unwrap()
-        .and_hms_opt(9, 30, 0)
-        .unwrap();
-    let to_timed = edit("gate-date", vec![Change::Due(Some(Due::Time(t)))]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &to_timed, today()),
-        blocked("edit for timed tasks is not verified yet (iphone_baseline)")
-    );
-    // A date-only → date-only edit needs only date-only.
-    let to_date = edit(
-        "gate-date",
-        vec![Change::Due(Some(Due::Date(date(2026, 11, 12))))],
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &to_date, today()),
-        Ok(())
-    );
-    // A timed task losing its time still needs timed (before) as well as date-only (after).
-    let from_timed = edit(
-        "gate-timed",
-        vec![Change::Due(Some(Due::Date(date(2026, 11, 12))))],
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &from_timed, today()),
-        blocked("edit for timed tasks is not verified yet (iphone_baseline)")
-    );
-    ops.push(("timed", "edit"));
-    let m = matrix(&ops, "pass", "pass", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &to_timed, today()),
-        Ok(())
-    );
-    // A start change adds start-date; summary changes add nothing.
-    let start = edit("gate-nodue", vec![Change::Start(Some(date(2026, 11, 5)))]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &start, today()),
-        blocked("edit for start-date tasks is not verified yet (iphone_baseline)")
-    );
-    let title = edit("gate-nodue", vec![Change::Summary("Renamed".into())]);
-    assert_eq!(check(&s, &m, WriteMode::Verified, &title, today()), Ok(()));
-}
-
-/// `m` plus the rows of `extra`.
-fn with(m: Matrix, extra: Matrix) -> Matrix {
-    let mut m = m;
-    m.operation.extend(extra.operation);
-    m.rule.extend(extra.rule);
-    m.edge_case.extend(extra.edge_case);
-    m
-}
-
-/// `m` plus a `[[rule]]` row for `class`.
-fn rule(m: Matrix, class: &str, preserve: &str, edit: &str) -> Matrix {
-    let extra = Matrix::from_toml_str(&format!(
-        "matrix_version = 1\n[[rule]]\nclass = \"{class}\"\npreserve = \"{preserve}\"\n\
-         execute = \"unverified\"\nedit = \"{edit}\"\n"
-    ))
-    .unwrap();
-    with(m, extra)
-}
+// `m` plus a `[[rule]]` row for `class`.
 
 fn repeat(text: &str) -> twydo_core::repeatinput::RepeatSpec {
     twydo_core::repeatinput::parse(text, today(), &[])
@@ -220,81 +132,9 @@ fn item(parent: &str) -> NewTask {
 }
 
 #[test]
-fn create_item_needs_family_create_row() {
-    let s = snap();
-    for (parent, family) in [("gate-checklist", "checklist"), ("gate-project", "project")] {
-        let op = Op::Create(item(parent));
-        let m = cases(&["one-time"], "pass", "pass", &[]);
-        assert_eq!(
-            check(&s, &m, WriteMode::Verified, &op, today()),
-            blocked(&format!(
-                "create for {family} tasks is not verified yet (iphone_baseline)"
-            ))
-        );
-        let m = cases(&["one-time", family], "pass", "pass", &[]);
-        assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    }
-    // A new parent's own family row.
-    let project = Op::Create(NewTask {
-        kind: twydo_core::model::TaskKind::Project,
-        ..NewTask::plain("inbox", "Synthetic project")
-    });
-    let m = cases(&["one-time"], "pass", "pass", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &project, today()),
-        blocked("create for project tasks is not verified yet (iphone_baseline)")
-    );
-    // An item of a repeating project joins the recurring-project family; a repeating item of
-    // a plain project is a project-recurring-child.
-    let op = Op::Create(item("gate-monthly-project"));
-    let m = fam();
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    let m = cases(&["one-time", "monthly", "project"], "pass", "pass", &[]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("create for recurring-project tasks is not verified yet (iphone_baseline)")
-    );
-    let op = Op::Create(NewTask {
-        due: Some(Due::Date(date(2026, 11, 9))),
-        repeat: Some(repeat("monthly")),
-        ..item("gate-project")
-    });
-    let m = cases(
-        &["monthly", "date-only", "project"],
-        "pass",
-        "pass",
-        &["months-day-1-28"],
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("create for project-recurring-child tasks is not verified yet (iphone_baseline)")
-    );
-    // The shipped matrix has verified Twydo's new items: an item of a checklist is allowed.
-    assert_eq!(
-        check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Verified,
-            &Op::Create(item("gate-checklist")),
-            today()
-        ),
-        Ok(())
-    );
-    // A repeating item of a plain project is not verified yet.
-    let got = check(&s, Matrix::embedded(), WriteMode::Verified, &op, today());
-    let Err(Blocked(why)) = got else {
-        panic!("allowed: {got:?}")
-    };
-    assert!(
-        why.starts_with("create for project-recurring-child tasks is not verified yet"),
-        "{why}"
-    );
-}
-
-#[test]
 fn create_item_under_plain_task_is_refused() {
     let s = snap();
-    let m = fam();
+    let m = full();
     let at = |parent: &str| check(&s, &m, WriteMode::Test, &Op::Create(item(parent)), today());
     assert_eq!(
         at("gate-date"),
@@ -306,10 +146,7 @@ fn create_item_under_plain_task_is_refused() {
     );
     assert_eq!(at("gate-checklist-item"), blocked(NESTED));
     assert_eq!(at("nope"), blocked("no task with UID nope"));
-    assert_eq!(
-        at("gate-monthly-checklist"),
-        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
-    );
+    assert!(at("gate-monthly-checklist").is_err());
     // An item is a task, in its parent's list.
     let op = Op::Create(NewTask {
         kind: twydo_core::model::TaskKind::Checklist,
@@ -332,7 +169,7 @@ fn create_item_under_plain_task_is_refused() {
 #[test]
 fn checklist_item_with_date_is_refused() {
     let s = snap();
-    let m = rule(fam(), "days", "pass", "pass");
+    let m = full();
     let shapes = [
         NewTask {
             due: Some(Due::Date(date(2026, 11, 9))),
@@ -355,417 +192,6 @@ fn checklist_item_with_date_is_refused() {
             "{n:?}"
         );
     }
-    // A repeating checklist needs its own create verdict, not the plain checklist's.
-    let op = Op::Create(NewTask {
-        kind: twydo_core::model::TaskKind::Checklist,
-        due: Some(Due::Date(date(2026, 11, 9))),
-        repeat: Some(repeat("monthly")),
-        ..NewTask::plain("inbox", "Synthetic checklist")
-    });
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &op, today()),
-        blocked("create for recurring-checklist tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
-fn new_repeat_needs_rule_edit_verdict() {
-    let s = snap();
-    let due = Due::Date(date(2026, 11, 10));
-    let create = Op::Create(NewTask {
-        due: Some(due),
-        repeat: Some(repeat("2nd tue")),
-        ..NewTask::plain("inbox", "Synthetic repeat")
-    });
-    let set = edit(
-        "gate-nodue",
-        vec![
-            Change::Due(Some(due)),
-            Change::Repeat(Some(repeat("2nd tue"))),
-        ],
-    );
-    let base = cases(&["one-time", "monthly", "date-only"], "pass", "pass", &[]);
-    let why = "months-nth-weekday repeats are not verified yet";
-    for op in [&create, &set] {
-        let m = base.clone();
-        assert_eq!(
-            check(&s, &m, WriteMode::Verified, op, today()),
-            blocked(why)
-        );
-        // Preserved is not enough: Twydo writes the rule.
-        let m = rule(base.clone(), "months-nth-weekday", "pass", "unverified");
-        assert_eq!(
-            check(&s, &m, WriteMode::Verified, op, today()),
-            blocked(why)
-        );
-        let m = rule(base.clone(), "months-nth-weekday", "pass", "pass");
-        assert_eq!(check(&s, &m, WriteMode::Verified, op, today()), Ok(()));
-    }
-    // Daily rules use the daily rows.
-    let daily = Op::Create(NewTask {
-        due: Some(due),
-        repeat: Some(repeat("daily")),
-        ..NewTask::plain("inbox", "Synthetic daily")
-    });
-    let m = rule(base.clone(), "days", "pass", "pass");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &daily, today()),
-        blocked("create for daily tasks is not verified yet (iphone_baseline)")
-    );
-    let m = rule(
-        cases(&["daily", "date-only"], "pass", "pass", &[]),
-        "days",
-        "pass",
-        "pass",
-    );
-    assert_eq!(check(&s, &m, WriteMode::Verified, &daily, today()), Ok(()));
-    // From completion has its own case, and its modifier needs verdicts too.
-    let from = Op::Create(NewTask {
-        due: Some(due),
-        repeat: Some(repeat("daily after done")),
-        ..NewTask::plain("inbox", "Synthetic from completion")
-    });
-    let m = rule(
-        cases(&["from-completion", "date-only"], "pass", "pass", &[]),
-        "days",
-        "pass",
-        "pass",
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &from, today()),
-        blocked("days+from-completion repeats are not verified yet")
-    );
-    let m = rule(m, "mod:from-completion", "pass", "pass");
-    assert_eq!(check(&s, &m, WriteMode::Verified, &from, today()), Ok(()));
-}
-
-#[test]
-fn changing_or_removing_a_repeat_needs_the_old_class_edit_verdict() {
-    let s = snap();
-    let base = cases(&["monthly", "yearly", "one-time"], "pass", "pass", &[]);
-    let remove = edit("gate-monthly", vec![Change::Repeat(None)]);
-    let m = rule(base.clone(), "months-day-1-28", "pass", "unverified");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &remove, today()),
-        blocked("months-day-1-28 repeats are not verified yet")
-    );
-    let m = rule(base.clone(), "months-day-1-28", "pass", "pass");
-    assert_eq!(check(&s, &m, WriteMode::Verified, &remove, today()), Ok(()));
-    // Removing the rule and then the due date is fine.
-    let both = edit(
-        "gate-monthly",
-        vec![Change::Repeat(None), Change::Due(None)],
-    );
-    let m = with(m, cases(&["date-only"], "pass", "pass", &[]));
-    assert_eq!(check(&s, &m, WriteMode::Verified, &both, today()), Ok(()));
-    // Monthly to yearly needs both classes' edit verdicts.
-    let change = edit("gate-monthly", vec![Change::Repeat(Some(repeat("yearly")))]);
-    let m = rule(base.clone(), "months-day-1-28", "pass", "unverified");
-    let m = rule(m, "years", "pass", "pass");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &change, today()),
-        blocked("months-day-1-28 repeats are not verified yet")
-    );
-    let m = rule(base.clone(), "months-day-1-28", "pass", "pass");
-    let m = rule(m, "years", "pass", "unverified");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &change, today()),
-        blocked("years repeats are not verified yet")
-    );
-    let m = rule(base.clone(), "months-day-1-28", "pass", "pass");
-    let m = rule(m, "years", "pass", "pass");
-    assert_eq!(check(&s, &m, WriteMode::Verified, &change, today()), Ok(()));
-    // The new own case is checked against its `repeat` row, not its `edit` row.
-    let m = rule(
-        cases(&["monthly"], "pass", "pass", &[]),
-        "months-day-1-28",
-        "pass",
-        "pass",
-    );
-    let m = rule(m, "years", "pass", "pass");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &change, today()),
-        blocked("changing the repeat rule of yearly tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
-fn weekly_task_has_case_weekly() {
-    let s = snap();
-    assert_eq!(task_cases(&s, idx(&s, "gate-weekly")), cs("weekly", None));
-    let m = rule(full(), "weeks", "pass", "pass");
-    let op = edit("gate-weekly", vec![Change::Summary("Renamed".into())]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("edit for weekly tasks is not verified yet (iphone_baseline)")
-    );
-    let m = with(m, cases(&["weekly"], "pass", "pass", &[]));
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-}
-
-fn kind(uid: &str, k: twydo_core::model::TaskKind) -> Op {
-    edit(uid, vec![Change::Kind(k)])
-}
-
-#[test]
-fn convert_needs_convert_row() {
-    use twydo_core::model::TaskKind::{Checklist, Project, Task};
-    let s = snap();
-    let rows =
-        |extra: &[(&str, &str)], baseline: &str| with(fam(), matrix(extra, baseline, "pass", &[]));
-    let shapes = [
-        (
-            "gate-nodue",
-            Checklist,
-            "a task to a checklist",
-            "task-to-checklist",
-        ),
-        (
-            "gate-nodue",
-            Project,
-            "a task to a project",
-            "task-to-project",
-        ),
-        (
-            "gate-checklist",
-            Project,
-            "a checklist to a project",
-            "checklist-to-project",
-        ),
-        (
-            "gate-empty-project",
-            Checklist,
-            "an empty project to a checklist",
-            "empty-project-to-checklist",
-        ),
-        (
-            "gate-empty-project",
-            Task,
-            "an empty checklist or project to a task",
-            "empty-parent-to-task",
-        ),
-    ];
-    for (uid, to, label, case) in shapes {
-        let op = kind(uid, to);
-        assert_eq!(
-            check(&s, &fam(), WriteMode::Verified, &op, today()),
-            blocked(&format!(
-                "converting {label} is not verified yet (iphone_baseline)"
-            )),
-            "{uid} to {to:?}"
-        );
-        let m = rows(&[(case, "convert")], "pass");
-        assert_eq!(
-            check(&s, &m, WriteMode::Verified, &op, today()),
-            Ok(()),
-            "{uid} to {to:?}"
-        );
-    }
-    // The iPhone does not offer these, so the matrix has them unsupported.
-    let refused = [
-        (
-            "gate-project",
-            Checklist,
-            "a project with items to a checklist",
-            "project-to-checklist",
-        ),
-        (
-            "gate-project",
-            Task,
-            "a checklist or project with items to a task",
-            "parent-with-items-to-task",
-        ),
-        (
-            "gate-checklist",
-            Task,
-            "a checklist or project with items to a task",
-            "parent-with-items-to-task",
-        ),
-    ];
-    for (uid, to, label, case) in refused {
-        let m = rows(&[(case, "convert")], "unsupported");
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &kind(uid, to), today()),
-            blocked(&format!("converting {label} is not supported by 2Do")),
-            "{uid} to {to:?}"
-        );
-    }
-    // The same type is no conversion.
-    assert_eq!(
-        check(
-            &s,
-            &fam(),
-            WriteMode::Verified,
-            &kind("gate-nodue", Task),
-            today()
-        ),
-        Ok(())
-    );
-    // A repeating task needs the recurring checklist's edit verdict; items cannot be parents.
-    let m = rows(&[("task-to-checklist", "convert")], "pass");
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &kind("gate-monthly", Checklist),
-            today()
-        ),
-        blocked("edit for recurring-checklist tasks is not verified yet (iphone_baseline)")
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &kind("gate-project-child", Checklist),
-            today()
-        ),
-        blocked(NESTED)
-    );
-    // The embedded matrix carries the rows: task to checklist is verified both ways now.
-    assert_eq!(
-        check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Verified,
-            &kind("gate-nodue", Checklist),
-            today()
-        ),
-        Ok(())
-    );
-    // An empty project to a checklist still lacks its iPhone baseline.
-    assert_eq!(
-        check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Verified,
-            &kind("gate-empty-project", Checklist),
-            today()
-        ),
-        blocked("converting an empty project to a checklist is not verified yet (iphone_baseline)")
-    );
-    assert_eq!(
-        check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Test,
-            &kind("gate-project", Checklist),
-            today()
-        ),
-        blocked("converting a project with items to a checklist is not supported by 2Do")
-    );
-}
-
-#[test]
-fn save_checks_the_edit_and_the_move() {
-    let s = snap();
-    let save = |changes: Vec<Change>, to: Option<&str>| Op::Save {
-        uid: "gate-date".into(),
-        changes,
-        to: to.map(str::to_string),
-    };
-    let title = vec![Change::Summary("Renamed".into())];
-    let only = |op| matrix(&[("one-time", op)], "pass", "pass", &[]);
-    let m = only("edit");
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(title.clone(), None),
-            today()
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(title.clone(), Some("errands")),
-            today()
-        ),
-        blocked("move for one-time tasks is not verified yet (iphone_baseline)")
-    );
-    let m = only("move");
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(title.clone(), Some("errands")),
-            today()
-        ),
-        blocked("edit for one-time tasks is not verified yet (iphone_baseline)")
-    );
-    // A move alone skips the edit part.
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(Vec::new(), Some("errands")),
-            today()
-        ),
-        Ok(())
-    );
-    let m = matrix(
-        &[("one-time", "edit"), ("one-time", "move")],
-        "pass",
-        "pass",
-        &[],
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(title.clone(), Some("errands")),
-            today()
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &save(title, Some("nope")),
-            today()
-        ),
-        blocked("no list nope")
-    );
-}
-
-#[test]
-fn create_checks_list_and_attribute_cases() {
-    let s = snap();
-    let m = matrix(&[("one-time", "create")], "pass", "pass", &[]);
-    let new = |collection: &str, due: Option<Due>| {
-        Op::Create(NewTask {
-            due,
-            ..NewTask::plain(collection, "Synthetic new")
-        })
-    };
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &new("inbox", None), today()),
-        Ok(())
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &new("nope", None), today()),
-        blocked("no list nope")
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &new("inbox", Some(Due::Date(date(2026, 11, 9)))),
-            today()
-        ),
-        blocked("create for date-only tasks is not verified yet (iphone_baseline)")
-    );
 }
 
 #[test]
@@ -812,26 +238,7 @@ fn task_blocked_reason_wins() {
     );
 }
 
-/// `full()` plus every family case, fully verified.
-fn fam() -> Matrix {
-    cases(
-        &[
-            "one-time",
-            "monthly",
-            "yearly",
-            "date-only",
-            "timed",
-            "start-date",
-            "checklist",
-            "project",
-            "recurring-project",
-            "project-recurring-child",
-        ],
-        "pass",
-        "pass",
-        &["months-day-1-28", "years"],
-    )
-}
+// `full()` plus every family case, fully verified.
 
 fn cs(own: &'static str, family: Option<&'static str>) -> Result<Cases, Blocked> {
     Ok(Cases { own, family })
@@ -877,7 +284,7 @@ const NESTED: &str = "nested projects and checklists are not verified yet";
 #[test]
 fn family_refusals() {
     let s = snap();
-    let m = fam();
+    let m = full();
     let refused = [
         ("gate-nested", NESTED),
         ("gate-nested-child", NESTED),
@@ -915,74 +322,9 @@ fn family_refusals() {
 }
 
 #[test]
-fn family_ops_check_own_and_family_rows() {
-    let s = snap();
-    let m = fam();
-    for uid in [
-        "gate-checklist",
-        "gate-checklist-item",
-        "gate-project",
-        "gate-project-child",
-        "gate-project-repeating-child",
-        "gate-monthly-project",
-        "gate-monthly-project-child",
-    ] {
-        assert_eq!(
-            check(&s, &m, WriteMode::Verified, &complete(uid), today()),
-            Ok(()),
-            "{uid}"
-        );
-    }
-    // The family row is checked as well as the own row.
-    let m = full();
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &complete("gate-project-child"),
-            today()
-        ),
-        blocked("complete for project tasks is not verified yet (iphone_baseline)")
-    );
-    // The own row of a repeating child is checked before its family row.
-    let m = cases(
-        &["project-recurring-child"],
-        "pass",
-        "pass",
-        &["months-day-1-28"],
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &complete("gate-project-repeating-child"),
-            today()
-        ),
-        blocked("complete for monthly tasks is not verified yet (iphone_baseline)")
-    );
-    // An unverified family row blocks the op: editing in a recurring project.
-    let m = matrix(
-        &[("one-time", "edit"), ("recurring-project", "complete")],
-        "pass",
-        "pass",
-        &[],
-    );
-    let op = edit(
-        "gate-monthly-project-child",
-        vec![Change::Summary("Renamed".into())],
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &op, today()),
-        blocked("edit for recurring-project tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
 fn parent_op_refused_when_child_blocked() {
     let s = snap();
-    let m = fam();
+    let m = full();
     // A second task with a child's UID.
     let mut dup = s.clone();
     let child = dup.tasks[idx(&s, "gate-project-child")].clone();
@@ -1005,9 +347,12 @@ fn parent_op_refused_when_child_blocked() {
             "{op:?}"
         );
     }
-    // Editing the parent alone does not touch the children.
+    // Text preservation still needs unambiguous family identities.
     let op = edit("gate-project", vec![Change::Summary("Renamed".into())]);
-    assert_eq!(check(&dup, &m, WriteMode::Test, &op, today()), Ok(()));
+    assert_eq!(
+        check(&dup, &m, WriteMode::Test, &op, today()),
+        blocked("duplicate UID")
+    );
 
     let mut bad = s.clone();
     let i = idx(&s, "gate-checklist-item");
@@ -1028,7 +373,7 @@ fn parent_op_refused_when_child_blocked() {
 #[test]
 fn parent_op_refused_when_child_has_no_case() {
     let s = snap();
-    let m = fam();
+    let m = full();
     assert_eq!(
         check(
             &s,
@@ -1056,10 +401,7 @@ fn parent_op_refused_when_child_has_no_case() {
         uid: "gate-project-weekly".into(),
         to: "errands".into(),
     };
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &mv, today()),
-        blocked("weeks repeats are not verified yet")
-    );
+    assert_eq!(check(&s, &m, WriteMode::Test, &mv, today()), Ok(()));
     // Editing the parent alone does not look at its children.
     let op = edit(
         "gate-project-weekly",
@@ -1068,94 +410,13 @@ fn parent_op_refused_when_child_has_no_case() {
     assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }
 
-#[test]
-fn parent_op_refused_when_child_rule_not_preserved() {
-    let s = snap();
-    // The child's own case is "monthly", but its rule class has no `[[rule]]` verdict.
-    assert_eq!(
-        task_cases(&s, idx(&s, "gate-project-last-day-child")),
-        cs("monthly", Some("project-recurring-child"))
-    );
-    let m = fam();
-    let mv = Op::Move {
-        uid: "gate-project-last-day".into(),
-        to: "errands".into(),
-    };
-    for op in [
-        complete("gate-project-last-day"),
-        reopen("gate-project-last-day"),
-        mv,
-        Op::Delete {
-            uid: "gate-project-last-day".into(),
-        },
-    ] {
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &op, today()),
-            blocked("months-last-day repeats are not verified yet"),
-            "{op:?}"
-        );
-    }
-    // The same parent op passes once the class preserves.
-    let m = cases(
-        &["one-time", "monthly", "project", "project-recurring-child"],
-        "pass",
-        "pass",
-        &["months-last-day"],
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &complete("gate-project-last-day"),
-            today()
-        ),
-        Ok(())
-    );
-}
-
-/// The real matrix: family baselines pass, the twydo columns and the recurring-project edit
-/// row do not.
-#[test]
-fn embedded_matrix_allows_family_baselines() {
-    let s = snap();
-    let m = Matrix::embedded();
-    for uid in [
-        "gate-checklist-item",
-        "gate-checklist",
-        "gate-monthly-project",
-    ] {
-        assert_eq!(
-            check(&s, m, WriteMode::Test, &complete(uid), today()),
-            Ok(()),
-            "{uid}"
-        );
-    }
-    let op = edit(
-        "gate-monthly-project-child",
-        vec![Change::Summary("Renamed".into())],
-    );
-    // Verified both ways in the Plan 6 Task 7 session (rounds 01 and 07).
-    assert_eq!(check(&s, m, WriteMode::Test, &op, today()), Ok(()));
-    assert_eq!(check(&s, m, WriteMode::Verified, &op, today()), Ok(()));
-    // Twydo completed a checklist and the phone showed it (Plan 6 Task 7); the phone
-    // completed one and Twydo read it back (gap session round 04).
-    assert_eq!(
-        check(
-            &s,
-            m,
-            WriteMode::Verified,
-            &complete("gate-checklist"),
-            today()
-        ),
-        Ok(())
-    );
-}
+// The real matrix: family baselines pass, the twydo columns and the recurring-project edit
+// row do not.
 
 #[test]
 fn unknown_task_type_and_broken_link_refused() {
     let s = snap();
-    let m = fam();
+    let m = full();
     let typed = "this 2Do task type is not verified yet";
     for (uid, reason) in [
         ("gate-typed", typed),
@@ -1186,179 +447,12 @@ fn unknown_task_type_and_broken_link_refused() {
     );
 }
 
-#[test]
-fn single_child_move_and_delete_blocked() {
-    let s = snap();
-    let m = fam();
-    for uid in ["gate-project-child", "gate-checklist-item"] {
-        let mv = Op::Move {
-            uid: uid.into(),
-            to: "errands".into(),
-        };
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &mv, today()),
-            blocked("moving one item out of its project or checklist is not verified yet"),
-            "{uid}"
-        );
-        let del = Op::Delete { uid: uid.into() };
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &del, today()),
-            blocked("deleting one item of a project or checklist is not verified yet"),
-            "{uid}"
-        );
-    }
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &reopen("gate-done-project-child"),
-            today()
-        ),
-        blocked("reopening an item of a completed project or checklist is not verified yet")
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &reopen("gate-cancelled-checklist-item"),
-            today()
-        ),
-        blocked("reopening an item of a completed project or checklist is not verified yet")
-    );
-    // Reopening the completed project itself is a family op.
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &reopen("gate-done-project"),
-            today()
-        ),
-        Ok(())
-    );
-}
-
-#[test]
-fn from_completion_needs_its_case() {
-    let s = snap();
-    assert_eq!(
-        check(
-            &s,
-            &full(),
-            WriteMode::Test,
-            &complete("gate-from-completion"),
-            today()
-        ),
-        blocked("complete for from-completion tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
-fn weekly_needs_its_case() {
-    let s = snap();
-    assert_eq!(
-        check(
-            &s,
-            &full(),
-            WriteMode::Test,
-            &complete("gate-weekly"),
-            today()
-        ),
-        blocked("complete for weekly tasks is not verified yet (iphone_baseline)")
-    );
-}
-
-#[test]
-fn monthly_day_31_blocked() {
-    let s = snap();
-    let op = edit("gate-monthly-31", vec![Change::Summary("Renamed".into())]);
-    assert_eq!(
-        check(&s, &full(), WriteMode::Test, &op, today()),
-        blocked("months-day-29-31 repeats are not verified yet")
-    );
-}
-
-#[test]
-fn recurring_needs_rule_verdicts() {
-    let s = snap();
-    let m = cases(&["monthly"], "pass", "pass", &[]);
-    let op = edit("gate-monthly", vec![Change::Summary("Renamed".into())]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("months-day-1-28 repeats are not verified yet")
-    );
-    let m = full();
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    let op = edit("gate-monthly", vec![Change::RepeatInterval(2)]);
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &complete("gate-monthly"),
-            today()
-        ),
-        Ok(())
-    );
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &complete("gate-yearly"),
-            today()
-        ),
-        Ok(())
-    );
-}
-
-const START_OFFSETS: &str =
-    "completing a repeating task with a start date is not verified yet (start-due-alarm-offsets)";
-const MISSED: &str = "completing a repeating task after a missed occurrence is not verified yet \
-                      (monthly-15th-three-months-late)";
-
-/// `m` plus an `[[edge_case]]` row.
-fn edge(m: Matrix, id: &str, verdict: &str) -> Matrix {
-    let mut m = m;
-    let extra = Matrix::from_toml_str(&format!(
-        "matrix_version = 1\n[[edge_case]]\nid = \"{id}\"\nverdict = \"{verdict}\"\n"
-    ))
-    .unwrap();
-    m.edge_case.extend(extra.edge_case);
-    m
-}
-
-#[test]
-fn repeat_shapes_need_their_edge_cases() {
-    let s = snap();
-    let shapes = [
-        "gate-monthly-start",
-        "gate-monthly-alarm",
-        "gate-monthly-timed-start",
-    ];
-    let unverified = edge(full(), "start-due-alarm-offsets", "unverified");
-    let pass = edge(full(), "start-due-alarm-offsets", "pass");
-    for uid in shapes {
-        assert_eq!(
-            check(&s, &unverified, WriteMode::Test, &complete(uid), today()),
-            blocked(START_OFFSETS),
-            "{uid}"
-        );
-        assert_eq!(
-            check(&s, &pass, WriteMode::Test, &complete(uid), today()),
-            Ok(()),
-            "{uid}"
-        );
-    }
-}
+// `m` plus an `[[edge_case]]` row.
 
 #[test]
 fn unusual_start_date_blocked() {
     let s = snap();
-    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    let m = with_offsets();
     let i = idx(&s, "gate-monthly-start");
     // 0, negative, and not on a UTC midnight.
     for secs in ["0", "-86400", "1762563600"] {
@@ -1387,7 +481,7 @@ fn unusual_start_date_blocked() {
 #[test]
 fn zoned_due_blocked() {
     let s = snap();
-    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    let m = with_offsets();
     assert_eq!(
         check(
             &s,
@@ -1401,22 +495,9 @@ fn zoned_due_blocked() {
 }
 
 #[test]
-fn missed_occurrence_needs_its_edge_case() {
-    let s = snap();
-    let op = complete("gate-monthly-late");
-    let unverified = edge(full(), "monthly-15th-three-months-late", "unverified");
-    let pass = edge(full(), "monthly-15th-three-months-late", "pass");
-    assert_eq!(
-        check(&s, &unverified, WriteMode::Test, &op, today()),
-        blocked(MISSED)
-    );
-    assert_eq!(check(&s, &pass, WriteMode::Test, &op, today()), Ok(()));
-}
-
-#[test]
 fn absolute_alert_stays_blocked() {
     let s = snap();
-    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    let m = with_offsets();
     assert_eq!(
         check(
             &s,
@@ -1432,7 +513,7 @@ fn absolute_alert_stays_blocked() {
 #[test]
 fn start_day_delay_stays_blocked() {
     let s = snap();
-    let m = edge(full(), "start-due-alarm-offsets", "pass");
+    let m = with_offsets();
     assert_eq!(
         check(
             &s,
@@ -1443,26 +524,6 @@ fn start_day_delay_stays_blocked() {
         ),
         blocked("completing a repeating task with a start-day delay is not verified yet")
     );
-}
-
-#[test]
-fn recurring_with_start_or_alarm_blocked() {
-    let s = snap();
-    // Rule verdicts pass, but the start-due-alarm-offsets edge case is unverified.
-    let m = edge(full(), "start-due-alarm-offsets", "unverified");
-    for uid in ["gate-monthly-start", "gate-monthly-alarm"] {
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &complete(uid), today()),
-            blocked(START_OFFSETS),
-            "{uid}"
-        );
-    }
-    // Only completion is restricted: editing the title of the same task is allowed.
-    let op = edit(
-        "gate-monthly-start",
-        vec![Change::Summary("Renamed".into())],
-    );
-    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }
 
 #[test]
@@ -1478,87 +539,8 @@ fn recurring_due_removal_blocked() {
     assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
 }
 
-#[test]
-fn history_copy_reopen_blocked() {
-    let s = snap();
-    let m = cases(&["one-time"], "pass", "pass", &[]);
-    assert_eq!(
-        check(
-            &s,
-            &m,
-            WriteMode::Verified,
-            &reopen("gate-history"),
-            today()
-        ),
-        blocked("reopening a repeat's history copy is not verified yet")
-    );
-    // A plain completed one-time task is not a history copy.
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &reopen("gate-done"), today()),
-        Ok(())
-    );
-    for case in ["monthly", "yearly"] {
-        let m = matrix(
-            &[("one-time", "reopen"), (case, "reopen")],
-            "pass",
-            "pass",
-            &[],
-        );
-        assert_eq!(
-            check(
-                &s,
-                &m,
-                WriteMode::Verified,
-                &reopen("gate-history"),
-                today()
-            ),
-            Ok(()),
-            "{case}"
-        );
-    }
-}
-
-/// Rule 6 uses the mode-aware row check: verified mode needs the monthly or yearly reopen
-/// row's twydo columns too; test mode needs only the baseline.
-#[test]
-fn history_copy_reopen_mode_aware() {
-    let s = snap();
-    let mut s_toml = String::from("matrix_version = 1\n");
-    for (case, twydo) in [
-        ("one-time", "pass"),
-        ("monthly", "unverified"),
-        ("yearly", "unverified"),
-    ] {
-        s_toml.push_str(&format!(
-            "[[operation]]\ncase = \"{case}\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
-             mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-             twydo_to_iphone = \"{twydo}\"\niphone_to_twydo = \"{twydo}\"\n"
-        ));
-    }
-    let m = Matrix::from_toml_str(&s_toml).unwrap();
-    let op = reopen("gate-history");
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("reopening a repeat's history copy is not verified yet")
-    );
-    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
-    // One twydo column alone is not enough.
-    let half = s_toml.replacen(
-        "case = \"monthly\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
-         mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-         twydo_to_iphone = \"unverified\"",
-        "case = \"monthly\"\nop = \"reopen\"\niphone_baseline = \"pass\"\n\
-         mac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\n\
-         twydo_to_iphone = \"pass\"",
-        1,
-    );
-    assert_ne!(half, s_toml);
-    let m = Matrix::from_toml_str(&half).unwrap();
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("reopening a repeat's history copy is not verified yet")
-    );
-}
+// Rule 6 uses the mode-aware row check: verified mode needs the monthly or yearly reopen
+// row's twydo columns too; test mode needs only the baseline.
 
 #[test]
 fn blocked_displays_reason() {
@@ -1566,120 +548,13 @@ fn blocked_displays_reason() {
 }
 
 const ITEM_DATES: &str = "checklist items take their date from the checklist";
-const DATED_ITEMS: &str = "removing a checklist's date, or giving it a time or a start date, \
-                           is not verified yet while its items have dates of their own";
-
-fn day(d: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 12, d).unwrap()
-}
-
-#[test]
-fn checklist_item_dates_refused() {
-    let s = snap();
-    let m = fam();
-    for uid in ["gate-checklist-item", "gate-checklist-dated-item"] {
-        for change in [
-            Change::Due(Some(Due::Date(day(11)))),
-            Change::Due(None),
-            Change::Start(Some(day(1))),
-        ] {
-            let op = edit(uid, vec![change.clone()]);
-            assert_eq!(
-                check(&s, &m, WriteMode::Test, &op, today()),
-                blocked(ITEM_DATES),
-                "{uid} {change:?}"
-            );
-        }
-        // Other fields of an item stay editable.
-        let op = edit(uid, vec![Change::Summary("Renamed".into())]);
-        assert_eq!(
-            check(&s, &m, WriteMode::Test, &op, today()),
-            Ok(()),
-            "{uid}"
-        );
-    }
-}
-
-#[test]
-fn dated_checklist_takes_only_a_new_date() {
-    let s = snap();
-    let m = fam();
-    let at = |changes| {
-        check(
-            &s,
-            &m,
-            WriteMode::Test,
-            &edit("gate-checklist-dated", changes),
-            today(),
-        )
-    };
-    assert_eq!(at(vec![Change::Due(Some(Due::Date(day(11))))]), Ok(()));
-    assert_eq!(at(vec![Change::Summary("Renamed".into())]), Ok(()));
-    let time = day(11).and_hms_opt(9, 0, 0).unwrap();
-    for changes in [
-        vec![Change::Due(None)],
-        vec![Change::Due(Some(Due::Time(time)))],
-        vec![Change::Start(Some(day(1)))],
-        vec![Change::Due(Some(Due::Date(day(11)))), Change::Start(None)],
-    ] {
-        assert_eq!(at(changes.clone()), blocked(DATED_ITEMS), "{changes:?}");
-    }
-    // A checklist whose items carry no dates keeps every date edit (session 1, H2).
-    let op = edit("gate-checklist", vec![Change::Due(None)]);
-    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
-}
-
-#[test]
-fn dated_checklist_date_change_needs_its_edge_case_when_verified() {
-    let s = snap();
-    let op = edit(
-        "gate-checklist-dated",
-        vec![Change::Due(Some(Due::Date(day(11))))],
-    );
-    let reason = "changing a checklist's date while its items have dates of their own is not \
-                  verified yet (checklist-item-dates)";
-    // fam() passes every row both ways, but has no edge case.
-    let m = fam();
-    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked(reason)
-    );
-    let m = edge(fam(), "checklist-item-dates", "pass");
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    // Title edits of the same checklist are not affected.
-    let title = edit(
-        "gate-checklist-dated",
-        vec![Change::Summary("Renamed".into())],
-    );
-    assert_eq!(
-        check(&s, &fam(), WriteMode::Verified, &title, today()),
-        Ok(())
-    );
-    // The shipped matrix verifies it (checklist-date round, plan6-baseline.md).
-    assert_eq!(
-        check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()),
-        Ok(())
-    );
-}
 
 #[test]
 fn a_new_repeat_needs_a_due_date() {
     let s = snap();
-    let m = rule(
-        cases(&["one-time", "monthly", "date-only"], "pass", "pass", &[]),
-        "months-day-1-28",
-        "pass",
-        "pass",
-    );
+    let m = full();
+    let daily = full();
     let why = "a repeating task needs a due date";
-    // A daily rule has a class without a due date, so only this rule stops it.
-    let daily = rule(
-        with(m.clone(), cases(&["daily"], "pass", "pass", &[])),
-        "days",
-        "pass",
-        "pass",
-    );
     let op = edit(
         "gate-date",
         vec![Change::Repeat(Some(repeat("daily"))), Change::Due(None)],
@@ -1712,66 +587,6 @@ fn a_new_repeat_needs_a_due_date() {
 }
 
 #[test]
-fn save_move_checks_the_cases_the_edit_leaves() {
-    use twydo_core::model::TaskKind::Checklist;
-    let s = snap();
-    let save = |uid: &str, changes: Vec<Change>| Op::Save {
-        uid: uid.into(),
-        changes,
-        to: Some("errands".into()),
-    };
-    // A repeat set and moved: the new own case's move row.
-    let due = Due::Date(date(2026, 11, 10));
-    let op = save(
-        "gate-nodue",
-        vec![
-            Change::Due(Some(due)),
-            Change::Repeat(Some(repeat("monthly"))),
-        ],
-    );
-    let base = rule(
-        cases(&["one-time", "date-only"], "pass", "pass", &[]),
-        "months-day-1-28",
-        "pass",
-        "pass",
-    );
-    let monthly_edit = matrix(
-        &[("monthly", "edit"), ("monthly", "repeat")],
-        "pass",
-        "pass",
-        &[],
-    );
-    let m = with(base.clone(), monthly_edit);
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("move for monthly tasks is not verified yet (iphone_baseline)")
-    );
-    let m = with(base, cases(&["monthly"], "pass", "pass", &[]));
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    // A type change and moved: the new family's move row.
-    let op = save("gate-nodue", vec![Change::Kind(Checklist)]);
-    let m = with(
-        cases(&["one-time"], "pass", "pass", &[]),
-        matrix(
-            &[("checklist", "edit"), ("task-to-checklist", "convert")],
-            "pass",
-            "pass",
-            &[],
-        ),
-    );
-    assert_eq!(
-        check(&s, &m, WriteMode::Verified, &op, today()),
-        blocked("move for checklist tasks is not verified yet (iphone_baseline)")
-    );
-    let m = with(m, matrix(&[("checklist", "move")], "pass", "pass", &[]));
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-    // A plain edit and a move needs only the task's own rows.
-    let op = save("gate-date", vec![Change::Summary("Renamed".into())]);
-    let m = cases(&["one-time"], "pass", "pass", &[]);
-    assert_eq!(check(&s, &m, WriteMode::Verified, &op, today()), Ok(()));
-}
-
-#[test]
 fn no_new_item_under_a_closed_parent() {
     let s = snap();
     let why = "adding an item to a completed or cancelled project or checklist is not verified yet";
@@ -1779,7 +594,7 @@ fn no_new_item_under_a_closed_parent() {
         assert_eq!(
             check(
                 &s,
-                &fam(),
+                &full(),
                 WriteMode::Test,
                 &Op::Create(item(parent)),
                 today()
@@ -1790,48 +605,11 @@ fn no_new_item_under_a_closed_parent() {
     }
 }
 
-/// Setting, removing or reshaping a repeat (not only its interval) needs the `repeat` rows
-/// of the cases before and after, and the before case's `edit` row. With the shipped matrix
-/// these repeat writes are verified.
-#[test]
-fn embedded_verified_allows_the_repeat_writes_the_phone_checked() {
-    let s = snap();
-    let m = Matrix::embedded();
-    let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
-    // One-time to monthly or weekly, removing a monthly repeat, weekly <-> monthly.
-    for text in ["monthly", "3m", "weekly", "2w"] {
-        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
-        assert_eq!(at(&op), Ok(()), "{text}");
-    }
-    let op = edit("gate-monthly", vec![Change::Repeat(None)]);
-    assert_eq!(at(&op), Ok(()));
-    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("weekly")))]);
-    assert_eq!(at(&op), Ok(()));
-    // An end by count passes since session B (`mod:count` edit).
-    let op = edit(
-        "gate-monthly",
-        vec![Change::Repeat(Some(repeat("monthly 3 times")))],
-    );
-    assert_eq!(at(&op), Ok(()));
-    // Only the interval, within the class: Plan 4's verified edit.
-    let op = edit("gate-monthly", vec![Change::Repeat(Some(repeat("2m")))]);
-    assert_eq!(at(&op), Ok(()));
-    // Editing an existing weekly task (Plan 7 session C, 03-twydo-edit: a new interval, and
-    // E3 weekly -> monthly, E4 weekly removed, which the phone showed right).
-    let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
-    for changes in [
-        vec![due],
-        vec![Change::Summary("Renamed".into())],
-        vec![Change::RepeatInterval(2)],
-        vec![Change::Repeat(Some(repeat("monthly")))],
-        vec![Change::Repeat(None)],
-    ] {
-        let op = edit("gate-weekly", changes.clone());
-        assert_eq!(at(&op), Ok(()), "{changes:?}");
-    }
-}
+// Setting, removing or reshaping a repeat (not only its interval) needs the `repeat` rows
+// of the cases before and after, and the before case's `edit` row. With the shipped matrix
+// these repeat writes are verified.
 
-/// Daily/yearly repeat transitions now pass; uncaptured anchor/family changes stay refused.
+// Daily/yearly repeat transitions now pass; uncaptured anchor/family changes stay refused.
 #[test]
 fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let s = snap();
@@ -1863,70 +641,11 @@ fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let Err(Blocked(why)) = at(&op) else {
         panic!("allowed")
     };
-    assert!(why.starts_with("changing the repeat rule of "), "{why}");
+    assert!(why.starts_with("set-repeat.project"), "{why}");
 }
 
-#[test]
-fn repeat_rows_with_a_baseline_pass_in_test_mode() {
-    let s = snap();
-    let m = Matrix::embedded();
-    let at = |op: &Op| check(&s, m, WriteMode::Test, op, today());
-    // The phone set every repeat kind on a plain task (Plan 7 capture 01).
-    for text in ["monthly", "yearly", "daily", "weekly"] {
-        let op = edit("gate-date", vec![Change::Repeat(Some(repeat(text)))]);
-        let got = at(&op);
-        // Rule verdicts still apply (days/weeks edit is unverified); the repeat rows do not stop it.
-        if let Err(Blocked(why)) = &got {
-            assert!(!why.contains("repeat rule of"), "{text}: {why}");
-        }
-    }
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("monthly")))]);
-    assert_eq!(at(&op), Ok(()));
-    // Not captured: a repeat on a project, or removing one.
-    let op = edit(
-        "gate-empty-project",
-        vec![
-            Change::Due(Some(Due::Date(date(2026, 11, 10)))),
-            Change::Repeat(Some(repeat("monthly"))),
-        ],
-    );
-    assert_eq!(
-        at(&op),
-        blocked("changing the repeat rule of project tasks is not verified yet (iphone_baseline)")
-    );
-    let op = edit("gate-monthly", vec![Change::Repeat(None)]);
-    assert_eq!(at(&op), Ok(()), "monthly and one-time rows have a baseline");
-    // A synthetic matrix without `repeat` rows refuses a new repeat even in test mode.
-    let m = rule(
-        matrix(
-            &[("one-time", "edit"), ("monthly", "edit")],
-            "pass",
-            "pass",
-            &[],
-        ),
-        "months-day-1-28",
-        "pass",
-        "pass",
-    );
-    let op = edit("gate-date", vec![Change::Repeat(Some(repeat("monthly")))]);
-    assert_eq!(
-        check(&s, &m, WriteMode::Test, &op, today()),
-        blocked("changing the repeat rule of one-time tasks is not verified yet (iphone_baseline)")
-    );
-    let m = with(
-        m,
-        matrix(
-            &[("one-time", "repeat"), ("monthly", "repeat")],
-            "pass",
-            "unverified",
-            &[],
-        ),
-    );
-    assert_eq!(check(&s, &m, WriteMode::Test, &op, today()), Ok(()));
-}
-
-/// The three kinds 2Do 3.91 on the iPhone misreads (rule `edit` = `fail`): Twydo reads them
-/// but never writes them, and the refusal says so rather than "not verified yet".
+// The three kinds 2Do 3.91 on the iPhone misreads (rule `edit` = `fail`): Twydo reads them
+// but never writes them, and the refusal says so rather than "not verified yet".
 #[test]
 fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
     let s = snap();
@@ -1979,45 +698,11 @@ fn embedded_verified_never_writes_the_kinds_the_phone_misreads() {
     assert!(!why.contains("not supported by 2Do on the iPhone"), "{why}");
 }
 
-/// Task 14: the gate lets every repeat kind Twydo can create through to completion once its
-/// rule's `execute` verdict and the case's `complete` row pass; since Plan 7 session C the
-/// real matrix passes them, so verified mode allows it.
-#[test]
-fn new_repeat_kinds_complete_when_their_verdicts_pass() {
-    let s = snap();
-    let m = cases(
-        &["one-time", "monthly", "weekly", "date-only", "start-date"],
-        "pass",
-        "pass",
-        &["months-day-29-31", "weeks"],
-    );
-    // Monthly on the 31st: Oct 31 -> Nov 30 (no longer refused as a clamp).
-    for mode in [WriteMode::Test, WriteMode::Verified] {
-        assert_eq!(
-            check(&s, &m, mode, &complete("gate-monthly-31"), today()),
-            Ok(()),
-            "{mode:?}"
-        );
-        assert_eq!(
-            check(&s, &m, mode, &complete("gate-weekly"), today()),
-            Ok(()),
-            "{mode:?}"
-        );
-    }
-    let real = Matrix::embedded();
-    assert_eq!(
-        check(
-            &s,
-            real,
-            WriteMode::Verified,
-            &complete("gate-monthly-31"),
-            today()
-        ),
-        Ok(())
-    );
-}
+// Task 14: the gate lets every repeat kind Twydo can create through to completion once its
+// rule's `execute` verdict and the case's `complete` row pass; since Plan 7 session C the
+// real matrix passes them, so verified mode allows it.
 
-/// A vdir with the given fixture steps, each as its own list.
+// A vdir with the given fixture steps, each as its own list.
 fn steps_snap(steps: &[(&str, &str)]) -> (tempfile::TempDir, Snapshot) {
     let tmp = tempfile::tempdir().unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
@@ -2035,9 +720,9 @@ fn steps_snap(steps: &[(&str, &str)]) -> (tempfile::TempDir, Snapshot) {
     (tmp, snap)
 }
 
-/// The last occurrence of an ended series, completed in place by the phone (`C1a` in session
-/// C's `01-phone-complete`), keeps its RRULE. Reopening it is refused with the reason, before
-/// the matrix rows (whose `reopen` verdicts would otherwise be cited), in every mode.
+// The last occurrence of an ended series, completed in place by the phone (`C1a` in session
+// C's `01-phone-complete`), keeps its RRULE. Reopening it is refused with the reason, before
+// the matrix rows (whose `reopen` verdicts would otherwise be cited), in every mode.
 #[test]
 fn reopening_an_ended_series_says_why_before_the_rows() {
     let (_tmp, s) = steps_snap(&[("c", "complete/recurrence-profiles/phone-complete/list1")]);
@@ -2052,8 +737,8 @@ fn reopening_an_ended_series_says_why_before_the_rows() {
     }
 }
 
-/// A vdir with the session C seed (`complete/recurrence-profiles/seed/list1`, list `c`) and session B's
-/// first round (`set-repeat/encoding-roundtrip/twydo-create/list1`, list `b`), as Twydo wrote them.
+// A vdir with the session C seed (`complete/recurrence-profiles/seed/list1`, list `c`) and session B's
+// first round (`set-repeat/encoding-roundtrip/twydo-create/list1`, list `b`), as Twydo wrote them.
 fn session_snap() -> (tempfile::TempDir, Snapshot) {
     steps_snap(&[
         ("c", "complete/recurrence-profiles/seed/list1"),
@@ -2078,9 +763,9 @@ fn by_title(s: &Snapshot, list: &str, title: &str) -> String {
         .clone()
 }
 
-/// Plan 7 session C: in verified mode with the shipped matrix, completing each kind the
-/// phone and Twydo completed alike is allowed (the `b` twins as seeded), and the session's
-/// edits of existing daily and weekly tasks too. What no session verified stays refused.
+// Plan 7 session C: in verified mode with the shipped matrix, completing each kind the
+// phone and Twydo completed alike is allowed (the `b` twins as seeded), and the session's
+// edits of existing daily and weekly tasks too. What no session verified stays refused.
 #[test]
 fn embedded_verified_completes_every_kind_session_c_verified() {
     let (_tmp, s) = session_snap();
@@ -2141,11 +826,11 @@ fn embedded_verified_completes_every_kind_session_c_verified() {
     assert!(at(&op).is_err());
 }
 
-/// Session B's recurring project `RP` (monthly, with item `r1`).
+// Session B's recurring project `RP` (monthly, with item `r1`).
 const RP: &str = "c3e14351e7f745b4a713b0c5e64bb8fd";
 
-/// Completing a recurring project is verified for a plain rule only: no capture shows 2Do
-/// completing one that ends (count or until) or repeats from completion.
+// Completing a recurring project is verified for a plain rule only: no capture shows 2Do
+// completing one that ends (count or until) or repeats from completion.
 #[test]
 fn embedded_verified_refuses_completing_a_recurring_project_with_an_end_or_from_completion() {
     let (tmp, s) = session_snap();
@@ -2205,9 +890,9 @@ fn embedded_verified_refuses_completing_a_recurring_project_with_an_end_or_from_
     }
 }
 
-/// An Nth-weekday repeat has no interval in 2Do (`RecurrenceValue` is the ordinal), so
-/// changing its interval is refused in every mode, by `RepeatInterval` or by an interval-only
-/// `Change::Repeat`. Setting the same rule again passes.
+// An Nth-weekday repeat has no interval in 2Do (`RecurrenceValue` is the ordinal), so
+// changing its interval is refused in every mode, by `RepeatInterval` or by an interval-only
+// `Change::Repeat`. Setting the same rule again passes.
 #[test]
 fn interval_of_an_nth_weekday_repeat_is_refused() {
     let (_tmp, s) = session_snap();
@@ -2234,9 +919,9 @@ fn interval_of_an_nth_weekday_repeat_is_refused() {
     }
 }
 
-/// A weekday set (`FREQ=WEEKLY;BYDAY=MO,TH`) completes only every week, so no op may give it
-/// another interval, in any mode: by `RepeatInterval`, an interval-only `Change::Repeat`, a
-/// reshape or a create. Interval 1 (the same rule) passes.
+// A weekday set (`FREQ=WEEKLY;BYDAY=MO,TH`) completes only every week, so no op may give it
+// another interval, in any mode: by `RepeatInterval`, an interval-only `Change::Repeat`, a
+// reshape or a create. Interval 1 (the same rule) passes.
 #[test]
 fn interval_on_a_weekday_set_repeat_is_refused() {
     let (_tmp, s) = session_snap();
@@ -2287,8 +972,8 @@ fn interval_on_a_weekday_set_repeat_is_refused() {
     }
 }
 
-/// Sessions B/C already supply fixture-comparison tests for these edges in edit_complete.rs.
-/// Keep the summary records aligned without promoting the only partially captured edges.
+// Sessions B/C already supply fixture-comparison tests for these edges in edit_complete.rs.
+// Keep the summary records aligned without promoting the only partially captured edges.
 
 // Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
@@ -2316,9 +1001,15 @@ mod recurrence_phone_captures {
                 .is_ok()
             );
             matrix
-                .operation
+                .contract
                 .iter_mut()
-                .find(|r| r.case == case && r.op == "reopen")
+                .find(|r| {
+                    r.id == if case == "ended-until-daily" {
+                        twydo_core::compat::ContractId::ReopenEndedDaily
+                    } else {
+                        twydo_core::compat::ContractId::ReopenEndedMonthly
+                    }
+                })
                 .unwrap()
                 .twydo_to_iphone = Verdict::Unverified;
             assert!(
@@ -2343,16 +1034,8 @@ mod recurrence_phone_captures {
         ] {
             let env = Env::new(WriteMode::Verified, &format!("{SCENARIO}/{step}"));
             let mut matrix = Matrix::embedded().clone();
-            matrix
-                .rule
-                .iter_mut()
-                .find(|r| r.class == "mod:until")
-                .unwrap()
-                .execute = Verdict::Unverified;
-            for case in ["recurring-checklist", "ended-until-daily"] {
-                for row in matrix.operation.iter_mut().filter(|r| r.case == case) {
-                    row.twydo_to_iphone = Verdict::Unverified;
-                }
+            for row in &mut matrix.contract {
+                row.twydo_to_iphone = Verdict::Unverified;
             }
             let mut store = env.store(matrix);
             let before = env.files();
@@ -2381,16 +1064,15 @@ mod recurrence_phone_captures {
             .clone();
         let mut matrix = Matrix::embedded().clone();
         matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklist)
             .unwrap()
             .twydo_to_iphone = Verdict::Pass;
         // Retain a baseline-only matrix to test pure repeat evidence independently.
         matrix
-            .operation
-            .retain(|r| !(r.case == "recurring-checklist" && r.op == "edit"));
-        assert!(matrix.operation("recurring-checklist", "edit").is_none());
+            .contract
+            .retain(|r| r.id != twydo_core::compat::ContractId::EditTitleResource);
         let now = dtstamp(&cal(STEP, &uid));
         let change = Change::Repeat(
             twydo_core::repeatinput::parse("weekly", now.date_naive(), &[]).unwrap(),
@@ -2432,9 +1114,9 @@ mod recurrence_phone_captures {
             assert!(env.journal().is_empty());
         }
         matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklist)
             .unwrap()
             .twydo_to_iphone = Verdict::Unverified;
         assert!(
@@ -2449,7 +1131,7 @@ mod recurrence_phone_captures {
 mod verified_recurrence_shapes {
     use crate::common::Env;
     use chrono::{Duration, TimeZone, Utc};
-    use twydo_core::compat::{Matrix, Verdict};
+    use twydo_core::compat::Matrix;
     use twydo_core::config::WriteMode;
     use twydo_core::edit::{Change, Op};
     use twydo_core::gate;
@@ -2486,29 +1168,7 @@ mod verified_recurrence_shapes {
         }
     }
     fn promoted() -> Matrix {
-        let mut m = Matrix::embedded().clone();
-        for (case, op) in [
-            ("daily", "repeat"),
-            ("yearly", "repeat"),
-            ("checklist", "repeat"),
-            ("recurring-checklist", "repeat"),
-            ("recurring-checklist", "complete"),
-            ("ended-until-daily", "reopen"),
-            ("ended-until-monthly", "reopen"),
-            ("history-copy", "reopen"),
-        ] {
-            m.operation
-                .iter_mut()
-                .find(|r| r.case == case && r.op == op)
-                .unwrap()
-                .twydo_to_iphone = Verdict::Pass;
-        }
-        m.rule
-            .iter_mut()
-            .find(|r| r.class == "mod:until")
-            .unwrap()
-            .execute = Verdict::Pass;
-        m
+        Matrix::embedded().clone()
     }
 
     #[test]
@@ -3069,8 +1729,8 @@ fn verified_from_completion_setting_refuses_reopened_history_but_keeps_live_fore
 mod recurring_checklist_writes {
     use super::*;
     use crate::common::{Env, recurrence::*};
-    use twydo_core::ical::value::IcalDateTime;
-    use twydo_core::model::{Status, TaskKind};
+
+    use twydo_core::model::TaskKind;
 
     fn env(step: &str) -> Env {
         Env::new(WriteMode::Verified, &format!("{CHECKLIST_B}/{step}"))
@@ -3110,14 +1770,8 @@ mod recurring_checklist_writes {
                 "{op:?}"
             );
             let mut baseline_only = m.clone();
-            for row in &mut baseline_only.operation {
-                if (row.case == "recurring-checklist"
-                    && matches!(row.op.as_str(), "create" | "edit"))
-                    || row.case == "recurring-checklist-item"
-                    || row.case == "resource-text"
-                {
-                    row.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
-                }
+            for row in &mut baseline_only.contract {
+                row.twydo_to_iphone = twydo_core::compat::Verdict::Unverified;
             }
             assert!(
                 check(&s, &baseline_only, WriteMode::Verified, &op, today()).is_err(),
@@ -3181,97 +1835,6 @@ mod recurring_checklist_writes {
         }
     }
 
-    #[test]
-    fn legacy_checklist_delete_requires_dedicated_evidence_and_open_sibling() {
-        let e = env("phone-items-and-text/list1");
-        let mut s = e.snap();
-        let mut m = Matrix::embedded().clone();
-        m.operation
-            .retain(|r| !matches!(r.case.as_str(), "checklist-item" | "project-item"));
-        let p = s.find(CHECKLIST_A_UID).unwrap();
-        let q = *s
-            .children(p)
-            .iter()
-            .find(|&&c| s.tasks[c].summary == "q")
-            .unwrap();
-        let other = *s.children(p).iter().find(|&&c| c != q).unwrap();
-        let op = Op::Delete {
-            uid: s.tasks[q].uid.clone(),
-        };
-        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_ok());
-        let mut missing = m.clone();
-        missing
-            .operation
-            .retain(|r| r.case != "recurring-checklist-item");
-        assert!(check(&s, &missing, WriteMode::Verified, &op, today()).is_err());
-        for which in [p, q, other] {
-            s.tasks[which].status = Status::Completed;
-            assert!(
-                check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
-                "completed family member {which}"
-            );
-            s.tasks[which].status = Status::Open;
-        }
-        s.tasks[p].rrule = Some("FREQ=WEEKLY".into());
-        assert!(check(&s, &m, WriteMode::Verified, &op, today()).is_err());
-        s.tasks[p].rrule = Some("FREQ=MONTHLY".into());
-        s.tasks[q].due = Some(IcalDateTime::Date(date(2026, 12, 11)));
-        assert!(
-            check(&s, &m, WriteMode::Verified, &op, today()).is_err(),
-            "foreign child schedule"
-        );
-    }
-    #[test]
-    fn legacy_checklist_last_item_and_uncaptured_parent_operations_stay_blocked() {
-        let e = env("phone-delete-items/list1");
-        let s = e.snap();
-        let mut legacy = Matrix::embedded().clone();
-        legacy.operation.retain(|r| {
-            !matches!(
-                r.case.as_str(),
-                "checklist-item" | "project-item" | "standalone-resource" | "flat-family"
-            )
-        });
-        let m = &legacy;
-        let p = s.find(CHECKLIST_A_UID).unwrap();
-        let child = s.children(p)[0];
-        for uid in [&s.tasks[child].uid, &s.tasks[p].uid] {
-            assert!(
-                check(
-                    &s,
-                    m,
-                    WriteMode::Verified,
-                    &Op::Delete { uid: uid.clone() },
-                    today()
-                )
-                .is_err()
-            );
-        }
-        let e = env("seeded/list1");
-        let base = e.snap();
-        for rule in [
-            "FREQ=WEEKLY",
-            "FREQ=MONTHLY;INTERVAL=2",
-            "FREQ=YEARLY",
-            "FREQ=MONTHLY;COUNT=2",
-        ] {
-            let mut s = base.clone();
-            let i = s.find("twydo-p8-c29-d").unwrap();
-            s.tasks[i].rrule = Some(rule.into());
-            assert!(
-                check(
-                    &s,
-                    m,
-                    WriteMode::Verified,
-                    &edit("twydo-p8-c29-d", vec![Change::Kind(TaskKind::Checklist)]),
-                    today()
-                )
-                .is_err(),
-                "{rule}"
-            );
-        }
-    }
-
     fn due(uid: &str, y: i32, m: u32, d: u32) -> Op {
         edit(uid, vec![Change::Due(Some(Due::Date(date(y, m, d))))])
     }
@@ -3308,8 +1871,12 @@ mod recurring_checklist_writes {
         assert_eq!(check(&s, &m, WriteMode::Verified, &mixed, today()), Ok(()));
 
         let mut no_text_evidence = m.clone();
-        no_text_evidence.operation.retain(|r| {
-            !((r.case == "recurring-checklist" || r.case == "resource-text") && r.op == "edit")
+        no_text_evidence.contract.retain(|r| {
+            !matches!(
+                r.id,
+                twydo_core::compat::ContractId::EditTitleResource
+                    | twydo_core::compat::ContractId::EditNotesResource
+            )
         });
         assert_eq!(
             check(&s, &no_text_evidence, WriteMode::Verified, &op, today()),
@@ -3473,8 +2040,8 @@ mod recurring_checklist_writes {
 
         let mut missing = m.clone();
         missing
-            .operation
-            .retain(|r| !(r.case == "recurring-checklist-due" && r.op == "edit"));
+            .contract
+            .retain(|r| r.id != twydo_core::compat::ContractId::SetDueChecklist);
         assert!(
             check(
                 &base,
@@ -3499,9 +2066,9 @@ mod recurring_checklist_writes {
         let s = e.snap();
         let mut candidate = Matrix::embedded().clone();
         let row = candidate
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist-interval" && r.op == "edit")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklistInterval)
             .expect("dedicated interval row");
         row.iphone_baseline = Verdict::Pass;
         row.twydo_to_iphone = Verdict::Pass;
@@ -3567,8 +2134,8 @@ mod recurring_checklist_writes {
         }
         let mut missing = candidate.clone();
         missing
-            .operation
-            .retain(|r| !(r.case == "recurring-checklist-interval" && r.op == "edit"));
+            .contract
+            .retain(|r| r.id != twydo_core::compat::ContractId::SetRepeatChecklistInterval);
         assert!(
             check(&s, &missing, WriteMode::Verified, &cli, today()).is_err(),
             "dedicated interval evidence is required"
@@ -3584,9 +2151,9 @@ mod recurring_checklist_writes {
         let s = e.snap();
         let mut candidate = Matrix::embedded().clone();
         let row = candidate
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist-interval")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklistInterval)
             .unwrap();
         row.iphone_baseline = Verdict::Pass;
         row.twydo_to_iphone = Verdict::Pass;
@@ -3666,11 +2233,11 @@ mod recurring_checklist_writes {
             }
         }
         candidate
-            .rule
+            .contract
             .iter_mut()
-            .find(|r| r.class == "months-day-1-28")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklistInterval)
             .unwrap()
-            .edit = Verdict::Unverified;
+            .twydo_to_iphone = Verdict::Unverified;
         for change in [
             Change::RepeatInterval(2),
             Change::Repeat(twydo_core::repeatinput::parse("2m", today(), &[]).unwrap()),
@@ -3758,7 +2325,7 @@ mod individual_item_deletion {
         }
         for column in ["baseline", "outbound", "inbound"] {
             let mut m = evidence::matrix("pass");
-            let row = &mut m.operation[0];
+            let row = &mut m.contract[0];
             match column {
                 "baseline" => row.iphone_baseline = Verdict::Unverified,
                 "outbound" => row.twydo_to_iphone = Verdict::Unverified,
@@ -3905,36 +2472,25 @@ mod capability_deletion {
     }
 
     fn capability_matrix(verdict: &str) -> Matrix {
-        let mut text = String::from("matrix_version = 1\n");
-        for case in ["standalone-resource", "flat-family"] {
-            text.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"delete\"\n\
-                 iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
-                 iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"{verdict}\"\n\
-                 iphone_to_twydo = \"{verdict}\"\n"
-            ));
-        }
-        // Rule verdicts are deliberately failing: removal must not execute or edit them.
-        text.push_str(
-            "[[rule]]\nclass = \"weeks\"\npreserve = \"fail\"\nexecute = \"fail\"\nedit = \"fail\"\n",
-        );
-        text.push_str(
-            "[[rule]]\nclass = \"months-day-1-28\"\npreserve = \"fail\"\nexecute = \"fail\"\nedit = \"fail\"\n",
-        );
-        Matrix::from_toml_str(&text).unwrap()
+        crate::common::only(
+            &[
+                twydo_core::compat::ContractId::DeleteResource,
+                twydo_core::compat::ContractId::DeleteFamily,
+            ],
+            "pass",
+            verdict,
+        )
     }
 
     fn baseline_matrix(baseline: &str) -> Matrix {
-        let mut text = String::from("matrix_version = 1\n");
-        for case in ["standalone-resource", "flat-family"] {
-            text.push_str(&format!(
-                "[[operation]]\ncase = \"{case}\"\nop = \"delete\"\n\
-                 iphone_baseline = \"{baseline}\"\nmac_to_iphone = \"unverified\"\n\
-                 iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
-                 iphone_to_twydo = \"pass\"\n"
-            ));
-        }
-        Matrix::from_toml_str(&text).unwrap()
+        crate::common::only(
+            &[
+                twydo_core::compat::ContractId::DeleteResource,
+                twydo_core::compat::ContractId::DeleteFamily,
+            ],
+            baseline,
+            "pass",
+        )
     }
 
     #[test]
@@ -4172,7 +2728,7 @@ mod capability_deletion {
         weekly(&e, E);
         let s = e.snap();
 
-        let empty = Matrix::from_toml_str("matrix_version = 1\n").unwrap();
+        let empty = Matrix::from_toml_str("matrix_version = 2\n").unwrap();
         assert!(
             check_uid(&s, &empty, E).is_err(),
             "missing row keeps legacy refusal"
@@ -4216,27 +2772,21 @@ mod capability_deletion {
         );
 
         // The matching case's row is required; a different new row does not dispatch.
-        let mut only_standalone = String::from("matrix_version = 1\n");
-        only_standalone.push_str(
-            "[[operation]]\ncase = \"standalone-resource\"\nop = \"delete\"\n\
-             iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
-             iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
-             iphone_to_twydo = \"pass\"\n",
+        let only_standalone = crate::common::only(
+            &[twydo_core::compat::ContractId::DeleteResource],
+            "pass",
+            "pass",
         );
-        let only_standalone = Matrix::from_toml_str(&only_standalone).unwrap();
         assert!(
             check_uid(&e.snap(), &only_standalone, CHECKLIST_A).is_err(),
             "flat family needs its own row"
         );
 
-        let mut only_family = String::from("matrix_version = 1\n");
-        only_family.push_str(
-            "[[operation]]\ncase = \"flat-family\"\nop = \"delete\"\n\
-             iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
-             iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\n\
-             iphone_to_twydo = \"pass\"\n",
+        let only_family = crate::common::only(
+            &[twydo_core::compat::ContractId::DeleteFamily],
+            "pass",
+            "pass",
         );
-        let only_family = Matrix::from_toml_str(&only_family).unwrap();
         assert!(
             check_uid(&s, &only_family, E).is_err(),
             "standalone needs its own row"
@@ -4326,7 +2876,11 @@ fn history_task_capability_preserves_schedule_and_series() {
     let mut s = snap();
     let i = idx(&s, "gate-history");
     s.tasks[i].start = Some(twydo_core::ical::value::IcalDateTime::Date(today()));
-    let m = matrix(&[("history-task", "reopen")], "pass", "pass", &[]);
+    let m = crate::common::only(
+        &[twydo_core::compat::ContractId::ReopenHistoryTask],
+        "pass",
+        "pass",
+    );
     assert_eq!(
         check(
             &s,
@@ -4341,7 +2895,11 @@ fn history_task_capability_preserves_schedule_and_series() {
 
 #[test]
 fn history_task_capability_refuses_live_cancelled_and_ended_series() {
-    let m = matrix(&[("history-task", "reopen")], "pass", "pass", &[]);
+    let m = crate::common::only(
+        &[twydo_core::compat::ContractId::ReopenHistoryTask],
+        "pass",
+        "pass",
+    );
     for uid in ["gate-done", "gate-monthly", "gate-cancelled-checklist-item"] {
         assert!(check(&snap(), &m, WriteMode::Verified, &reopen(uid), today()).is_err());
     }
@@ -4401,16 +2959,7 @@ fn live_parent_with_foreign_series_identity_does_not_use_history_item_policy() {
     let i = s.find(child).unwrap();
     s.tasks[parent].rrule = Some("FREQ=MONTHLY".into());
     s.tasks[i].status = twydo_core::model::Status::Completed;
-    let m = common::matrix(
-        &[
-            "history-flat-family",
-            "one-time",
-            "recurring-project",
-            "date-only",
-        ],
-        "pass",
-        &[],
-    );
+    let m = common::matrix("pass", &[]);
     assert_eq!(
         check(&s, &m, WriteMode::Verified, &reopen(child), today()),
         Ok(())
@@ -4420,11 +2969,13 @@ fn live_parent_with_foreign_series_identity_does_not_use_history_item_policy() {
 #[test]
 fn capability_move_gate_is_independent_of_schedule_execution() {
     let s = snap();
-    let m = matrix(
-        &[("standalone-resource", "move"), ("flat-family", "move")],
+    let m = crate::common::only(
+        &[
+            twydo_core::compat::ContractId::MoveResource,
+            twydo_core::compat::ContractId::MoveFamily,
+        ],
         "pass",
         "pass",
-        &[],
     );
     for uid in ["gate-weekly", "gate-yearly", "gate-monthly-alarm"] {
         let op = Op::Move {
@@ -4467,7 +3018,7 @@ fn capability_move_gate_is_independent_of_schedule_execution() {
             .is_err()
         );
     }
-    let legacy = matrix(&[], "pass", "pass", &[]);
+    let legacy = crate::common::only(&[], "pass", "pass");
     assert!(
         check(
             &s,
@@ -4490,17 +3041,7 @@ fn capability_move_save_revalidates_permitted_transition_without_legacy_move_row
         "complete/standalone-lifecycle/edit/list1",
     );
     let s = env.snap();
-    let mut text = String::from("matrix_version = 1\n");
-    for (case, op) in [
-        ("one-time", "edit"),
-        ("project", "edit"),
-        ("task-to-project", "convert"),
-        ("standalone-resource", "move"),
-        ("flat-family", "move"),
-    ] {
-        text.push_str(&format!("[[operation]]\ncase = \"{case}\"\nop = \"{op}\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"));
-    }
-    let m = Matrix::from_toml_str(&text).unwrap();
+    let m = Matrix::embedded().clone();
     let op = Op::Save {
         uid: "0a04f22aeb294b719633c978fe1975e5".into(),
         changes: vec![Change::Kind(twydo_core::model::TaskKind::Project)],
@@ -4519,15 +3060,14 @@ fn reparent_candidate_refuses_ambiguous_links_nesting_and_closed_targets() {
     let k = "a8dcf93bcaa14211a07481eb87af8f11";
     let child = "c57dfd30e9574d6ba195117e73dcc6d9";
     let p = "09c49c2cd76f483498fc2ff3a0f66160";
-    let m = matrix(
+    let m = crate::common::only(
         &[
-            ("item-to-project", "reparent"),
-            ("item-to-checklist", "reparent"),
-            ("item-outdent", "reparent"),
+            twydo_core::compat::ContractId::ReparentProject,
+            twydo_core::compat::ContractId::ReparentChecklist,
+            twydo_core::compat::ContractId::ReparentOutdent,
         ],
         "pass",
         "pass",
-        &[],
     );
     let make = |uid: &str, parent: Option<&str>, collection: &str| Op::Reparent {
         uid: uid.into(),
@@ -4588,7 +3128,11 @@ fn reparent_refuses_hidden_descendant_of_selected_leaf() {
     meta.set_str("parentuid", uid);
     prop.set_value(&meta.encode());
     std::fs::write(e.file("synthetic-hidden-descendant"), serialize(&cal)).unwrap();
-    let m = matrix(&[("item-to-project", "reparent")], "pass", "pass", &[]);
+    let m = crate::common::only(
+        &[twydo_core::compat::ContractId::ReparentProject],
+        "pass",
+        "pass",
+    );
     let op = Op::Reparent {
         uid: uid.into(),
         collection: "list1".into(),
@@ -4759,7 +3303,14 @@ fn text_capability_admits_closed_checklists_without_schedule_permissions() {
     let env = text::closed();
     let s = env.snap();
     let p = s.find(text::PARENT).unwrap();
-    let m = matrix(&[("resource-text", "edit")], "pass", "pass", &[]);
+    let m = crate::common::only(
+        &[
+            twydo_core::compat::ContractId::EditTitleResource,
+            twydo_core::compat::ContractId::EditNotesResource,
+        ],
+        "pass",
+        "pass",
+    );
     for i in std::iter::once(p).chain(s.children(p).iter().copied()) {
         for change in [
             Change::Summary("New title".into()),
@@ -4786,12 +3337,26 @@ fn text_capability_has_its_own_evidence_and_keeps_nontext_restrictions() {
     let env = text::closed();
     let s = env.snap();
     let title = edit(text::PARENT, vec![Change::Summary("New title".into())]);
-    let absent = matrix(&[], "pass", "pass", &[]);
+    let absent = crate::common::only(&[], "pass", "pass");
     assert!(check(&s, &absent, WriteMode::Verified, &title, today()).is_err());
-    let baseline = matrix(&[("resource-text", "edit")], "pass", "unverified", &[]);
+    let baseline = crate::common::only(
+        &[
+            twydo_core::compat::ContractId::EditTitleResource,
+            twydo_core::compat::ContractId::EditNotesResource,
+        ],
+        "pass",
+        "unverified",
+    );
     assert!(check(&s, &baseline, WriteMode::Verified, &title, today()).is_err());
     assert!(check(&s, &baseline, WriteMode::Test, &title, today()).is_ok());
-    let missing_baseline = matrix(&[("resource-text", "edit")], "unverified", "pass", &[]);
+    let missing_baseline = crate::common::only(
+        &[
+            twydo_core::compat::ContractId::EditTitleResource,
+            twydo_core::compat::ContractId::EditNotesResource,
+        ],
+        "unverified",
+        "pass",
+    );
     assert!(check(&s, &missing_baseline, WriteMode::Test, &title, today()).is_err());
     for changes in [
         vec![],

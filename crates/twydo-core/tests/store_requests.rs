@@ -20,7 +20,6 @@ use common::Env;
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
 const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
-const CASES: [&str; 5] = ["one-time", "monthly", "date-only", "timed", "start-date"];
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
@@ -31,7 +30,7 @@ fn later() -> DateTime<Utc> {
 }
 
 fn matrix() -> Matrix {
-    common::matrix(&CASES, "unverified", &[])
+    common::matrix("unverified", &[])
 }
 
 fn env() -> Env {

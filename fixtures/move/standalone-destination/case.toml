@@ -1,16 +1,20 @@
 claim = "Moving standalone resources changes collection identity while preserving task fields."
 origin = "device"
 observed = "Moving standalone resources changes collection identity while preserving task fields."
-tests = ["crates/twydo-core/tests/ical_write.rs::unedited_calendar_is_byte_equal"]
-supports = ["delete.resource"]
+tests = ["crates/twydo-core/tests/store.rs::undo_move_restores_source_and_removes_copy", "crates/twydo-core/tests/gate.rs::capability_move_gate_is_independent_of_schedule_execution"]
+supports = ["move.resource"]
 
 [provenance]
 source_revision = "41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 source_path = "fixtures/phase0/v1/plan4-list2"
+environment_source = "compat/matrix.toml at 41a5fe9534e1b822538f3ec4fdaf2a8d25c1681a"
 
 [environment]
-iphone_2do = "3.91 build 38246"
-ios = "27.0.1"
-server = "Synology Calendar (DSM 7.1.1-42962 Update 9)"
-server_version = "2.4.8-10948"
-vdirsyncer = "0.21.0"
+client_version = "unknown (not recorded per state; baseline versions are in the source matrix)"
+
+[states."phone-moved"]
+path = "phone-moved"
+collections = ["list1"]
+members = ["list1/2306431b953744bea6237f826d380448.ics", "list1/6e467f8aa2e64ed4a7eca25890a4a176.ics"]
+action = "A2 move to list2; B remove due date; E live (due 2027-01-10) move to list2"
+device = "iphone"

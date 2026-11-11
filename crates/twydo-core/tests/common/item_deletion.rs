@@ -14,14 +14,13 @@ pub fn env(step: &str) -> Env {
 /// Deliberately has no task/family operation or recurrence-rule rows: removal
 /// must depend on its own evidence and preserve the rest without executing it.
 pub fn matrix(twydo: &str) -> Matrix {
-    let mut text = String::from("matrix_version = 1\n");
-    for case in ["checklist-item", "project-item"] {
-        text.push_str(&format!(
-            "[[operation]]\ncase = \"{case}\"\nop = \"delete\"\n\
-             iphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\n\
-             iphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"{twydo}\"\n\
-             iphone_to_twydo = \"{twydo}\"\n"
-        ));
-    }
-    Matrix::from_toml_str(&text).unwrap()
+    let mut matrix = super::matrix(twydo, &[]);
+    matrix.contract.retain(|r| {
+        matches!(
+            r.id,
+            twydo_core::compat::ContractId::DeleteChecklistItem
+                | twydo_core::compat::ContractId::DeleteProjectItem
+        )
+    });
+    matrix
 }

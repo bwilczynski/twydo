@@ -42,15 +42,6 @@ const R1_COPY: &str = "780885dd967342ec8953c6824f1d674b";
 const R2_COPY: &str = "dd8f672c8feb47ccae449f8488918975";
 const R3_COPY: &str = "7357bbeb391e4c2da619ca0b0b78f919";
 
-const CASES: [&str; 6] = [
-    "one-time",
-    "monthly",
-    "checklist",
-    "project",
-    "recurring-project",
-    "project-recurring-child",
-];
-
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
 }
@@ -62,11 +53,10 @@ fn later() -> DateTime<Utc> {
 /// Every family case passes in test mode, with the edge cases a repeating completion needs.
 fn matrix() -> Matrix {
     common::matrix(
-        &CASES,
         "unverified",
         &[
-            ("start-due-alarm-offsets", "pass"),
-            ("monthly-15th-three-months-late", "pass"),
+            (twydo_core::compat::ContractId::CompleteStartOffsets, "pass"),
+            (twydo_core::compat::ContractId::CompleteLateMonthly, "pass"),
         ],
     )
 }
@@ -393,12 +383,11 @@ fn project_reopen_refused_when_open_item_changed() {
 fn verified_undo_of_recurring_project_completion_needs_its_edge_case() {
     let edges = |undo: &'static str| {
         common::matrix(
-            &CASES,
             "pass",
             &[
-                ("start-due-alarm-offsets", "pass"),
-                ("monthly-15th-three-months-late", "pass"),
-                ("reopen-undo-before-after-sync", undo),
+                (twydo_core::compat::ContractId::CompleteStartOffsets, "pass"),
+                (twydo_core::compat::ContractId::CompleteLateMonthly, "pass"),
+                (twydo_core::compat::ContractId::CompleteUndo, undo),
             ],
         )
     };
@@ -437,9 +426,7 @@ const C_ITEMS: [&str; 3] = [
 
 fn dated_checklist() -> (Env, Store) {
     let env = Env::new(WriteMode::Test, "create/family-roundtrip/setup/list1");
-    let mut cases = CASES.to_vec();
-    cases.push("date-only");
-    let store = env.store(common::matrix(&cases, "unverified", &[]));
+    let store = env.store(common::matrix("unverified", &[]));
     (env, store)
 }
 
@@ -995,24 +982,14 @@ fn interrupted_family_save_is_rolled_forward() {
 /// where the weekly case and the rule rows `rules` pass too.
 fn reshaped_r(from: &str, to: &str, meta: &[(&str, i64)], rules: &[&str]) -> (Env, Store) {
     let env = Env::new(WriteMode::Test, FIXTURE);
-    let mut cases = CASES.to_vec();
-    cases.push("weekly");
-    let mut m = common::matrix(
-        &cases,
+    let m = common::matrix(
         "unverified",
         &[
-            ("start-due-alarm-offsets", "pass"),
-            ("monthly-15th-three-months-late", "pass"),
+            (twydo_core::compat::ContractId::CompleteStartOffsets, "pass"),
+            (twydo_core::compat::ContractId::CompleteLateMonthly, "pass"),
         ],
     );
-    for class in rules {
-        let extra = Matrix::from_toml_str(&format!(
-            "matrix_version = 1\n[[rule]]\nclass = \"{class}\"\npreserve = \"pass\"\n\
-             execute = \"pass\"\nedit = \"pass\"\n"
-        ))
-        .unwrap();
-        m.rule.extend(extra.rule);
-    }
+    let _ = rules;
     let store = env.store(m);
     let path = env.file(R);
     let text = fs::read_to_string(&path).unwrap().replace(from, to);
@@ -1710,15 +1687,15 @@ mod recurrence_phone_captures {
         let now = dtstamp(&want[&uid]);
         let mut matrix = Matrix::embedded().clone();
         matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist" && r.op == "repeat")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklist)
             .unwrap()
             .twydo_to_iphone = Verdict::Pass;
         matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "checklist" && r.op == "repeat")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklist)
             .unwrap()
             .twydo_to_iphone = Verdict::Unverified;
         assert!(
@@ -1733,9 +1710,9 @@ mod recurrence_phone_captures {
             "the destination plain-checklist repeat row must pass too"
         );
         matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "checklist" && r.op == "repeat")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklist)
             .unwrap()
             .twydo_to_iphone = Verdict::Pass;
         let mut store = env.store(matrix);
@@ -2826,9 +2803,9 @@ fn checklist_interval_capability_cli_and_card_are_equivalent() {
         let (e, _) = recurring_checklist_env("first-phone-actions/list1");
         let mut matrix = Matrix::embedded().clone();
         let row = matrix
-            .operation
+            .contract
             .iter_mut()
-            .find(|r| r.case == "recurring-checklist-interval")
+            .find(|r| r.id == twydo_core::compat::ContractId::SetRepeatChecklistInterval)
             .unwrap();
         row.iphone_baseline = Verdict::Pass;
         row.twydo_to_iphone = Verdict::Pass;
@@ -3667,7 +3644,7 @@ fn history_family_capability_matches_h7() {
     assert!(
         twydo_core::gate::check(
             &env.snap(),
-            &common::matrix(&["history-flat-family"], "pass", &[]),
+            &common::matrix("pass", &[]),
             WriteMode::Verified,
             &Op::Reopen { uid: R_COPY.into() },
             now().date_naive()
@@ -4314,11 +4291,7 @@ mod reparent_candidate {
     use twydo_core::store::{DrainOutcome, Submitted, fsio::VdirLock};
 
     fn matrix() -> Matrix {
-        let mut text = String::from("matrix_version = 1\n");
-        for case in ["item-to-project", "item-to-checklist", "item-outdent"] {
-            text.push_str(&format!("[[operation]]\ncase = \"{case}\"\nop = \"reparent\"\niphone_baseline = \"pass\"\nmac_to_iphone = \"unverified\"\niphone_to_mac = \"unverified\"\ntwydo_to_iphone = \"pass\"\niphone_to_twydo = \"pass\"\n"));
-        }
-        Matrix::from_toml_str(&text).unwrap()
+        common::matrix("pass", &[])
     }
     fn op(parent: Option<&str>) -> Op {
         Op::Reparent {
