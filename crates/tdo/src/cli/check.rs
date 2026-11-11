@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use twydo_daemon::protocol::reports::{CheckReport, CheckReportParams};
 
-use super::sync::{client_error, connect};
+use super::sync::{client_error, connect, warn_stuck_journal};
 use crate::client::{self, CLI_TIMEOUT, Target};
 
 /// How long the call waits for a daemon that is still starting.
@@ -52,6 +52,9 @@ pub fn print(r: &CheckReport) {
 pub fn run(target: &Target, matrix: Option<&Path>, verbose: bool) -> i32 {
     match report(target, matrix, verbose, None) {
         Ok(r) => {
+            if let Ok(client) = connect(target) {
+                warn_stuck_journal(&client);
+            }
             print(&r);
             0
         }

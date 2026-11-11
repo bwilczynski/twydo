@@ -440,6 +440,11 @@ fn stuck_entry_blocks_writes_until_abandoned() {
     let o = env.tdo(&["export-json"]);
     assert!(o.status.success(), "{}", err(&o));
     assert!(out(&o).contains(TASK_A), "export missing tasks");
+    assert!(
+        err(&o).contains("tdo: journal has unfinished operations; run 'tdo op journal'"),
+        "{}",
+        err(&o)
+    );
     assert_eq!(fs::read_to_string(env.vdir().join(&rel)).unwrap(), disk);
 
     let e_file = env.vdir().join(format!("list1/{TASK_E}.ics"));
@@ -1090,6 +1095,87 @@ fn op_never_opens_the_config_file() {
     fs::set_permissions(&cfg, fs::Permissions::from_mode(0o644)).unwrap();
     assert!(o.status.success(), "{}", err(&o));
     assert!(op_id_ok(&out(&o)), "stdout was {:?}", out(&o));
+}
+
+/// With `config.toml` unreadable the daemon still serves every read-only command.
+#[test]
+fn read_only_commands_never_open_the_config_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new("test");
+    env.ensure_daemon();
+    let ready = env.tdo(&["op", "journal"]);
+    assert!(ready.status.success(), "{}", err(&ready));
+    let cfg = env.dir.path().join("config/twydo/config.toml");
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o000)).unwrap();
+    let outs: Vec<(&str, Output)> = [
+        vec!["check"],
+        vec!["export-json"],
+        vec!["conflicts"],
+        vec!["op", "check", TASK_E],
+    ]
+    .into_iter()
+    .map(|a| (a[0], env.tdo(&a)))
+    .collect();
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o644)).unwrap();
+    for (name, o) in &outs {
+        assert!(o.status.success(), "{name}: {}", err(o));
+    }
+}
+
+/// `status` needs `[sync]`; its own test checks that it too works without the file.
+#[test]
+fn status_never_opens_the_config_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new("test");
+    let cfg = env.dir.path().join("config/twydo/config.toml");
+    let mut text = fs::read_to_string(&cfg).unwrap();
+    text.push_str("\n[sync]\ncommand = \"/nonexistent/vdirsyncer\"\n");
+    fs::write(&cfg, text).unwrap();
+    env.ensure_daemon();
+    let ready = env.tdo(&["op", "journal"]);
+    assert!(ready.status.success(), "{}", err(&ready));
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o000)).unwrap();
+    let o = env.tdo(&["status"]);
+    fs::set_permissions(&cfg, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(out(&o).contains("last sync: never"), "{}", out(&o));
+}
+
+/// `check`, `export-json` and `status` warn on stderr when journal recovery left stuck entries.
+#[test]
+fn read_only_commands_warn_about_a_stuck_journal() {
+    let env = Env::new("test");
+    let cfg = env.dir.path().join("config/twydo/config.toml");
+    let mut text = fs::read_to_string(&cfg).unwrap();
+    text.push_str("\n[sync]\ncommand = \"/nonexistent/vdirsyncer\"\n");
+    fs::write(&cfg, text).unwrap();
+    let rel = format!("list1/{TASK_A}.ics");
+    let id = "20261101T120000Z-0badf00d";
+    let entry = serde_json::json!({
+        "format": 1, "id": id, "created": "2026-11-01T12:00:00Z", "kind": "edit",
+        "uids": [TASK_A], "stage": "prepared", "inverse_of": null,
+        "writes": [{"path": rel, "before": "neither before", "after": "nor after"}],
+    });
+    let jdir = env.vdir_state().join("journal");
+    fs::create_dir_all(&jdir).unwrap();
+    fs::write(jdir.join(format!("{id}.json")), entry.to_string()).unwrap();
+    env.ensure_daemon();
+    let m = env.dir.path().join("matrix.toml");
+    for args in [
+        vec!["check", "--matrix", m.to_str().unwrap()],
+        vec!["export-json"],
+        vec!["status"],
+    ] {
+        let o = env.tdo(&args);
+        assert!(o.status.success(), "{args:?}: {}", err(&o));
+        assert!(
+            err(&o).contains("tdo: journal has unfinished operations; run 'tdo op journal'"),
+            "{args:?}: {}",
+            err(&o)
+        );
+    }
+    let o = env.op(&["check", TASK_E]);
+    assert!(!err(&o).contains("journal has unfinished"), "{}", err(&o));
 }
 
 #[test]
