@@ -26,8 +26,9 @@ MAX_DAV = 4 * 1024 * 1024
 
 
 class Refused(Exception):
-    def __init__(self, code="mapping"):
+    def __init__(self, code="mapping", missing=None):
         self.code = code
+        self.missing = missing
         super().__init__(code)
 
 
@@ -40,7 +41,7 @@ def plain_id(value):
 def validate_request(request):
     if not isinstance(request, dict) or type(request.get("version")) is not int or request["version"] != 1:
         raise Refused("protocol")
-    if request.get("action") not in ("probe", "resolve", "create", "edit", "preview-delete"):
+    if request.get("action") not in ("probe", "resolve", "create", "edit", "preview-delete", "discover"):
         raise Refused("protocol")
     mode = request.get("mode", "execute")
     if type(request.get("timeout_secs", 300)) is not int or request.get("timeout_secs", 300) < 1:
@@ -58,7 +59,9 @@ def validate_request(request):
         raise Refused("protocol")
     if request.get("config") is not None and not isinstance(request["config"], str):
         raise Refused("protocol")
-    if request.get("action") != "probe" and not plain_id(request.get("collection")):
+    if request.get("action") not in ("probe", "discover") and not plain_id(request.get("collection")):
+        raise Refused("protocol")
+    if request.get("action") == "discover" and request.get("operation"):
         raise Refused("protocol")
     if request.get("action") == "preview-delete" and (not request.get("operation") or not request.get("state")):
         raise Refused("protocol")
@@ -113,6 +116,9 @@ def local_snapshot(path):
         elif not entry.is_dir():
             raise Refused("operation")
     return files
+
+
+REQUEST_ENV = "TWYDO_HELPER_REQUEST"
 
 
 @contextlib.contextmanager
@@ -175,6 +181,26 @@ def operation_guard(request):
         if not plain_id(request.get("collection")) or not matches:
             raise Refused("operation")
         yield record
+
+
+@contextlib.contextmanager
+def discover_guard(request, inherited_lock=False):
+    """Discovery creates local folders, so it holds the shared vdir lock for the whole action.
+
+    Never run.lock: the parent sync run holds that one while it waits for this process.
+    """
+    state = request.get("state")
+    if request.get("action") != "discover" or state is None or inherited_lock:
+        yield
+        return
+    import fcntl
+    state = Path(state)
+    if not state.is_absolute() or state.is_symlink():
+        raise Refused("protocol")
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    with os.fdopen(os.open(state / "vdir.lock", flags, 0o600), "r+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        yield
 
 
 def load_adapter():
@@ -526,12 +552,13 @@ def pair_context(request, adapter, record=None):
         raise Refused("config") from None
     if status_path == local_path or local_path in status_path.parents:
         raise Refused()
-    collection = local_path / request["collection"]
+    discovering = request["action"] == "discover"
+    collection = None if discovering else local_path / request["collection"]
     creating = request["action"] == "create" and request.get("mode", "execute") == "execute"
     allow_absent = request["action"] == "create" and request.get("mode") == "reconcile"
-    if collection.is_symlink() or (creating and collection.exists()) or (not creating and not allow_absent and not collection.is_dir()):
+    if not discovering and (collection.is_symlink() or (creating and collection.exists()) or (not creating and not allow_absent and not collection.is_dir())):
         raise Refused()
-    identity = remote_identity(pair, request)
+    identity = None if discovering else remote_identity(pair, request)
     if record is not None:
         digest = hashlib.sha256(json.dumps({"storages": [local_raw, remote_raw], "sides": [pair.name_a, pair.name_b],
                                            "collections": pair.collections, "metadata": pair.metadata,
@@ -575,17 +602,39 @@ def dav_policy(session_class, base):
         session_class.request = original
 
 
-async def refresh_discovery(full, pair, adapter, connector):
+def local_only_policy(local_storage, original, adopted):
+    """Collection-not-found policy for `discover`: create only on the local filesystem side."""
+    async def handle(config, collection, e=None, implicit_create=False):
+        if not plain_id(collection):
+            raise Refused("mapping")
+        if config.get("instance_name") == local_storage:
+            # The configured local side must be a plain filesystem storage.
+            if config.get("type") != "filesystem":
+                raise Refused("mapping")
+        elif config.get("type") == "caldav":
+            raise Refused("discovery", missing=[collection])
+        else:
+            raise Refused("mapping")
+        args = await original(config, collection, e, implicit_create=True)
+        adopted.append(collection)
+        return args  # vdirsyncer uses the handler's result as the collection's storage args
+
+    return handle
+
+
+async def refresh_discovery(full, pair, adapter, connector, policy=None):
     config_api, utils, discover, _aiohttp = adapter
 
     async def refuse_missing(*_args, **_kwargs):
         raise Refused("discovery")
 
+    policy = policy or refuse_missing
+
     # The supported API otherwise prompts or implicitly creates missing unrelated lists.
     # In this isolated helper process, replace that policy at both entry points, retaining
     # the library's own cache writer and mapping expansion.
     originals = discover.handle_collection_not_found, utils.handle_collection_not_found
-    discover.handle_collection_not_found = utils.handle_collection_not_found = refuse_missing
+    discover.handle_collection_not_found = utils.handle_collection_not_found = policy
     try:
         status = config_api.expand_path(full.general["status_path"])
         utils.prepare_status_path(status)
@@ -606,6 +655,21 @@ async def dispatch(request, adapter, record):
     async with aiohttp.TCPConnector() as connector:
         cls, _ = utils.storage_class_from_config(remote)
         with dav_policy(cls.session_class, remote["url"]):
+            if action == "discover":
+                adopted = []
+                policy = local_only_policy(request["local_storage"], utils.handle_collection_not_found, adopted)
+                try:
+                    await refresh_discovery(full, pair, adapter, connector, policy)
+                except BaseException:
+                    # Nothing is adopted on failure: remove the folders this run created, only
+                    # while still empty (rmdir, never a recursive delete).
+                    for name in adopted:
+                        try:
+                            (Path(request["vdir"]) / name).rmdir()
+                        except OSError:
+                            pass
+                    raise
+                return {"refreshed": True, "adopted": adopted}
             if mode == "refresh":
                 return await refresh_discovery(full, pair, adapter, connector)
             if mode == "reconcile":
@@ -668,10 +732,16 @@ def main():
     code, result = "protocol", None
     active_record = None
     try:
-        raw = sys.stdin.buffer.read(MAX_INPUT + 1)
+        # A discovery gets the request in the environment: its stdin is the vdir lock file
+        # the parent handed down, held for as long as this process lives.
+        raw = os.environ.pop(REQUEST_ENV, None)
+        inherited_lock = raw is not None
+        raw = raw.encode() if inherited_lock else sys.stdin.buffer.read(MAX_INPUT + 1)
         if len(raw) > MAX_INPUT:
             raise Refused("protocol")
         request = validate_request(json.loads(raw))
+        if inherited_lock and request["action"] != "discover":
+            raise Refused("protocol")
         def timed_out(_signal, _frame):
             # Do not rely on asyncio/subprocess cleanup finishing: a credential process
             # or DNS executor can stall it after the TUI and its monitor have gone.
@@ -689,7 +759,7 @@ def main():
         # Dependency/credential libraries must not print into the protocol stream.
         with contextlib.redirect_stdout(io.StringIO()):
             adapter = load_adapter()
-            with operation_guard(request) as record:
+            with operation_guard(request) as record, discover_guard(request, inherited_lock):
                 active_record = record
                 mode = request.get("mode", "execute")
                 if record is not None and mode == "execute":
@@ -721,6 +791,8 @@ def main():
     except Refused as error:
         code = error.code
         reply = {"version": 1, "ok": False, "code": code}
+        if error.missing:
+            reply["missing"] = error.missing
     except Exception:
         # Never return an exception string: DAV/config errors can contain account URLs
         # and credential commands. The operation service retains private diagnostics.

@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 
 use super::SyncError;
+use super::discover::{DiscoverError, discover_watched};
 use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
 use super::lock::LockFile;
 use super::manifest::Manifest;
@@ -29,8 +30,9 @@ use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
+use crate::lists::helper::Watch;
 use crate::store::bind_vdir_state;
-use crate::store::fsio::{VdirLock, remove_durable};
+use crate::store::fsio::{VdirLock, remove_durable, write_atomic};
 use crate::store::journal::{Journal, Stage, recover_locked};
 use crate::store::queue::drain_with_lock;
 use crate::store::{DrainOutcome, Drained};
@@ -50,6 +52,10 @@ pub struct RunOptions {
     /// again once it holds the vdir lock: set by then, the run stops there, writing nothing
     /// more (nothing at all in its first pass), and no further pass starts.
     pub hold_queue: Arc<AtomicBool>,
+    /// Discover lists created on the server before the first pass's `vdirsyncer sync`
+    /// (`tdo sync --discover`). Without it a run still discovers while `<state>/sync/discover`
+    /// exists (the daemon writes it at startup) or after `:forget-list` (`sync/rediscover`).
+    pub discover: bool,
 }
 
 /// Why a run did nothing.
@@ -100,6 +106,13 @@ pub struct RunReport {
     /// the error is returned as `Err` instead; with them it rides here so the caller can still
     /// finish each drained item.
     pub error: Option<String>,
+    /// Collection ids the discovery adopted (new lists created on the server).
+    pub adopted: Vec<String>,
+    /// Why the discovery failed (the sync ran regardless).
+    pub discovery_error: Option<String>,
+    /// The failure is only a warning: a background run, or a discovery that only the
+    /// `sync/rediscover` gate triggered.
+    pub discovery_is_warning: bool,
 }
 
 /// Grace for the stderr reader threads after the child is gone (a grandchild may still
@@ -178,11 +191,16 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Backoff { until }));
     }
 
-    let mut report = RunReport::default();
+    let mut report = RunReport {
+        discovery_is_warning: !(opts.discover && !opts.background),
+        ..RunReport::default()
+    };
     let mut force = opts.force_delete.clone();
     for pass in 0..=MAX_RERUNS {
         let ran = match one_pass(
             pass == MAX_RERUNS,
+            pass == 0,
+            opts.discover,
             &opts.hold_queue,
             cfg,
             sync,
@@ -221,6 +239,8 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
 #[allow(clippy::too_many_arguments)]
 fn one_pass(
     last_pass: bool,
+    first_pass: bool,
+    discover_requested: bool,
     hold_queue: &AtomicBool,
     cfg: &Config,
     sync: &SyncConfig,
@@ -283,6 +303,58 @@ fn one_pass(
         running: &guard,
     };
     let rediscover = state.join("sync/rediscover");
+    let discover_marker = state.join("sync/discover");
+    // Once per run: the first pass, before the gate's plain discovery and the sync.
+    let mut helper_discovered = false;
+    if first_pass
+        && (discover_requested || discover_marker.exists() || rediscover.exists())
+        && !stop_pending(&guard, state)
+    {
+        let watch = DiscoverWatch {
+            running: &guard,
+            state,
+        };
+        let mut timed_out = false;
+        match discover_watched(cfg, state, &watch) {
+            Ok(found) => {
+                report.adopted.extend(found.adopted);
+                status.discovery_error = None;
+                helper_discovered = true;
+            }
+            // The stop is the run's outcome (the sync below stops too); nothing is learned.
+            Err(DiscoverError::Stopped) => {}
+            Err(e) => {
+                timed_out = matches!(e, DiscoverError::TimedOut(_));
+                let name = match &e {
+                    DiscoverError::Missing { id } => list_display_name(cfg, id),
+                    _ => None,
+                };
+                let message = e.describe(name.as_deref());
+                report.discovery_error = Some(message.clone());
+                // A helper that cannot run at all is only worth a stored problem when the
+                // user asked for the discovery.
+                if discover_requested || !matches!(e, DiscoverError::Unavailable(_)) {
+                    status.discovery_error = Some(message);
+                }
+            }
+        }
+        // An attempt that ran is spent, failed or not: a broken helper is not retried on
+        // every sync. A stopped or timed out one (which left nothing learned) is retried.
+        if timed_out && fs::read(&discover_marker).ok().as_deref() != Some(TIMED_OUT_MARK) {
+            // The first timeout is retried once: the marker remembers it. A discovery that
+            // keeps timing out would otherwise cost a full timeout on every sync.
+            if discover_marker.exists() {
+                write_atomic(&discover_marker, TIMED_OUT_MARK)?;
+            }
+        } else if !guard.borrow().stopped {
+            remove_durable(&discover_marker)?;
+        }
+    }
+    // The helper did what the plain discovery does (refresh the cache), without creating
+    // anything on the server: the gate is satisfied.
+    if helper_discovered {
+        remove_durable(&rediscover)?;
+    }
     let mut discovery_reports = BTreeMap::new();
     let discovery = if rediscover.exists() {
         let mut ran = run_command(&child_env, &["discover".into(), sync.pair.clone()])?;
@@ -454,6 +526,52 @@ fn one_pass(
     report.collections = collections;
     report.transient = transient;
     Ok(true)
+}
+
+/// The display name of local list `id`, when it has one.
+fn list_display_name(cfg: &Config, id: &str) -> Option<String> {
+    crate::vdir::load(&cfg.vdir)
+        .ok()?
+        .collections
+        .into_iter()
+        .find(|c| c.id == id)?
+        .display_name
+}
+
+/// Content of `sync/discover` after a discovery timed out once.
+const TIMED_OUT_MARK: &[u8] = b"timed-out";
+
+/// Whether the pass must stop now: a stop request. Like `run_command`, not `hold_queue`: a
+/// daemon shutdown gives a running sync its grace period before it writes the request.
+fn stop_pending(guard: &RefCell<RunningGuard>, state: &Path) -> bool {
+    let since = guard.borrow().rec.started;
+    let stop = stop_requested(state, since).unwrap_or(false);
+    if stop {
+        guard.borrow_mut().stopped = true;
+    }
+    stop
+}
+
+/// Lets the discovery helper be recorded in `running.json` and stopped like a sync child.
+struct DiscoverWatch<'a> {
+    running: &'a RefCell<RunningGuard>,
+    state: &'a Path,
+}
+
+impl Watch for DiscoverWatch<'_> {
+    fn started(&self, pgid: u32) {
+        // Best effort, as for a sync child: without the record it cannot be stopped from
+        // elsewhere, but it runs.
+        let _ = self.running.borrow_mut().set_child(Some(pgid));
+    }
+
+    fn finished(&self) {
+        let _ = self.running.borrow_mut().set_child(None);
+    }
+
+    fn stop_requested(&self) -> bool {
+        stop_pending(self.running, self.state)
+    }
 }
 
 /// A failed discovery may stop at the first missing collection, before sync can report

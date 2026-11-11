@@ -2,6 +2,7 @@
 //! status.
 
 pub mod batch;
+pub mod discover;
 pub mod hook;
 pub mod lock;
 pub mod manifest;

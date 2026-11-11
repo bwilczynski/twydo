@@ -361,6 +361,7 @@ pub fn check_lines(
 pub mod recurrence;
 
 pub mod item_deletion;
+pub mod lists;
 pub mod text_edit;
 
 pub fn only(ids: &[twydo_core::compat::ContractId], baseline: &str, twydo: &str) -> Matrix {

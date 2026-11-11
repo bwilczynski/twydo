@@ -40,6 +40,14 @@ pub struct Messages {
 pub fn messages(cfg: &Config, r: &RunReport) -> Messages {
     let names = list_names(cfg, r);
     let mut warnings = r.warnings.clone();
+    let mut problems = problems(r, &names);
+    if let Some(error) = &r.discovery_error {
+        if r.discovery_is_warning {
+            warnings.push(error.clone());
+        } else {
+            problems.push(error.clone());
+        }
+    }
     for path in &r.unexpected {
         warnings.push(format!(
             "{path} changed before its edit synced; the edit stays pending"
@@ -51,17 +59,18 @@ pub fn messages(cfg: &Config, r: &RunReport) -> Messages {
         ));
     }
     Messages {
-        problems: problems(r, &names),
+        problems,
         warnings,
         notes: r
-            .auto_forced
+            .adopted
             .iter()
-            .map(|c| {
+            .map(|c| format!("found new list \"{}\"", name_of(&names, c)))
+            .chain(r.auto_forced.iter().map(|c| {
                 format!(
                     "applied the emptied list \"{}\" on the server",
                     name_of(&names, c)
                 )
-            })
+            }))
             .collect(),
     }
 }
@@ -82,7 +91,7 @@ fn load_locked(cfg: &Config) -> Result<LoadReport, String> {
 
 /// Display names of the lists a run reported on (best effort; empty when unreadable).
 fn list_names(cfg: &Config, r: &RunReport) -> BTreeMap<String, String> {
-    if r.collections.is_empty() && r.auto_forced.is_empty() {
+    if r.collections.is_empty() && r.auto_forced.is_empty() && r.adopted.is_empty() {
         return BTreeMap::new();
     }
     load_locked(cfg)
