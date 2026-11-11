@@ -414,3 +414,92 @@ fn generic_discovery_failure_without_list_reports_still_offers_forget_list() {
         "unknown state must not be presented as known missing: {text}"
     );
 }
+
+#[test]
+fn daemon_lookup_matches_file_lookup() {
+    use tdo::app::ListAction;
+    use tdo::app::{DaemonLookup, FileLookup, Lookup};
+    use tdo::term::link::{Command, Update};
+    let e = common::list_env();
+    let cfg = Config::load(&e.instance.config).unwrap();
+    let link = common::link_to(e.socket.clone(), e.instance.clone());
+    let wait = |link: &tdo::term::link::Link, pick: &dyn Fn(&Update) -> bool| {
+        let end = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let left = end.saturating_duration_since(std::time::Instant::now());
+            match link.next_update(left) {
+                Some(u) if pick(&u) => return,
+                Some(_) => {}
+                None => panic!("no matching update"),
+            }
+        }
+    };
+    wait(&link, &|u| matches!(u, &Update::Status(_)));
+    let daemon = DaemonLookup(link.caller_source());
+    let files = FileLookup(cfg.clone());
+    let tasks = |s: twydo_core::views::Snapshot| {
+        s.tasks
+            .iter()
+            .map(|t| (t.summary.clone(), t.description.clone()))
+            .collect::<Vec<_>>()
+    };
+
+    // Nothing preserved or pending yet.
+    assert_eq!(
+        daemon.forget_preview("Synthetic one").unwrap(),
+        files.forget_preview("Synthetic one").unwrap()
+    );
+    assert_eq!(
+        daemon.forget_preview("nope").unwrap_err(),
+        files.forget_preview("nope").unwrap_err()
+    );
+    assert_eq!(daemon.retired().unwrap(), files.retired().unwrap());
+    assert!(daemon.deleted_backups().unwrap().is_empty());
+    assert_eq!(daemon.pending_list_op().unwrap(), None);
+    assert_eq!(files.pending_list_op().unwrap(), None);
+
+    // A deletion preview keeps a backup (the daemon makes it).
+    link.send(Command::List(ListAction::PreviewDelete { id: "c2".into() }));
+    wait(&link, &|u| matches!(u, &Update::ListDone(_)));
+    let (from_daemon, from_files) = (
+        daemon.deleted_backups().unwrap(),
+        files.deleted_backups().unwrap(),
+    );
+    assert_eq!(from_daemon.len(), 1);
+    assert_eq!(from_daemon, from_files);
+    assert!(
+        from_daemon[0].resources > 0 && from_daemon[0].local_files > 0,
+        "{from_daemon:?}"
+    );
+
+    // Forgetting a list preserves it.
+    link.send(Command::Forget {
+        name: "c1".into(),
+        collection: "c1".into(),
+    });
+    wait(&link, &|u| matches!(u, &Update::Forgot(_)));
+    let (from_daemon, from_files) = (daemon.retired().unwrap(), files.retired().unwrap());
+    assert_eq!(from_daemon.len(), 1);
+    assert_eq!(from_daemon, from_files);
+    let id = &from_daemon[0].id;
+    assert_eq!(
+        tasks(daemon.retired_preview(id).unwrap()),
+        tasks(files.retired_preview(id).unwrap())
+    );
+    assert_eq!(tasks(daemon.retired_preview(id).unwrap()).len(), 1);
+
+    // An unfinished list save, seen the same by both. The daemon runs on, so it appears now.
+    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+    request.action = "create".into();
+    request.collection = Some("pending-id".into());
+    request.name = Some("Pending synthetic".into());
+    request.color = Some("#3289D2".into());
+    twydo_core::lists::operation::prepare(&cfg, request, Utc::now()).unwrap();
+    let (from_daemon, from_files) = (
+        daemon.pending_list_op().unwrap(),
+        files.pending_list_op().unwrap(),
+    );
+    assert!(from_daemon.is_some());
+    assert_eq!(from_daemon, from_files);
+    let _ = &e.daemon;
+}

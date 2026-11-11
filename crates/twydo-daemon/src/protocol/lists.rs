@@ -227,6 +227,10 @@ pub struct RetiredBackupView {
     pub tasks: usize,
     pub pending: usize,
     pub retired: bool,
+    /// The list had unresolved conflicts when it was preserved.
+    pub conflicts: bool,
+    /// The list a recovery of this backup went to, once one was recorded.
+    pub destination: Option<String>,
 }
 
 impl RetiredBackupView {
@@ -239,6 +243,8 @@ impl RetiredBackupView {
             tasks: b.tasks,
             pending: b.pending,
             retired: b.retired,
+            conflicts: !b.conflicts.is_empty(),
+            destination: b.destination.clone(),
         }
     }
 }
@@ -250,6 +256,10 @@ pub struct DeletedBackupView {
     pub collection: String,
     pub name: String,
     pub created: DateTime<Utc>,
+    /// Remote resources the backup preserves.
+    pub resources: usize,
+    /// Local files the backup preserves.
+    pub local_files: usize,
 }
 
 /// The answer of `lists.backups`.

@@ -94,8 +94,8 @@ fn complete_then_undo_then_redo() {
     assert_ne!(fs::read(env.task_file()).unwrap(), original);
 }
 
-/// A pending collection operation stops a daemon from starting its work; once the operation
-/// is reconciled, the daemon that starts next writes.
+/// A daemon starts and serves over a pending collection operation (so the operation can be
+/// reconciled through it); once the operation is reconciled, a daemon writes.
 #[test]
 fn daemon_started_during_a_pending_list_operation_writes_after_reconciliation() {
     let env = Env::new();
@@ -114,8 +114,8 @@ fn daemon_started_during_a_pending_list_operation_writes_after_reconciliation() 
         };
         let h = twydo_daemon::server::Daemon::start(cfg.clone(), instance, opts).unwrap();
         assert!(
-            !h.wait_ready(Duration::from_secs(2)),
-            "the daemon became ready with an unfinished list operation"
+            h.wait_ready(Duration::from_secs(10)),
+            "the daemon must start over an unfinished list operation"
         );
         h.shutdown();
     }

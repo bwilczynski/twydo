@@ -71,7 +71,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
                     "{} · {} · {} task(s)",
                     b.id, b.name, b.tasks
                 )));
-                if !b.conflicts.is_empty() {
+                if b.conflicts {
                     lines.push(Line::raw("Recovery uses the local snapshot. Both conflict versions remain in the backup."));
                 }
                 lines.push(Line::raw(""));
