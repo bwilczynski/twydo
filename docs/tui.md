@@ -323,7 +323,7 @@ card can also move an open parent's date-only due to day 1–28 when its plain o
 items are undated or carry that parent's date. The source date must also be day 1–28.
 Inherited item-date copies are removed; item completion state is preserved. Cancelled or
 independently dated/recurring items, start/time/interval edits and other type changes stay
-refused. The [scheduling audit](reference/phase0/checklist-scheduling-capability.md) distinguishes
+refused. The [scheduling audit](reference/evidence.md) distinguishes
 the enabled due edit from the unverified interval candidate. A mixed save containing a refused field
 retains all typed text.
 
@@ -363,7 +363,7 @@ Title/notes-only saves use a separate compatibility capability, including on
 completed tasks and recurring checklist/project families. They leave dates,
 recurrence, alarms, lifecycle and metadata intact. Other changed fields retain
 their own gates: a mixed save with a refused field writes nothing and keeps the
-typed card input. See the [text-edit audit](reference/phase0/text-edit-capability.md).
+typed card input. See the [text-edit audit](reference/evidence.md).
 
 The status line says why, and nothing is written:
 
@@ -449,6 +449,6 @@ is refused. Outdenting a checklist item produces an undated plain task.
 
 These controls are implemented for synthetic candidate verification. **Shipping
 membership writes remain refused in both write modes** until the dedicated
-[evidence checklist](reference/phase0/item-relocation-capability.md) is approved
+[evidence checklist](reference/evidence.md) is approved
 and completed. A refused write displays the gate reason and leaves task bytes
 unchanged. This does not enable yank/paste or list management.

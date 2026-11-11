@@ -24,6 +24,6 @@
 
 | Folder | What it holds |
 |---|---|
-| [reference/](reference/README.md) | 2Do's behaviour and formats as observed, the compatibility checklist and the logs of every iPhone session, and the tools used in them |
+| [reference/](reference/README.md) | 2Do's observed formats and operation evidence, known failures, unresolved questions and capture tools |
 | [superpowers/](superpowers/) | The design spec and the implementation plans Twydo was built from |
 | [demo/](demo/) | The VHS tape and script that record the README demo (`mise run demo`) |

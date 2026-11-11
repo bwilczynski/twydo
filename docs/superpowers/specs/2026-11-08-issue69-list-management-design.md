@@ -14,7 +14,7 @@ This supersedes the main spec's exclusion of collection deletion. The
 [add-and-reshape design](2026-11-03-tui-add-and-structure-design.md) §5 already anticipates
 sidebar list management and identifies its unverified collection semantics.
 
-The requested [device archive check](../../reference/phase0/issue69-list-management.md)
+The requested [device archive check](../../reference/evidence.md)
 observed no changes to either task, resource ETags or any of the 14 returned collection
 properties through archive/unarchive and sync. Use Twydo's existing local `archived`
 preference and label archiving as applying to this desktop only. Do not claim shared
@@ -135,7 +135,7 @@ them; explain that limitation explicitly and provide an export path. No automati
 ## Bounded archive investigation
 
 This section is a protocol; the separately recorded
-[archive-round approval](../../reference/phase0/issue69-list-management.md#approval-2026-11-08)
+[archive-round approval](../../reference/evidence.md)
 authorizes only that bounded session, not general NAS or phone access. Bind actual account, exact
 collection identity, transport/config, device versions and private backup/capture paths
 outside git before requesting fresh approval for network/device actions.

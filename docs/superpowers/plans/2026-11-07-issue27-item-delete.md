@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust/Cargo, Python fixture tools, scoped vdirsyncer, 2Do iPhone.
 
-**Spec:** [approved four-example session](../../reference/phase0/issue27-item-deletion.md), under [main spec](../specs/2026-10-31-terminal-tasks-design.md) §6/§9.
+**Spec:** [approved four-example session](../../reference/evidence.md), under [main spec](../specs/2026-10-31-terminal-tasks-design.md) §6/§9.
 
 ## Global Constraints
 

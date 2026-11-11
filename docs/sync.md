@@ -398,7 +398,7 @@ Lock order is always run lock, vdir lock, conflicts lock.
 - **Deletes without an etag.** vdirsyncer sends deletes to Synology without an etag
   (`Deleting an item with no etag`), and the iPhone may show a one-off "Remote server returned an
   invalid task reference during incremental sync" on its next refresh; a retry succeeds and the data
-  is right ([plan4-baseline.md](reference/phase0/plan4-baseline.md)). Twydo cannot prevent this.
+  is right ([plan4-baseline.md](reference/evidence.md)). Twydo cannot prevent this.
 - **Do not run vdirsyncer by hand while the daemon runs (unsupported).** The hook still records
   both-changed conflicts (it runs inside vdirsyncer), but nothing confirms journal entries or
   closes conflicts until the next `tdo sync`, and a delete-versus-edit that vdirsyncer settles
@@ -429,4 +429,4 @@ Lock order is always run lock, vdir lock, conflicts lock.
   To avoid the wait, unlock gpg, or let the agent cache the passphrase longer.
 
 All of these flows were checked against 2Do on an iPhone; the session log is
-[plan3-sync.md](reference/phase0/plan3-sync.md).
+[plan3-sync.md](reference/evidence.md).

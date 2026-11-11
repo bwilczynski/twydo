@@ -7,7 +7,7 @@ return passed: both items displayed last and retained identity/order after phone
 
 Checklist and project items should retain their sequence and newly added items should append.
 The user requested the same behavior for projects on 2026-11-05.
-The [bounded captures](../../reference/phase0/issue35-checklist-order.md) establish phone
+The [bounded captures](../../reference/evidence.md) establish phone
 display Zulu, Alpha, Mike, Bravo. The first three have `DisplayOrder: 0` and ascending
 creation timestamps; appending Bravo writes `DisplayOrder: 3`. Drag reorder is unavailable.
 Twydo currently applies the containing view's sort to checklist children, with alphabetical

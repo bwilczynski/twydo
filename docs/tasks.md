@@ -70,7 +70,7 @@ families. Dates, recurrence, alarms, lifecycle, identities, links and metadata r
 unchanged. Scheduling restrictions do not prevent a pure text edit. Blank titles,
 ambiguous identities, unreadable required metadata, broken links and nesting remain
 refused. Mixed saves retain the gates for their other fields. The
-[text-edit audit](reference/phase0/text-edit-capability.md) records representative
+[text-edit audit](reference/evidence.md) records representative
 phone evidence and the preservation generalization.
 
 ## Completing, reopening, moving, deleting
@@ -111,7 +111,7 @@ the family, where those operations are verified:
   project items use the same operation, without requiring recurrence-execution permission.
   Parent/sibling or membership changes make apply, undo, redo and recovery refuse safely.
   Broken links, duplicate identities, unreadable metadata, unrecognized rules and nested
-  families remain refused. The [representative phone session](reference/phase0/issue27-item-deletion.md)
+  families remain refused. The [representative phone session](reference/evidence.md)
   and local preservation tests establish this operation invariant.
 
 Creating, editing schedules and completing a **recurring checklist** have narrower verified support: plain monthly day 1–28, interval 1,
@@ -161,7 +161,7 @@ times, alerts, endings or delay. Plain open/completed items must be undated or c
 parent's inherited date; dated items lose those copies while completion state is preserved.
 Cancelled, independently dated or recurring items stay refused. This is a preservation
 generalization of the existing checklist-date evidence; see the
-[scheduling audit](reference/phase0/checklist-scheduling-capability.md). Interval edits remain
+[scheduling audit](reference/evidence.md). Interval edits remain
 candidate-only and refused with the shipping matrix; other schedule/type edits, other
 checklist rules and project repeat changes remain refused. Standalone tasks can
 make the captured completion-anchored changes: plain or monthly due to monthly completion,
@@ -372,5 +372,5 @@ list relocation and does not bypass the single-item gate.
 The shipping matrix refuses all three membership cases, including test mode.
 Candidate matrices are used only in isolated synthetic tests. Project membership
 preserves scheduling; checklist inbound and checklist outdent support only simple
-date cleanup. See the [candidate evidence](reference/phase0/item-relocation-capability.md)
+date cleanup. See the [candidate evidence](reference/evidence.md)
 for identity policy, exact exclusions and remaining verification.

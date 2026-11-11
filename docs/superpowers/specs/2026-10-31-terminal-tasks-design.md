@@ -115,8 +115,8 @@ be used occasionally against the same data.
   broader shapes through exact preservation tests; unchanged schedules do not require execution
   or recurrence-edit verdicts. Unsupported operations are blocked with a reason; tasks remain
   visible and their known current due dates still drive reminders. Unrelated safe edits may proceed.
-  The approved [incremental capability-gating design](2026-11-07-capability-gating-design.md)
-  defines evidence scope and the migration policy.
+  The approved [operation-contract design](2026-11-11-operation-evidence-design.md)
+  defines evidence scope and the current matrix structure.
 - **Parent tasks:** projects and checklists may share a visual presentation but retain their types.
   Project children keep independent dates, recurrence, Today membership, and notifications.
   Checklist items inherit the parent's scheduling and do not notify independently. Completing
