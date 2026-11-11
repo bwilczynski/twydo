@@ -1,4 +1,6 @@
-//! Phase-0 compatibility matrix (`compat/matrix.toml`): what has been verified against 2Do.
+pub mod contracts;
+
+// Legacy schema during the operation-contract migration.
 
 use std::collections::BTreeMap;
 use std::path::Path;
