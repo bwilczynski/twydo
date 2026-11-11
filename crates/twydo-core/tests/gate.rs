@@ -641,7 +641,10 @@ fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let Err(Blocked(why)) = at(&op) else {
         panic!("allowed")
     };
-    assert!(why.starts_with("set-repeat.project"), "{why}");
+    assert!(
+        why.ends_with("(set-repeat.project: iphone_baseline)"),
+        "{why}"
+    );
 }
 
 // The three kinds 2Do 3.91 on the iPhone misreads (rule `edit` = `fail`): Twydo reads them
@@ -3560,4 +3563,26 @@ fn text_capability_refuses_ambiguous_member_aliases_and_hidden_descendants() {
             );
         }
     }
+}
+
+/// Completed repeating tasks are handled by the ended-series rule, but a cancelled one
+/// reaches the repeating-reopen contracts, which keep 0.1.9's unverified phone direction.
+#[test]
+fn reopening_a_cancelled_monthly_task_needs_its_repeating_contract() {
+    let env = common::Env::new(
+        WriteMode::Verified,
+        "complete/recurrence-profiles/seed/list1",
+    );
+    let mut s = env.snap();
+    let uid = "0c6980e28e1d4b0ea8b1d7ed1edb5d34";
+    let i = s.tasks.iter().position(|t| t.uid == uid).unwrap();
+    s.tasks[i].status = twydo_core::model::Status::Cancelled;
+    let op = Op::Reopen { uid: uid.into() };
+    assert_eq!(
+        check(&s, Matrix::embedded(), WriteMode::Verified, &op, today())
+            .unwrap_err()
+            .to_string(),
+        "reopening a monthly or yearly repeating task is not verified yet \
+         (reopen.repeating-calendar: twydo_to_iphone)"
+    );
 }

@@ -53,99 +53,101 @@ impl OperationId {
 }
 
 macro_rules! contracts {
-    ($( $name:ident => $operation:ident, $id:literal; )*) => {
+    ($( $name:ident => $operation:ident, $id:literal, $label:literal; )*) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
         pub enum ContractId { $( #[serde(rename = $id)] $name, )* }
         impl ContractId {
             pub const ALL: &'static [Self] = &[$(Self::$name,)*];
             pub fn operation(self) -> OperationId { match self { $(Self::$name => OperationId::$operation,)* } }
             pub fn as_str(self) -> &'static str { match self { $(Self::$name => $id,)* } }
+            /// How the contract's write reads in a refusal.
+            pub fn label(self) -> &'static str { match self { $(Self::$name => $label,)* } }
         }
     }
 }
 contracts! {
-    EditTitleResource => EditTitle, "edit-title.resource";
-    EditNotesResource => EditNotes, "edit-notes.resource";
-    SetDueTask => SetDue, "set-due.task";
-    SetDueChecklist => SetDue, "set-due.recurring-checklist";
-    SetDueItemCleanup => SetDue, "set-due.checklist-item-cleanup";
-    SetStartTask => SetStart, "set-start.task";
-    SetRepeatInterval => SetRepeat, "set-repeat.interval";
-    SetRepeatTask => SetRepeat, "set-repeat.task";
-    SetRepeatChecklist => SetRepeat, "set-repeat.checklist";
-    SetRepeatProject => SetRepeat, "set-repeat.project";
-    SetRepeatProjectItem => SetRepeat, "set-repeat.recurring-project-item";
-    SetRepeatChecklistInterval => SetRepeat, "set-repeat.checklist-interval";
-    CreateTask => Create, "create.task";
-    CreateChecklist => Create, "create.checklist";
-    CreateProject => Create, "create.project";
-    CreateRecurringChecklist => Create, "create.recurring-checklist";
-    CreateRecurringProject => Create, "create.recurring-project";
-    CreateRecurringProjectItem => Create, "create.recurring-project-item";
-    CompleteTask => Complete, "complete.task";
-    CompleteChecklist => Complete, "complete.checklist";
-    CompleteProject => Complete, "complete.project";
-    CompleteRecurringChecklist => Complete, "complete.recurring-checklist";
-    CompleteRecurringProject => Complete, "complete.recurring-project";
-    ReopenResource => Reopen, "reopen.resource";
-    ReopenRecurringChecklist => Reopen, "reopen.recurring-checklist";
-    ReopenRepeatingCalendar => Reopen, "reopen.repeating-calendar";
-    ReopenRepeatingOther => Reopen, "reopen.repeating-other";
-    ReopenFromCompletion => Reopen, "reopen.from-completion";
-    ReopenHistoryTask => Reopen, "reopen.history-task";
-    ReopenHistoryFamily => Reopen, "reopen.history-family";
-    ReopenEndedDaily => Reopen, "reopen.ended-daily";
-    ReopenEndedMonthly => Reopen, "reopen.ended-monthly";
-    MoveResource => Move, "move.resource";
-    MoveFamily => Move, "move.family";
-    DeleteResource => Delete, "delete.resource";
-    DeleteFamily => Delete, "delete.family";
-    DeleteChecklistItem => Delete, "delete.checklist-item";
-    DeleteProjectItem => Delete, "delete.project-item";
-    ConvertSameKind => Convert, "convert.same-kind";
-    ConvertTaskChecklist => Convert, "convert.task-checklist";
-    ConvertTaskProject => Convert, "convert.task-project";
-    ConvertChecklistProject => Convert, "convert.checklist-project";
-    ConvertProjectChecklist => Convert, "convert.project-checklist";
-    ConvertEmptyProjectChecklist => Convert, "convert.empty-project-checklist";
-    ConvertParentTask => Convert, "convert.parent-task";
-    ConvertEmptyParentTask => Convert, "convert.empty-parent-task";
-    ReorderItems => Reorder, "reorder.items";
-    InsertItems => Insert, "insert.items";
-    ReparentProject => Reparent, "reparent.project";
-    ReparentChecklist => Reparent, "reparent.checklist";
-    ReparentOutdent => Reparent, "reparent.outdent";
-    ListCreate => ListCreate, "list-create.collection";
-    ListMetadata => ListMetadata, "list-metadata.collection";
-    ListDelete => ListDelete, "list-delete.collection";
-    CompleteDays => Complete, "complete.days";
-    CompleteWeeks => Complete, "complete.weeks";
-    CompleteWeekdays => Complete, "complete.weekdays";
-    CompleteMonthly => Complete, "complete.monthly";
-    CompleteMonthOverflow => Complete, "complete.month-overflow";
-    CompleteNthWeekday => Complete, "complete.nth-weekday";
-    CompleteYearly => Complete, "complete.yearly";
-    CompleteLeapYear => Complete, "complete.leap-year";
-    CompleteFromCompletion => Complete, "complete.from-completion";
-    CompleteCount => Complete, "complete.count";
-    CompleteUntil => Complete, "complete.until";
-    CompleteLateMonthly => Complete, "complete.late-monthly";
-    CompleteStartOffsets => Complete, "complete.start-offsets";
-    CompleteUndo => Complete, "complete.undo";
-    SetRepeatDays => SetRepeat, "set-repeat.days";
-    SetRepeatWeeks => SetRepeat, "set-repeat.weeks";
-    SetRepeatWeekdays => SetRepeat, "set-repeat.weekdays";
-    SetRepeatMonthly => SetRepeat, "set-repeat.monthly";
-    SetRepeatMonthOverflow => SetRepeat, "set-repeat.month-overflow";
-    SetRepeatNthWeekday => SetRepeat, "set-repeat.nth-weekday";
-    SetRepeatYearly => SetRepeat, "set-repeat.yearly";
-    SetRepeatLeapYear => SetRepeat, "set-repeat.leap-year";
-    SetRepeatFromCompletion => SetRepeat, "set-repeat.from-completion";
-    SetRepeatCount => SetRepeat, "set-repeat.count";
-    SetRepeatUntil => SetRepeat, "set-repeat.until";
-    SetRepeatLastDay => SetRepeat, "set-repeat.last-day";
-    SetRepeatNthWorkday => SetRepeat, "set-repeat.nth-workday";
-    SetRepeatNthWeekend => SetRepeat, "set-repeat.nth-weekend";
+    EditTitleResource => EditTitle, "edit-title.resource", "editing a title";
+    EditNotesResource => EditNotes, "edit-notes.resource", "editing notes";
+    SetDueTask => SetDue, "set-due.task", "changing a due date";
+    SetDueChecklist => SetDue, "set-due.recurring-checklist", "changing a recurring checklist's due date";
+    SetDueItemCleanup => SetDue, "set-due.checklist-item-cleanup", "changing a checklist's date while its items have dates of their own";
+    SetStartTask => SetStart, "set-start.task", "changing a start date";
+    SetRepeatInterval => SetRepeat, "set-repeat.interval", "changing a repeat interval";
+    SetRepeatTask => SetRepeat, "set-repeat.task", "changing a task's repeat rule";
+    SetRepeatChecklist => SetRepeat, "set-repeat.checklist", "changing a checklist's repeat rule";
+    SetRepeatProject => SetRepeat, "set-repeat.project", "changing a project's repeat rule";
+    SetRepeatProjectItem => SetRepeat, "set-repeat.recurring-project-item", "changing the repeat rule of an item in a recurring project";
+    SetRepeatChecklistInterval => SetRepeat, "set-repeat.checklist-interval", "changing a recurring checklist's repeat interval";
+    CreateTask => Create, "create.task", "creating a task";
+    CreateChecklist => Create, "create.checklist", "creating a checklist";
+    CreateProject => Create, "create.project", "creating a project";
+    CreateRecurringChecklist => Create, "create.recurring-checklist", "creating a recurring checklist";
+    CreateRecurringProject => Create, "create.recurring-project", "creating a recurring project";
+    CreateRecurringProjectItem => Create, "create.recurring-project-item", "adding an item to a recurring project";
+    CompleteTask => Complete, "complete.task", "completing a task";
+    CompleteChecklist => Complete, "complete.checklist", "completing a checklist";
+    CompleteProject => Complete, "complete.project", "completing a project";
+    CompleteRecurringChecklist => Complete, "complete.recurring-checklist", "completing a recurring checklist";
+    CompleteRecurringProject => Complete, "complete.recurring-project", "completing a recurring project";
+    ReopenResource => Reopen, "reopen.resource", "reopening a task";
+    ReopenRecurringChecklist => Reopen, "reopen.recurring-checklist", "reopening a recurring checklist";
+    ReopenRepeatingCalendar => Reopen, "reopen.repeating-calendar", "reopening a monthly or yearly repeating task";
+    ReopenRepeatingOther => Reopen, "reopen.repeating-other", "reopening a daily or weekly repeating task";
+    ReopenFromCompletion => Reopen, "reopen.from-completion", "reopening a task that repeats from completion";
+    ReopenHistoryTask => Reopen, "reopen.history-task", "reopening a completed occurrence";
+    ReopenHistoryFamily => Reopen, "reopen.history-family", "reopening a completed occurrence of a project or checklist";
+    ReopenEndedDaily => Reopen, "reopen.ended-daily", "reopening the last occurrence of an ended daily series";
+    ReopenEndedMonthly => Reopen, "reopen.ended-monthly", "reopening the last occurrence of an ended monthly series";
+    MoveResource => Move, "move.resource", "moving a task to another list";
+    MoveFamily => Move, "move.family", "moving a project or checklist to another list";
+    DeleteResource => Delete, "delete.resource", "deleting a task";
+    DeleteFamily => Delete, "delete.family", "deleting a project or checklist";
+    DeleteChecklistItem => Delete, "delete.checklist-item", "deleting a checklist item";
+    DeleteProjectItem => Delete, "delete.project-item", "deleting a project item";
+    ConvertSameKind => Convert, "convert.same-kind", "converting a task to the type it already has";
+    ConvertTaskChecklist => Convert, "convert.task-checklist", "converting a task to a checklist";
+    ConvertTaskProject => Convert, "convert.task-project", "converting a task to a project";
+    ConvertChecklistProject => Convert, "convert.checklist-project", "converting a checklist to a project";
+    ConvertProjectChecklist => Convert, "convert.project-checklist", "converting a project with items to a checklist";
+    ConvertEmptyProjectChecklist => Convert, "convert.empty-project-checklist", "converting an empty project to a checklist";
+    ConvertParentTask => Convert, "convert.parent-task", "converting a checklist or project with items to a task";
+    ConvertEmptyParentTask => Convert, "convert.empty-parent-task", "converting an empty checklist or project to a task";
+    ReorderItems => Reorder, "reorder.items", "reordering items";
+    InsertItems => Insert, "insert.items", "inserting an item at a position";
+    ReparentProject => Reparent, "reparent.project", "moving a task into a project";
+    ReparentChecklist => Reparent, "reparent.checklist", "moving a task into a checklist";
+    ReparentOutdent => Reparent, "reparent.outdent", "moving an item out of its parent";
+    ListCreate => ListCreate, "list-create.collection", "creating a list";
+    ListMetadata => ListMetadata, "list-metadata.collection", "renaming or recoloring a list";
+    ListDelete => ListDelete, "list-delete.collection", "deleting a list";
+    CompleteDays => Complete, "complete.days", "completing a task that repeats every few days";
+    CompleteWeeks => Complete, "complete.weeks", "completing a weekly repeating task";
+    CompleteWeekdays => Complete, "complete.weekdays", "completing a task that repeats on set weekdays";
+    CompleteMonthly => Complete, "complete.monthly", "completing a monthly repeating task";
+    CompleteMonthOverflow => Complete, "complete.month-overflow", "completing a monthly task due on the 29th to 31st";
+    CompleteNthWeekday => Complete, "complete.nth-weekday", "completing a task that repeats on the nth weekday of the month";
+    CompleteYearly => Complete, "complete.yearly", "completing a yearly repeating task";
+    CompleteLeapYear => Complete, "complete.leap-year", "completing a yearly task due on February 29";
+    CompleteFromCompletion => Complete, "complete.from-completion", "completing a task that repeats from completion";
+    CompleteCount => Complete, "complete.count", "completing a repeating task with a fixed number of occurrences";
+    CompleteUntil => Complete, "complete.until", "completing a repeating task with an end date";
+    CompleteLateMonthly => Complete, "complete.late-monthly", "completing a monthly task after a missed occurrence";
+    CompleteStartOffsets => Complete, "complete.start-offsets", "completing a repeating task with a start date or alerts";
+    CompleteUndo => Complete, "complete.undo", "undoing a completion";
+    SetRepeatDays => SetRepeat, "set-repeat.days", "setting a repeat every few days";
+    SetRepeatWeeks => SetRepeat, "set-repeat.weeks", "setting a weekly repeat";
+    SetRepeatWeekdays => SetRepeat, "set-repeat.weekdays", "setting a repeat on set weekdays";
+    SetRepeatMonthly => SetRepeat, "set-repeat.monthly", "setting a monthly repeat";
+    SetRepeatMonthOverflow => SetRepeat, "set-repeat.month-overflow", "setting a monthly repeat on the 29th to 31st";
+    SetRepeatNthWeekday => SetRepeat, "set-repeat.nth-weekday", "setting a repeat on the nth weekday of the month";
+    SetRepeatYearly => SetRepeat, "set-repeat.yearly", "setting a yearly repeat";
+    SetRepeatLeapYear => SetRepeat, "set-repeat.leap-year", "setting a yearly repeat on February 29";
+    SetRepeatFromCompletion => SetRepeat, "set-repeat.from-completion", "setting a repeat from completion";
+    SetRepeatCount => SetRepeat, "set-repeat.count", "setting a repeat with a fixed number of occurrences";
+    SetRepeatUntil => SetRepeat, "set-repeat.until", "setting a repeat with an end date";
+    SetRepeatLastDay => SetRepeat, "set-repeat.last-day", "setting a repeat on the last day of the month";
+    SetRepeatNthWorkday => SetRepeat, "set-repeat.nth-workday", "setting a repeat on the nth workday of the month";
+    SetRepeatNthWeekend => SetRepeat, "set-repeat.nth-weekend", "setting a repeat on the nth weekend day of the month";
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -178,12 +180,33 @@ pub struct Matrix {
     pub contract: Vec<Contract>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{contract} is not verified yet ({direction}: {verdict})")]
+/// Why a contract does not authorize a write. A missing contract has no direction.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequirementFailure {
-    pub contract: &'static str,
-    pub direction: &'static str,
-    pub verdict: &'static str,
+    pub contract: ContractId,
+    pub direction: Option<&'static str>,
+    pub verdict: Verdict,
+}
+
+impl std::error::Error for RequirementFailure {}
+
+/// Says what the write is, then which matrix entry to look at:
+/// "converting a project with items to a checklist is not supported by 2Do
+/// (convert.project-checklist: iphone_baseline)".
+impl std::fmt::Display for RequirementFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let outcome = match self.verdict {
+            Verdict::Unsupported => "is not supported by 2Do",
+            Verdict::Fail => "fails with 2Do",
+            Verdict::Unverified | Verdict::Pass => "is not verified yet",
+        };
+        let label = self.contract.label();
+        let id = self.contract.as_str();
+        match self.direction {
+            Some(direction) => write!(f, "{label} {outcome} ({id}: {direction})"),
+            None => write!(f, "{label} {outcome} ({id}: no matrix entry)"),
+        }
+    }
 }
 impl Matrix {
     pub fn from_toml_str(text: &str) -> Result<Self, MatrixError> {
@@ -251,13 +274,17 @@ impl Matrix {
     }
     pub fn require(&self, id: ContractId, mode: WriteMode) -> Result<(), RequirementFailure> {
         let record = self.get(id);
-        let fail = |direction, verdict: Verdict| RequirementFailure {
-            contract: id.as_str(),
-            direction,
-            verdict: verdict.as_str(),
+        let fail = |direction, verdict| RequirementFailure {
+            contract: id,
+            direction: Some(direction),
+            verdict,
         };
         let Some(record) = record else {
-            return Err(fail("missing contract", Verdict::Unverified));
+            return Err(RequirementFailure {
+                contract: id,
+                direction: None,
+                verdict: Verdict::Unverified,
+            });
         };
         if id == ContractId::ListCreate {
             for (direction, verdict) in [
@@ -340,29 +367,14 @@ impl ContractId {
 impl Matrix {
     /// Projection of the same profiles used by write admission, not a separate table.
     pub fn schedule_verdict(&self, operation: OperationId, class: &str) -> Verdict {
-        let rank = |v| match v {
-            Verdict::Pass => 0,
-            Verdict::Unverified => 1,
-            Verdict::Unsupported => 2,
-            Verdict::Fail => 3,
-        };
-        let mut result = Verdict::Pass;
-        for part in class.split('+') {
-            let verdict = match ContractId::schedule(operation, part)
-                .and_then(|id| self.require(id, WriteMode::Verified).err())
-            {
-                Some(e) => match e.verdict {
-                    "fail" => Verdict::Fail,
-                    "unsupported" => Verdict::Unsupported,
-                    _ => Verdict::Unverified,
-                },
-                None if ContractId::schedule(operation, part).is_some() => Verdict::Pass,
+        class
+            .split('+')
+            .map(|part| match ContractId::schedule(operation, part) {
+                Some(id) => self
+                    .require(id, WriteMode::Verified)
+                    .map_or_else(|e| e.verdict, |()| Verdict::Pass),
                 None => Verdict::Unverified,
-            };
-            if rank(verdict) > rank(result) {
-                result = verdict;
-            }
-        }
-        result
+            })
+            .fold(Verdict::Pass, Verdict::worst)
     }
 }

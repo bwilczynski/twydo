@@ -98,15 +98,19 @@ on the status line (or on stderr from `tdo op`, which exits 1):
 
 ```
 months-last-day repeats are not verified yet
-reopen for yearly tasks is not verified yet (twydo_to_iphone)
+reopening a monthly or yearly repeating task is not verified yet (reopen.repeating-calendar: twydo_to_iphone)
 nested projects and checklists are not verified yet
-converting a project with items to a checklist is not supported by 2Do
+converting a project with items to a checklist is not supported by 2Do (convert.project-checklist: iphone_baseline)
 ```
+
+A refusal from a contract ends with the contract's ID and the failing direction, which is the
+entry to look at in the matrix; `no matrix entry` means the matrix has no such contract.
 
 "Not verified yet" means Twydo has not checked the write against the iPhone. "Not supported by
 2Do" means the iPhone itself cannot do it (it greys out the type selector on a project with
 items), so there is nothing to verify and the write stays refused in every mode, including `test`.
-The bounded Twydo-originated ordering exception below is checked separately.
+"Fails with 2Do" means the write was tried and the other side got it wrong, for example the
+iPhone misreading a rule Twydo wrote. The bounded Twydo-originated ordering exception below is checked separately.
 
 The part in parentheses names the direction that is missing: `twydo_to_iphone` (the iPhone has
 not been checked reading Twydo's version) or `iphone_to_twydo` (Twydo has not been checked

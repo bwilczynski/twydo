@@ -131,6 +131,9 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
             })?;
         }
         if let Some(to) = to {
+            // Both the loaded and the edited structure must be movable, as in 0.1.9.
+            // The pre-edit check is not redundant: a shape the edit changes would
+            // otherwise be judged only by its result, widening admission.
             checker.check(&Op::Move {
                 uid: uid.clone(),
                 to: to.clone(),
@@ -1651,11 +1654,9 @@ fn check_order(
     if head.parent.is_some() {
         return blocked(NESTED);
     }
-    let family = match declared_kind(head) {
-        TaskKind::Checklist => "checklist",
-        TaskKind::Project => "project",
-        TaskKind::Task => return blocked(PLAIN_PARENT),
-    };
+    if declared_kind(head) == TaskKind::Task {
+        return blocked(PLAIN_PARENT);
+    }
     match op {
         Op::Reorder { uid, .. } => {
             let i = lookup(snap, uid)?;
@@ -1686,7 +1687,6 @@ fn check_order(
         // classifications belong to operations that edit or execute those fields,
         // not to this metadata-only write. CreateAt already passed the Create gate.
     }
-    let _ = family;
     require(
         m,
         mode,

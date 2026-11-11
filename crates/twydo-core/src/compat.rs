@@ -20,6 +20,21 @@ impl Verdict {
             Verdict::Unsupported => "unsupported",
         }
     }
+
+    /// The more severe of two verdicts: pass < unverified < unsupported < fail.
+    pub fn worst(self, other: Self) -> Self {
+        let severity = |v| match v {
+            Verdict::Pass => 0,
+            Verdict::Unverified => 1,
+            Verdict::Unsupported => 2,
+            Verdict::Fail => 3,
+        };
+        if severity(other) > severity(self) {
+            other
+        } else {
+            self
+        }
+    }
 }
 
 /// Why matrix text was rejected.

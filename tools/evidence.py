@@ -117,7 +117,7 @@ def validate(root: Path) -> list[str]:
         try:
             matrix = tomllib.loads(matrix_path.read_text())
             vocabulary = (root / "crates/twydo-core/src/compat/contracts.rs").read_text()
-            known = set(re.findall(r'\w+\s*=>\s*\w+,\s*"([a-z][a-z0-9.-]+)";', vocabulary))
+            known = set(re.findall(r'\w+\s*=>\s*\w+,\s*"([a-z][a-z0-9.-]+)",\s*"[^"]*";', vocabulary))
             seen = set()
             for contract in matrix.get("contract", []):
                 cid = contract["id"]

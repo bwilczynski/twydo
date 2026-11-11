@@ -561,7 +561,7 @@ fn blocked_op_writes_nothing() {
     match store.apply(&env.snap(), &complete(A), now()) {
         Err(WriteError::Blocked(b)) => assert_eq!(
             b.to_string(),
-            "complete.task is not verified yet (twydo_to_iphone: unverified)"
+            "completing a task is not verified yet (complete.task: twydo_to_iphone)"
         ),
         other => panic!("expected Blocked, got {other:?}"),
     }

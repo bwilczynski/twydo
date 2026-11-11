@@ -44,7 +44,7 @@ selector does:
 
 In verified mode task to checklist, task to project, checklist to project and empty checklist or
 project to task are allowed. Empty project to checklist is still refused
-(`… is not verified yet (iphone_baseline)`), as is any conversion not listed
+(`… is not verified yet (convert.empty-project-checklist: iphone_baseline)`), as is any conversion not listed
 ([compatibility.md](compatibility.md#verified-mode)).
 
 To fill a parent, `a` adds an item (on a plain task it asks first whether to make it a project
