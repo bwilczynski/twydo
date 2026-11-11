@@ -339,3 +339,36 @@ fn cleared() -> InputParsed {
         description: String::new(),
     }
 }
+
+/// Runs the journal recovery a daemon deferred at startup because an unfinished list operation
+/// fenced the vdir, once that operation has ended. Does nothing when none was deferred or the
+/// fence still holds. Called at the end of every list job.
+pub fn retry_deferred_recovery(shared: &Arc<Shared>) {
+    if !shared.publisher.recovery_deferred() {
+        return;
+    }
+    if matches!(
+        twydo_core::lists::operation::fenced_collection(&shared.state_dir),
+        Ok(Some(_))
+    ) {
+        return;
+    }
+    match try_recover(&shared.cfg.vdir, &shared.state_dir) {
+        Ok(Some(report)) => {
+            shared.publisher.set_recovery_deferred(None);
+            shared
+                .publisher
+                .set_stuck(report.stuck.iter().map(|(id, _)| id.clone()).collect());
+            if !report.resumed.is_empty()
+                && let Err(e) = shared.publisher.reload(Cause::Recovery, Vec::new())
+            {
+                eprintln!("tdo daemon: reload after a recovery failed: {e}");
+            }
+            shared.publisher.refresh_status();
+            shared.request_drain();
+        }
+        // The vdir is busy: the next list job (or `journal.recover`) tries again.
+        Ok(None) => {}
+        Err(e) => eprintln!("tdo daemon: deferred recovery failed: {e}"),
+    }
+}

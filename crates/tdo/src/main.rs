@@ -97,7 +97,8 @@ fn main() {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
             let link = term::link::Link::start(target);
-            let app = term::first_app(&link, cli.vdir.as_deref(), FIRST_SNAPSHOT);
+            let mut app = term::first_app(&link, cli.vdir.as_deref(), FIRST_SNAPSHOT);
+            app.lookup = Box::new(tdo::app::DaemonLookup(link.caller_source()));
             let tz = app.snapshot.tz();
             if let Err(e) = term::run(app, link, tz) {
                 eprintln!("tdo: {e}");

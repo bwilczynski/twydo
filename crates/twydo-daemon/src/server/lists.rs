@@ -102,6 +102,7 @@ fn start(
             if let Err(e) = shared.publisher.reload(Cause::List, Vec::new()) {
                 eprintln!("tdo daemon: reload after a list job failed: {e}");
             }
+            super::admin::retry_deferred_recovery(shared);
             result
         }))
     };
@@ -267,6 +268,7 @@ fn start_body(
             if let Err(e) = shared.publisher.reload(Cause::List, Vec::new()) {
                 eprintln!("tdo daemon: reload after a list job failed: {e}");
             }
+            super::admin::retry_deferred_recovery(shared);
             shared.poke_scheduler();
             result
         }))
@@ -394,6 +396,8 @@ pub fn backups(shared: &Arc<Shared>) -> Result<Value, RpcError> {
             collection: b.collection,
             name: b.name,
             created: b.created,
+            resources: b.remote.resources.len(),
+            local_files: b.local.len(),
         })
         .collect();
     serde_json::to_value(Backups { retired, deleted }).map_err(internal)

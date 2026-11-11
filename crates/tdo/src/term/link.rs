@@ -197,6 +197,12 @@ impl Link {
         self.caller.lock().unwrap().clone()
     }
 
+    /// [`Link::caller`] as a function that outlives the link value: it follows reconnects.
+    pub fn caller_source(&self) -> Arc<dyn Fn() -> Option<Caller> + Send + Sync> {
+        let caller = Arc::clone(&self.caller);
+        Arc::new(move || caller.lock().unwrap().clone())
+    }
+
     /// The epoch and revision of the last snapshot the link sent.
     pub fn based_on(&self) -> Option<BasedOn> {
         self.based_on.lock().unwrap().clone()

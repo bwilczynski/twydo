@@ -1,9 +1,9 @@
 //! Manual list-retirement confirmation and preserved-list browsing.
 use super::*;
-use twydo_core::retired::{self, Backup, Preview};
+use twydo_daemon::protocol::lists::{ForgetPreview, RetiredBackupView};
 
 pub struct RecoveryPanel {
-    pub backups: Vec<Backup>,
+    pub backups: Vec<RetiredBackupView>,
     pub cursor: usize,
     pub preview: Option<Snapshot>,
     pub scroll: u16,
@@ -16,7 +16,7 @@ pub enum Confirmation {
         unfinished: usize,
         unreadable: usize,
     },
-    Forget(Preview),
+    Forget(ForgetPreview),
     Reparent {
         op: Box<Op>,
     },
@@ -85,7 +85,7 @@ impl App {
             });
             return;
         }
-        match retired::preview(&self.snapshot.config, arg) {
+        match self.lookup.forget_preview(arg) {
             Ok(p) => {
                 self.recovery = None;
                 self.confirmation = Some(Confirmation::Forget(p));
@@ -94,9 +94,33 @@ impl App {
         }
     }
 
+    /// The directory of the list called `name`: its id, or else its unique display name.
+    fn collection_id(&self, name: &str) -> Result<String, String> {
+        let plain = !name.is_empty()
+            && std::path::Path::new(name).components().count() == 1
+            && std::path::Path::new(name)
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)));
+        let lists = &self.snapshot.collections;
+        if plain && lists.iter().any(|c| c.id == name) {
+            return Ok(name.to_string());
+        }
+        let named: Vec<_> = lists
+            .iter()
+            .filter(|c| c.display_name.as_deref() == Some(name))
+            .collect();
+        match named.as_slice() {
+            [c] => Ok(c.id.clone()),
+            [] => Err(format!("no list {name:?}")),
+            _ => Err(format!(
+                "list name {name:?} is ambiguous; use its collection id"
+            )),
+        }
+    }
+
     pub(super) fn recover_command(&mut self, arg: &str) {
         if arg.is_empty() {
-            match retired::list(&self.snapshot.config) {
+            match self.lookup.retired() {
                 Ok(backups) => {
                     self.recovery = Some(RecoveryPanel {
                         backups,
@@ -114,16 +138,19 @@ impl App {
             self.message = Some("usage: :recover <backup-id> <destination-list>".into());
             return;
         };
-        match retired::collection_id(&self.snapshot.config, destination.trim()) {
+        match self.collection_id(destination.trim()) {
             Ok(to) => self.confirm_recovery(id, &to),
             Err(e) => self.message = Some(e.to_string()),
         }
     }
 
     pub(super) fn confirm_recovery(&mut self, id: &str, to: &str) {
-        let cfg = &self.snapshot.config;
-        let result = retired::get(cfg, id).and_then(|b| {
-            let preview = retired::snapshot(cfg, id)?;
+        let result = self.lookup.retired().and_then(|backups| {
+            let b = backups
+                .into_iter()
+                .find(|b| b.id == id)
+                .ok_or_else(|| format!("no preserved list {id:?}"))?;
+            let preview = self.lookup.retired_preview(id)?;
             Ok((b, preview))
         });
         match result {
@@ -224,7 +251,7 @@ impl App {
             KeyCode::Char('k') | KeyCode::Up => panel.cursor = panel.cursor.saturating_sub(1),
             KeyCode::Enter => {
                 if let Some(b) = panel.backups.get(panel.cursor) {
-                    match retired::snapshot(&self.snapshot.config, &b.id) {
+                    match self.lookup.retired_preview(&b.id) {
                         Ok(s) => {
                             panel.preview = Some(s);
                             panel.scroll = 0;

@@ -546,15 +546,29 @@
           "id": {
             "type": "string"
           },
+          "local_files": {
+            "description": "Local files the backup preserves.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
           "name": {
             "type": "string"
+          },
+          "resources": {
+            "description": "Remote resources the backup preserves.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
           "id",
           "collection",
           "name",
-          "created"
+          "created",
+          "resources",
+          "local_files"
         ],
         "type": "object"
       },
@@ -2531,9 +2545,20 @@
           "collection": {
             "type": "string"
           },
+          "conflicts": {
+            "description": "The list had unresolved conflicts when it was preserved.",
+            "type": "boolean"
+          },
           "created": {
             "format": "date-time",
             "type": "string"
+          },
+          "destination": {
+            "description": "The list a recovery of this backup went to, once one was recorded.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "type": "string"
@@ -2562,7 +2587,8 @@
           "created",
           "tasks",
           "pending",
-          "retired"
+          "retired",
+          "conflicts"
         ],
         "type": "object"
       },

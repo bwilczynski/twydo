@@ -556,6 +556,17 @@ fn startup(
             Ok(())
         }),
         Box::new(move |shared| {
+            // An unfinished list operation fences the vdir and refuses recovery. The daemon
+            // starts anyway (so the operation can be reconciled through it); recovery runs
+            // when the operation ends (`admin::retry_deferred_recovery`).
+            if let Ok(Some(collection)) =
+                twydo_core::lists::operation::fenced_collection(&shared.state_dir)
+            {
+                shared.publisher.set_recovery_deferred(Some(format!(
+                    "journal recovery waits for the unfinished operation on list {collection}; reconcile it"
+                )));
+                return Ok(());
+            }
             // The recovery store is dropped; only the stuck ids are kept, for the status.
             let (_store, report) =
                 Store::open_with(&shared.cfg, matrix).map_err(|e| e.to_string())?;

@@ -2,10 +2,10 @@
 use super::*;
 use crate::listform::{ListField, ListForm, ListFormAction};
 use std::path::PathBuf;
-use twydo_core::lists::{ListRequest, ListResult, ListState, operation};
+use twydo_core::lists::{ListRequest, ListResult, ListState};
 
 pub struct CollectionBackups {
-    pub backups: Vec<twydo_core::lists::backup::DeletePreview>,
+    pub backups: Vec<twydo_daemon::protocol::lists::WireDeletePreview>,
     pub cursor: usize,
 }
 
@@ -53,22 +53,10 @@ pub struct ListCompletion {
 
 impl App {
     pub(super) fn open_collection_backups(&mut self) {
-        match twydo_core::lists::backup::list(&self.snapshot.config) {
+        match self.lookup.deleted_backups() {
             Ok(backups) => {
                 self.recovery = None;
-                self.collection_backups = Some(CollectionBackups {
-                    cursor: 0,
-                    backups: backups
-                        .into_iter()
-                        .map(|b| twydo_core::lists::backup::DeletePreview {
-                            backup: b.id,
-                            collection: b.collection,
-                            name: b.name,
-                            resources: b.remote.resources.len(),
-                            local_files: b.local.len(),
-                        })
-                        .collect(),
-                });
+                self.collection_backups = Some(CollectionBackups { cursor: 0, backups });
             }
             Err(e) => self.message = Some(format!("Cannot read collection backups: {e}")),
         }
@@ -107,7 +95,7 @@ impl App {
     }
 
     fn pending_list_card(&mut self) -> bool {
-        let record = match operation::active(&self.snapshot.config) {
+        let record = match self.lookup.pending_list_op() {
             Ok(None) => return false,
             Ok(Some(record)) => record,
             Err(e) => {
@@ -115,11 +103,11 @@ impl App {
                 return true;
             }
         };
-        let Some(id) = record.request.collection.as_deref() else {
+        let Some(id) = record.collection.as_deref() else {
             self.message = Some("Pending list save has no list identity".into());
             return true;
         };
-        let mut form = if record.request.action == "create" {
+        let mut form = if record.action == "create" {
             ListForm::new(0)
         } else {
             self.list_state(id)
@@ -127,15 +115,16 @@ impl App {
                 .unwrap_or_else(|| ListForm::new(0))
         };
         form.id = id.into();
-        if let Some(name) = &record.request.name {
+        if let Some(name) = &record.name {
             form.name = name.clone();
         }
-        if let Some(color) = &record.request.color {
+        if let Some(color) = &record.color {
             form.color = color.clone();
         }
-        form.operation = Some(record.id.clone());
+        form.operation = Some(record.operation.clone());
         form.focus = ListField::Reconcile;
-        form.server_values = operation::observed(&record);
+        form.server_values = (record.observed_name.is_some() || record.observed_color.is_some())
+            .then(|| (record.observed_name.clone(), record.observed_color.clone()));
         form.notice = Some("Finish the pending list save before starting another".into());
         self.list_form = Some(form);
         self.mode = Mode::Insert;

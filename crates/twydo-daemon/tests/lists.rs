@@ -987,3 +987,67 @@ fn lists_pending_is_none_when_idle() {
     let got: Option<PendingListOp> = td.client().call("lists.pending", empty()).unwrap();
     assert_eq!(got, None);
 }
+
+/// A fixture with a journal (so startup recovery really runs) and an unfinished list
+/// operation on `inbox` (a preview, which reconciling clears without the server).
+fn fenced_fixture() -> (Fixture, Config, String) {
+    let fx = Fixture::new(&[("inbox", "u1", "One", None)]);
+    let mut cfg = fx.config();
+    cfg.sync = Some(twydo_core::config::SyncConfig::default());
+    fs::create_dir_all(fx.state().join("journal")).unwrap();
+    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+    request.action = "preview-delete".into();
+    request.collection = Some("inbox".into());
+    let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
+    (fx, cfg, record.id)
+}
+
+#[test]
+fn a_daemon_starts_over_an_unfinished_list_operation() {
+    use twydo_daemon::protocol::lists::PendingListOp;
+    use twydo_daemon::protocol::methods::StatusView;
+    let (fx, cfg, id) = fenced_fixture();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let pending: Option<PendingListOp> = c.call("lists.pending", empty()).unwrap();
+    assert_eq!(pending.expect("the operation is pending").operation, id);
+    assert_eq!(common::snapshot(&c).tasks.len(), 1);
+    let st: StatusView = c.call("status.get", empty()).unwrap();
+    assert!(
+        st.drain_error
+            .as_deref()
+            .is_some_and(|m| m.contains("waits for the unfinished operation")),
+        "{:?}",
+        st.drain_error
+    );
+    // A task write into the fenced list is not applied.
+    let _ = submit(&c, edit_title("u1", "Changed"));
+    assert!(!fx.read("inbox/u1.ics").contains("Changed"));
+}
+
+#[test]
+fn reconciling_the_operation_lets_recovery_and_writes_go_on() {
+    use twydo_daemon::protocol::lists::{ListReconcileParams, PendingListOp};
+    use twydo_daemon::protocol::methods::StatusView;
+    let (fx, cfg, id) = fenced_fixture();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let _: Value = c.call("events.subscribe", empty()).unwrap();
+    let job = call(
+        &c,
+        "lists.reconcile",
+        ListReconcileParams {
+            request_id: c.next_request_id(),
+            operation: id,
+            keep_server: false,
+        },
+    );
+    // The preview needs no server: the job may report the helper's refusal, the fence is gone.
+    let _ = finished(&c, &job);
+    let pending: Option<PendingListOp> = c.call("lists.pending", empty()).unwrap();
+    assert_eq!(pending, None);
+    let st: StatusView = c.call("status.get", empty()).unwrap();
+    assert_eq!(st.drain_error, None);
+    submit(&c, edit_title("u1", "Changed")).unwrap();
+    assert!(fx.read("inbox/u1.ics").contains("Changed"));
+}

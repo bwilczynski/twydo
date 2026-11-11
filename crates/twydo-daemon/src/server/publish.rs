@@ -45,6 +45,9 @@ struct State {
     stuck: Vec<String>,
     /// Why the last queue drain stopped with items left; see [`StatusView::drain_error`].
     drain_error: Option<String>,
+    /// Why journal recovery waits (an unfinished list operation fences the vdir); shown as
+    /// `drain_error` while nothing else is.
+    recovery_deferred: Option<String>,
     /// A sync is running, and the job it belongs to; see [`Publisher::set_sync_state`].
     sync_running: Option<Option<String>>,
     /// The state of the live configuration; see [`StatusView::config`].
@@ -92,6 +95,7 @@ impl Publisher {
                 status: None,
                 stuck: Vec::new(),
                 drain_error: None,
+                recovery_deferred: None,
                 sync_running: None,
                 config_status: ConfigStatus::default(),
             }),
@@ -146,6 +150,17 @@ impl Publisher {
     /// Takes effect at the next [`Publisher::refresh_status`].
     pub fn set_drain_error(&self, e: Option<String>) {
         self.state.lock().unwrap().drain_error = e;
+    }
+
+    /// Is journal recovery deferred by a list operation?
+    pub fn recovery_deferred(&self) -> bool {
+        self.state.lock().unwrap().recovery_deferred.is_some()
+    }
+
+    /// Records (`Some`) or clears (`None`) that journal recovery waits for an unfinished list
+    /// operation. Takes effect at the next [`Publisher::refresh_status`].
+    pub fn set_recovery_deferred(&self, why: Option<String>) {
+        self.state.lock().unwrap().recovery_deferred = why;
     }
 
     /// What `status.sync.state` and `status.sync.job_id` report: running (with the job of a
@@ -297,7 +312,9 @@ impl Publisher {
             let s = self.state.lock().unwrap();
             (
                 s.stuck.clone(),
-                s.drain_error.clone(),
+                s.drain_error
+                    .clone()
+                    .or_else(|| s.recovery_deferred.clone()),
                 s.sync_running.clone(),
                 s.config_status.clone(),
                 s.status.as_ref().map_or(0, |v| v.status_rev),

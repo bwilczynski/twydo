@@ -2,11 +2,13 @@
 //! fields and the terminal loop feeds `handle_key` / `tick`.
 
 mod lists;
+mod lookup;
 mod newrow;
 mod recovery;
 mod structure;
 mod sync_activity;
 mod sync_state;
+pub use lookup::{DaemonLookup, FileLookup, Lookup};
 pub use recovery::{Confirmation, RecoveryPanel};
 pub use sync_activity::SyncActivity;
 pub use sync_state::ClientSync;
@@ -94,7 +96,7 @@ pub enum Outcome {
     Write(Request),
     /// Edit these notes in `$EDITOR`; the loop reports back with [`App::notes_edited`].
     EditNotes(String),
-    ForgetList(twydo_core::retired::Preview),
+    ForgetList(twydo_daemon::protocol::lists::ForgetPreview),
     ManageList(ListAction),
 }
 
@@ -159,7 +161,8 @@ impl ListPicker {
 }
 
 pub struct App {
-    pub config_path: Option<std::path::PathBuf>,
+    /// Where the panels read list and backup state: the daemon, or the files in tests.
+    pub lookup: Box<dyn Lookup>,
     pub list_form: Option<crate::listform::ListForm>,
     pub collection_backups: Option<CollectionBackups>,
     pub recovery: Option<RecoveryPanel>,
@@ -239,7 +242,7 @@ const MESSAGE_SECS: i64 = 5;
 impl App {
     pub fn new(snapshot: Snapshot, now: DateTime<Tz>) -> App {
         App {
-            config_path: None,
+            lookup: Box::new(FileLookup(snapshot.config.clone())),
             list_form: None,
             collection_backups: None,
             recovery: None,

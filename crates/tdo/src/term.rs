@@ -6,8 +6,6 @@
 //! configuration or a lock file.
 
 pub mod link;
-mod lists;
-pub use lists::perform_list_action;
 
 use std::collections::HashSet;
 use std::io;

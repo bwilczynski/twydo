@@ -4,42 +4,22 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use common::{TestEnv, short_socket_dir, write_script};
+use common::{TestEnv, link_to, list_env};
 use serde_json::json;
 use tdo::app::{ListAction, ListCompletion, SYNC_DONE};
 use tdo::term::link::{Command, Connector, Link, Update, WriteRequest, sync_message};
 use tdo::write::Request;
-use twydo_core::compat::{Matrix, Verdict};
 use twydo_core::config::Config;
 use twydo_core::edit::{Change, Op};
 use twydo_core::lists::{ListRequest, ListResult};
-use twydo_daemon::client::Client;
 use twydo_daemon::protocol::events::Cause;
-use twydo_daemon::protocol::methods::{HelloParams, Instance};
 use twydo_daemon::protocol::sync::{SyncOutcome, SyncResult};
-use twydo_daemon::server::{Daemon, DaemonHandle, DaemonOptions};
+use twydo_daemon::server::{Daemon, DaemonOptions};
 
 const BOUND: Duration = Duration::from_secs(20);
-
-/// A link that connects to `socket` as `instance` (no daemon is started for it).
-fn link_to(socket: PathBuf, instance: Instance) -> Link {
-    let connect: Connector = Box::new(move |session| {
-        let hello = HelloParams {
-            client: "link-test".into(),
-            version: "0".into(),
-            protocol: twydo_daemon::PROTOCOL,
-            session,
-            instance: instance.clone(),
-        };
-        Client::connect(&socket, hello)
-            .map_err(|e| tdo::client::ConnectError::Unavailable(e.to_string()))
-    });
-    Link::start_with(connect)
-}
 
 fn link_for(env: &TestEnv) -> Link {
     link_to(env.socket(), env.instance())
@@ -448,115 +428,6 @@ fn a_sync_through_the_link_reports_its_message() {
         _ => None,
     });
     assert_eq!(done, SYNC_DONE);
-}
-
-/// A daemon with lists `c1` and `c2` that a synthetic server also holds (the core tests'
-/// offline list backend), and the way to reach it.
-struct ListEnv {
-    _root: tempfile::TempDir,
-    _sockets: tempfile::TempDir,
-    daemon: DaemonHandle,
-    socket: PathBuf,
-    instance: Instance,
-}
-
-const COLOR: &str = "#3289d2";
-
-fn list_env() -> ListEnv {
-    let root = tempfile::tempdir().unwrap();
-    let sockets = short_socket_dir();
-    let vdir = root.path().join("vdir");
-    let mut collections = serde_json::Map::new();
-    for (id, name) in [("c1", "Synthetic one"), ("c2", "Synthetic two")] {
-        fs::create_dir_all(vdir.join(id)).unwrap();
-        fs::write(
-            vdir.join(id).join(format!("u-{id}.ics")),
-            task_ics(&format!("u-{id}"), "One"),
-        )
-        .unwrap();
-        fs::write(vdir.join(id).join("displayname"), name).unwrap();
-        fs::write(vdir.join(id).join("color"), COLOR).unwrap();
-        collections.insert(id.into(), json!({"name": name, "color": COLOR}));
-    }
-    fs::write(
-        root.path().join("server.json"),
-        json!({"calls": [], "flags": {}, "collections": collections}).to_string(),
-    )
-    .unwrap();
-    let connection = root.path().join("connection.json");
-    fs::write(&connection, json!({"vdir": vdir}).to_string()).unwrap();
-    let vdirsyncer = root.path().join("fake-vdirsyncer");
-    write_script(&vdirsyncer, "exit 0");
-    let backend = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../twydo-core/tests/common/list_backend.py")
-        .canonicalize()
-        .unwrap();
-    let helper = root.path().join("list-python");
-    fs::write(
-        &helper,
-        format!(
-            "#!/usr/bin/env python3\nimport runpy,sys\n\
-             if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
-             runpy.run_path({backend:?}, run_name='__main__')\n"
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-    // A script written while another test thread forks can briefly be busy: probe it.
-    let end = Instant::now() + Duration::from_secs(5);
-    while std::process::Command::new(&helper)
-        .arg("__probe")
-        .status()
-        .map(|s| !s.success())
-        .unwrap_or(true)
-    {
-        assert!(Instant::now() < end, "the list helper never ran");
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    let config = root.path().join("config.toml");
-    fs::write(
-        &config,
-        format!(
-            "vdir = {vdir:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             pair = \"synthetic\"\nlocal_storage = \"local\"\ncommand = {vdirsyncer:?}\n\
-             list_python = {helper:?}\nvdirsyncer_config = {connection:?}\nmetasync = false\n",
-            root.path().join("state"),
-        ),
-    )
-    .unwrap();
-    let cfg = Config::load(&config).unwrap();
-    let mut matrix = Matrix::embedded().clone();
-    let row = matrix
-        .operation
-        .iter_mut()
-        .find(|r| r.case == "list-metadata" && r.op == "edit")
-        .unwrap();
-    row.iphone_baseline = Verdict::Pass;
-    row.twydo_to_iphone = Verdict::Pass;
-    row.iphone_to_twydo = Verdict::Pass;
-    matrix
-        .edge_case
-        .iter_mut()
-        .find(|e| e.id == "list-metadata-atomicity")
-        .unwrap()
-        .verdict = Verdict::Pass;
-    let socket = sockets.path().join("s").join("tdo.sock");
-    let mut opts = DaemonOptions::new(socket.clone());
-    opts.schedule = false;
-    opts.matrix = matrix;
-    let instance = Instance {
-        config,
-        vdir: Some(vdir),
-    };
-    let daemon = Daemon::start(cfg, instance.clone(), opts).unwrap();
-    assert!(daemon.wait_ready(Duration::from_secs(10)));
-    ListEnv {
-        _root: root,
-        _sockets: sockets,
-        daemon,
-        socket,
-        instance,
-    }
 }
 
 #[test]
