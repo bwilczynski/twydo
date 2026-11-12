@@ -130,6 +130,8 @@
 
 ## Execution ledger
 
+- 2026-11-12: rename/recolor and deletion were later admitted as accepted best-effort writes; see [the best-effort list writes plan](2026-11-12-best-effort-list-writes.md).
+
 - 2026-11-08: user approved the product design after completion of the archive round and requested focused commits. Implementation is inline on the existing branch. Plan prepared from the installed vdirsyncer 0.21.0 API and existing Rust lock/journal/queue/TUI interfaces. Product code has not yet changed.
 - Planning review: all design requirements map to the tasks above. Remaining deletion concurrency evidence is an explicit device checkpoint, not a presumed capability. The existing archive round does not authorize additional remote work.
 - Task 1 RED: absent `lists` service prevented the archive tests from compiling. GREEN: nine archive tests prove exact unrelated-text/task-byte preservation, stale/wrong-store/symlink refusal, missing-config refusal, new quoted tables, config permissions and service preconditions. One expanded test initially omitted its temporary state directory and hit the sandbox; corrected the fixture, with no user-state write. UI path/reload integration is carried by Task 5.

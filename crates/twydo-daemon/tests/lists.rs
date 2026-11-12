@@ -359,14 +359,15 @@ fn archive_and_unarchive_write_the_config() {
     );
 }
 
-/// The daemon runs the service's best-effort deletion. Its result is still the generic
-/// forgotten-list one (the daemon protocol gets a proper deletion result later).
+/// The daemon runs the service's best-effort deletion and reports the deleted list and the
+/// backup it kept.
 #[test]
-fn delete_retires_the_list_through_the_daemon() {
+fn delete_job_reports_the_deleted_list() {
     let e = env();
     let p = preview(&e, "c1");
     assert_eq!(p.collection, "c1");
     assert_eq!(p.name, "Synthetic one");
+    let backup = p.backup.clone();
     let job = call(
         &e.c,
         "lists.delete",
@@ -377,7 +378,8 @@ fn delete_retires_the_list_through_the_daemon() {
     );
     let finished = finished(&e.c, &job);
     assert!(
-        matches!(&finished, JobState::Finished { result: JobResult::Forgot { name, .. } } if name == "Synthetic one"),
+        matches!(&finished, JobState::Finished { result: JobResult::ListDeleted { name, collection, backup: b, .. } }
+            if name == "Synthetic one" && collection == "c1" && *b == backup),
         "{finished:?}"
     );
     assert!(!e.fx.vdir().join("c1").exists());

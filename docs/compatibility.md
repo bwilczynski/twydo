@@ -183,7 +183,8 @@ direction, or an `unsupported` atomicity verdict, still refuses. Removing the fi
 the strict rule that atomicity must pass. Refusals name the matrix entry that failed, and
 add that the server does not protect against concurrent remote edits only when that entry
 is `atomicity`.
-Product collection deletion still needs its own implementation; this gate only admits it. These verdicts do not
+Collection deletion is implemented on top of this gate, best-effort: the backup is kept
+and exportable, and restoring it is not yet available (#75). These verdicts do not
 change task-operation test-mode rules.
 
 The [archive investigation](reference/evidence.md) found no changes

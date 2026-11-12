@@ -282,6 +282,29 @@ impl App {
     }
 
     pub fn list_finished(&mut self, completion: ListCompletion) {
+        // A deletion ends the list wherever it came from: a fresh delete or a reconcile of a
+        // pending one, with or without its card open.
+        if let Ok(ListResult::Deleted {
+            collection,
+            name,
+            backup,
+            ..
+        }) = &completion.result
+        {
+            self.snapshot.collections.retain(|c| &c.id != collection);
+            self.snapshot.config.lists.remove(collection);
+            if self.view == View::List(collection.clone()) {
+                self.open(View::Today);
+            }
+            if self.list_form.as_ref().is_some_and(|f| &f.id == collection) {
+                self.list_form = None;
+                self.mode = Mode::Normal;
+            }
+            self.confirmation = None;
+            self.message = Some(format!("Deleted {name} from CalDAV; backup {backup} kept"));
+            self.sync_sidebar();
+            return;
+        }
         if matches!(completion.action, ListAction::ExportBackup { .. })
             || !self
                 .list_form
@@ -317,12 +340,7 @@ impl App {
                 }
                 self.confirmation = Some(Confirmation::DeleteList(preview));
             }
-            // Stopgap until the TUI handles list deletion properly.
-            Ok(ListResult::Deleted { name, retired, .. }) => {
-                self.message = Some(format!(
-                    "Deleted list {name:?}; local copy preserved as {retired}"
-                ));
-            }
+            Ok(ListResult::Deleted { .. }) => {} // handled above
             Err(error) => {
                 if self.list_form.is_none() {
                     self.message = Some(error.clone());
@@ -381,7 +399,9 @@ impl App {
                     } => "Kept server values",
                     ListAction::Reconcile { .. } => "List save reconciled",
                     ListAction::Save(_) => "List saved",
-                    ListAction::PreviewDelete { .. } | ListAction::Delete(_) => "List saved",
+                    ListAction::PreviewDelete { .. } | ListAction::Delete(_) => {
+                        "List request finished"
+                    }
                     ListAction::ExportBackup { .. } => "Backup exported",
                 };
                 if matches!(completion.action, ListAction::Archive { .. }) {

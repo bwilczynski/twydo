@@ -1397,6 +1397,35 @@
             "type": "object"
           },
           {
+            "description": "`lists.delete` (or the reconcile of an interrupted one) removed collection `collection`\nfrom the server; `backup` is the verified backup kept, and the local copy is retired.",
+            "properties": {
+              "backup": {
+                "type": "string"
+              },
+              "collection": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "operation": {
+                "type": "string"
+              },
+              "type": {
+                "const": "list_deleted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "operation",
+              "collection",
+              "name",
+              "backup"
+            ],
+            "type": "object"
+          },
+          {
             "description": "`lists.forget` preserved list `name` as `backup`; `message` is what the TUI shows\n(with the sync's problems appended), `sync` the sync that followed.",
             "properties": {
               "backup": {

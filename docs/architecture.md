@@ -149,7 +149,8 @@ steps and answers:
    the embedded version-2 matrix. Mixed saves need each field contract and the combined
    shape checks. Held schedules require preservation, while execution or rewriting needs
    the relevant operation profiles. Missing contracts refuse before any write. Collection
-   metadata/deletion also require independently proven atomicity in their own contract.
+   metadata/deletion also require passing atomicity in their own contract, or the explicit
+   `accepted_risk = "best-effort"` for those two list contracts.
 2. **Edit.** The `edit` functions produce the new file contents. Only the properties the
    operation is about change, plus `DTSTAMP`, `LAST-MODIFIED` and their counterparts in 2Do's
    metadata; every other line keeps its bytes.
@@ -240,12 +241,12 @@ them under the exclusive vdir lock before retrying. Pre-existing scratch files,
 unrelated files and changed task bytes remain protected.
 Reconciliation does not repeat MKCALENDAR or PROPPATCH. If the
 server's values differ, accepting them requires the explicit Keep server choice.
-The metadata writer remains an unverified prototype: its read/PROPPATCH/read sequence
-has a remote-writer race. The shipping metadata capability stays closed in every mode,
-including test mode, until a server-enforced conditional write is implemented and proven.
-The `list-metadata.collection` contract must declare passing `atomicity` as well as
-interoperability. Missing atomicity defaults to unverified; phone verdicts alone cannot
-admit a known unsafe write, including in test mode.
+The metadata writer's read/PROPPATCH/read sequence has a remote-writer race that the server
+cannot close. It is admitted only as a best-effort write: the `list-metadata.collection`
+contract must either declare passing `atomicity`, or carry the user's explicit
+`accepted_risk = "best-effort"` (see [compatibility](compatibility.md#collection-management-capabilities)).
+Missing atomicity defaults to unverified and refuses; phone verdicts alone cannot admit a
+known unsafe write.
 Offline protocol/reconciliation tests use a synthetic matrix override; the application
 and proposed device round cannot load that override.
 
@@ -272,7 +273,10 @@ The approved lifecycle probe demonstrated that a changing calendar-export ETag w
 insufficient: the server ignored a stale `If-Match` on DELETE. Only that disposable
 test collection was removed. All three resources, including the remote-only task, were
 retained in the service backup and verified through its local raw-export API. The
-isolated test sync profile was sealed; this did not enable a product DELETE path.
+isolated test sync profile was sealed; that probe itself did not enable a product DELETE
+path. The product path is the best-effort `delete_list` above, admitted by the user's
+accepted risk. The daemon reports it as the `list_deleted` job result and the TUI
+removes the list from the sidebar; restoring a backup into CalDAV is not implemented (#75).
 
 ## The operation journal
 
