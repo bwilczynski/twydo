@@ -256,7 +256,12 @@ pub fn run(
             set(t, "username", Value::from(user));
             set(t, "password_command", string_array(&cmd));
             if let Some(ca) = &args.ca_file {
-                set(t, "ca_file", Value::from(ca.display().to_string()));
+                let ca = if ca.starts_with("~") {
+                    ca.display().to_string()
+                } else {
+                    home_relative(&expand_tilde(ca, home), home)
+                };
+                set(t, "ca_file", Value::from(ca));
             }
             for k in REMOVED {
                 t.remove(k);
@@ -441,14 +446,20 @@ mod tests {
         fs::write(dots.join("config.toml"), "vdir = \"~/old\"\n").unwrap();
         // config/twydo/config.toml -> ../dotfiles/config.toml
         std::os::unix::fs::symlink("../dotfiles/config.toml", e.cfg()).unwrap();
-        e.init(&mut Script::say(&["", "n"])).unwrap();
+        e.init(&mut Script::say(&["~/new", "n"])).unwrap();
         assert_eq!(
             fs::read_link(e.cfg()).unwrap(),
             Path::new("../dotfiles/config.toml")
         );
         assert_eq!(
             fs::read_to_string(dots.join("config.toml")).unwrap(),
-            "vdir = \"~/old\"\n"
+            "vdir = \"~/new\"\n"
+        );
+        assert!(
+            fs::symlink_metadata(e.cfg())
+                .unwrap()
+                .file_type()
+                .is_symlink()
         );
     }
 
@@ -507,5 +518,32 @@ mod tests {
         let r = run(&e.cfg(), &e.home(), None, &args, &mut p);
         assert!(matches!(r, Err(InitError::Required { flag: "--url" })));
         assert!(!e.cfg().exists());
+    }
+
+    #[test]
+    fn ca_file_is_written_home_relative_and_kept() {
+        let e = Env::new();
+        let ca = e.home().join("certs/ca.pem");
+        let args = InitArgs {
+            url: Some("https://dav.example.test/a/".into()),
+            username: Some("alice".into()),
+            password_command: Some("true".into()),
+            ca_file: Some(ca),
+            ..InitArgs::default()
+        };
+        run(&e.cfg(), &e.home(), None, &args, &mut Script::say(&[""])).unwrap();
+        assert!(
+            e.text().contains("ca_file = \"~/certs/ca.pem\""),
+            "{}",
+            e.text()
+        );
+        // A re-run without the flag keeps it.
+        let mut p = Script::say(&["", "", "", "", ""]);
+        e.init(&mut p).unwrap();
+        assert!(
+            e.text().contains("ca_file = \"~/certs/ca.pem\""),
+            "{}",
+            e.text()
+        );
     }
 }
