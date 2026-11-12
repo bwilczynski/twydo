@@ -150,6 +150,10 @@ fn sync_defaults() {
     assert_eq!(
         c.sync,
         Some(SyncConfig {
+            url: String::new(),
+            username: String::new(),
+            password_command: vec![],
+            ca_file: None,
             pair: "twydo".into(),
             local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
@@ -248,4 +252,33 @@ fn the_daemon_table_defaults_to_warning_and_reads_the_switch() {
         .unwrap_err()
         .to_string();
     assert!(e.contains("foo"), "{e}");
+}
+
+#[test]
+fn sync_ca_file_expands_tilde() {
+    let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
+    let Some(home) = home else {
+        eprintln!("skipping: HOME not set");
+        return;
+    };
+    let c = parse("vdir = \"/x\"\n[sync]\nca_file = \"~/ca.pem\"\n").unwrap();
+    assert_eq!(
+        c.sync.unwrap().ca_file,
+        Some(Path::new(&home).join("ca.pem"))
+    );
+    let c = parse("vdir = \"/x\"\n[sync]\nca_file = \"/abs/ca.pem\"\n").unwrap();
+    assert_eq!(c.sync.unwrap().ca_file, Some(PathBuf::from("/abs/ca.pem")));
+}
+
+#[test]
+fn sync_connection_keys_parse() {
+    let c = parse(
+        "vdir = \"/x\"\n[sync]\nurl = \"https://dav.example.test/a/\"\nusername = \"alice\"\npassword_command = [\"pass\", \"show\", \"x\"]\n",
+    )
+    .unwrap();
+    let s = c.sync.unwrap();
+    assert_eq!(s.url, "https://dav.example.test/a/");
+    assert_eq!(s.username, "alice");
+    assert_eq!(s.password_command, ["pass", "show", "x"]);
+    assert_eq!(s.ca_file, None);
 }

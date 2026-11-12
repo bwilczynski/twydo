@@ -14,6 +14,7 @@ pub mod run;
 pub mod running;
 pub mod status;
 pub mod switch;
+pub mod vdirsyncer;
 
 use std::io;
 
