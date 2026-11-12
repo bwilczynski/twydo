@@ -57,6 +57,11 @@ enum Command {
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
+    /// Set up and check the configuration (never contacts the daemon)
+    Config {
+        #[command(subcommand)]
+        command: cli::config::ConfigCommand,
+    },
     /// Run the daemon (it owns the data; clients talk to it over a socket), or manage it
     Daemon {
         /// Compatibility matrix file (test hook)
@@ -130,6 +135,7 @@ fn main() {
                 detach,
             ),
         }),
+        Command::Config { command } => std::process::exit(cli::config::run(command)),
         Command::Conflicts { command } => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());

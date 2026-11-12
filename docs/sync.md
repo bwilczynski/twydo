@@ -24,7 +24,8 @@ in [config.md](config.md) (`[sync]`).
    sync. The file is overwritten: do not edit it. It names `tdo conflicts hook` as the
    conflict command, which keeps both versions in the conflict store and changes nothing until
    you choose; it is not `a wins` / `b wins`. `tdo` must be on the `PATH` of vdirsyncer, which
-   the daemon starts. `ca_file` is written as vdirsyncer's `verify`.
+   the daemon starts. `ca_file` is written as vdirsyncer's `verify`. `tdo config check` verifies this machine's
+   setup step by step (see [config.md](config.md#checking-the-setup)).
 
 2. **Running vdirsyncer by hand.** Not needed, and **do not run `vdirsyncer sync` by hand while
    the daemon runs.** The daemon does not know about that run: it cannot confirm edits, close

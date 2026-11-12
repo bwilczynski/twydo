@@ -1,6 +1,7 @@
 //! Non-interactive subcommands and the helpers they share.
 
 pub mod check;
+pub mod config;
 pub mod conflicts;
 pub mod daemon;
 pub mod export;
