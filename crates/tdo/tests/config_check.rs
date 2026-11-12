@@ -154,6 +154,23 @@ fn password_failure_hides_stdout() {
 }
 
 #[test]
+fn password_hint_depends_on_the_failure() {
+    let e = Env::new();
+    e.config(&e.sync("/nonexistent/pass", ""));
+    let out = text(&e.run());
+    line(&out, "✗ password");
+    assert!(out.contains("run the command yourself"), "{out}");
+    assert!(!out.contains("whole output"), "{out}");
+
+    let pw = e.script("pw2", "echo one; echo two");
+    e.config(&e.sync(&pw, ""));
+    let out = text(&e.run());
+    assert!(out.contains("more than one line"), "{out}");
+    assert!(out.contains("uses the whole output"), "{out}");
+    assert!(!out.contains("run the command yourself"), "{out}");
+}
+
+#[test]
 fn password_success_hides_secret() {
     let e = Env::new();
     let pw = e.script("pw", "echo s3cret");
