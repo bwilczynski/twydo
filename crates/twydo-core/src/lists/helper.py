@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import sys
 import tempfile
 from urllib.parse import quote, unquote, urljoin, urlsplit
@@ -41,14 +42,16 @@ def plain_id(value):
 def validate_request(request):
     if not isinstance(request, dict) or type(request.get("version")) is not int or request["version"] != 1:
         raise Refused("protocol")
-    if request.get("action") not in ("probe", "resolve", "create", "edit", "preview-delete", "discover"):
+    if request.get("action") not in ("probe", "resolve", "create", "edit", "preview-delete", "delete", "discover"):
         raise Refused("protocol")
     mode = request.get("mode", "execute")
     if type(request.get("timeout_secs", 300)) is not int or request.get("timeout_secs", 300) < 1:
         raise Refused("protocol")
     if mode not in ("execute", "refresh", "reconcile") or type(request.get("keep_server", False)) is not bool:
         raise Refused("protocol")
-    if mode != "execute" and request.get("action") not in ("create", "edit"):
+    if mode != "execute" and request.get("action") not in ("create", "edit", "delete"):
+        raise Refused("protocol")
+    if mode == "refresh" and request.get("action") == "delete":
         raise Refused("protocol")
     if request.get("keep_server") and mode != "reconcile":
         raise Refused("protocol")
@@ -64,6 +67,9 @@ def validate_request(request):
     if request.get("action") == "discover" and request.get("operation"):
         raise Refused("protocol")
     if request.get("action") == "preview-delete" and (not request.get("operation") or not request.get("state")):
+        raise Refused("protocol")
+    if request.get("action") == "delete" and (not request.get("operation") or not request.get("state")
+                                              or not plain_id(request.get("backup"))):
         raise Refused("protocol")
     if request.get("action") in ("create", "edit"):
         if not request.get("operation") or not request.get("state"):
@@ -444,6 +450,78 @@ async def capture_inventory(session):
     return {"format": 1, "properties": base64.b64encode(properties).decode(), "resources": resources}
 
 
+def read_backup(request):
+    """The preview's `remote.json`, read without following symlinks."""
+    directory = Path(request["state"]) / "lists/backups" / request["backup"]
+    for parent in (directory.parent.parent, directory.parent, directory):
+        if parent.is_symlink() or not parent.is_dir():
+            raise Refused("operation")
+    path = directory / "remote.json"
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise Refused("operation")
+            backup = json.loads(handle.read())
+        if (not isinstance(backup, dict) or backup.get("format") != 1
+                or not isinstance(backup.get("properties"), str) or not isinstance(backup.get("resources"), list)):
+            raise Refused("operation")
+        return backup
+    except (OSError, ValueError):
+        raise Refused("operation") from None
+
+
+def backup_matches(backup, captured):
+    """Properties by decoded bytes, resources as the set of (href, etag, sha256)."""
+    try:
+        if base64.b64decode(backup["properties"], validate=True) != base64.b64decode(captured["properties"], validate=True):
+            return False
+        wanted = {(r["href"], r["etag"], r["sha256"]) for r in backup["resources"]}
+        if len(wanted) != len(backup["resources"]):
+            raise Refused("operation")
+    except (KeyError, TypeError, ValueError):
+        raise Refused("operation") from None
+    return wanted == {(r["href"], r["etag"], r["sha256"]) for r in captured["resources"]}
+
+
+async def collection_absent(session):
+    probe = b'<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>'
+    try:
+        response, _ = await dav_request(session, "PROPFIND", data=probe,
+                                        headers={"Depth": "0", "Content-Type": "application/xml"})
+        return response.status == 404
+    except Exception as error:
+        from vdirsyncer.exceptions import NotFoundError
+        if not isinstance(error, NotFoundError):
+            raise
+        return True
+
+
+async def delete_collection(session, backup):
+    """Best effort: nothing on the server enforces the revalidated state at DELETE time."""
+    await read_properties(session)
+    if not backup_matches(backup, await capture_inventory(session)):
+        raise Refused("changed")
+    try:
+        response, _ = await dav_request(session, "DELETE")
+        status = response.status
+    except Exception as error:
+        from vdirsyncer.exceptions import NotFoundError
+        if not isinstance(error, NotFoundError):
+            raise
+        status = 404
+    if not (200 <= status < 300 or status == 404):
+        raise Refused("dav")
+
+
+async def reconcile_delete(session, backup):
+    """Read-only: never sends DELETE."""
+    if await collection_absent(session):
+        return
+    await read_properties(session)
+    raise Refused("present" if backup_matches(backup, await capture_inventory(session)) else "changed")
+
+
 def same_metadata(field, left, right):
     if field == "color":
         return canonical_color(left) == canonical_color(right)
@@ -480,17 +558,7 @@ async def write_metadata(session, changes, expected):
 
 
 async def create_task_collection(session, name, color):
-    probe = b'<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>'
-    try:
-        response, _ = await dav_request(session, "PROPFIND", data=probe,
-                                        headers={"Depth": "0", "Content-Type": "application/xml"})
-        absent = response.status == 404
-    except Exception as error:
-        from vdirsyncer.exceptions import NotFoundError
-        if not isinstance(error, NotFoundError):
-            raise
-        absent = True
-    if not absent:
+    if not await collection_absent(session):
         raise Refused("exists")
     root = ET.Element(C + "mkcalendar")
     properties = ET.SubElement(ET.SubElement(root, D + "set"), D + "prop")
@@ -672,6 +740,7 @@ async def dispatch(request, adapter, record):
                 return {"refreshed": True, "adopted": adopted}
             if mode == "refresh":
                 return await refresh_discovery(full, pair, adapter, connector)
+            backup = read_backup(request) if action == "delete" else None
             if mode == "reconcile":
                 if record is None or not record.get("remote_target"):
                     raise Refused("operation")
@@ -698,6 +767,12 @@ async def dispatch(request, adapter, record):
                 record["remote_target"] = target
                 atomic_json(request["operation"], record)
             changes = {key: request[key] for key in ("name", "color") if request.get(key) is not None}
+            if action == "delete":
+                if mode == "reconcile":
+                    await reconcile_delete(storage.session, backup)
+                else:
+                    await delete_collection(storage.session, backup)
+                return {"deleted": True, "collection": request["collection"]}
             if mode == "reconcile":
                 properties = await read_properties(storage.session)
                 if not request.get("keep_server") and any(not same_metadata(k, properties[k], v) for k, v in changes.items()):
@@ -781,8 +856,12 @@ def main():
                         record["phase"] = "uncertain"
                         if request["action"] == "preview-delete":
                             record["receipt"] = {"no_remote_write": True}
-                        elif mode == "execute" and isinstance(error, Refused) and error.code in ("stale", "exists"):
+                        elif (mode == "execute" and isinstance(error, Refused)
+                              and (error.code in ("stale", "exists") or (request["action"] == "delete" and error.code == "changed"))):
                             record["receipt"] = {"no_remote_write": True, "reason": error.code}
+                        elif (mode == "reconcile" and request["action"] == "delete" and isinstance(error, Refused)
+                              and error.code in ("present", "changed")):
+                            record["receipt"] = {"present": True, "reason": error.code}
                         atomic_json(request["operation"], record)
                     raise
                 finally:

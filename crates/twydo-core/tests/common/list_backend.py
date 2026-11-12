@@ -39,7 +39,9 @@ class Session(memory.MemoryDAV):
                          ignore_write=store["flags"].get("ignore_write", False))
         if self.exists:
             self.state = store["collections"][self.identity]
-        self.inventory = memory.InventoryDAV(store["flags"].get("inventory_fault"))
+        # `mutate_before_delete` makes the listing carry one resource the preview never saw.
+        fault = store["flags"].get("inventory_fault") or ("extra" if store["flags"].get("mutate_before_delete") else None)
+        self.inventory = memory.InventoryDAV(fault)
         self.inventory.url = self.url
 
     @classmethod
@@ -49,13 +51,23 @@ class Session(memory.MemoryDAV):
     async def request(self, method, path="", **kwargs):
         if method == "GET" or (method == "PROPFIND" and kwargs.get("headers", {}).get("Depth") == "1"):
             result = await self.inventory.request(method, path, **kwargs)
+        elif method == "DELETE" and load()["flags"].get("fail_delete_once"):
+            # A transport failure before the server applies the DELETE: the collection stays.
+            store = load()
+            store["flags"].pop("fail_delete_once")
+            store["calls"].append(method)
+            save(store)
+            raise OSError("synthetic transport failure")
         else:
             result = await super().request(method, path, **kwargs)
         store = load()
         store["calls"].append(method)
         if self.exists:
             store["collections"][self.identity] = self.state
-        hang = method == "MKCALENDAR" and store["flags"].pop("hang_after_create_once", False)
+        elif method == "DELETE":
+            store["collections"].pop(self.identity, None)
+        hang = ((method == "MKCALENDAR" and store["flags"].pop("hang_after_create_once", False))
+                or (method == "DELETE" and store["flags"].pop("hang_after_delete_once", False)))
         save(store)
         if hang:
             time.sleep(store["flags"].get("hang_seconds", 10))
