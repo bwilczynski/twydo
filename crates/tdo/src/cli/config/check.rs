@@ -70,14 +70,10 @@ const NAMES: [&str; 8] = [
 
 struct Builder {
     steps: Vec<Step>,
-    failed: Option<&'static str>,
 }
 
 impl Builder {
     fn push(&mut self, name: &'static str, status: Status, detail: String, hint: Option<String>) {
-        if status == Status::Fail && self.failed.is_none() {
-            self.failed = Some(name);
-        }
         self.steps.push(Step {
             name,
             status,
@@ -105,27 +101,13 @@ impl Builder {
         }
     }
 
-    /// True (after skipping the rest) when an earlier step failed.
-    fn blocked(&mut self) -> bool {
-        match self.failed {
-            Some(f) => {
-                self.skip_rest(&format!("skipped: {f} failed"));
-                true
-            }
-            None => false,
-        }
-    }
-
     fn done(self) -> Report {
         Report { steps: self.steps }
     }
 }
 
 pub fn run(path: &Path) -> Report {
-    let mut b = Builder {
-        steps: Vec::new(),
-        failed: None,
-    };
+    let mut b = Builder { steps: Vec::new() };
 
     let cfg = match Config::load(path) {
         Ok(c) => {
@@ -134,12 +116,13 @@ pub fn run(path: &Path) -> Report {
         }
         Err(e) => {
             b.fail("config", e.to_string(), INIT_HINT);
-            b.blocked();
+            b.skip_rest("skipped: config failed");
             return b.done();
         }
     };
 
-    if cfg.vdir.is_dir() {
+    let vdir_ok = cfg.vdir.is_dir();
+    if vdir_ok {
         b.pass("vdir", cfg.vdir.display().to_string());
     } else {
         b.fail(
@@ -147,9 +130,6 @@ pub fn run(path: &Path) -> Report {
             format!("{} is not a directory", cfg.vdir.display()),
             "create it, or rerun tdo config init",
         );
-    }
-    if b.blocked() {
-        return b.done();
     }
 
     let Some(sync) = cfg.sync.as_ref() else {
@@ -171,9 +151,6 @@ pub fn run(path: &Path) -> Report {
             "install vdirsyncer 0.21.x or set [sync].command",
         ),
         Err(e) => b.fail(step, e, "install vdirsyncer 0.21.x or set [sync].command"),
-    }
-    if b.blocked() {
-        return b.done();
     }
 
     // list helper
@@ -197,9 +174,6 @@ pub fn run(path: &Path) -> Report {
             "install vdirsyncer 0.21.x for the interpreter or set [sync].list_python",
         ),
     }
-    if b.blocked() {
-        return b.done();
-    }
 
     // password
     match run_password(&sync.password_command) {
@@ -210,25 +184,23 @@ pub fn run(path: &Path) -> Report {
             "check [sync].password_command by running it yourself",
         ),
     }
-    if b.blocked() {
-        return b.done();
-    }
 
-    // generated config
-    match existing_vdir_state(&cfg.state_dir(), &cfg.vdir) {
-        Ok(Some(vstate)) => b.pass(
-            "generated config",
-            vdirsyncer::config_path(&vstate).display().to_string(),
-        ),
-        Ok(None) => b.pass("generated config", "written on first sync"),
-        Err(e) => b.fail(
-            "generated config",
-            e.to_string(),
-            "check the state directory",
-        ),
-    }
-    if b.blocked() {
-        return b.done();
+    // generated config (depends on the vdir)
+    if !vdir_ok {
+        b.skip("generated config", "skipped: vdir failed");
+    } else {
+        match existing_vdir_state(&cfg.state_dir(), &cfg.vdir) {
+            Ok(Some(vstate)) => b.pass(
+                "generated config",
+                vdirsyncer::config_path(&vstate).display().to_string(),
+            ),
+            Ok(None) => b.pass("generated config", "written on first sync"),
+            Err(e) => b.fail(
+                "generated config",
+                e.to_string(),
+                "check the state directory",
+            ),
+        }
     }
 
     // ca file
@@ -279,8 +251,16 @@ fn run_with_timeout(
     timeout: Duration,
 ) -> Result<Output, String> {
     use std::os::unix::process::CommandExt;
-    let mut child = Command::new(cmd)
-        .args(args)
+    // Version probes get their own process group so a timeout kills what a wrapper started.
+    // A command that may read the terminal stays in ours: a background group would be
+    // stopped by SIGTTIN on its first tty read and would not see Ctrl-C.
+    let own_group = !inherit_stdin;
+    let mut command = Command::new(cmd);
+    command.args(args);
+    if own_group {
+        command.process_group(0);
+    }
+    let mut child = command
         .stdin(if inherit_stdin {
             Stdio::inherit()
         } else {
@@ -288,7 +268,6 @@ fn run_with_timeout(
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .process_group(0)
         .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -298,37 +277,54 @@ fn run_with_timeout(
             }
         })?;
     let pgid = child.id() as i32;
-    let out_h = drain(child.stdout.take());
-    let err_h = drain(child.stderr.take());
+    let out_rx = drain(child.stdout.take());
+    let err_rx = drain(child.stderr.take());
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,
             Ok(None) if Instant::now() >= deadline => {
-                // SAFETY: signalling the process group this function created.
-                unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                if own_group {
+                    // SAFETY: signalling the process group this function created.
+                    unsafe { libc::kill(-pgid, libc::SIGKILL) };
+                } else {
+                    let _ = child.kill();
+                }
                 let _ = child.wait();
                 return Err(format!("{cmd}: timed out after {} s", timeout.as_secs()));
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(20)),
-            Err(e) => return Err(format!("{cmd}: {e}")),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{cmd}: {e}"));
+            }
         }
+    };
+    // A grandchild (an agent the command started) may keep the pipes open: use what was
+    // read within a short grace period.
+    let grace = Instant::now() + Duration::from_secs(2);
+    let read = |rx: &std::sync::mpsc::Receiver<String>| {
+        rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
+            .unwrap_or_default()
     };
     Ok(Output {
         status,
-        stdout: out_h.join().unwrap_or_default(),
-        stderr: err_h.join().unwrap_or_default(),
+        stdout: read(&out_rx),
+        stderr: read(&err_rx),
     })
 }
 
-fn drain<R: Read + Send + 'static>(r: Option<R>) -> std::thread::JoinHandle<String> {
+fn drain<R: Read + Send + 'static>(r: Option<R>) -> std::sync::mpsc::Receiver<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
         if let Some(mut r) = r {
             let _ = r.read_to_end(&mut buf);
         }
-        String::from_utf8_lossy(&buf).into_owned()
-    })
+        let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
+    });
+    rx
 }
 
 /// Run a version probe and parse its output; the error is the step's detail.

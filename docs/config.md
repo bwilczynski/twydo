@@ -101,7 +101,8 @@ The password and TLS settings are passed on to vdirsyncer unchanged.
 `tdo config check` reports, step by step, whether this machine is ready to sync. It checks only
 this machine: it never contacts the server, never starts the daemon and writes nothing (it does
 not bind state either). Each step shows `✓`, `✗` or `–` (skipped) with a one-line detail, and a
-failing step adds a `hint:` line. A failure skips the steps after it. The exit code is 1 when
+failing step adds a `hint:` line. A failure skips only the steps that depend on it: a bad `config` skips everything after it, a
+bad `vdir` skips `generated config`, and the other steps run independently. The exit code is 1 when
 any step fails, else 0.
 
 | Step | Passes when |
