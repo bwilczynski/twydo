@@ -394,3 +394,98 @@ fn deleted_list_is_not_recreated_by_the_next_sync() {
             .any(|v| v == "MKCALENDAR")
     );
 }
+
+/// A delete whose DELETE reached the server and was confirmed, with retirement not begun: the
+/// operation is unfinished and the next reconcile retires the list.
+#[cfg(unix)]
+fn confirmed_but_unretired() -> (
+    tempfile::TempDir,
+    Config,
+    ListService,
+    String,
+    std::path::PathBuf,
+) {
+    let (d, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "hang_after_delete_once");
+    assert!(service.delete_list(&preview).is_err());
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    let id = id.trim().to_string();
+    // The helper confirmed the deletion (a crash before retirement began).
+    let file = state.join("lists/operations").join(format!("{id}.json"));
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+    record["phase"] = "remote-confirmed".into();
+    record["receipt"] = serde_json::json!({"deleted": true, "collection": "synthetic"});
+    fs::write(file, record.to_string()).unwrap();
+    (d, cfg, service, id, state)
+}
+
+#[cfg(unix)]
+#[test]
+fn local_edit_after_confirmed_delete_is_preserved_and_retired() {
+    let (d, cfg, mut service, id, _state) = confirmed_but_unretired();
+    fs::write(
+        cfg.vdir.join("synthetic/local.ics"),
+        b"edited after the delete",
+    )
+    .unwrap();
+    let ListResult::Deleted { retired, .. } = service.reconcile(&id).unwrap() else {
+        panic!("expected a deletion")
+    };
+    assert_eq!(deletes(d.path()), 1);
+    assert!(!cfg.vdir.join("synthetic").exists());
+    no_active(&cfg);
+    let kept = twydo_core::retired::data_dir(&cfg, &retired).unwrap();
+    assert_eq!(
+        fs::read(kept.join("synthetic/local.ics")).unwrap(),
+        b"edited after the delete"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn interrupted_retirement_with_partial_directory_resumes() {
+    let (d, cfg, mut service, id, state) = confirmed_but_unretired();
+    // A crash inside resume_locked: the manifest is in place, removal got part way.
+    let files = twydo_core::lists::operation::snapshot(&cfg.vdir.join("synthetic"))
+        .unwrap()
+        .unwrap();
+    let retired_id = "20261112T000000Z-partial";
+    let dir = state.join("retired").join(retired_id);
+    for (name, bytes) in &files {
+        let path = dir.join("data/synthetic").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let manifest = twydo_core::retired::Backup {
+        format: 1,
+        id: retired_id.into(),
+        collection: "synthetic".into(),
+        name: "Before".into(),
+        created: chrono::Utc::now(),
+        tasks: 1,
+        pending: 0,
+        files: files.keys().cloned().collect(),
+        journal: vec![],
+        conflicts: vec![],
+        retired: false,
+        recovery: None,
+        destination: None,
+    };
+    fs::write(
+        dir.join("backup.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::remove_file(cfg.vdir.join("synthetic/local.ics")).unwrap();
+    let ListResult::Deleted { retired, .. } = service.reconcile(&id).unwrap() else {
+        panic!("expected a deletion")
+    };
+    assert_eq!(retired, retired_id);
+    assert_eq!(deletes(d.path()), 1);
+    assert!(!cfg.vdir.join("synthetic").exists());
+    no_active(&cfg);
+}
