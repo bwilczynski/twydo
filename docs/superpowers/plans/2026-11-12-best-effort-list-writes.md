@@ -45,20 +45,20 @@
 - Produces: `pub enum AcceptedRisk { BestEffort }` (serde `"best-effort"`), `Contract.accepted_risk: Option<AcceptedRisk>`.
 - Produces: refusal text = `RequirementFailure`'s `Display`, plus the sentence `" The server does not protect against concurrent remote edits."` only when `direction == Some("atomicity")`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `accepted_risk_is_only_valid_on_list_metadata_and_delete`: parsing a v2 matrix with `accepted_risk = "best-effort"` on `title.*` (any non-list row) → `MatrixError::Invalid`; on either list row → Ok.
   - `best_effort_admits_failed_atomicity_and_unverified_directions_in_both_modes`: row with `atomicity = "fail"`, all directions `unverified`, `accepted_risk = "best-effort"` → `require` Ok in `Verified` and `Test`.
   - `best_effort_still_refuses_fail_or_unsupported`: same row with `twydo_to_iphone = "fail"` → Err direction `twydo_to_iphone`; with `atomicity = "unsupported"` → Err direction `atomicity`; with `iphone_baseline = "unsupported"` → Err.
   - `without_acceptance_list_rows_refuse_as_before`: the embedded rows with `accepted_risk` removed → Err direction `atomicity` in both modes.
   - `embedded_matrix_admits_list_metadata_and_delete`: `Matrix::embedded().require(ListMetadata|ListDelete, Verified)` → Ok.
   - `refusal_names_the_failing_direction` (#84): custom matrix from the issue (atomicity pass, `twydo_to_iphone` unverified, no acceptance, Verified mode) → `ListService::execute(Edit…)` error contains `list-metadata.collection: twydo_to_iphone` and not `concurrent`.
-- [ ] **Step 2: Run** `cargo test -p twydo-core --test lists_remote --test gate_contract_parity` plus the compat test target; expect the new tests to fail to compile or fail.
-- [ ] **Step 3: Implement.** Parser rejects `accepted_risk` outside the two list contracts (same place as the `atomicity` check). In `require`, for `ListMetadata|ListDelete` with `accepted_risk == Some(BestEffort)`: refuse only if atomicity, `iphone_baseline` or either direction is `Fail`/`Unsupported`; otherwise Ok, skipping the `strict`/Verified direction loop. Without acceptance, unchanged. `capability` uses the failure's `Display` (+ atomicity sentence) and reports the unknown `case` name.
-- [ ] **Step 4: Update matrix rows.** Add `accepted_risk = "best-effort"` to both; keep `atomicity = "fail"`. Notes: `"Best-effort: accepted by the user on 2026-11-12. The server does not enforce protection against concurrent remote edits; a phone change racing a Twydo write can be overwritten (metadata) or lost (delete)."` For delete, add the lifecycle-round phone disappearance as `twydo_to_iphone` evidence only if `python3 tools/check_evidence.py` accepts the existing case; otherwise leave it unverified.
-- [ ] **Step 5: Re-point the old refusal tests** at a matrix with the acceptance stripped (helper `without_acceptance(Matrix) -> Matrix` in the test file), keeping their assertions. Update the parity case: list rows are now admitted under the embedded matrix and still refused without acceptance.
-- [ ] **Step 6: Run** `cargo test -p twydo-core` and `python3 tools/check_evidence.py`; all pass.
-- [ ] **Step 7: Docs.** `docs/compatibility.md`: explain `accepted_risk`, that it exists only for the two list contracts, and what risk was accepted.
-- [ ] **Step 8: Commit** `feat(compat): accept best-effort list metadata and deletion`.
+- [x] **Step 2: Run** `cargo test -p twydo-core --test lists_remote --test gate_contract_parity` plus the compat test target; expect the new tests to fail to compile or fail.
+- [x] **Step 3: Implement.** Parser rejects `accepted_risk` outside the two list contracts (same place as the `atomicity` check). In `require`, for `ListMetadata|ListDelete` with `accepted_risk == Some(BestEffort)`: refuse only if atomicity, `iphone_baseline` or either direction is `Fail`/`Unsupported`; otherwise Ok, skipping the `strict`/Verified direction loop. Without acceptance, unchanged. `capability` uses the failure's `Display` (+ atomicity sentence) and reports the unknown `case` name.
+- [x] **Step 4: Update matrix rows.** Add `accepted_risk = "best-effort"` to both; keep `atomicity = "fail"`. Notes: `"Best-effort: accepted by the user on 2026-11-12. The server does not enforce protection against concurrent remote edits; a phone change racing a Twydo write can be overwritten (metadata) or lost (delete)."` For delete, add the lifecycle-round phone disappearance as `twydo_to_iphone` evidence only if `python3 tools/check_evidence.py` accepts the existing case; otherwise leave it unverified.
+- [x] **Step 5: Re-point the old refusal tests** at a matrix with the acceptance stripped (helper `without_acceptance(Matrix) -> Matrix` in the test file), keeping their assertions. Update the parity case: list rows are now admitted under the embedded matrix and still refused without acceptance.
+- [x] **Step 6: Run** `cargo test -p twydo-core` and `python3 tools/check_evidence.py`; all pass.
+- [x] **Step 7: Docs.** `docs/compatibility.md`: explain `accepted_risk`, that it exists only for the two list contracts, and what risk was accepted.
+- [x] **Step 8: Commit** `feat(compat): accept best-effort list metadata and deletion`.
 
 ### Task 2: Rename/recolor live
 
@@ -71,14 +71,14 @@
 **Interfaces:**
 - Consumes: Task 1's embedded matrix admitting `ListMetadata`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - core `embedded_matrix_renames_and_recolors_in_verified_mode`: offline backend, `ListService::open(&cfg, None)` with `cfg.writes.mode = Verified`, create then Edit name and color → `state()` shows both; task file bytes unchanged; exactly one PROPPATCH call in `server.json`.
   - tdo `card_explains_best_effort_overwrite_risk`: rendering the edit card contains `can overwrite a simultaneous change made on another device`.
-- [ ] **Step 2: Run** them; expect failures (the first currently refuses on atomicity, the second lacks the text).
-- [ ] **Step 3: Implement.** Replace `prototype_metadata_service` uses that only existed to bypass the gate with `ListService::open`; keep the synthetic matrix only where a test needs an otherwise-unavailable verdict. Add the copy to the card.
-- [ ] **Step 4: Run** `cargo test -p twydo-core --test lists_remote` and `cargo test -p tdo --test lists`; pass.
-- [ ] **Step 5: Docs.** `docs/tui.md`: rename/recolor saves to CalDAV in both modes, best-effort, may overwrite a simultaneous phone edit.
-- [ ] **Step 6: Commit** `feat: enable best-effort list rename and recolor`.
+- [x] **Step 2: Run** them; expect failures (the first currently refuses on atomicity, the second lacks the text).
+- [x] **Step 3: Implement.** Replace `prototype_metadata_service` uses that only existed to bypass the gate with `ListService::open`; keep the synthetic matrix only where a test needs an otherwise-unavailable verdict. Add the copy to the card.
+- [x] **Step 4: Run** `cargo test -p twydo-core --test lists_remote` and `cargo test -p tdo --test lists`; pass.
+- [x] **Step 5: Docs.** `docs/tui.md`: rename/recolor saves to CalDAV in both modes, best-effort, may overwrite a simultaneous phone edit.
+- [x] **Step 6: Commit** `feat: enable best-effort list rename and recolor`.
 
 ### Task 3: Helper `delete` action
 
@@ -94,17 +94,17 @@
 - Failure receipts (in `main`): execute-mode `changed` records `{"no_remote_write": true, "reason": "changed"}` (as `stale`/`exists` do today); reconcile-mode `present` or `changed` records `{"present": true, "reason": code}`.
 - `"delete"` is added to the modes allowed with `reconcile`; `refresh` stays create/edit only.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `test_delete_request_requires_backup_operation_and_state`
   - `test_delete_revalidates_then_sends_one_unconditional_delete`: DAV records one `DELETE` to the exact collection URL with no `If-Match` header.
   - `test_delete_refuses_changed_inventory_or_properties`: an extra resource, a changed ETag, changed bytes, or changed properties → `Refused("changed")`, zero DELETEs.
   - `test_delete_refuses_incomplete_inventory_before_delete` (reuse the inventory faults).
   - `test_delete_reconcile_distinguishes_absent_present_changed_and_unreachable`.
-- [ ] **Step 2: Run** `python3 -m unittest tools.tests.test_list_helper`; new tests fail.
-- [ ] **Step 3: Implement** per Interfaces. Reuse `capture_inventory`/`read_properties`; compare hashes, not the raw base64.
-- [ ] **Step 4: Backend.** `list_backend.py` records `DELETE` in `calls`, removes the collection from `server.json`, and supports flags `hang_after_delete_once` and `mutate_before_delete` (adds a resource after the preview) for Task 4.
-- [ ] **Step 5: Run** the Python tests and `python3 -m unittest discover -s tools/tests -t .`; pass.
-- [ ] **Step 6: Commit** `feat(helper): delete a list collection after revalidating its backup`.
+- [x] **Step 2: Run** `python3 -m unittest tools.tests.test_list_helper`; new tests fail.
+- [x] **Step 3: Implement** per Interfaces. Reuse `capture_inventory`/`read_properties`; compare hashes, not the raw base64.
+- [x] **Step 4: Backend.** `list_backend.py` records `DELETE` in `calls`, removes the collection from `server.json`, and supports flags `hang_after_delete_once` and `mutate_before_delete` (adds a resource after the preview) for Task 4.
+- [x] **Step 5: Run** the Python tests and `python3 -m unittest discover -s tools/tests -t .`; pass.
+- [x] **Step 6: Commit** `feat(helper): delete a list collection after revalidating its backup`.
 
 ### Task 4: `delete_list` service, retirement and reconciliation
 
@@ -123,7 +123,7 @@
 - Produces: `operation::release_present(cfg: &Config, id: &str) -> Result<(), ListError>` in `crates/twydo-core/src/lists/operation.rs`: only for a `delete` record whose receipt has `present: true`; marks it `Complete` and clears `lists/active` under the same locks `finish` uses. (`cancel_unstarted` refuses started operations, so it cannot serve here.)
 - Reconcile (`action == "delete"`): `RemoteConfirmed` or reconcile result `deleted` → retire and finish. `present` → `release_present` and refuse `"the list still exists on the server; delete it again if you still want to"`. `changed` → `release_present` and refuse with "review deletion again". `dav` → keep `Uncertain`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `delete_sends_one_delete_retires_local_copy_and_keeps_backup`: preview then `delete_list` → `Deleted`; `server.json` has one `DELETE` and no collection; `vdir/synthetic` is gone; `backup::get` and `backup::export` still work; `lists/active` absent; `sync/rediscover` written.
   - `delete_refuses_changed_local_bytes_without_sending_delete`: modify `vdir/synthetic/local.ics` after preview → refusal containing `review deletion again`, zero DELETEs, no active operation.
   - `delete_refuses_changed_remote_inventory_without_sending_delete` (flag `mutate_before_delete`).
@@ -131,10 +131,10 @@
   - `timeout_after_delete_reconciles_absence_and_retires_without_a_second_delete` (flag `hang_after_delete_once`, short `timeout_secs`): first call errors with `needs reconciliation`; `reconcile(op)` → `Deleted`; exactly one DELETE.
   - `reconcile_with_list_still_present_releases_the_fence`: DELETE never reached the server (fault before send) → reconcile refuses with `still exists`, no active operation, local copy intact.
   - `deleted_list_is_not_recreated_by_the_next_sync`: after delete, run the existing offline sync path used in `sync_discover.rs`; no MKCALENDAR, no `vdir/synthetic`.
-- [ ] **Step 2: Run** `cargo test -p twydo-core --test lists_recovery`; new tests fail (today `delete_list` always refuses).
-- [ ] **Step 3: Implement** per Interfaces. Update the `backup.rs` module doc (no longer "No DELETE is issued").
-- [ ] **Step 4: Run** `cargo test -p twydo-core`; pass.
-- [ ] **Step 5: Commit** `feat: delete lists from CalDAV after a verified backup`.
+- [x] **Step 2: Run** `cargo test -p twydo-core --test lists_recovery`; new tests fail (today `delete_list` always refuses).
+- [x] **Step 3: Implement** per Interfaces. Update the `backup.rs` module doc (no longer "No DELETE is issued").
+- [x] **Step 4: Run** `cargo test -p twydo-core`; pass.
+- [x] **Step 5: Commit** `feat: delete lists from CalDAV after a verified backup`.
 
 ### Task 5: Daemon result, TUI completion and docs
 
@@ -149,26 +149,28 @@
 - Confirmation text: `Delete {name:?} ({collection}) from CalDAV and ALL DEVICES? Backup {backup} preserves {resources} remote resource(s) and {local_files} local file(s); it can be exported but not yet restored. Best-effort: a change made on another device at the same moment can be lost. y delete · n/Esc cancel`
 - Success message: `Deleted {name} from CalDAV; backup {backup} kept`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - daemon `delete_job_reports_the_deleted_list` (offline backend): `lists.preview_delete` then `lists.delete` → result kind `ListDeleted` with the backup id.
   - tdo `deleting_the_open_list_returns_to_today_and_drops_it_from_the_sidebar`.
   - tdo `delete_confirmation_defaults_to_cancel_and_states_best_effort`: Enter/Esc/`n` cancel without a job; text contains `Best-effort`.
   - tdo `changed_since_backup_refusal_is_shown_and_dd_previews_again`.
-- [ ] **Step 2: Run** `cargo test -p twydo-daemon --test lists` and `cargo test -p tdo --test lists`; fail.
-- [ ] **Step 3: Implement.** On `Deleted`: remove the collection from `snapshot.collections`, `open(View::Today)` if it was open, close the card, `sync_sidebar()`, set the success message. Remove the `ListAction::PreviewDelete | Delete => "List saved"` arm's misleading text.
-- [ ] **Step 4: Run** both test targets plus `cargo test -p tdo`; pass.
-- [ ] **Step 5: Docs.** `docs/tui.md`: `dd` deletes after backup/confirmation, best-effort, backup exportable, restore not yet (#75). `docs/protocol.md`: new result. Add a one-line pointer to this plan in the issue-69 design's "Open decisions" and the issue-69 plan's ledger.
-- [ ] **Step 6: Commit** `feat(tdo): delete lists from the sidebar`.
+- [x] **Step 2: Run** `cargo test -p twydo-daemon --test lists` and `cargo test -p tdo --test lists`; fail.
+- [x] **Step 3: Implement.** On `Deleted`: remove the collection from `snapshot.collections`, `open(View::Today)` if it was open, close the card, `sync_sidebar()`, set the success message. Remove the `ListAction::PreviewDelete | Delete => "List saved"` arm's misleading text.
+- [x] **Step 4: Run** both test targets plus `cargo test -p tdo`; pass.
+- [x] **Step 5: Docs.** `docs/tui.md`: `dd` deletes after backup/confirmation, best-effort, backup exportable, restore not yet (#75). `docs/protocol.md`: new result. Add a one-line pointer to this plan in the issue-69 design's "Open decisions" and the issue-69 plan's ledger.
+- [x] **Step 6: Commit** `feat(tdo): delete lists from the sidebar`.
 
 ### Task 6: Full validation and review
 
-- [ ] Run `cargo test --workspace`, `python3 -m unittest discover -s tools/tests -t .`, `python3 tools/check_links.py`, `python3 tools/check_evidence.py`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`, `git diff --check`. All pass.
-- [ ] Packaged-helper smoke: run the embedded helper source from a scratch directory with `{"version":1,"action":"probe",...}`; it answers `vdirsyncer-0.21`.
-- [ ] Privacy-scan new fixtures and staged content (`git diff main --stat`, inspect new fixture bytes).
-- [ ] Whole-branch review via `superpowers:requesting-code-review`; fix concrete findings in focused commits with targeted reruns.
+- [x] Run `cargo test --workspace`, `python3 -m unittest discover -s tools/tests -t .`, `python3 tools/check_links.py`, `python3 tools/check_evidence.py`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`, `git diff --check`. All pass.
+- [x] Packaged-helper smoke: run the embedded helper source from a scratch directory with `{"version":1,"action":"probe",...}`; it answers `vdirsyncer-0.21`.
+- [x] Privacy-scan new fixtures and staged content (`git diff main --stat`, inspect new fixture bytes).
+- [x] Whole-branch review via `superpowers:requesting-code-review`; fix concrete findings in focused commits with targeted reruns.
 - [ ] Offer the Codex review (`hc run … reviewer`) and a terminal diff review (`git diff main HEAD | hunk patch`).
 - [ ] After merge (user's call): comment on and close #73, #74 and #84, stating the policy basis. No release or installed-binary update is included.
 
 ## Execution ledger
 
 - 2026-11-12: design approved by the user and committed (`975c590`). Plan written; no product code changed.
+- Tasks 1–5 implemented subagent-driven with a task review each (Task 3: one fix round, 207 Multi-Status no longer counts as deleted; Task 4: two fix rounds, retirement after a confirmed or uncertain delete can no longer wedge the vdir fence). Final whole-branch review found no Critical/Important issues; one fix wave corrected two stale statements, recorded the retired id in the delete operation and split a key arm. Final validation: 1,621 Rust tests, Python tools, links, evidence, clippy, fmt and whitespace checks pass; packaged helper probe passes from a scratch directory. No NAS/phone access.
+- Rulings: under `accepted_risk`, failed atomicity is admitted and only `unsupported` refuses; `retired::forget_fenced`/`operation::finish_deleted` added because the plain forget/finish cannot run under the delete's own fence; a deleted list's local copy also appears in forgotten-list recovery; after a "changed since backup" refusal the card stays on Delete (Enter or Esc then `dd` re-previews). Parked: the crash-window fallback in `deleted()` could report a future-dated retired id.
