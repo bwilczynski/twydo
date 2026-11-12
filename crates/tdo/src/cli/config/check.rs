@@ -57,11 +57,12 @@ impl Report {
     }
 }
 
-const NAMES: [&str; 8] = [
+const NAMES: [&str; 9] = [
     "config",
     "vdir",
     "sync",
     "vdirsyncer",
+    "tdo on PATH",
     "list helper",
     "password",
     "generated config",
@@ -153,6 +154,16 @@ pub fn run(path: &Path) -> Report {
         Err(e) => b.fail(step, e, "install vdirsyncer 0.21.x or set [sync].command"),
     }
 
+    // tdo on PATH: the conflict hook runs `tdo` by name
+    match find_on_path("tdo") {
+        Some(p) => b.pass("tdo on PATH", p.display().to_string()),
+        None => b.fail(
+            "tdo on PATH",
+            "no executable named tdo on PATH",
+            "the conflict hook runs `tdo` by name: put it on the PATH the daemon and vdirsyncer run with",
+        ),
+    }
+
     // list helper
     let step = "list helper";
     match probe(
@@ -223,6 +234,18 @@ pub fn run(path: &Path) -> Report {
     b.done()
 }
 
+/// The first executable regular file named `name` in a PATH directory.
+fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .filter(|d| !d.as_os_str().is_empty())
+        .map(|d| d.join(name))
+        .find(|c| {
+            std::fs::metadata(c).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
+}
+
 /// The text after `marker` up to the next whitespace, when it looks like `d.d.d`.
 fn version_of(out: &str, marker: &str) -> Option<String> {
     let rest = &out[out.find(marker)? + marker.len()..];
@@ -277,8 +300,8 @@ fn run_with_timeout(
             }
         })?;
     let pgid = child.id() as i32;
-    let out_rx = drain(child.stdout.take());
-    let err_rx = drain(child.stderr.take());
+    let out = Drain::spawn(child.stdout.take());
+    let err = Drain::spawn(child.stderr.take());
     let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
@@ -301,30 +324,50 @@ fn run_with_timeout(
             }
         }
     };
-    // A grandchild (an agent the command started) may keep the pipes open: use what was
-    // read within a short grace period.
+    // A grandchild (an agent the command started) may keep the pipes open, so EOF may never
+    // come: wait for it within a short grace period, then use whatever was read so far.
     let grace = Instant::now() + Duration::from_secs(2);
-    let read = |rx: &std::sync::mpsc::Receiver<String>| {
-        rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
-            .unwrap_or_default()
-    };
     Ok(Output {
         status,
-        stdout: read(&out_rx),
-        stderr: read(&err_rx),
+        stdout: out.collect(grace),
+        stderr: err.collect(grace),
     })
 }
 
-fn drain<R: Read + Send + 'static>(r: Option<R>) -> std::sync::mpsc::Receiver<String> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut r) = r {
-            let _ = r.read_to_end(&mut buf);
-        }
-        let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
-    });
-    rx
+/// A pipe read in the background into a shared buffer, so a partial read stays available
+/// when the pipe never reaches EOF.
+struct Drain {
+    buf: std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    eof: std::sync::mpsc::Receiver<()>,
+}
+
+impl Drain {
+    fn spawn<R: Read + Send + 'static>(r: Option<R>) -> Self {
+        let buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (tx, eof) = std::sync::mpsc::channel();
+        let shared = buf.clone();
+        std::thread::spawn(move || {
+            if let Some(mut r) = r {
+                let mut chunk = [0u8; 4096];
+                while let Ok(n) = r.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    shared.lock().unwrap().extend_from_slice(&chunk[..n]);
+                }
+            }
+            let _ = tx.send(());
+        });
+        Drain { buf, eof }
+    }
+
+    /// Wait for EOF until `deadline`, then return everything read so far.
+    fn collect(&self, deadline: Instant) -> String {
+        let _ = self
+            .eof
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()));
+        String::from_utf8_lossy(&self.buf.lock().unwrap()).into_owned()
+    }
 }
 
 /// Run a version probe and parse its output; the error is the step's detail.

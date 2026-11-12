@@ -34,9 +34,13 @@ in [config.md](config.md) (`[sync]`).
    itself, point it at the generated file: `VDIRSYNCER_CONFIG=<state>/<vdir>/vdirsyncer/config
    vdirsyncer discover twydo`.
 
-   **Upgrading from 0.2.x.** Sync every machine first, then update the config with `tdo config
-   init`. Your old vdirsyncer config and its status directory are left unused; delete them when
-   you like. The first sync after the upgrade discovers the collections again.
+   **Upgrading from 0.2.x.** Sync every machine first, and upgrade `tdo` on every machine
+   before you stow or share the new `config.toml`: an older `tdo` or daemon fails on the `url`
+   and `username` keys the moment the file is linked. Then update the config with `tdo config
+   init`. Other settings of your old hand-written vdirsyncer file (such as `verify_fingerprint`,
+   `auth` or extra timeouts) are not carried over; `ca_file` is the only TLS setting.
+   Your old vdirsyncer config and its status directory are left unused; delete them when you
+   like. The first sync after the upgrade discovers the collections again.
 
 3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result. The
    daemon starts when needed.

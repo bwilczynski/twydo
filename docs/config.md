@@ -94,7 +94,12 @@ key. `tdo config init` rewrites the file without them. Edits sync in batches (`b
 
 The collection adapter works on the generated config: a filesystem/CalDAV pair whose local
 storage is the bound vdir and whose `status_path` is outside it. Its `url` is always literal.
-The password and TLS settings are passed on to vdirsyncer unchanged.
+The password is passed on to vdirsyncer unchanged. `ca_file` is the only TLS setting: other
+settings of an old hand-written vdirsyncer config (such as `verify_fingerprint`, `auth` or extra
+timeouts) are not carried over.
+
+Upgrade `tdo` on every machine before you stow or share the new `config.toml`: an older `tdo` or
+daemon rejects `url` and `username` the moment the file is linked.
 
 ## Guided setup: `tdo config init`
 
@@ -133,6 +138,7 @@ any step fails, else 0.
 | `vdir` | the vdir exists and is a directory |
 | `sync` | `[sync]` is present; without it this is `sync off` and the steps below are skipped |
 | `vdirsyncer` | `[sync].command --version` reports 0.21.x |
+| `tdo on PATH` | an executable named `tdo` is on the PATH (the conflict hook runs `tdo` by name, so the daemon and vdirsyncer need it on their PATH); skipped when sync is off |
 | `list helper` | `[sync].list_python` imports vdirsyncer 0.21.x |
 | `password` | `password_command` exits 0 and prints a non-empty first line. The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
 | `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound) |
