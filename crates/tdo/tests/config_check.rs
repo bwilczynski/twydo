@@ -253,3 +253,42 @@ fn password_kept_by_grandchild_pipe_still_counts() {
     assert_eq!(o.status.code(), Some(0), "{out}");
     line(&out, "✓ password");
 }
+
+#[test]
+fn password_with_extra_lines_fails_without_leaking() {
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret; echo 'username: alice'");
+    e.config(&e.sync(&pw, ""));
+    let o = e.run();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    line(&out, "✗ password");
+    assert!(out.contains("whole output"), "{out}");
+    assert!(!out.contains("s3cret"), "{out}");
+    assert!(!out.contains("alice\n"), "{out}");
+    assert!(!String::from_utf8_lossy(&o.stderr).contains("s3cret"));
+}
+
+#[test]
+fn read_only_state_dir_fails_generated_config() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret");
+    let state = e.p("custom-state");
+    fs::create_dir_all(&state).unwrap();
+    e.config(&format!(
+        "state_dir = \"{}\"\n{}",
+        state.display(),
+        e.sync(&pw, "")
+    ));
+    let vstate = twydo_core::store::bind_vdir_state(&state, &e.p("vdir")).unwrap();
+    fs::set_permissions(&vstate, fs::Permissions::from_mode(0o555)).unwrap();
+    let o = e.run();
+    fs::set_permissions(&vstate, fs::Permissions::from_mode(0o755)).unwrap();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    let l = line(&out, "✗ generated config");
+    assert!(l.contains("ermission denied"), "{l}");
+}

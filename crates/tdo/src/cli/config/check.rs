@@ -192,7 +192,7 @@ pub fn run(path: &Path) -> Report {
         Err(e) => b.fail(
             "password",
             e,
-            "check [sync].password_command by running it yourself",
+            "vdirsyncer uses the whole output as the password; print only the password (e.g. [\"sh\", \"-c\", \"pass show x | head -n1\"])",
         ),
     }
 
@@ -201,10 +201,17 @@ pub fn run(path: &Path) -> Report {
         b.skip("generated config", "skipped: vdir failed");
     } else {
         match existing_vdir_state(&cfg.state_dir(), &cfg.vdir) {
-            Ok(Some(vstate)) => b.pass(
-                "generated config",
-                vdirsyncer::config_path(&vstate).display().to_string(),
-            ),
+            Ok(Some(vstate)) => match state_writable(&vstate) {
+                Ok(()) => b.pass(
+                    "generated config",
+                    vdirsyncer::config_path(&vstate).display().to_string(),
+                ),
+                Err(e) => b.fail(
+                    "generated config",
+                    e,
+                    "make the state directory writable by this user",
+                ),
+            },
             Ok(None) => b.pass("generated config", "written on first sync"),
             Err(e) => b.fail(
                 "generated config",
@@ -398,6 +405,30 @@ fn describe_failure(out: &Output) -> String {
     }
 }
 
+/// Whether the vdir state (and its `vdirsyncer` subdirectory, if present) is a writable
+/// directory. Uses `access(2)`, so nothing is written.
+fn state_writable(vstate: &Path) -> Result<(), String> {
+    use std::os::unix::ffi::OsStrExt;
+    let sub = vstate.join("vdirsyncer");
+    let mut dirs = vec![vstate.to_path_buf()];
+    if sub.exists() {
+        dirs.push(sub);
+    }
+    for d in dirs {
+        let md = std::fs::metadata(&d).map_err(|e| format!("{}: {e}", d.display()))?;
+        if !md.is_dir() {
+            return Err(format!("{} is not a directory", d.display()));
+        }
+        let c = std::ffi::CString::new(d.as_os_str().as_bytes())
+            .map_err(|e| format!("{}: {e}", d.display()))?;
+        // SAFETY: `c` is a valid NUL-terminated path for the duration of the call.
+        if unsafe { libc::access(c.as_ptr(), libc::W_OK) } != 0 {
+            return Err(format!("{}: {}", d.display(), std::io::Error::last_os_error()));
+        }
+    }
+    Ok(())
+}
+
 /// Run the password command; its stdout is read but never reported.
 fn run_password(cmd: &[String]) -> Result<(), String> {
     let (prog, args) = cmd
@@ -408,8 +439,13 @@ fn run_password(cmd: &[String]) -> Result<(), String> {
     if !out.status.success() {
         return Err(describe_failure(&out));
     }
-    match out.stdout.lines().next() {
-        Some(l) if !l.is_empty() => Ok(()),
-        _ => Err("password_command printed no password".to_string()),
+    // vdirsyncer 0.21 uses the whole stdout minus leading and trailing newlines.
+    let pw = out.stdout.trim_matches('\n');
+    if pw.is_empty() {
+        Err("password_command printed no password".to_string())
+    } else if pw.contains('\n') {
+        Err("password_command printed more than one line".to_string())
+    } else {
+        Ok(())
     }
 }

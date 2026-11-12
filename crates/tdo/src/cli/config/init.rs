@@ -16,7 +16,7 @@ const Q_VDIR: &str = "Vdir";
 const Q_SYNC: &str = "Sync with a CalDAV server?";
 const Q_URL: &str = "Server URL";
 const Q_USER: &str = "Username";
-const Q_PASS: &str = "Password command (prints the password, e.g. pass show twydo/caldav)";
+const Q_PASS: &str = "Password command (prints only the password, e.g. pass show twydo/caldav)";
 /// Keys the generated vdirsyncer config replaced.
 const REMOVED: [&str; 4] = ["pair", "local_storage", "vdirsyncer_config", "after_edit"];
 
