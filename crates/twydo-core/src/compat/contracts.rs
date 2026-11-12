@@ -150,6 +150,15 @@ contracts! {
     SetRepeatNthWeekend => SetRepeat, "set-repeat.nth-weekend", "setting a repeat on the nth weekend day of the month";
 }
 
+/// A risk the user knowingly accepted for a contract that cannot be proven safe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AcceptedRisk {
+    /// The server offers no protection against concurrent remote edits; the write is
+    /// attempted anyway. Only list metadata and list deletion may carry it.
+    BestEffort,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
@@ -167,6 +176,9 @@ pub struct Contract {
     /// Collection atomicity is independent of successful client round trips.
     #[serde(default)]
     pub atomicity: Option<Verdict>,
+    /// Explicit user acceptance that admits a list write despite failed atomicity.
+    #[serde(default)]
+    pub accepted_risk: Option<AcceptedRisk>,
 }
 fn unverified() -> Verdict {
     Verdict::Unverified
@@ -237,6 +249,17 @@ impl Matrix {
                     contract.id.as_str()
                 )));
             }
+            if contract.accepted_risk.is_some()
+                && !matches!(
+                    contract.id,
+                    ContractId::ListMetadata | ContractId::ListDelete
+                )
+            {
+                return Err(MatrixError::Invalid(format!(
+                    "accepted_risk is not applicable to {}",
+                    contract.id.as_str()
+                )));
+            }
             if !seen.insert(contract.id) {
                 return Err(MatrixError::Invalid(format!(
                     "duplicate contract {}",
@@ -296,7 +319,28 @@ impl Matrix {
                 }
             }
         }
-        if matches!(id, ContractId::ListMetadata | ContractId::ListDelete) {
+        let list_write = matches!(id, ContractId::ListMetadata | ContractId::ListDelete);
+        if list_write && record.accepted_risk == Some(AcceptedRisk::BestEffort) {
+            // The user accepted the missing concurrency protection, so atomicity may
+            // fail and unverified directions are admitted; a recorded failure or
+            // unsupported verdict anywhere still refuses.
+            for (direction, verdict) in [
+                ("atomicity", record.atomicity.unwrap_or(Verdict::Unverified)),
+                ("iphone_baseline", record.iphone_baseline),
+                ("twydo_to_iphone", record.twydo_to_iphone),
+                ("iphone_to_twydo", record.iphone_to_twydo),
+            ] {
+                let refused = match direction {
+                    "atomicity" => verdict == Verdict::Unsupported,
+                    _ => matches!(verdict, Verdict::Fail | Verdict::Unsupported),
+                };
+                if refused {
+                    return Err(fail(direction, verdict));
+                }
+            }
+            return Ok(());
+        }
+        if list_write {
             let protection = record.atomicity.unwrap_or(Verdict::Unverified);
             if protection != Verdict::Pass {
                 return Err(fail("atomicity", protection));

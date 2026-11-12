@@ -370,8 +370,9 @@ iphone_baseline = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["list-metadata/server-preconditions"]
-notes = "FAIL: server-enforced concurrent metadata protection is not established."
+notes = "Best-effort: accepted by the user on 2026-11-12. The server does not enforce protection against concurrent remote edits; a phone change racing a Twydo write can be overwritten (metadata) or lost (delete)."
 atomicity = "fail"
+accepted_risk = "best-effort"
 
 [[contract]]
 id = "list-delete.collection"
@@ -379,8 +380,9 @@ iphone_baseline = "unverified"
 twydo_to_iphone = "unverified"
 iphone_to_twydo = "unverified"
 evidence = ["list-metadata/server-preconditions"]
-notes = "Collection deletion remains unavailable; the server accepted a stale-ETag DELETE."
+notes = "Best-effort: accepted by the user on 2026-11-12. The server does not enforce protection against concurrent remote edits; a phone change racing a Twydo write can be overwritten (metadata) or lost (delete)."
 atomicity = "fail"
+accepted_risk = "best-effort"
 
 [[contract]]
 id = "complete.days"
