@@ -181,7 +181,7 @@ impl Target {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
-    #[error("no config at {}; pass --vdir, or create it with: vdir = \"<path to your vdir>\" (see docs/config.md)", .0.display())]
+    #[error("no config at {}; run `tdo config init`, or pass --vdir", .0.display())]
     NoConfig(PathBuf),
     #[error("{0}")]
     WrongInstance(String),
