@@ -367,7 +367,7 @@ impl ListService {
                 "the list deletion was not sent; preview it again if you still want to delete the list".into(),
             ));
         }
-        let mut request = record.request.clone();
+        let mut request = operation::recovery_request(&self.config, &record.request)?;
         request.mode = "reconcile".into();
         let reply = helper::exchange(&self.config, &request).map_err(|e| {
             ListError::Refused(format!("list operation {id} remains unresolved: {e}"))

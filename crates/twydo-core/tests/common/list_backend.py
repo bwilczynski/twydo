@@ -111,6 +111,12 @@ class Connector:
 class Config:
     @classmethod
     def from_filename_or_environment(cls, _path):
+        # Tests read back which config path each helper run was given.
+        _seen = Path(os.environ["TWYDO_TEST_LIST_CONNECTION"]).parent / "server.json"
+        if _seen.exists():
+            _data = json.loads(_seen.read_text())
+            _data.setdefault("config_paths", []).append(_path)
+            _seen.write_text(json.dumps(_data))
         # The generated vdirsyncer file is not parsed here: the harness names its own
         # connection file.
         global STORE

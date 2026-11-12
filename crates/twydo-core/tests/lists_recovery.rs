@@ -674,3 +674,52 @@ fn uncertain_delete_with_local_edit_and_list_still_present_releases_the_fence() 
         b"edited while uncertain"
     );
 }
+
+/// A timed-out delete leaves an unresolved operation; returns its state dir and id.
+#[cfg(unix)]
+fn unresolved_delete(
+    d: &tempfile::TempDir,
+    cfg: &Config,
+    service: &mut ListService,
+) -> (std::path::PathBuf, String) {
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "hang_after_delete_once");
+    service.delete_list(&preview).unwrap_err();
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    (state, id.trim().to_string())
+}
+
+#[cfg(unix)]
+#[test]
+fn recovery_regenerates_the_config_and_runs_the_helper_with_it() {
+    let (d, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let (state, id) = unresolved_delete(&d, &cfg, &mut service);
+    let generated = twydo_core::sync::vdirsyncer::config_path(&state);
+    fs::remove_file(&generated).unwrap();
+    service.reconcile(&id).unwrap();
+    assert!(generated.exists(), "recovery must ensure the generated config");
+    let paths = server(d.path())["config_paths"].clone();
+    let last = paths.as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last, generated.to_str().unwrap(), "{paths}");
+}
+
+#[cfg(unix)]
+#[test]
+fn recovery_of_a_record_with_another_config_never_uses_that_config() {
+    let (d, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let (state, id) = unresolved_delete(&d, &cfg, &mut service);
+    // A record written before the upgrade: its stored config points at the old file.
+    let path = state.join("lists/operations").join(format!("{id}.json"));
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    record["request"]["config"] = "/nonexistent/old/vdirsyncer/config".into();
+    fs::write(&path, record.to_string()).unwrap();
+    let message = service.reconcile(&id).unwrap_err().to_string();
+    assert!(message.contains("mismatched operation state"), "{message}");
+    let paths = server(d.path())["config_paths"].clone();
+    assert!(!paths.to_string().contains("/nonexistent/old"), "{paths}");
+}
