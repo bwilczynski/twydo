@@ -1,10 +1,17 @@
-//! Raw collection previews. No DELETE is issued until a server guard is demonstrated.
+//! Raw collection backups and best-effort list deletion.
+//!
+//! A preview captures the server's complete collection and the local copy as one backup. A
+//! deletion revalidates both against it and then sends one unconditional DELETE: nothing on
+//! the server enforces that state at DELETE time, so an edit made by another device in that
+//! instant is not protected (the backup remains the recovery path). After a confirmed
+//! deletion the local copy is retired through [`crate::retired`] and the backup is kept.
 use super::{
-    ListError, ListService,
+    ListError, ListResult, ListService,
     helper::{self, HelperRequest},
     invalid,
-    operation::{self, Phase},
+    operation::{self, ListOperation, Phase},
     plain_id,
+    remote::capability,
 };
 use crate::{
     config::Config,
@@ -291,10 +298,167 @@ impl ListService {
         }
     }
 
-    pub fn delete_list(
+    pub fn delete_list(&mut self, preview: &DeletePreview) -> Result<ListResult, ListError> {
+        self.validate_binding()?;
+        capability(
+            &self.matrix,
+            self.config.writes.mode,
+            "list-delete",
+            "delete",
+        )?;
+        let state = bind_vdir_state(&self.config.state_dir(), &self.config.vdir)?;
+        let saved = read(&state, &preview.backup).map_err(|_| {
+            ListError::Refused("the deletion backup is missing or invalid; preview again".into())
+        })?;
+        if saved.collection != preview.collection {
+            return Err(ListError::Refused(
+                "the backup belongs to another list; preview again".into(),
+            ));
+        }
+        let collection = saved.collection.as_str();
+        if operation::snapshot(&self.config.vdir.join(collection))?.as_ref() != Some(&saved.local) {
+            return Err(ListError::Refused(CHANGED.into()));
+        }
+        let mut request = HelperRequest::probe(&self.config)?;
+        request.action = "delete".into();
+        request.collection = Some(collection.into());
+        request.backup = Some(saved.id.clone());
+        let record = operation::prepare(&self.config, request, Utc::now())?;
+        let id = record.id.clone();
+        // Prepared under the locks: the bytes the operation holds are what will be retired.
+        if record.holds.as_ref() != Some(&saved.local) {
+            operation::cancel_unstarted(&self.config, &id)?;
+            return Err(ListError::Refused(CHANGED.into()));
+        }
+        let unresolved = |e: ListError| {
+            ListError::Refused(format!("list operation {id} needs reconciliation: {e}"))
+        };
+        let outcome = helper::exchange(&self.config, &record.request).and_then(|reply| {
+            if reply.ok {
+                Ok(())
+            } else if reply.code == "changed" {
+                Err(ListError::Refused(CHANGED.into()))
+            } else {
+                Err(ListError::Refused(helper::refusal(&reply.code).into()))
+            }
+        });
+        if let Err(error) = outcome {
+            // The helper proves a refusal before any DELETE; anything else may have reached
+            // the server and stays fenced.
+            return match operation::cancel_unstarted(&self.config, &id) {
+                Ok(()) => Err(error),
+                Err(_) => Err(unresolved(error)),
+            };
+        }
+        self.complete_delete(&id).map_err(unresolved)
+    }
+
+    /// Reconcile an unfinished `delete`: read-only against the server, never another DELETE.
+    pub(super) fn reconcile_delete(
         &mut self,
-        _preview: &DeletePreview,
-    ) -> Result<super::ListResult, ListError> {
-        Err(ListError::Refused("List deletion is unavailable: a server-enforced collection precondition has not been demonstrated. The preserved backup remains available; no DELETE was sent.".into()))
+        record: &ListOperation,
+    ) -> Result<ListResult, ListError> {
+        let id = record.id.as_str();
+        if record.phase == Phase::RemoteConfirmed {
+            return self.complete_delete(id);
+        }
+        if operation::cancel_unstarted(&self.config, id).is_ok() {
+            return Err(ListError::Refused(
+                "the list deletion was not sent; preview it again if you still want to delete the list".into(),
+            ));
+        }
+        let mut request = record.request.clone();
+        request.mode = "reconcile".into();
+        let reply = helper::exchange(&self.config, &request).map_err(|e| {
+            ListError::Refused(format!("list operation {id} remains unresolved: {e}"))
+        })?;
+        if reply.ok {
+            return self.complete_delete(id);
+        }
+        let message = match reply.code.as_str() {
+            "present" => {
+                "the list still exists on the server; delete it again if you still want to"
+            }
+            "changed" => CHANGED,
+            code => {
+                return Err(ListError::Refused(format!(
+                    "list operation {id} remains unresolved: {}",
+                    helper::refusal(code)
+                )));
+            }
+        };
+        operation::release_present(&self.config, id)?;
+        Err(ListError::Refused(message.into()))
+    }
+
+    /// The server deletion is confirmed: retire the local copy, then release the fence.
+    /// Safe to repeat after an interruption at any point.
+    fn complete_delete(&mut self, id: &str) -> Result<ListResult, ListError> {
+        let state = bind_vdir_state(&self.config.state_dir(), &self.config.vdir)?;
+        let mut record = operation::read(&state, id)?;
+        let collection = record
+            .request
+            .collection
+            .clone()
+            .filter(|c| plain_id(c))
+            .ok_or_else(|| invalid("missing collection identity"))?;
+        if record.phase != Phase::RemoteConfirmed
+            || record.receipt.as_ref().and_then(|r| r.get("deleted")) != Some(&true.into())
+        {
+            return Err(ListError::Refused(
+                "list deletion is not confirmed on the server".into(),
+            ));
+        }
+        let saved = read(
+            &state,
+            record
+                .request
+                .backup
+                .as_deref()
+                .ok_or_else(|| invalid("missing deletion backup"))?,
+        )?;
+        // Once retired the directory is gone, which is how a repeat knows to skip this.
+        if self.config.vdir.join(&collection).try_exists()? {
+            crate::retired::forget_fenced(
+                &self.config,
+                &crate::retired::Preview {
+                    collection,
+                    name: saved.name.clone(),
+                    tasks: saved.local.keys().filter(|f| f.ends_with(".ics")).count(),
+                    pending: 0,
+                    files: saved.local.clone(),
+                },
+                Utc::now(),
+            )?;
+        }
+        operation::finish_deleted(&self.config, &mut record)?;
+        self.deleted(&record)
+    }
+
+    pub(super) fn deleted(&self, record: &ListOperation) -> Result<ListResult, ListError> {
+        let collection = record
+            .request
+            .collection
+            .clone()
+            .ok_or_else(|| invalid("missing collection identity"))?;
+        let backup = record
+            .request
+            .backup
+            .clone()
+            .ok_or_else(|| invalid("missing deletion backup"))?;
+        let saved = get(&self.config, &backup)?;
+        let retired = crate::retired::list(&self.config)?
+            .into_iter()
+            .find(|b| b.collection == collection && b.retired && b.created >= record.created)
+            .ok_or_else(|| invalid("the retired local copy is missing"))?;
+        Ok(ListResult::Deleted {
+            operation: record.id.clone(),
+            collection,
+            name: saved.name,
+            backup,
+            retired: retired.id,
+        })
     }
 }
+
+const CHANGED: &str = "the list changed since the backup; review deletion again";

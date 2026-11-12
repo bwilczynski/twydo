@@ -36,6 +36,9 @@ pub struct HelperRequest {
     pub color: Option<String>,
     #[serde(default)]
     pub expected: Option<Value>,
+    /// A `delete` request names the preview backup its server state is revalidated against.
+    #[serde(default)]
+    pub backup: Option<String>,
     #[serde(default = "execute_mode")]
     pub mode: String,
     #[serde(default)]
@@ -82,6 +85,7 @@ impl HelperRequest {
             name: None,
             color: None,
             expected: None,
+            backup: None,
             mode: execute_mode(),
             keep_server: false,
             timeout_secs: sync.timeout_secs.max(1),

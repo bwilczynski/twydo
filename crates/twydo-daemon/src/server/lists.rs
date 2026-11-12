@@ -67,6 +67,13 @@ fn job_result(r: ListResult) -> JobResult {
             backup,
             destination,
         },
+        // Stopgap until the daemon exposes list deletion: report it as a retired list.
+        ListResult::Deleted { name, retired, .. } => JobResult::Forgot {
+            message: format!("deleted list {name:?}; local copy preserved as {retired}"),
+            backup: retired,
+            name,
+            sync: None,
+        },
     }
 }
 

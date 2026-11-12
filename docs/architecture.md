@@ -256,8 +256,18 @@ backup under `lists/backups/<id>/backup.json` with raw local files and relevant 
 releasing the fence and showing confirmation. A failed preview can be cancelled safely
 without another network request. Only complete manifests appear in the collection-backup
 browser; raw export checks resource/local hashes and creates a new directory outside the
-vdir. This checkpoint contains no collection DELETE path or collection restore path;
-server-enforced deletion protection must be demonstrated first.
+vdir. There is no collection restore path.
+
+`ListService::delete_list` is best-effort: nothing on the server enforces the previewed
+state at DELETE time. It requires the `list-delete` capability, a valid backup naming the
+previewed list and unchanged local bytes, then prepares a `delete` operation (refused for
+pending or queued task edits and unresolved conflicts). The helper revalidates the server
+against the backup's remote inventory and sends one unconditional DELETE; only 200, 202,
+204 or 404 count as deleted. A changed inventory refuses before any DELETE and releases the
+fence. After a confirmed deletion the local list is retired through the forgotten-list
+path (backup kept, `sync/rediscover` written) and the operation completes; ordinary sync
+stays fenced until then. An interrupted deletion is reconciled read-only: an absent
+collection finishes retirement, a still-present one releases the fence without a DELETE.
 The approved lifecycle probe demonstrated that a changing calendar-export ETag was
 insufficient: the server ignored a stale `If-Match` on DELETE. Only that disposable
 test collection was removed. All three resources, including the remote-only task, were

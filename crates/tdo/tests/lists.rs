@@ -393,7 +393,8 @@ fn sidebar_delete_previews_before_confirmation_and_cancel_sends_no_delete() {
         panic!("delete worker")
     };
     let result = serve(&cfg, &path).run(action);
-    assert!(result.result.unwrap_err().contains("server-enforced"));
+    // The fixture's preview names no saved backup, so the service refuses before any DELETE.
+    assert!(result.result.unwrap_err().contains("backup is missing"));
     assert!(cfg.vdir.join("a/open.ics").exists());
 }
 
