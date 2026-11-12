@@ -285,6 +285,15 @@ fn missing_connection_keys_are_named_errors() {
         msg("vdir = \"/x\"\n[sync]\nurl = \"https://dav.example.test/a/\"\nusername = \"alice\"\npassword_command = []\n")
             .ends_with(&required("password_command"))
     );
+    for blank in ["[\"\"]", "[\" \", \"x\"]"] {
+        let toml = format!(
+            "vdir = \"/x\"\n[sync]\nurl = \"https://dav.example.test/a/\"\nusername = \"alice\"\npassword_command = {blank}\n"
+        );
+        assert!(
+            msg(&toml).ends_with(&required("password_command")),
+            "{blank}"
+        );
+    }
 }
 
 #[test]

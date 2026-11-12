@@ -333,7 +333,11 @@ impl Config {
             if sync.username.trim().is_empty() {
                 return Err(missing("username"));
             }
-            if sync.password_command.is_empty() {
+            if sync
+                .password_command
+                .first()
+                .is_none_or(|w| w.trim().is_empty())
+            {
                 return Err(missing("password_command"));
             }
             for (key, zero) in [
