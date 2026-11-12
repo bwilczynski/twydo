@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::Config;
-use crate::store::bind_vdir_state;
-use crate::sync::vdirsyncer::{LOCAL_STORAGE, PAIR, ensure};
+use crate::sync::vdirsyncer::{LOCAL_STORAGE, PAIR, config_path};
 
 use super::ListError;
 
@@ -63,6 +62,7 @@ impl HelperRequest {
         let mut request = Self::probe(cfg)?;
         request.action = "discover".into();
         request.state = Some(std::path::absolute(state)?);
+        request.config = Some(std::path::absolute(config_path(state))?);
         Ok(request)
     }
 
@@ -76,11 +76,9 @@ impl HelperRequest {
             pair: PAIR.into(),
             local_storage: LOCAL_STORAGE.into(),
             vdir: std::path::absolute(&cfg.vdir)?,
-            config: Some(std::path::absolute(ensure(
-                cfg,
-                sync,
-                &bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?,
-            )?)?),
+            // Set where the generated config is ensured, under the sync run lock: by
+            // `operation::prepare`, or `discover`.
+            config: None,
             collection: None,
             operation: None,
             state: None,

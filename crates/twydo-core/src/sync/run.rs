@@ -164,7 +164,6 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Off));
     }
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
-    let vdirsyncer_config = vdirsyncer::ensure(cfg, sync, &state)?;
     let sync_dir = state.join("sync");
     fs::create_dir_all(&sync_dir)?;
     let requested = sync_dir.join("requested");
@@ -174,6 +173,9 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         File::create(&requested)?;
         return Ok(skipped(Skip::Busy));
     };
+    // Only under the run lock: a run that is discovering must not lose the rediscover marker
+    // that a changed config leaves.
+    let vdirsyncer_config = vdirsyncer::ensure(cfg, sync, &state)?;
 
     // The caller is shutting down: write nothing at all, not even recovery or status; the
     // next owner of the vdir recovers. An ordinary stop request is not

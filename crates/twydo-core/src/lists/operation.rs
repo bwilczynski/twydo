@@ -312,6 +312,14 @@ pub fn prepare(
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
     private_dir(&state.join("sync"))?;
     let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
+    // Under the run lock, so a sync that is discovering never loses the rediscover marker
+    // this may leave.
+    let sync = cfg.sync.as_ref().ok_or_else(|| {
+        ListError::Refused("list management needs a configured CalDAV sync pair".into())
+    })?;
+    request.config = Some(std::path::absolute(crate::sync::vdirsyncer::ensure(
+        cfg, sync, &state,
+    )?)?);
     let _vdir = VdirLock::exclusive(&state)?;
     ensure_idle(&state)?;
     let journal = Journal::open(&state)?;
