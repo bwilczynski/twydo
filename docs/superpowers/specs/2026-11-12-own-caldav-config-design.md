@@ -47,7 +47,7 @@ does not start it.
 |---|---|---|---|
 | `url` | string | required when `[sync]` is present | CalDAV server URL (the collection home the NAS gives the account). |
 | `username` | string | required | CalDAV username. |
-| `password_command` | array of strings | required | Command whose first line of output is the password, e.g. `["pass", "show", "twydo/caldav"]`. Written as vdirsyncer's `password.fetch = ["command", …]`. No literal password key exists. |
+| `password_command` | array of strings | required | Command whose output (trailing newlines removed) is the password, e.g. `["pass", "show", "twydo/caldav"]`. Written as vdirsyncer's `password.fetch = ["command", …]`. No literal password key exists. |
 | `ca_file` | path | none | CA certificate (PEM) to verify a server whose certificate is not otherwise trusted; written as vdirsyncer's `verify`. Leading `~` expands. |
 
 Kept unchanged: `command`, `list_python`, `metasync`, `batch_size`, `max_wait_secs`,
@@ -222,7 +222,7 @@ and, on failure, a hint. A failure skips the steps that depend on it. Exit 1 on 
 | 3 | sync | `[sync]` present | not a failure: "sync off", steps 4–7 skip |
 | 4 | vdirsyncer | `<command> --version` runs and reports 0.21.x | not found / unsupported version, hint names `[sync].command` |
 | 5 | list helper | `list_python` imports vdirsyncer and its version is 0.21.x | hint names `[sync].list_python` |
-| 6 | password | `password_command` exits 0 and prints a non-empty first line (never shown) | its exit status and the last line of its stderr; stdout is never shown. Run with `tdo`'s own environment and stdin inherited (so `pass`/`gpg` can reach their agent or pinentry), killed after 60 s (*my call*) |
+| 6 | password | `password_command` exits 0 and prints a single non-empty line (as vdirsyncer reads it: whole stdout, trailing newlines removed) (never shown) | its exit status and the last line of its stderr; stdout is never shown. Run with `tdo`'s own environment and stdin inherited (so `pass`/`gpg` can reach their agent or pinentry), killed after 60 s (*my call*) |
 | 7 | generated config | the generated vdirsyncer config can be written to the state directory; shows its path | the IO error |
 | 8 | ca file | when `ca_file` is set, it exists and is readable | missing/unreadable |
 

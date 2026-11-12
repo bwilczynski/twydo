@@ -106,7 +106,7 @@ pub struct SyncConfig {
     pub url: String,
     /// CalDAV username.
     pub username: String,
-    /// Command (argv) that prints the CalDAV password; run by vdirsyncer.
+    /// Command (argv) whose output (trailing newlines removed) is the CalDAV password; run by vdirsyncer.
     pub password_command: Vec<String>,
     /// PEM file with the CA that signed the server certificate.
     pub ca_file: Option<PathBuf>,

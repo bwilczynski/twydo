@@ -76,7 +76,7 @@ code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md
 |---|---|---|---|
 | `url` | string | required | CalDAV server URL (the collection home your server gives the account). |
 | `username` | string | required | CalDAV username. |
-| `password_command` | array of strings | required | Command whose first line of output is the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
+| `password_command` | array of strings | required | Command whose output (trailing newlines removed) is the password, so it must print only the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
 | `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
 | `list_python` | string | `"python3"` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. Independent of `command`, which may be a wrapper. The helper uses the generated vdirsyncer config. |
@@ -140,7 +140,7 @@ any step fails, else 0.
 | `vdirsyncer` | `[sync].command --version` reports 0.21.x |
 | `tdo on PATH` | an executable named `tdo` is on the PATH (the conflict hook runs `tdo` by name, so the daemon and vdirsyncer need it on their PATH); skipped when sync is off |
 | `list helper` | `[sync].list_python` imports vdirsyncer 0.21.x |
-| `password` | `password_command` exits 0 and prints a non-empty first line. The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
+| `password` | `password_command` exits 0 and prints a single non-empty line (vdirsyncer uses the whole output, trailing newlines removed). The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
 | `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound) |
 | `ca file` | `ca_file`, when set, is a readable file |
 
