@@ -96,6 +96,28 @@ The collection adapter works on the generated config: a filesystem/CalDAV pair w
 storage is the bound vdir and whose `status_path` is outside it. Its `url` is always literal.
 The password and TLS settings are passed on to vdirsyncer unchanged.
 
+## Guided setup: `tdo config init`
+
+`tdo config init [--no-sync | --url URL --username USER --password-command CMD] [--ca-file PATH]`
+(and the global `--vdir PATH`) writes `config.toml`: the file `tdo` loads, so `$XDG_CONFIG_HOME`
+applies. It never needs or starts the daemon. It asks for the vdir (default
+`~/.local/share/twydo/vdir`), whether to sync with a CalDAV server, and then the server URL, the
+username and the password command (typed as one line, split like a shell line). Every question
+shows its default in brackets and Enter takes it; on a re-run the defaults are the values already
+in the file. A flag answers its question without asking.
+
+- It edits the file in place: comments, key order and other tables stay. It removes `pair`,
+  `local_storage`, `vdirsyncer_config` and `after_edit`, and, when you decline sync, the `[sync]`
+  table. Paths under your home directory are written as `~/...`, so the file works on every
+  machine you share it with.
+- A `config.toml` that is a symlink (stow) stays one: the file it points to is replaced
+  atomically.
+- Without a terminal on stdin nothing is asked: each value is its flag, else the existing value,
+  else the default. A missing URL, username or password command is an error naming the flag, and
+  nothing is written. End of input (Ctrl-D, Ctrl-C) while asking also writes nothing.
+- Afterwards it creates the vdir, prints `wrote <path>` and the `tdo config check` report, and exits
+  with the check's code. If a daemon is running it says to run `tdo daemon stop` to apply the change.
+
 ## Checking the setup
 
 `tdo config check` reports, step by step, whether this machine is ready to sync. It checks only

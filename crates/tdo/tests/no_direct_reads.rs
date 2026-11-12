@@ -29,6 +29,8 @@ fn allowed(rel: &str, pattern: &str) -> bool {
         "cli/daemon.rs" | "cli/mod.rs" | "editor.rs" => true,
         // `tdo config check` inspects this machine's setup; it never talks to the daemon.
         "cli/config/check.rs" => matches!(pattern, "Config::load" | "existing_vdir_state"),
+        // `tdo config init` edits the config file itself (and follows its symlink).
+        "cli/config/init.rs" | "cli/config/write.rs" => pattern == "fs::read",
         "cli/conflicts.rs" => pattern == "resolve_config",
         _ => false,
     }
