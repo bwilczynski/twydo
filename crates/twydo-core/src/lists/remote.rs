@@ -209,7 +209,7 @@ impl ListService {
         }
         if record.phase == Phase::RemoteConfirmed {
             operation::finalize_metadata(&self.config, &mut record)?;
-            let mut request = record.request.clone();
+            let mut request = operation::recovery_request(&self.config, &record.request)?;
             request.mode = "refresh".into();
             helper::invoke(&self.config, &request).map_err(|e| {
                 ListError::Refused(format!("list operation {id} needs reconciliation: {e}"))
@@ -283,7 +283,7 @@ impl ListService {
                 "the list operation was not sent; retry your changes".into(),
             ));
         }
-        let mut request = record.request.clone();
+        let mut request = operation::recovery_request(&self.config, &record.request)?;
         request.mode = "reconcile".into();
         request.keep_server = keep_server;
         helper::invoke(&self.config, &request).map_err(|e| {

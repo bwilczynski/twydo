@@ -298,6 +298,29 @@ pub fn save(state: &Path, operation: &ListOperation) -> io::Result<()> {
     )
 }
 
+/// A recovered record's request, pointed at the generated vdirsyncer config as it is now.
+///
+/// The stored `config` may name a pre-upgrade file or nothing, and the settings may have
+/// changed since. Runs [`crate::sync::vdirsyncer::ensure`] under the sync run lock, as
+/// [`prepare`] does; the lock is released before the helper runs, like `prepare`'s callers.
+/// The caller must not hold the run lock.
+pub(super) fn recovery_request(
+    cfg: &Config,
+    stored: &HelperRequest,
+) -> Result<HelperRequest, ListError> {
+    let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+    private_dir(&state.join("sync"))?;
+    let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
+    let sync = cfg.sync.as_ref().ok_or_else(|| {
+        ListError::Refused("list management needs a configured CalDAV sync pair".into())
+    })?;
+    let mut request = stored.clone();
+    request.config = Some(std::path::absolute(crate::sync::vdirsyncer::ensure(
+        cfg, sync, &state,
+    )?)?);
+    Ok(request)
+}
+
 pub fn prepare(
     cfg: &Config,
     mut request: HelperRequest,
