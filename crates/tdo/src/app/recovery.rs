@@ -215,19 +215,21 @@ impl App {
                 }
             }
             // Deleting a list defaults to cancel: Enter does not confirm it.
-            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Enter
-                if k.code != KeyCode::Enter
-                    || matches!(self.confirmation, Some(Confirmation::DeleteList(_))) =>
-            {
-                if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
-                    self.picker = None;
-                }
-                self.confirmation = None;
-                self.message = Some("cancelled".into());
-                Outcome::Continue
+            KeyCode::Char('n') | KeyCode::Esc => self.cancel_confirmation(),
+            KeyCode::Enter if matches!(self.confirmation, Some(Confirmation::DeleteList(_))) => {
+                self.cancel_confirmation()
             }
             _ => Outcome::Continue,
         }
+    }
+
+    fn cancel_confirmation(&mut self) -> Outcome {
+        if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
+            self.picker = None;
+        }
+        self.confirmation = None;
+        self.message = Some("cancelled".into());
+        Outcome::Continue
     }
 
     pub(super) fn recovery_key(&mut self, k: KeyEvent) -> Outcome {
