@@ -82,8 +82,13 @@ which never needs the daemon, so a hard stop until then is clear and cheap.)*
 This is a breaking change (decided by the user). One commit during the implementation, the one
 that removes the keys, is marked `feat!:` with a `BREAKING CHANGE:` footer naming the removed
 keys and `tdo config init`, so release-plz bumps to `0.3.0`. The
-protocol schema (`schema/*.openrpc.json`) does not describe `config.toml`; if a snapshot does
-carry `[sync]` fields, it is regenerated as part of the change. *(My call.)*
+daemon's snapshot carries the loaded `Config` (`WireSnapshot.config`), so removing `[sync]`
+fields breaks the protocol (`schema/released.openrpc.json`), and adding fields would make an
+older client, whose `SyncConfig` denies unknown fields, fail to decode it. The change therefore
+bumps the protocol generation (`twydo_daemon::PROTOCOL` 1 → 2) on purpose, as daemon spec §6.2
+prescribes. The breaking-change check learns that across a generation change only the frozen
+lifecycle methods are compared. An old TUI still running after the upgrade gets the existing
+"tdo was upgraded; restart it" path. *(My call, found while planning.)*
 
 ### Portability
 
