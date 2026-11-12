@@ -725,7 +725,11 @@ fn recovery_of_a_record_with_another_config_never_uses_that_config() {
     record["request"]["config"] = "/nonexistent/old/vdirsyncer/config".into();
     fs::write(&path, record.to_string()).unwrap();
     let message = service.reconcile(&id).unwrap_err().to_string();
-    assert!(message.contains("mismatched operation state"), "{message}");
+    assert!(
+        message.contains("started before Twydo generated the vdirsyncer config")
+            && message.contains(&id),
+        "{message}"
+    );
     let paths = fs::read_to_string(d.path().join("config_paths.log")).unwrap_or_default();
     assert!(!paths.contains("/nonexistent/old"), "{paths}");
 }
