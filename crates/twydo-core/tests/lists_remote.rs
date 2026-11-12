@@ -6,6 +6,15 @@ use std::fs;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::lists::{ListRequest, ListService};
 
+/// The embedded matrix with the user's best-effort acceptance removed.
+fn without_acceptance() -> twydo_core::compat::Matrix {
+    let mut matrix = twydo_core::compat::Matrix::embedded().clone();
+    for row in &mut matrix.contract {
+        row.accepted_risk = None;
+    }
+    matrix
+}
+
 fn setup() -> (tempfile::TempDir, Config) {
     let d = tempfile::tempdir().unwrap();
     let mut cfg = Config::with_vdir(d.path().join("vdir"));
@@ -20,7 +29,7 @@ fn setup() -> (tempfile::TempDir, Config) {
 #[test]
 fn shipping_gate_admits_verified_create_and_refuses_unverified_edit_before_preparing() {
     let (_d, cfg) = setup();
-    let mut service = ListService::open(&cfg, None).unwrap();
+    let mut service = ListService::open_with(&cfg, None, without_acceptance()).unwrap();
     let expected = service.state("synthetic").unwrap();
     // Creation passed both device directions; it fails later here only because this
     // fixture has no usable helper or vdirsyncer pair.
@@ -42,7 +51,10 @@ fn shipping_gate_admits_verified_create_and_refuses_unverified_edit_before_prepa
         })
         .unwrap_err()
         .to_string();
-    assert!(edit.contains("not verified"), "{edit}");
+    assert!(
+        edit.contains("list-metadata.collection: atomicity"),
+        "{edit}"
+    );
     assert!(!cfg.vdir.join("new-id").exists());
     assert_eq!(
         fs::read_to_string(cfg.vdir.join("synthetic/displayname")).unwrap(),
@@ -62,7 +74,7 @@ fn shipping_metadata_gate_requires_server_protection_even_in_test_mode() {
             .unwrap();
         cfg.writes.mode = mode;
         let before = fs::read(d.path().join("server.json")).unwrap();
-        let mut service = ListService::open(&cfg, None).unwrap();
+        let mut service = ListService::open_with(&cfg, None, without_acceptance()).unwrap();
         let expected = service.state("new-id").unwrap();
         let error = service
             .execute(ListRequest::Edit {
@@ -74,7 +86,8 @@ fn shipping_metadata_gate_requires_server_protection_even_in_test_mode() {
             .unwrap_err()
             .to_string();
         assert!(
-            error.contains("not verified") && error.contains("server-enforced"),
+            error.contains("list-metadata.collection: atomicity")
+                && error.contains("concurrent remote edits"),
             "{error}"
         );
         assert_eq!(fs::read(d.path().join("server.json")).unwrap(), before);
@@ -105,7 +118,7 @@ fn metadata_interoperability_cannot_bypass_missing_or_failed_atomicity() {
                 .execute(create())
                 .unwrap();
             cfg.writes.mode = mode;
-            let mut matrix = twydo_core::compat::Matrix::embedded().clone();
+            let mut matrix = without_acceptance();
             let row = matrix
                 .contract
                 .iter_mut()
@@ -129,7 +142,8 @@ fn metadata_interoperability_cannot_bypass_missing_or_failed_atomicity() {
                 .unwrap_err()
                 .to_string();
             assert!(
-                error.contains("server-enforced"),
+                error.contains("list-metadata.collection: atomicity")
+                    && error.contains("concurrent remote edits"),
                 "{mode:?} {atomicity:?}: {error}"
             );
             assert_eq!(fs::read(d.path().join("server.json")).unwrap(), before);
@@ -593,4 +607,43 @@ fn missing_pair_never_prepares_a_remote_change() {
         .to_string();
     assert!(message.contains("pair"));
     assert!(!cfg.state_dir().exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn refusal_names_the_failing_direction() {
+    use twydo_core::compat::Verdict;
+    use twydo_core::config::WriteMode;
+    let (_d, mut cfg) = offline();
+    ListService::open(&cfg, None)
+        .unwrap()
+        .execute(create())
+        .unwrap();
+    cfg.writes.mode = WriteMode::Verified;
+    let mut matrix = without_acceptance();
+    let row = matrix
+        .contract
+        .iter_mut()
+        .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
+        .unwrap();
+    row.iphone_baseline = Verdict::Pass;
+    row.iphone_to_twydo = Verdict::Pass;
+    row.twydo_to_iphone = Verdict::Unverified;
+    row.atomicity = Some(Verdict::Pass);
+    let mut service = ListService::open_with(&cfg, None, matrix).unwrap();
+    let expected = service.state("new-id").unwrap();
+    let error = service
+        .execute(ListRequest::Edit {
+            id: "new-id".into(),
+            name: "Rename".into(),
+            color: expected.color,
+            expected,
+        })
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("list-metadata.collection: twydo_to_iphone"),
+        "{error}"
+    );
+    assert!(!error.contains("concurrent"), "{error}");
 }

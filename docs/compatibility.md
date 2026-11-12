@@ -166,19 +166,25 @@ lifecycle baseline. Twydo picks up lists created on the phone
 [discovery round](reference/evidence.md) confirmed a phone-created list's identity, name,
 color and tasks in Twydo, so `list-create.collection` passes in all three directions and
 verified mode allows list creation. A missing, failed or unsupported row still refuses.
-Name/color editing stays refused in **every write mode** until server-enforced
-conditional writes
-are implemented and demonstrated. The prototype's preflight read and post-write readback
-cannot prevent a concurrent phone rename/color change from being silently overwritten.
-Successful phone round trips alone cannot enable that capability: the independent
-`list-metadata.collection` atomicity requirement must also pass. The [lifecycle probes](reference/evidence.md)
-found that the server accepted a tokenless name change while reporting an exclusive lock,
-and accepted a stale-ETag DELETE even though that ETag tracked resource changes.
-The list metadata and deletion contracts record those independent `atomicity` failures.
-Missing atomicity is unverified even if all device directions pass; neither write mode
-can bypass it.
-Product collection deletion remains unavailable. These verdicts do not change
-task-operation test-mode rules.
+The server offers no protection against concurrent remote edits: it accepted a tokenless
+name change while reporting an exclusive lock, and a stale-ETag DELETE even though that ETag
+tracked resource changes (see the [lifecycle probes](reference/evidence.md)). The prototype's
+preflight read and post-write readback cannot close that gap, so the
+`list-metadata.collection` and `list-delete.collection` rows record `atomicity = "fail"`.
+
+Without further action that failure refuses both writes in every write mode. On 2026-11-12
+the user knowingly accepted the risk. Those two rows therefore carry
+`accepted_risk = "best-effort"`, a matrix field that exists only for the two list contracts
+(the parser rejects it anywhere else). It admits the write in both modes even though
+`atomicity` fails and the device directions are still unverified. The accepted risk is that
+a phone change racing a Twydo write can be overwritten (rename or recolor) or lost
+(deletion). A recorded `fail` or `unsupported` verdict in `iphone_baseline` or either
+direction, or an `unsupported` atomicity verdict, still refuses. Removing the field restores
+the strict rule that atomicity must pass. Refusals name the matrix entry that failed, and
+add that the server does not protect against concurrent remote edits only when that entry
+is `atomicity`.
+Product collection deletion still needs its own implementation; this gate only admits it. These verdicts do not
+change task-operation test-mode rules.
 
 The [archive investigation](reference/evidence.md) found no changes
 to task bytes, ETags or the 14 returned collection properties after phone archive/unarchive.

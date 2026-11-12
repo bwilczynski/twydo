@@ -52,11 +52,17 @@ pub(super) fn capability(
         "list-delete" => ContractId::ListDelete,
         _ => {
             return Err(ListError::Refused(format!(
-                "unknown list capability: {action}"
+                "unknown list capability {case}: {action}"
             )));
         }
     };
-    matrix.require(id, mode).map_err(|e| ListError::Refused(if id == ContractId::ListMetadata { "list metadata editing is not verified: server-enforced protection against concurrent name/color edits is required (including in test mode)".into() } else { e.to_string() }))
+    matrix.require(id, mode).map_err(|failure| {
+        let mut message = failure.to_string();
+        if failure.direction == Some("atomicity") {
+            message.push_str(" The server does not protect against concurrent remote edits.");
+        }
+        ListError::Refused(message)
+    })
 }
 
 fn color_hex(color: (u8, u8, u8)) -> String {

@@ -1,6 +1,6 @@
 //! Operation-scoped compatibility evidence.
 pub mod contracts;
-pub use contracts::{Contract, ContractId, Matrix, OperationId, RequirementFailure};
+pub use contracts::{AcceptedRisk, Contract, ContractId, Matrix, OperationId, RequirementFailure};
 use serde::Deserialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]

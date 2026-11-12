@@ -143,3 +143,87 @@ fn schedule_verdict_reports_the_worst_part() {
         Verdict::Unverified
     );
 }
+
+fn list_row(id: &str, extra: &str) -> String {
+    format!(
+        "matrix_version = 2\n[[contract]]\nid = \"{id}\"\natomicity = \"fail\"\naccepted_risk = \"best-effort\"\n{extra}"
+    )
+}
+
+#[test]
+fn accepted_risk_is_only_valid_on_list_metadata_and_delete() {
+    assert!(Matrix::from_toml_str(&entry("accepted_risk = 'best-effort'")).is_err());
+    for id in ["list-metadata.collection", "list-delete.collection"] {
+        assert!(Matrix::from_toml_str(&list_row(id, "")).is_ok(), "{id}");
+    }
+    assert!(
+        Matrix::from_toml_str(
+            &list_row("list-metadata.collection", "").replace("best-effort", "anything")
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn best_effort_admits_failed_atomicity_and_unverified_directions_in_both_modes() {
+    for (id, contract) in [
+        ("list-metadata.collection", ContractId::ListMetadata),
+        ("list-delete.collection", ContractId::ListDelete),
+    ] {
+        let m = Matrix::from_toml_str(&list_row(id, "")).unwrap();
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            assert!(m.require(contract, mode).is_ok(), "{id} {mode:?}");
+        }
+    }
+}
+
+#[test]
+fn best_effort_still_refuses_fail_or_unsupported() {
+    let refused = |extra: &str, direction: &str| {
+        let m = Matrix::from_toml_str(&list_row("list-metadata.collection", extra)).unwrap();
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            let e = m.require(ContractId::ListMetadata, mode).unwrap_err();
+            assert_eq!(e.direction, Some(direction), "{extra} {mode:?}");
+        }
+    };
+    refused("twydo_to_iphone = 'fail'\n", "twydo_to_iphone");
+    refused("iphone_to_twydo = 'unsupported'\n", "iphone_to_twydo");
+    refused("iphone_baseline = 'unsupported'\n", "iphone_baseline");
+    let m = Matrix::from_toml_str(
+        &list_row("list-metadata.collection", "")
+            .replace("atomicity = \"fail\"", "atomicity = \"unsupported\""),
+    )
+    .unwrap();
+    let e = m
+        .require(ContractId::ListMetadata, WriteMode::Test)
+        .unwrap_err();
+    assert_eq!(e.direction, Some("atomicity"));
+}
+
+#[test]
+fn without_acceptance_list_rows_refuse_as_before() {
+    for (id, contract) in [
+        ("list-metadata.collection", ContractId::ListMetadata),
+        ("list-delete.collection", ContractId::ListDelete),
+    ] {
+        let m = Matrix::from_toml_str(
+            &list_row(id, "").replace("accepted_risk = \"best-effort\"\n", ""),
+        )
+        .unwrap();
+        for mode in [WriteMode::Verified, WriteMode::Test] {
+            let e = m.require(contract, mode).unwrap_err();
+            assert_eq!(e.direction, Some("atomicity"), "{id} {mode:?}");
+        }
+    }
+}
+
+#[test]
+fn embedded_matrix_admits_list_metadata_and_delete() {
+    for contract in [ContractId::ListMetadata, ContractId::ListDelete] {
+        assert!(
+            Matrix::embedded()
+                .require(contract, WriteMode::Verified)
+                .is_ok()
+        );
+    }
+}
