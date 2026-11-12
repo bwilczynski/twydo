@@ -423,7 +423,11 @@ fn state_writable(vstate: &Path) -> Result<(), String> {
             .map_err(|e| format!("{}: {e}", d.display()))?;
         // SAFETY: `c` is a valid NUL-terminated path for the duration of the call.
         if unsafe { libc::access(c.as_ptr(), libc::W_OK) } != 0 {
-            return Err(format!("{}: {}", d.display(), std::io::Error::last_os_error()));
+            return Err(format!(
+                "{}: {}",
+                d.display(),
+                std::io::Error::last_os_error()
+            ));
         }
     }
     Ok(())

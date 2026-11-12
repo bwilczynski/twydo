@@ -3000,7 +3000,7 @@
           },
           "password_command": {
             "default": [],
-            "description": "Command (argv) that prints the CalDAV password; run by vdirsyncer.",
+            "description": "Command (argv) whose output (trailing newlines removed) is the CalDAV password; run by vdirsyncer.",
             "items": {
               "type": "string"
             },
