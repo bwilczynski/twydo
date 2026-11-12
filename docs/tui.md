@@ -143,11 +143,17 @@ reload the saved list preferences while retaining active card input.
 Sidebar `dd`, or the deletion action in a list card, requests a fresh remote inventory
 and a private backup before confirmation. The backup includes server-only resources,
 unparseable content, local files, collection properties and relevant journal/conflict
-evidence. An incomplete or changing inventory is refused. **Actual collection deletion
-is currently unavailable**: server-enforced protection against concurrent remote edits
-has not been demonstrated, including in test mode. No DELETE is sent.
-The approved synthetic server probe ignored both a metadata lock and a stale deletion
-ETag. Its results keep these product actions gated; that probe is separate from the TUI.
+evidence. An incomplete or changing inventory is refused. The confirmation defaults to
+cancel (Enter, Esc and `n` cancel; only `y` deletes) and states that deletion is
+**best-effort**: the server offers no protection against concurrent remote edits, so a
+change made on another device at the same moment can be lost. `y` revalidates the list
+against the backup and deletes it from CalDAV and all devices. If it changed since the
+backup the deletion is refused with the reason; close the card and press `dd` again for a
+fresh backup and preview. On success the list leaves the sidebar (an open list returns to
+Today) and the message names the backup kept. The backup stays exportable with
+`:export-list-backup`; restoring one into CalDAV is not available yet (#75). The local copy
+is preserved like a forgotten list, so it also appears in `:recover`. An interrupted
+deletion is finished or released from the card's pending-save choices.
 
 Use `:list-backups` and `:export-list-backup` to inspect/export these raw snapshots.
 They are separate from task undo and the existing `:recover` retirement backups.

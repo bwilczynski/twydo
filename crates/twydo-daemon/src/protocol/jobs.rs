@@ -96,6 +96,14 @@ pub enum JobResult {
         backup: String,
         destination: PathBuf,
     },
+    /// `lists.delete` (or the reconcile of an interrupted one) removed collection `collection`
+    /// from the server; `backup` is the verified backup kept, and the local copy is retired.
+    ListDeleted {
+        operation: String,
+        collection: String,
+        name: String,
+        backup: String,
+    },
     /// `lists.forget` preserved list `name` as `backup`; `message` is what the TUI shows
     /// (with the sync's problems appended), `sync` the sync that followed.
     Forgot {

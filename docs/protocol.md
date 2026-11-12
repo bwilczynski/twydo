@@ -79,6 +79,13 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   `job.finished` event; `job.get` returns the outcome later. There is no `job.progress` yet.
   `sync.stop` asks the running sync to stop; its result then reports the outcome `stopped`.
 
+## List deletion result
+
+`lists.preview_delete` finishes with a `delete_preview` result (a private backup id and its
+counts). `lists.delete` finishes with `list_deleted` (`operation`, `collection`, `name`,
+`backup`), as does `lists.reconcile` of an interrupted deletion. The deletion is
+best-effort and the backup is kept (exportable with `lists.export`, not yet restorable).
+
 ## Schema files and open enums
 
 - `schema/tdo.openrpc.json` in the repository describes every method, result, error and event,

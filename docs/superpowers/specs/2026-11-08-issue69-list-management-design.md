@@ -193,6 +193,8 @@ device round is implied by this design.
 - Archive remains local under the observed evidence; a shared implementation would need
   a separate representation and interoperability proof.
 - Resolve server-enforced deletion concurrency protection before shipping deletion.
+  Superseded 2026-11-12 by accepted best-effort list writes: see
+  [the plan](../plans/2026-11-12-best-effort-list-writes.md).
 - Builders may choose module layout, adapter packaging, structured error fields, operation
   schema and card geometry. Reuse the current picker, palette, locks and recovery UI where
   their contracts fit; do not weaken existing task gating or preservation.

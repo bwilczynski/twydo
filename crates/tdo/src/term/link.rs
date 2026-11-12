@@ -903,6 +903,19 @@ fn list_result(state: JobState) -> Result<ListResult, String> {
                 backup,
                 destination,
             }),
+            JobResult::ListDeleted {
+                operation,
+                collection,
+                name,
+                backup,
+            } => Ok(ListResult::Deleted {
+                operation,
+                collection,
+                name,
+                backup,
+                // The daemon does not report the local copy's id; the TUI does not show it.
+                retired: String::new(),
+            }),
             _ => Err("the daemon answered with something unexpected".into()),
         },
         JobState::Failed { message, .. } => Err(message),

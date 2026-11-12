@@ -31,7 +31,7 @@ impl Confirmation {
     pub fn question(&self) -> String {
         match self {
             Self::DeleteList(p) => format!(
-                "Delete {:?} ({}) from CalDAV and ALL DEVICES? Backup {} preserves {} remote resource(s) and {} local file(s). This action is currently refused until server-enforced concurrency protection is demonstrated. y attempt · n/Esc cancel",
+                "Delete {:?} ({}) from CalDAV and ALL DEVICES? Backup {} preserves {} remote resource(s) and {} local file(s); it can be exported but not yet restored. Best-effort: a change made on another device at the same moment can be lost. y delete · n/Esc cancel",
                 p.name, p.collection, p.backup, p.resources, p.local_files
             ),
             Self::Archive {
@@ -214,7 +214,11 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('n') | KeyCode::Esc => {
+            // Deleting a list defaults to cancel: Enter does not confirm it.
+            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Enter
+                if k.code != KeyCode::Enter
+                    || matches!(self.confirmation, Some(Confirmation::DeleteList(_))) =>
+            {
                 if matches!(self.confirmation, Some(Confirmation::Reparent { .. })) {
                     self.picker = None;
                 }

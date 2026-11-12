@@ -364,7 +364,7 @@ fn busy_card_cannot_be_replaced_or_changed_by_keys_and_paste() {
 #[test]
 fn sidebar_delete_previews_before_confirmation_and_cancel_sends_no_delete() {
     use twydo_core::lists::{ListResult, backup::DeletePreview};
-    let (_d, cfg, path, mut app) = setup();
+    let (_d, cfg, _path, mut app) = setup();
     select(&mut app, "a");
     app.handle_key(key(KeyCode::Char('d')));
     let Outcome::ManageList(action) = app.handle_key(key(KeyCode::Char('d'))) else {
@@ -392,10 +392,113 @@ fn sidebar_delete_previews_before_confirmation_and_cancel_sends_no_delete() {
     let Outcome::ManageList(action) = app.handle_key(key(KeyCode::Char('y'))) else {
         panic!("delete worker")
     };
-    let result = serve(&cfg, &path).run(action);
-    // The fixture's preview names no saved backup, so the service refuses before any DELETE.
-    assert!(result.result.unwrap_err().contains("backup is missing"));
+    // Only the confirmed preview is sent; the service runs it (see the daemon's delete tests).
+    assert_eq!(action, ListAction::Delete(preview));
     assert!(cfg.vdir.join("a/open.ics").exists());
+}
+
+fn open_delete_confirmation(app: &mut App, id: &str) -> twydo_core::lists::backup::DeletePreview {
+    use twydo_core::lists::{ListResult, backup::DeletePreview};
+    select(app, id);
+    app.handle_key(key(KeyCode::Char('d')));
+    let Outcome::ManageList(action) = app.handle_key(key(KeyCode::Char('d'))) else {
+        panic!("preview worker")
+    };
+    let preview = DeletePreview {
+        backup: "synthetic-backup".into(),
+        collection: id.into(),
+        name: "Same".into(),
+        resources: 2,
+        local_files: 2,
+    };
+    app.list_finished(ListCompletion {
+        action,
+        result: Ok(ListResult::DeletePreview(preview.clone())),
+        pending: None,
+        server_values: None,
+    });
+    preview
+}
+
+#[test]
+fn delete_confirmation_defaults_to_cancel_and_states_best_effort() {
+    for code in [KeyCode::Enter, KeyCode::Esc, KeyCode::Char('n')] {
+        let (_d, _cfg, _path, mut app) = setup();
+        open_delete_confirmation(&mut app, "a");
+        let text = render(&app);
+        assert!(text.contains("Best-effort"), "{text}");
+        assert!(text.contains("exported but not yet restored"), "{text}");
+        assert_eq!(app.handle_key(key(code)), Outcome::Continue, "{code:?}");
+        assert!(app.confirmation.is_none(), "{code:?}");
+    }
+}
+
+#[test]
+fn deleting_the_open_list_returns_to_today_and_drops_it_from_the_sidebar() {
+    use twydo_core::lists::ListResult;
+    let (_d, _cfg, _path, mut app) = setup();
+    app.view = View::List("a".into());
+    let preview = open_delete_confirmation(&mut app, "a");
+    app.confirmation = Some(tdo::app::Confirmation::DeleteList(preview.clone()));
+    let Outcome::ManageList(action) = app.handle_key(key(KeyCode::Char('y'))) else {
+        panic!("delete worker")
+    };
+    app.list_finished(ListCompletion {
+        action,
+        result: Ok(ListResult::Deleted {
+            operation: "op".into(),
+            collection: "a".into(),
+            name: "Same".into(),
+            backup: "synthetic-backup".into(),
+            retired: String::new(),
+        }),
+        pending: None,
+        server_values: None,
+    });
+    assert_eq!(app.view, View::Today);
+    assert!(!app.sidebar_items().contains(&View::List("a".into())));
+    assert!(app.snapshot.collections.iter().all(|c| c.id != "a"));
+    assert!(app.list_form.is_none() && app.confirmation.is_none());
+    assert_eq!(
+        app.message.as_deref(),
+        Some("Deleted Same from CalDAV; backup synthetic-backup kept")
+    );
+}
+
+#[test]
+fn changed_since_backup_refusal_is_shown_and_dd_previews_again() {
+    let (_d, _cfg, _path, mut app) = setup();
+    let preview = open_delete_confirmation(&mut app, "a");
+    app.confirmation = Some(tdo::app::Confirmation::DeleteList(preview));
+    let Outcome::ManageList(action) = app.handle_key(key(KeyCode::Char('y'))) else {
+        panic!("delete worker")
+    };
+    app.list_finished(ListCompletion {
+        action,
+        result: Err("list changed since backup; review deletion again".into()),
+        pending: None,
+        server_values: None,
+    });
+    assert!(render(&app).contains("changed since backup"));
+    // The card stays open on the Delete field: Enter previews again, as does closing the
+    // card and pressing dd.
+    let Outcome::ManageList(again) = app.handle_key(key(KeyCode::Enter)) else {
+        panic!("a fresh preview")
+    };
+    assert!(matches!(again, ListAction::PreviewDelete { ref id } if id == "a"));
+    app.list_finished(ListCompletion {
+        action: again,
+        result: Err("list changed since backup; review deletion again".into()),
+        pending: None,
+        server_values: None,
+    });
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.list_form.is_none());
+    app.handle_key(key(KeyCode::Char('d')));
+    let Outcome::ManageList(again) = app.handle_key(key(KeyCode::Char('d'))) else {
+        panic!("a fresh preview")
+    };
+    assert!(matches!(again, ListAction::PreviewDelete { ref id } if id == "a"));
 }
 
 #[test]
