@@ -273,7 +273,10 @@ pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backu
 
 /// [`forget`] for a list the server has just deleted, under that deletion's operation fence.
 /// Journal recovery refuses to run while the fence is up, and the operation was prepared
-/// with no pending task writes for the list, so it is skipped here.
+/// with no pending task writes for the list, so it is skipped here. The remote deletion
+/// cannot be undone, so refusing to retire would protect nothing: an interrupted retirement
+/// of this list is resumed against its archived copy, and otherwise whatever is on disk now
+/// is preserved (`p.files` is replaced by the live tree).
 pub(crate) fn forget_fenced(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backup> {
     retire(cfg, p, now, false)
 }
@@ -287,6 +290,25 @@ fn retire(cfg: &Config, p: &Preview, now: DateTime<Utc>, recover: bool) -> io::R
     let _run = run_lock(&state.join("sync"), false)?;
     let _lock = VdirLock::exclusive(&state)?;
     let journal = Journal::open(&state)?;
+    let live;
+    let p = if recover {
+        p
+    } else {
+        if let Some(open) = list_state(&state)?
+            .into_iter()
+            .find(|b| !b.retired && b.collection == p.collection)
+        {
+            resume_locked(&cfg.vdir, &state)?;
+            return read(&state, &open.id);
+        }
+        let files = tree(&cfg.vdir.join(&p.collection))?;
+        live = Preview {
+            tasks: files.keys().filter(|f| f.ends_with(".ics")).count(),
+            files,
+            ..p.clone()
+        };
+        &live
+    };
     let recovered = if recover {
         recover_locked(&cfg.vdir, &journal)?
     } else {
