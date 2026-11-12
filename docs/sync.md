@@ -40,7 +40,11 @@ in [config.md](config.md) (`[sync]`).
    init`. Other settings of your old hand-written vdirsyncer file (such as `verify_fingerprint`,
    `auth` or extra timeouts) are not carried over; `ca_file` is the only TLS setting.
    Your old vdirsyncer config and its status directory are left unused; delete them when you
-   like. The first sync after the upgrade discovers the collections again.
+   like. The first sync after the upgrade discovers the collections again. A list operation left
+   unresolved before the upgrade cannot be resumed: reconcile answers that it was started before
+   Twydo generated the vdirsyncer config. No command abandons a started list operation, so
+   resolve such operations (reconcile them) before upgrading, and otherwise check on the server
+   whether the change happened.
 
 3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result. The
    daemon starts when needed.
