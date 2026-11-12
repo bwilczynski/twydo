@@ -26,7 +26,7 @@ fn hello_returns_epoch_session_and_vdir() {
     let fx = fx();
     let td = TestDaemon::start(&fx);
     let (_c, r) = Client::connect(td.socket(), td.hello_params()).unwrap();
-    assert_eq!(r.protocol, 1);
+    assert_eq!(r.protocol, twydo_daemon::PROTOCOL);
     assert!(r.session.starts_with("s-"), "{}", r.session);
     assert_eq!(r.session.len(), 2 + 12);
     assert!(r.epoch.starts_with("d-"));
@@ -40,12 +40,12 @@ fn protocol_mismatch_is_refused_with_both_versions() {
     let td = TestDaemon::start(&fx);
     let c = td.raw();
     let p = HelloParams {
-        protocol: 2,
+        protocol: twydo_daemon::PROTOCOL + 1,
         ..td.hello_params()
     };
     let err = c.call::<_, HelloResult>("hello", p).unwrap_err();
     assert_eq!(kind(&err), ErrorKind::Protocol);
-    assert_eq!(err_data(&err).protocol, Some(1));
+    assert_eq!(err_data(&err).protocol, Some(twydo_daemon::PROTOCOL));
     assert!(err_data(&err).daemon.is_some());
 }
 
@@ -71,7 +71,7 @@ fn hello_for_another_instance_and_protocol_is_wrong_instance() {
     let td = TestDaemon::start(&fx);
     let other = tempfile::tempdir().unwrap();
     let p = HelloParams {
-        protocol: 2,
+        protocol: twydo_daemon::PROTOCOL + 1,
         instance: Instance {
             config: other.path().join("config.toml"),
             vdir: Some(other.path().to_path_buf()),
@@ -95,7 +95,7 @@ fn a_refused_instance_leaves_the_daemon_running() {
     };
     assert!(td.raw().call::<_, HelloResult>("hello", p).is_err());
     let info: DaemonInfo = td.client().call("daemon.info", empty()).unwrap();
-    assert_eq!(info.protocol, 1);
+    assert_eq!(info.protocol, twydo_daemon::PROTOCOL);
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn lifecycle_methods_answer_without_hello() {
     let td = TestDaemon::start(&fx);
     let c = td.raw();
     let info: DaemonInfo = c.call("daemon.info", json!({})).unwrap();
-    assert_eq!(info.protocol, 1);
+    assert_eq!(info.protocol, twydo_daemon::PROTOCOL);
     let doc: Value = c.call("rpc.discover", json!({})).unwrap();
     assert!(doc.get("openrpc").is_some());
     assert_eq!(
@@ -345,7 +345,7 @@ fn one_client_serves_several_threads() {
             s.spawn(move || {
                 for _ in 0..20 {
                     let i: DaemonInfo = caller.call("daemon.info", empty()).unwrap();
-                    assert_eq!(i.protocol, 1);
+                    assert_eq!(i.protocol, twydo_daemon::PROTOCOL);
                 }
             });
         }

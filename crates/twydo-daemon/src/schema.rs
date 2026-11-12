@@ -632,6 +632,9 @@ fn method_schema<'a>(m: &'a Value, which: &str) -> Option<&'a Value> {
 }
 
 /// One line per breaking change from `released` to `current`.
+///
+/// When the two documents are different protocol generations, only the lifecycle methods
+/// (which stay frozen across generations) are compared; every other change is allowed.
 pub fn breaking_changes(released: &Value, current: &Value) -> Vec<String> {
     let mut w = Walk {
         released: defs(released),
@@ -641,9 +644,13 @@ pub fn breaking_changes(released: &Value, current: &Value) -> Vec<String> {
     };
     let empty = Vec::new();
     let cur_methods = current["methods"].as_array().unwrap_or(&empty);
+    let new_generation = released["x-protocol"] != current["x-protocol"];
 
     for rm in released["methods"].as_array().unwrap_or(&empty) {
         let name = rm["name"].as_str().unwrap_or("?");
+        if new_generation && rm["x-lifecycle"] != json!(true) {
+            continue;
+        }
         let Some(cm) = cur_methods.iter().find(|m| m["name"] == rm["name"]) else {
             w.out.insert(format!("{name}: method removed"));
             continue;
@@ -667,6 +674,10 @@ pub fn breaking_changes(released: &Value, current: &Value) -> Vec<String> {
             };
             w.walk(&format!("{name}.{which}"), rs, cs, role);
         }
+    }
+
+    if new_generation {
+        return w.out.into_iter().collect();
     }
 
     if let Some(revents) = released["x-events"].as_object() {
@@ -711,6 +722,6 @@ mod tests {
 
     #[test]
     fn info_version_is_the_protocol_generation() {
-        assert_eq!(document()["info"]["version"], json!("1"));
+        assert_eq!(document()["info"]["version"], json!("2"));
     }
 }
