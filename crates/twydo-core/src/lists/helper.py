@@ -501,6 +501,15 @@ def partly_removed(backup, captured):
     return {(r["href"], r["etag"], r["sha256"]) for r in captured["resources"]} < wanted
 
 
+def not_found(error):
+    """vdirsyncer's 404, which its DAV session raises instead of returning the response."""
+    try:
+        from vdirsyncer.exceptions import NotFoundError
+    except ImportError:
+        return False  # no adapter loaded, so no vdirsyncer session raised it
+    return isinstance(error, NotFoundError)
+
+
 async def collection_absent(session):
     probe = b'<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>'
     try:
@@ -508,8 +517,7 @@ async def collection_absent(session):
                                         headers={"Depth": "0", "Content-Type": "application/xml"})
         return response.status == 404
     except Exception as error:
-        from vdirsyncer.exceptions import NotFoundError
-        if not isinstance(error, NotFoundError):
+        if not not_found(error):
             raise
         return True
 
@@ -530,8 +538,7 @@ async def delete_collection(session, backup):
         response, _ = await dav_request(session, "DELETE")
         status = response.status
     except Exception as error:
-        from vdirsyncer.exceptions import NotFoundError
-        if not isinstance(error, NotFoundError):
+        if not not_found(error):
             raise
         status = 404
     if status not in (200, 202, 204, 404):
