@@ -100,7 +100,8 @@ fn removed_key_fails_config_step() {
 fn unsupported_vdirsyncer_version_fails() {
     let e = Env::new();
     let vd = e.script("old", "echo 'vdirsyncer, version 0.20.1'");
-    e.config(&e.sync("true", "").replace(
+    let pw = e.script("pw", "echo s3cret");
+    e.config(&e.sync(&pw, "").replace(
         &format!("command = \"{}\"", e.p("vds").display()),
         &format!("command = \"{vd}\""),
     ));
@@ -110,7 +111,8 @@ fn unsupported_vdirsyncer_version_fails() {
     let l = line(&out, "✗ vdirsyncer");
     assert!(l.contains("0.20.1"), "{l}");
     assert!(out.contains("[sync].command"), "{out}");
-    assert!(line(&out, "– password").contains("skipped: vdirsyncer failed"));
+    // Independent steps still run.
+    line(&out, "✓ password");
 }
 
 #[test]
@@ -179,4 +181,17 @@ fn missing_ca_file_fails() {
     let out = text(&o);
     assert_eq!(o.status.code(), Some(1), "{out}");
     line(&out, "✗ ca file");
+}
+
+#[test]
+fn vdir_failure_skips_only_generated_config() {
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret");
+    e.config(&e.sync(&pw, ""));
+    fs::remove_dir(e.p("vdir")).unwrap();
+    let out = text(&e.run());
+    line(&out, "✗ vdir");
+    assert!(line(&out, "– generated config").contains("skipped: vdir failed"));
+    line(&out, "✓ vdirsyncer");
+    line(&out, "✓ password");
 }
