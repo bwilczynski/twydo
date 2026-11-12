@@ -68,7 +68,9 @@ shapes. This list records useful unresolved questions, not permission to run the
   discovery with its identity, name, color and tasks. Metadata edits remain refused
   in every mode: a tokenless PROPPATCH succeeded while the server reported an exclusive
   lock. An obsolete calendar-export ETag also failed to protect collection DELETE,
-  despite changing with task membership/content. Product list deletion remains unavailable.
+  despite changing with task membership/content. Product list deletion now ships as best-effort
+  (user decision 2026-11-12; see the best-effort list-writes design); the evidence about the
+  failed server guards stands.
 - Phone archive/unarchive changed neither the captured task bytes/ETags nor the 14
   inspected collection properties. Archive remains local; no shared encoding is claimed.
 
