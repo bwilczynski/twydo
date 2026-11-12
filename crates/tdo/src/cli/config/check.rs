@@ -189,11 +189,14 @@ pub fn run(path: &Path) -> Report {
     // password
     match run_password(&sync.password_command) {
         Ok(()) => b.pass("password", "password_command printed a password"),
-        Err(e) => b.fail(
-            "password",
-            e,
-            "vdirsyncer uses the whole output as the password; print only the password (e.g. [\"sh\", \"-c\", \"pass show x | head -n1\"])",
-        ),
+        Err(e) => {
+            let hint = if e == MULTILINE_PASSWORD {
+                "vdirsyncer uses the whole output as the password; print only the password (e.g. [\"sh\", \"-c\", \"pass show x | head -n1\"])"
+            } else {
+                "run the command yourself and check it prints only the password"
+            };
+            b.fail("password", e, hint)
+        }
     }
 
     // generated config (depends on the vdir)
@@ -433,6 +436,8 @@ fn state_writable(vstate: &Path) -> Result<(), String> {
     Ok(())
 }
 
+const MULTILINE_PASSWORD: &str = "password_command printed more than one line";
+
 /// Run the password command; its stdout is read but never reported.
 fn run_password(cmd: &[String]) -> Result<(), String> {
     let (prog, args) = cmd
@@ -448,7 +453,7 @@ fn run_password(cmd: &[String]) -> Result<(), String> {
     if pw.is_empty() {
         Err("password_command printed no password".to_string())
     } else if pw.contains('\n') {
-        Err("password_command printed more than one line".to_string())
+        Err(MULTILINE_PASSWORD.to_string())
     } else {
         Ok(())
     }
