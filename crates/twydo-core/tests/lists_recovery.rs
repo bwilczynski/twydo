@@ -700,10 +700,16 @@ fn recovery_regenerates_the_config_and_runs_the_helper_with_it() {
     let generated = twydo_core::sync::vdirsyncer::config_path(&state);
     fs::remove_file(&generated).unwrap();
     service.reconcile(&id).unwrap();
-    assert!(generated.exists(), "recovery must ensure the generated config");
-    let paths = server(d.path())["config_paths"].clone();
-    let last = paths.as_array().unwrap().last().unwrap().clone();
-    assert_eq!(last, generated.to_str().unwrap(), "{paths}");
+    assert!(
+        generated.exists(),
+        "recovery must ensure the generated config"
+    );
+    let paths = fs::read_to_string(d.path().join("config_paths.log")).unwrap();
+    assert_eq!(
+        paths.lines().last().unwrap(),
+        generated.to_str().unwrap(),
+        "{paths}"
+    );
 }
 
 #[cfg(unix)]
@@ -720,6 +726,6 @@ fn recovery_of_a_record_with_another_config_never_uses_that_config() {
     fs::write(&path, record.to_string()).unwrap();
     let message = service.reconcile(&id).unwrap_err().to_string();
     assert!(message.contains("mismatched operation state"), "{message}");
-    let paths = server(d.path())["config_paths"].clone();
-    assert!(!paths.to_string().contains("/nonexistent/old"), "{paths}");
+    let paths = fs::read_to_string(d.path().join("config_paths.log")).unwrap_or_default();
+    assert!(!paths.contains("/nonexistent/old"), "{paths}");
 }
