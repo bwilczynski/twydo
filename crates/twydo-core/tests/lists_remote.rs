@@ -178,23 +178,6 @@ fn invalid_or_blank_list_input_never_starts_a_remote_operation() {
 }
 
 #[cfg(unix)]
-fn prototype_metadata_service(cfg: &Config) -> ListService {
-    // Exercise the prototype and reconciliation only against the offline transport.
-    // This synthetic matrix is never loaded by the application or a device round.
-    let mut matrix = twydo_core::compat::Matrix::embedded().clone();
-    let row = matrix
-        .contract
-        .iter_mut()
-        .find(|r| r.id == twydo_core::compat::ContractId::ListMetadata)
-        .unwrap();
-    row.iphone_baseline = twydo_core::compat::Verdict::Pass;
-    row.twydo_to_iphone = twydo_core::compat::Verdict::Pass;
-    row.iphone_to_twydo = twydo_core::compat::Verdict::Pass;
-    row.atomicity = Some(twydo_core::compat::Verdict::Pass);
-    ListService::open_with(cfg, None, matrix).unwrap()
-}
-
-#[cfg(unix)]
 fn create() -> ListRequest {
     ListRequest::Create {
         id: "new-id".into(),
@@ -207,7 +190,7 @@ fn create() -> ListRequest {
 #[test]
 fn actual_service_and_bundled_helper_create_edit_and_confirm_local_discovery() {
     let (_d, cfg) = offline();
-    let mut service = prototype_metadata_service(&cfg);
+    let mut service = ListService::open(&cfg, None).unwrap();
     service.execute(create()).unwrap();
     assert_eq!(service.state("new-id").unwrap().name, "Synthetic list");
     fs::write(cfg.vdir.join("new-id/held.ics"), "held task bytes").unwrap();
@@ -227,6 +210,43 @@ fn actual_service_and_bundled_helper_create_edit_and_confirm_local_discovery() {
     );
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     assert!(!state.join("lists/active").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn embedded_matrix_renames_and_recolors_in_verified_mode() {
+    let (d, mut cfg) = offline();
+    cfg.writes.mode = twydo_core::config::WriteMode::Verified;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    service.execute(create()).unwrap();
+    fs::write(cfg.vdir.join("new-id/held.ics"), "held task bytes").unwrap();
+    let expected = service.state("new-id").unwrap();
+    service
+        .execute(ListRequest::Edit {
+            id: "new-id".into(),
+            name: "Renamed".into(),
+            color: Some((1, 2, 3)),
+            expected,
+        })
+        .unwrap();
+    let state = service.state("new-id").unwrap();
+    assert_eq!(state.name, "Renamed");
+    assert_eq!(state.color, Some((1, 2, 3)));
+    assert_eq!(
+        fs::read_to_string(cfg.vdir.join("new-id/held.ics")).unwrap(),
+        "held task bytes"
+    );
+    let server: serde_json::Value =
+        serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
+    let count = |name: &str| {
+        server["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| **v == name)
+            .count()
+    };
+    assert_eq!(count("PROPPATCH"), 1);
 }
 
 #[cfg(unix)]
@@ -257,7 +277,7 @@ fn failed_local_discovery_reconciles_without_recreating_a_remote_list() {
 #[test]
 fn failed_edit_can_adopt_server_values_without_reissuing_the_edit() {
     let (d, cfg) = offline();
-    let mut service = prototype_metadata_service(&cfg);
+    let mut service = ListService::open(&cfg, None).unwrap();
     service.execute(create()).unwrap();
     flag(d.path(), "ignore_write");
     let expected = service.state("new-id").unwrap();

@@ -128,9 +128,10 @@ In the sidebar, `o` opens a new list card and `i` edits the selected ordinary li
 Use Tab to move between name, color and actions. Color accepts `#RRGGBB`; Left/Right
 cycles the 11 preset colors. **Save to CalDAV** applies immediately, even when automatic
 sync is off. Creating a list is verified in both directions.
-Name/color editing is currently refused in every write mode: its prototype cannot
-protect against a concurrent phone edit. Enabling it requires a demonstrated atomic
-server precondition as well as interoperability checks.
+Renaming and recoloring an existing list saves to CalDAV in both write modes. It is
+best-effort: the server offers no atomic precondition, so a save can overwrite a
+simultaneous name or color change made on another device. The card says so; the result
+is read back and confirmed.
 A refusal retains the card input. Pending saves offer **Check pending save** and
 **Keep server values**; these inspect the recorded target without repeating a write.
 

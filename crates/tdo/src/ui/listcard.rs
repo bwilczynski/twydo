@@ -56,6 +56,12 @@ pub fn render(f: &mut Frame, area: Rect, form: &ListForm) {
         "Archive is local; Save applies immediately, including when sync is off.",
         dim(),
     ));
+    if form.original.is_some() {
+        lines.push(Line::styled(
+            "Rename and color are best-effort: a save can overwrite a simultaneous change made on another device.",
+            dim(),
+        ));
+    }
     if form.busy {
         lines.push(Line::styled("Working…", theme::accent()));
     }
