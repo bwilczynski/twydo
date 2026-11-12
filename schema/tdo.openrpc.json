@@ -2971,6 +2971,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "ca_file": {
+            "default": null,
+            "description": "PEM file with the CA that signed the server certificate.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "command": {
             "default": "vdirsyncer",
             "description": "vdirsyncer executable.",
@@ -3008,6 +3016,14 @@
             "description": "vdirsyncer pair name.",
             "type": "string"
           },
+          "password_command": {
+            "default": [],
+            "description": "Command (argv) that prints the CalDAV password; run by vdirsyncer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "retention_days": {
             "default": 30,
             "format": "uint32",
@@ -3019,6 +3035,16 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "url": {
+            "default": "",
+            "description": "CalDAV server URL.",
+            "type": "string"
+          },
+          "username": {
+            "default": "",
+            "description": "CalDAV username.",
+            "type": "string"
           },
           "vdirsyncer_config": {
             "default": null,
@@ -3911,7 +3937,7 @@
   },
   "info": {
     "title": "tdo",
-    "version": "1"
+    "version": "2"
   },
   "methods": [
     {
@@ -4752,5 +4778,5 @@
       }
     }
   },
-  "x-protocol": 1
+  "x-protocol": 2
 }

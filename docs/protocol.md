@@ -3,7 +3,7 @@
 `tdo daemon` serves the TUI and the CLI over a Unix socket. You can write your own client
 against the same protocol. This page is the short version; the design has the detail
 ([§6](superpowers/specs/2026-11-09-daemon-design.md#6-the-protocol)), and the schema files below
-are the reference. The protocol is generation 1 and not yet promised stable for outside
+are the reference. The protocol is generation 2 and not yet promised stable for outside
 clients.
 
 ## The socket

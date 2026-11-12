@@ -4,7 +4,7 @@ pub mod protocol;
 pub mod schema;
 
 /// The wire protocol version this build speaks.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 pub mod client;
 pub mod paths;
 pub mod server;

@@ -610,3 +610,33 @@ fn removed_all_of_part_in_a_result_is_a_break() {
         "{lines:?}"
     );
 }
+
+fn an_older_generation(doc: &Value) -> Value {
+    let mut old = doc.clone();
+    old["x-protocol"] = json!(doc["x-protocol"].as_u64().unwrap() - 1);
+    old
+}
+
+#[test]
+fn a_new_generation_allows_a_removed_result_field() {
+    let current = schema::document();
+    let mut released = an_older_generation(&current);
+    def_mut(&mut released, "WriteResult")["properties"]["gone"] = json!({"type": "string"});
+    assert_eq!(breaks(&released, &current), Vec::<String>::new());
+}
+
+#[test]
+fn a_new_generation_still_freezes_lifecycle_methods() {
+    let released = an_older_generation(&schema::document());
+    let mut current = schema::document();
+    let m = current["methods"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|m| m["name"] == "daemon.info")
+        .unwrap();
+    m["params"][0]["schema"] =
+        json!({"type": "object", "properties": {"extra": {"type": "string"}}});
+    let lines = breaks(&released, &current);
+    assert!(lines.iter().any(|l| l.contains("daemon.info")), "{lines:?}");
+}
