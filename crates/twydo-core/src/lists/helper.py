@@ -33,6 +33,10 @@ class Refused(Exception):
         super().__init__(code)
 
 
+class NotSent(Refused):
+    """A refusal raised before the write it guards was sent."""
+
+
 def plain_id(value):
     return (isinstance(value, str) and 0 < len(value) <= 255
             and not value.startswith(".")
@@ -488,6 +492,15 @@ def backup_matches(backup, captured):
     return wanted == {(r["href"], r["etag"], r["sha256"]) for r in captured["resources"]}
 
 
+def partly_removed(backup, captured):
+    """Some backed-up resources are gone and nothing else changed: a partly applied DELETE."""
+    try:
+        wanted = {(r["href"], r["etag"], r["sha256"]) for r in backup["resources"]}
+    except (KeyError, TypeError):
+        raise Refused("operation") from None
+    return {(r["href"], r["etag"], r["sha256"]) for r in captured["resources"]} < wanted
+
+
 async def collection_absent(session):
     probe = b'<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>'
     try:
@@ -503,9 +516,16 @@ async def collection_absent(session):
 
 async def delete_collection(session, backup):
     """Best effort: nothing on the server enforces the revalidated state at DELETE time."""
-    await read_properties(session)
-    if not backup_matches(backup, await capture_inventory(session)):
-        raise Refused("changed")
+    # Every failure up to here happens before the DELETE is sent.
+    try:
+        await read_properties(session)
+        unchanged = backup_matches(backup, await capture_inventory(session))
+    except Refused as error:
+        raise NotSent(error.code) from None
+    except Exception:
+        raise NotSent("dav") from None
+    if not unchanged:
+        raise NotSent("changed")
     try:
         response, _ = await dav_request(session, "DELETE")
         status = response.status
@@ -523,7 +543,10 @@ async def reconcile_delete(session, backup):
     if await collection_absent(session):
         return
     await read_properties(session)
-    raise Refused("present" if backup_matches(backup, await capture_inventory(session)) else "changed")
+    captured = await capture_inventory(session)
+    if backup_matches(backup, captured):
+        raise Refused("present")
+    raise Refused("partial" if partly_removed(backup, captured) else "changed")
 
 
 def same_metadata(field, left, right):
@@ -861,10 +884,10 @@ def main():
                         if request["action"] == "preview-delete":
                             record["receipt"] = {"no_remote_write": True}
                         elif (mode == "execute" and isinstance(error, Refused)
-                              and (error.code in ("stale", "exists") or (request["action"] == "delete" and error.code == "changed"))):
+                              and (error.code in ("stale", "exists") or isinstance(error, NotSent))):
                             record["receipt"] = {"no_remote_write": True, "reason": error.code}
                         elif (mode == "reconcile" and request["action"] == "delete" and isinstance(error, Refused)
-                              and error.code in ("present", "changed")):
+                              and error.code in ("present", "partial", "changed")):
                             record["receipt"] = {"present": True, "reason": error.code}
                         atomic_json(request["operation"], record)
                     raise
