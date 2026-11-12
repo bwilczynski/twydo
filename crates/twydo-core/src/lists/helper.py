@@ -182,6 +182,10 @@ def operation_guard(request):
                     del actual[temp]
             values = (actual or {}, before or {}, after)
             matches = all(values[0].get(k) in (values[1].get(k), values[2].get(k)) for k in set().union(*values))
+        elif mode == "reconcile" and request["action"] == "delete":
+            # Read-only remotely and never writes the vdir: a local edit made after the
+            # DELETE must not block learning the outcome. Retirement preserves what is on disk.
+            matches = True
         else:
             matches = actual == record.get("holds")
         if not plain_id(request.get("collection")) or not matches:
