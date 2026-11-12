@@ -96,6 +96,27 @@ The collection adapter works on the generated config: a filesystem/CalDAV pair w
 storage is the bound vdir and whose `status_path` is outside it. Its `url` is always literal.
 The password and TLS settings are passed on to vdirsyncer unchanged.
 
+## Checking the setup
+
+`tdo config check` reports, step by step, whether this machine is ready to sync. It checks only
+this machine: it never contacts the server, never starts the daemon and writes nothing (it does
+not bind state either). Each step shows `✓`, `✗` or `–` (skipped) with a one-line detail, and a
+failing step adds a `hint:` line. A failure skips the steps after it. The exit code is 1 when
+any step fails, else 0.
+
+| Step | Passes when |
+|---|---|
+| `config` | the config file loads (a removed key or a missing `[sync]` key fails here; the hint is `run tdo config init`) |
+| `vdir` | the vdir exists and is a directory |
+| `sync` | `[sync]` is present; without it this is `sync off` and the steps below are skipped |
+| `vdirsyncer` | `[sync].command --version` reports 0.21.x |
+| `list helper` | `[sync].list_python` imports vdirsyncer 0.21.x |
+| `password` | `password_command` exits 0 and prints a non-empty first line. The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
+| `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound) |
+| `ca file` | `ca_file`, when set, is a readable file |
+
+The two version probes are killed after 10 seconds.
+
 ## `[lists.<id>]`
 
 `<id>` is the collection directory name. A list without an entry gets the defaults below.

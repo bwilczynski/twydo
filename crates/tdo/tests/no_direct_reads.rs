@@ -27,6 +27,8 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
 fn allowed(rel: &str, pattern: &str) -> bool {
     match rel {
         "cli/daemon.rs" | "cli/mod.rs" | "editor.rs" => true,
+        // `tdo config check` inspects this machine's setup; it never talks to the daemon.
+        "cli/config/check.rs" => matches!(pattern, "Config::load" | "existing_vdir_state"),
         "cli/conflicts.rs" => pattern == "resolve_config",
         _ => false,
     }
