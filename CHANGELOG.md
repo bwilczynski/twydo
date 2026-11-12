@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/bwilczynski/twydo/compare/v0.2.1...v0.2.2) - 2026-11-12
+
+### Added
+
+- *(tdo)* delete lists from the sidebar
+- delete lists from CalDAV after a verified backup
+- enable best-effort list rename and recolor
+- *(helper)* delete a list collection after revalidating its backup
+- *(compat)* accept best-effort list metadata and deletion
+
+### Fixed
+
+- *(tdo)* close only the finished list's delete confirmation
+- *(helper)* check for a vdirsyncer 404 without requiring vdirsyncer
+- *(core)* finish interrupted, partial and unsent list deletions
+- *(core)* record the retired copy of a deleted list in its operation
+- *(helper)* reconcile an uncertain delete despite local edits
+- always retire a list the server has deleted
+- *(helper)* accept only 200, 202, 204 or 404 as a completed delete
+
 ## [0.2.1](https://github.com/bwilczynski/twydo/compare/v0.2.0...v0.2.1) - 2026-11-11
 
 ### Added
