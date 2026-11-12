@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/bwilczynski/twydo/compare/v0.2.2...v0.3.0) - 2026-11-12
+
+### Added
+
+- *(tdo)* guided setup with tdo config init
+- *(tdo)* tdo config check
+- *(config)* [**breaking**] own the CalDAV settings and generate the vdirsyncer config
+- *(sync)* render the vdirsyncer config from [sync]
+- *(daemon)* protocol generation 2
+
+### Fixed
+
+- *(tdo)* config check password hint depends on the failure
+- *(lists)* keep config-path log out of the fake server state; sync schema description
+- *(tdo)* config check emulates vdirsyncer's password reading and checks the state dir is writable
+- *(tdo)* client no-config error points at tdo config init
+- *(config)* reject empty init flags and blank password_command
+- *(tdo)* config check verifies tdo is on PATH and keeps partial password output
+- *(tdo)* write ca_file home-relative; stronger symlink test
+- *(tdo)* config check keeps the tty, bounds pipe reads, skips by dependency
+- *(lists)* refuse to resume a list operation recorded before the generated config
+- *(lists)* recovery points the helper at the generated vdirsyncer config
+- *(sync)* ensure the generated config after the shutdown hold; document test seam; inode test
+- *(sync)* generate the vdirsyncer config only under the run lock
+
 ## [0.2.2](https://github.com/bwilczynski/twydo/compare/v0.2.1...v0.2.2) - 2026-11-12
 
 ### Added
