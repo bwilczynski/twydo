@@ -356,30 +356,168 @@ class ListHelperTests(unittest.TestCase):
         self.assertEqual(len(captured["resources"]),2)
         self.assertEqual(captured["resources"][0]["etag"],'"v0"')
 
+    def delete_request(self, **extra):
+        request = self.request()
+        request.update(action="delete", operation="/state/lists/operations/op.json",
+                       state="/state", backup="backup1")
+        request.update(extra)
+        return request
+
+    def test_delete_request_requires_backup_operation_and_state(self):
+        for mode in ("execute", "reconcile"):
+            self.h.validate_request(self.delete_request(mode=mode))
+        for change in ({"backup": None}, {"backup": ""}, {"backup": "../x"}, {"backup": "/abs"}, {"backup": 7},
+                       {"operation": None}, {"state": None}, {"mode": "refresh"}, {"collection": "../x"}):
+            with self.subTest(change=change), self.assertRaises(self.h.Refused) as caught:
+                request = self.delete_request()
+                request.update(change)
+                self.h.validate_request(request)
+            self.assertEqual(caught.exception.code, "protocol")
+        request = self.delete_request()
+        del request["backup"]
+        with self.assertRaises(self.h.Refused):
+            self.h.validate_request(request)
+
+    def captured(self):
+        return asyncio.run(self.h.capture_inventory(InventoryDAV()))
+
+    def test_delete_revalidates_then_sends_one_unconditional_delete(self):
+        backup, transport = self.captured(), InventoryDAV()
+        asyncio.run(self.h.delete_collection(transport, backup))
+        deletes = [c for c in transport.calls if c[0] == "DELETE"]
+        self.assertEqual(len(deletes), 1)
+        self.assertEqual(deletes[0][1], "")
+        self.assertEqual(transport.url, "https://example.com/dav/synthetic/")
+        self.assertFalse({k.lower() for k in deletes[0][2].get("headers", {})} & {"if-match", "if-none-match"})
+        self.assertEqual(transport.calls[-1][0], "DELETE")
+        self.assertTrue(any(c[0] == "GET" for c in transport.calls[:-1]))
+
+    def test_delete_treats_404_as_deleted_and_other_statuses_as_dav_failures(self):
+        backup = self.captured()
+        asyncio.run(self.h.delete_collection(InventoryDAV(delete_status=404), backup))
+        for status in (403, 405, 409, 423, 500):
+            with self.subTest(status=status), self.assertRaises(self.h.Refused) as caught:
+                asyncio.run(self.h.delete_collection(InventoryDAV(delete_status=status), backup))
+            self.assertEqual(caught.exception.code, "dav")
+
+    def test_delete_refuses_changed_inventory_or_properties(self):
+        backup = self.captured()
+        for fault in ("extra", "etag-changed", "bytes-changed", "props-changed"):
+            transport = InventoryDAV(fault)
+            with self.subTest(fault=fault), self.assertRaises(self.h.Refused) as caught:
+                asyncio.run(self.h.delete_collection(transport, backup))
+            self.assertEqual(caught.exception.code, "changed")
+            self.assertFalse(any(c[0] == "DELETE" for c in transport.calls))
+        missing = dict(backup, resources=backup["resources"][:1] + [dict(backup["resources"][1], href=backup["resources"][1]["href"] + "x")])
+        with self.assertRaises(self.h.Refused) as caught:
+            asyncio.run(self.h.delete_collection(InventoryDAV(), missing))
+        self.assertEqual(caught.exception.code, "changed")
+
+    def test_delete_refuses_incomplete_inventory_before_delete(self):
+        backup = self.captured()
+        for fault in ("weak", "missing", "duplicate", "foreign", "nested", "failed", "changed", "get-stale", "properties"):
+            transport = InventoryDAV(fault)
+            with self.subTest(fault=fault), self.assertRaises(self.h.Refused):
+                asyncio.run(self.h.delete_collection(transport, backup))
+            self.assertFalse(any(c[0] == "DELETE" for c in transport.calls))
+
+    def test_delete_transport_failure_surfaces_for_an_uncertain_record(self):
+        with self.assertRaises(OSError):
+            asyncio.run(self.h.delete_collection(InventoryDAV("delete-transport"), self.captured()))
+
+    def test_delete_reconcile_distinguishes_absent_present_changed_and_unreachable(self):
+        backup = self.captured()
+        transport = InventoryDAV(absent=True)
+        asyncio.run(self.h.reconcile_delete(transport, backup))
+        for fault, code in ((None, "present"), ("extra", "changed"), ("props-changed", "changed"), ("bytes-changed", "changed")):
+            with self.subTest(fault=fault), self.assertRaises(self.h.Refused) as caught:
+                asyncio.run(self.h.reconcile_delete(InventoryDAV(fault), backup))
+            self.assertEqual(caught.exception.code, code)
+        class Down(InventoryDAV):
+            async def request(self, *args, **kwargs):
+                raise OSError("synthetic network failure")
+        with self.assertRaises(OSError):
+            asyncio.run(self.h.reconcile_delete(Down(), backup))
+        for transport in (InventoryDAV(), InventoryDAV("extra"), InventoryDAV(absent=True)):
+            try:
+                asyncio.run(self.h.reconcile_delete(transport, backup))
+            except self.h.Refused:
+                pass
+            self.assertFalse(any(c[0] == "DELETE" for c in transport.calls))
+
+    def test_delete_backup_must_be_a_plain_file_under_unlinked_directories(self):
+        import json
+        import os
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp) / "state"
+            directory = state / "lists/backups/backup1"
+            directory.mkdir(parents=True)
+            request = self.delete_request(state=str(state))
+            with self.assertRaises(self.h.Refused) as caught:
+                self.h.read_backup(request)
+            self.assertEqual(caught.exception.code, "operation")
+            (directory / "remote.json").write_text(json.dumps(self.captured()))
+            self.assertEqual(self.h.read_backup(request)["format"], 1)
+            real = Path(temp) / "real.json"
+            (directory / "remote.json").rename(real)
+            (directory / "remote.json").symlink_to(real)
+            with self.assertRaises(self.h.Refused):
+                self.h.read_backup(request)
+            (directory / "remote.json").unlink()
+            os.mkfifo(directory / "remote.json")
+            with self.assertRaises(self.h.Refused):
+                self.h.read_backup(request)
+            (directory / "remote.json").unlink()
+            (directory / "remote.json").write_text("{not json")
+            with self.assertRaises(self.h.Refused):
+                self.h.read_backup(request)
+            (directory / "remote.json").unlink()
+            directory.rmdir()
+            directory.symlink_to(Path(temp), target_is_directory=True)
+            with self.assertRaises(self.h.Refused):
+                self.h.read_backup(request)
+
 
 class InventoryDAV:
     url = "https://example.com/dav/synthetic/"
 
-    def __init__(self, fault=None):
+    def __init__(self, fault=None, absent=False, delete_status=204):
         self.fault, self.calls, self.inventories = fault, [], 0
+        self.absent, self.delete_status = absent, delete_status
+
+    def tag(self, index):
+        return '"v%d-new"' % index if self.fault == "etag-changed" else f'"v{index}"'
 
     async def request(self, method, path="", **kwargs):
         import xml.etree.ElementTree as ET
         self.calls.append((method, path, kwargs))
         status, headers = 207, {}
-        if method == "GET":
-            index = 0 if path.endswith("remote.ics") else 1
-            raw = [b"malformed synthetic VTODO\x00", b"opaque synthetic resource"][index]
-            headers["ETag"] = '"changed"' if self.fault == "get-stale" else f'"v{index}"'
+        if method == "DELETE":
+            status, raw = self.delete_status, b""
+            if self.fault == "delete-transport":
+                raise OSError("synthetic transport failure")
+            if 200 <= status < 300 or status == 404:
+                self.absent = True
+        elif method == "GET":
+            index = 0 if path.endswith("remote.ics") else 2 if path.endswith("added.ics") else 1
+            raw = [b"malformed synthetic VTODO\x00", b"opaque synthetic resource", b"added synthetic resource"][index]
+            if self.fault == "bytes-changed" and index == 0:
+                raw += b"!"
+            headers["ETag"] = '"changed"' if self.fault == "get-stale" else self.tag(index)
             status = 200
         elif kwargs["headers"]["Depth"] == "0":
-            raw = b'<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/synthetic/</d:href><d:propstat><d:prop><d:displayname>Synthetic</d:displayname></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>'
+            name = b"Renamed" if self.fault == "props-changed" else b"Synthetic"
+            raw = (b'''<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:a="http://apple.com/ns/ical/"><d:response><d:href>/dav/synthetic/</d:href><d:propstat><d:prop><d:displayname>''' + name
+                   + b'''</d:displayname><d:resourcetype><c:calendar/></d:resourcetype><c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set><a:calendar-color>#3289D2</a:calendar-color></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>''')
             if self.fault == "properties":
                 raw = raw.replace(b"200 OK", b"403 Forbidden")
+            if self.absent:
+                status, raw = 404, b""
         else:
             self.inventories += 1
             root = ET.Element("{DAV:}multistatus")
-            for index, name in enumerate(("", "remote.ics", "unknown.bin")):
+            names = ("", "remote.ics", "unknown.bin") + (("added.ics",) if self.fault == "extra" else ())
+            for index, name in enumerate(names):
                 row = ET.SubElement(root, "{DAV:}response")
                 href = self.url + name
                 if name and self.fault == "foreign": href = "https://elsewhere.example.org/" + name
@@ -396,7 +534,7 @@ class InventoryDAV:
                         ET.SubElement(ET.SubElement(absent,"{DAV:}prop"),"{DAV:}getetag")
                         ET.SubElement(absent,"{DAV:}status").text="HTTP/1.1 404 Not Found"
                 elif self.fault != "missing":
-                    tag = f'"v{index-1}"'
+                    tag = self.tag(index - 1)
                     if self.fault == "weak": tag = "W/" + tag
                     if self.fault == "changed" and self.inventories > 1: tag = '"changed"'
                     ET.SubElement(prop, "{DAV:}getetag").text = tag
@@ -414,7 +552,8 @@ class MemoryDAV:
     """The network boundary only: all validation/writing is production helper code."""
     url = "https://example.com/dav/synthetic/"
 
-    def __init__(self, fail_status=False, ignore_write=False, exists=True):
+    def __init__(self, fail_status=False, ignore_write=False, exists=True, fail_delete=False):
+        self.fail_delete = fail_delete
         self.state = dict(name="Before", color="#3289D2", unknown="preserved")
         self.fail_status, self.ignore_write = fail_status, ignore_write
         self.calls, self.written_properties = [], []
@@ -453,6 +592,11 @@ class MemoryDAV:
             self.state["name"] = root.findtext(".//{DAV:}displayname")
             self.state["color"] = root.findtext(".//{http://apple.com/ns/ical/}calendar-color")
             status_code, raw = 201, b""
+        elif method == "DELETE":
+            if self.fail_delete:
+                raise OSError("synthetic transport failure")
+            self.exists = False
+            status_code, raw = 204, b""
         else:
             raise AssertionError("unexpected request")
 
