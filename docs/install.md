@@ -56,25 +56,22 @@ regenerate it into an empty folder to start over.
 
 ## Use it with your tasks
 
-1. **Get your tasks into a vdir.** Twydo reads a local folder that
-   [vdirsyncer](https://vdirsyncer.pimutils.org/) keeps in step with your CalDAV server. If you use
-   2Do, it must sync over CalDAV first: see [compatibility.md](compatibility.md) for moving from
-   Dropbox, and [sync.md](sync.md) for setting up vdirsyncer.
-2. **Point Twydo at it.** Create `~/.config/twydo/config.toml` (or under `$XDG_CONFIG_HOME`):
-
-   ```toml
-   vdir = "~/.local/share/vdirsyncer/tasks"
-   timezone = "Europe/Berlin"   # optional; defaults to the system zone
-   ```
-
-   All keys: [config.md](config.md). Without a config, `tdo` prints how to create one; `--vdir <path>` works without
-   one.
+1. **Set up.** Run `tdo config init`. It asks where the vdir goes (Enter takes
+   `~/.local/share/twydo/vdir`) and whether to sync with a CalDAV server; if so, the server URL,
+   the username and a command that prints the password. It writes
+   `~/.config/twydo/config.toml` (or under `$XDG_CONFIG_HOME`), creates the vdir and checks the
+   setup. Syncing needs [vdirsyncer](https://vdirsyncer.pimutils.org/) 0.21.x installed; Twydo
+   writes its config itself ([sync.md](sync.md)). If you use 2Do, it must sync over CalDAV first:
+   see [compatibility.md](compatibility.md) for moving from Dropbox. All keys:
+   [config.md](config.md). Without a config, `tdo` prints how to create one; `--vdir <path>`
+   works without one.
+2. **Optional settings.** Add keys such as `timezone = "Europe/Berlin"` (defaults to the system
+   zone) to the file by hand.
 3. **Check your data.** `tdo check` reports each kind of repeat in your data, whether Twydo has
    verified it against 2Do, and any task it cannot read.
 4. **Open it.** `tdo`. Keys: [tui.md](tui.md).
-5. **Sync.** Run `tdo config init` to add the `[sync]` table (server URL, username, password
-   command) so `tdo sync` and the TUI's `:sync` run vdirsyncer: [sync.md](sync.md). Twydo writes
-   the vdirsyncer config itself.
+5. **Sync.** If you set up sync in step 1, `tdo sync` and the TUI's `:sync` run vdirsyncer:
+   [sync.md](sync.md). To add or change it later, run `tdo config init` again.
 
 ## The daemon
 
