@@ -48,6 +48,9 @@ pub struct ListOperation {
     pub local_base: Option<BTreeMap<String, Vec<u8>>>,
     #[serde(default)]
     pub local_after: Option<BTreeMap<String, Vec<u8>>>,
+    /// The retired local copy of a deleted list, recorded once its retirement completes.
+    #[serde(default)]
+    pub retired: Option<String>,
 }
 
 pub(crate) fn private_dir(path: &Path) -> io::Result<()> {
@@ -367,6 +370,7 @@ pub fn prepare(
         connection_digest: None,
         local_base: None,
         local_after: None,
+        retired: None,
     };
     save(&state, &operation)?;
     write_atomic(&root.join("active"), operation.id.as_bytes())?;

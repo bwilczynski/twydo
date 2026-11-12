@@ -948,6 +948,7 @@ fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
         connection_digest: None,
         local_base: None,
         local_after: None,
+        retired: None,
     };
     twydo_core::lists::operation::save(&state, &record).unwrap();
     fs::create_dir_all(state.join("lists")).unwrap();

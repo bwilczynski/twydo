@@ -255,6 +255,35 @@ fn delete_sends_one_delete_retires_local_copy_and_keeps_backup() {
 }
 
 #[test]
+fn delete_succeeds_when_the_collection_was_forgotten_before() {
+    let (_d, cfg) = offline();
+    // A copy retired with a later timestamp must not be mistaken for this deletion's.
+    let earlier = twydo_core::retired::preview(&cfg, "Before").unwrap();
+    let old = twydo_core::retired::forget(
+        &cfg,
+        &earlier,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+    )
+    .unwrap();
+    // The list is discovered again with the same collection identity.
+    fs::create_dir_all(cfg.vdir.join("synthetic")).unwrap();
+    fs::write(cfg.vdir.join("synthetic/displayname"), "Before").unwrap();
+    fs::write(
+        cfg.vdir.join("synthetic/local.ics"),
+        b"unparseable local synthetic task",
+    )
+    .unwrap();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    let ListResult::Deleted { retired, .. } = service.delete_list(&preview).unwrap() else {
+        panic!("expected a deletion")
+    };
+    assert_ne!(retired, old.id);
+    assert!(twydo_core::retired::get(&cfg, &retired).unwrap().retired);
+    no_active(&cfg);
+}
+
+#[test]
 fn delete_refuses_changed_local_bytes_without_sending_delete() {
     let (d, cfg) = offline();
     let mut service = ListService::open(&cfg, None).unwrap();
