@@ -309,6 +309,20 @@ pub(super) fn recovery_request(
     stored: &HelperRequest,
 ) -> Result<HelperRequest, ListError> {
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+    let generated = std::path::absolute(crate::sync::vdirsyncer::config_path(&state))?;
+    if stored.config.as_deref() != Some(generated.as_path()) {
+        // Written before Twydo generated the config. The helper would refuse it with a
+        // message that sends the user back to reconcile, and no command resolves it.
+        return Err(ListError::Refused(format!(
+            "list operation {} was started before Twydo generated the vdirsyncer config (upgrade to 0.3) and cannot be resumed; check on the server whether the change happened and make it there if needed",
+            stored
+                .operation
+                .as_deref()
+                .and_then(Path::file_stem)
+                .and_then(|n| n.to_str())
+                .unwrap_or("(unknown)")
+        )));
+    }
     private_dir(&state.join("sync"))?;
     let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
     let sync = cfg.sync.as_ref().ok_or_else(|| {
