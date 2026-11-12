@@ -488,7 +488,7 @@ fn changed_saved_write_policy_refuses_a_worker_using_old_test_mode() {
     let (d, cfg) = offline();
     let path = d.path().join("config.toml");
     let sync = cfg.sync.as_ref().unwrap();
-    fs::write(&path, format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"verified\"\n[sync]\npair = \"synthetic\"\nlocal_storage = \"local\"\nlist_python = {:?}\nvdirsyncer_config = {:?}\n", cfg.vdir.to_str().unwrap(), cfg.state_dir().to_str().unwrap(),sync.list_python,sync.vdirsyncer_config.as_ref().unwrap().to_str().unwrap())).unwrap();
+    fs::write(&path, format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"verified\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\nlist_python = {:?}\n", cfg.vdir.to_str().unwrap(), cfg.state_dir().to_str().unwrap(),sync.list_python)).unwrap();
     let mut service = ListService::open(&cfg, Some(&path)).unwrap();
     assert!(service.execute(create()).is_err());
     assert!(!d.path().join("server.json").exists());
@@ -519,7 +519,7 @@ fn changed_saved_state_binding_refuses_create_preview_and_reconciliation() {
         };
         let path = d.path().join("config.toml");
         let sync = cfg.sync.as_ref().unwrap();
-        fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\npair = \"synthetic\"\nlocal_storage = \"local\"\nlist_python = {:?}\nvdirsyncer_config = {:?}\n",cfg.vdir.to_str().unwrap(),d.path().join("other-state").to_str().unwrap(),sync.list_python,sync.vdirsyncer_config.as_ref().unwrap().to_str().unwrap())).unwrap();
+        fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\nlist_python = {:?}\n",cfg.vdir.to_str().unwrap(),d.path().join("other-state").to_str().unwrap(),sync.list_python)).unwrap();
         let before = fs::read(d.path().join("server.json")).unwrap();
         let mut service = ListService::open(&cfg, Some(&path)).unwrap();
         let message = match action {

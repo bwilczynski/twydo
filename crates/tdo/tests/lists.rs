@@ -101,7 +101,7 @@ fn setup() -> (tempfile::TempDir, Config, std::path::PathBuf, App) {
     }
     fs::write(vdir.join("a/open.ics"), "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:synthetic-open\r\nSUMMARY:Synthetic open task\r\nDUE;VALUE=DATE:20261108\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR\r\n").unwrap();
     let path = d.path().join("config.toml");
-    fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\ntimezone = \"UTC\"\n[sync]\npair = \"synthetic\"\nlocal_storage = \"local\"\n[lists.b]\narchived = true\n[lists.c]\nhidden = true\n",vdir.to_str().unwrap(),d.path().join("state").to_str().unwrap())).unwrap();
+    fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\ntimezone = \"UTC\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\n[lists.b]\narchived = true\n[lists.c]\nhidden = true\n",vdir.to_str().unwrap(),d.path().join("state").to_str().unwrap())).unwrap();
     let cfg = Config::load(&path).unwrap();
     let app = App::new(
         Snapshot::new(twydo_core::vdir::load(&vdir).unwrap(), cfg.clone()),

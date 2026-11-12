@@ -970,7 +970,8 @@ fn op_wait_survives_a_daemon_restart() {
             use std::io::Write;
             write!(
                 f,
-                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                "[sync]\n{}command = \"{}\"\nmetasync = false\n",
+                common::SYNC_KEYS,
                 fake.display()
             )
         })
@@ -1102,7 +1103,7 @@ fn status_never_opens_the_config_file() {
     let env = Env::new("test");
     let cfg = env.dir.path().join("config/twydo/config.toml");
     let mut text = fs::read_to_string(&cfg).unwrap();
-    text.push_str("\n[sync]\ncommand = \"/nonexistent/vdirsyncer\"\n");
+    text.push_str("\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\ncommand = \"/nonexistent/vdirsyncer\"\n");
     fs::write(&cfg, text).unwrap();
     env.ensure_daemon();
     let ready = env.tdo(&["op", "journal"]);
@@ -1120,7 +1121,7 @@ fn read_only_commands_warn_about_a_stuck_journal() {
     let env = Env::new("test");
     let cfg = env.dir.path().join("config/twydo/config.toml");
     let mut text = fs::read_to_string(&cfg).unwrap();
-    text.push_str("\n[sync]\ncommand = \"/nonexistent/vdirsyncer\"\n");
+    text.push_str("\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\ncommand = \"/nonexistent/vdirsyncer\"\n");
     fs::write(&cfg, text).unwrap();
     let rel = format!("list1/{TASK_A}.ics");
     let id = "20261101T120000Z-0badf00d";
@@ -1486,7 +1487,8 @@ fn op_status_reports_a_sync_job() {
             use std::io::Write;
             write!(
                 f,
-                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                "[sync]\n{}command = \"{}\"\nmetasync = false\n",
+                common::SYNC_KEYS,
                 fake.display()
             )
         })

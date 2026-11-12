@@ -112,7 +112,13 @@ impl ListService {
 
     pub fn execute(&mut self, request: ListRequest) -> Result<ListResult, ListError> {
         self.validate_binding()?;
-        let mut helper = HelperRequest::probe(&self.config)?;
+        // Probing writes the generated vdirsyncer config and binds the state directory, so it
+        // follows the checks that refuse an operation before it starts.
+        let action: String;
+        let collection: Option<String>;
+        let mut new_name = None;
+        let mut new_color = None;
+        let mut expected_json = None;
         match request {
             ListRequest::Create { id, name, color } => {
                 validate(&id, &name)?;
@@ -125,10 +131,10 @@ impl ListService {
                 if fs::symlink_metadata(self.config.vdir.join(&id)).is_ok() {
                     return Err(ListError::Refused("list identity already exists".into()));
                 }
-                helper.action = "create".into();
-                helper.collection = Some(id);
-                helper.name = Some(name.trim().to_string());
-                helper.color = Some(color_hex(color));
+                action = "create".into();
+                collection = Some(id);
+                new_name = Some(name.trim().to_string());
+                new_color = Some(color_hex(color));
             }
             ListRequest::Edit {
                 id,
@@ -153,24 +159,30 @@ impl ListService {
                         "choose a color to replace the existing list color".into(),
                     ));
                 }
-                helper.action = "edit".into();
-                helper.collection = Some(id.clone());
+                action = "edit".into();
+                collection = Some(id.clone());
                 if name.trim() != expected.name {
-                    helper.name = Some(name.trim().to_string());
+                    new_name = Some(name.trim().to_string());
                 }
                 if color != expected.color {
-                    helper.color = color.map(color_hex);
+                    new_color = color.map(color_hex);
                 }
-                if helper.name.is_none() && helper.color.is_none() {
+                if new_name.is_none() && new_color.is_none() {
                     return Err(ListError::Refused("no list changes".into()));
                 }
                 let raw_name = fs::read_to_string(self.config.vdir.join(&id).join("displayname"))
                     .ok()
                     .map(|s| s.trim().to_string());
-                helper.expected =
+                expected_json =
                     Some(json!({"name":raw_name, "color":expected.color.map(color_hex)}));
             }
         }
+        let mut helper = HelperRequest::probe(&self.config)?;
+        helper.action = action;
+        helper.collection = collection;
+        helper.name = new_name;
+        helper.color = new_color;
+        helper.expected = expected_json;
         let record = operation::prepare(&self.config, helper, Utc::now())?;
         let id = record.id.clone();
         if let Err(error) = helper::invoke(&self.config, &record.request) {

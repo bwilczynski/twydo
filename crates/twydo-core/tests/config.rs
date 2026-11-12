@@ -3,6 +3,14 @@ use std::path::{Path, PathBuf};
 use chrono::{NaiveTime, Weekday};
 use twydo_core::config::{Config, SortField, SyncConfig, WriteMode, expand_tilde, state_dir_from};
 
+/// A `[sync]` table with the three required keys plus `extra`.
+fn sync_toml(extra: &str) -> String {
+    format!("vdir = \"/x\"\n[sync]\n{CONN}{extra}")
+}
+
+const CONN: &str =
+    "url = \"https://dav.example.test/a/\"\nusername = \"alice\"\npassword_command = [\"true\"]\n";
+
 fn parse(s: &str) -> Result<Config, twydo_core::config::ConfigError> {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("config.toml");
@@ -146,23 +154,19 @@ fn sync_absent_means_off() {
 
 #[test]
 fn sync_defaults() {
-    let c = parse("vdir = \"/x\"\n[sync]\n").unwrap();
+    let c = parse(&sync_toml("")).unwrap();
     assert_eq!(
         c.sync,
         Some(SyncConfig {
-            url: String::new(),
-            username: String::new(),
-            password_command: vec![],
+            url: "https://dav.example.test/a/".into(),
+            username: "alice".into(),
+            password_command: vec!["true".into()],
             ca_file: None,
-            pair: "twydo".into(),
-            local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
             list_python: "python3".into(),
-            vdirsyncer_config: None,
             metasync: true,
             batch_size: 5,
             max_wait_secs: 60,
-            after_edit: None,
             timeout_secs: 300,
             max_backoff_secs: 1800,
             retention_days: 30,
@@ -171,27 +175,8 @@ fn sync_defaults() {
 }
 
 #[test]
-fn sync_vdirsyncer_config_expands_tilde() {
-    let home = std::env::var_os("HOME").filter(|h| !h.is_empty());
-    let Some(home) = home else {
-        eprintln!("skipping: HOME not set");
-        return;
-    };
-    let c = parse("vdir = \"/x\"\n[sync]\nvdirsyncer_config = \"~/vs/config\"\n").unwrap();
-    assert_eq!(
-        c.sync.unwrap().vdirsyncer_config,
-        Some(Path::new(&home).join("vs/config"))
-    );
-    let c = parse("vdir = \"/x\"\n[sync]\nvdirsyncer_config = \"/abs/config\"\n").unwrap();
-    assert_eq!(
-        c.sync.unwrap().vdirsyncer_config,
-        Some(PathBuf::from("/abs/config"))
-    );
-}
-
-#[test]
 fn sync_unknown_key_is_error() {
-    let e = parse("vdir = \"/x\"\n[sync]\nbogus_key = 1\n")
+    let e = parse(&sync_toml("bogus_key = 1\n"))
         .unwrap_err()
         .to_string();
     assert!(e.contains("bogus_key"), "{e}");
@@ -210,37 +195,20 @@ fn work_days_default_and_custom() {
 
 #[test]
 fn sync_defaults_batch_and_wait() {
-    let s = parse("vdir = \"/x\"\n[sync]\n").unwrap().sync.unwrap();
+    let s = parse(&sync_toml("")).unwrap().sync.unwrap();
     assert_eq!((s.batch_size, s.max_wait_secs), (5, 60));
 }
 
 #[test]
 fn zero_batch_size_is_refused() {
-    let e = parse("vdir = \"/x\"\n[sync]\nbatch_size = 0\n").unwrap_err();
+    let e = parse(&sync_toml("batch_size = 0\n")).unwrap_err();
     assert!(e.to_string().contains("batch_size"), "{e}");
 }
 
 #[test]
 fn zero_max_wait_is_refused() {
-    let e = parse("vdir = \"/x\"\n[sync]\nmax_wait_secs = 0\n").unwrap_err();
+    let e = parse(&sync_toml("max_wait_secs = 0\n")).unwrap_err();
     assert!(e.to_string().contains("max_wait_secs"), "{e}");
-}
-
-#[test]
-fn after_edit_false_still_loads_with_a_warning() {
-    let c = parse("vdir = \"/x\"\n[sync]\nafter_edit = false\n").unwrap();
-    assert_eq!(
-        c.warnings(),
-        vec![
-            "[sync] after_edit is no longer used: edits sync in batches (batch_size, max_wait_secs); use `tdo sync off` to keep syncs manual"
-        ]
-    );
-    assert!(
-        parse("vdir = \"/x\"\n[sync]\n")
-            .unwrap()
-            .warnings()
-            .is_empty()
-    );
 }
 
 #[test]
@@ -261,12 +229,12 @@ fn sync_ca_file_expands_tilde() {
         eprintln!("skipping: HOME not set");
         return;
     };
-    let c = parse("vdir = \"/x\"\n[sync]\nca_file = \"~/ca.pem\"\n").unwrap();
+    let c = parse(&sync_toml("ca_file = \"~/ca.pem\"\n")).unwrap();
     assert_eq!(
         c.sync.unwrap().ca_file,
         Some(Path::new(&home).join("ca.pem"))
     );
-    let c = parse("vdir = \"/x\"\n[sync]\nca_file = \"/abs/ca.pem\"\n").unwrap();
+    let c = parse(&sync_toml("ca_file = \"/abs/ca.pem\"\n")).unwrap();
     assert_eq!(c.sync.unwrap().ca_file, Some(PathBuf::from("/abs/ca.pem")));
 }
 
@@ -281,4 +249,50 @@ fn sync_connection_keys_parse() {
     assert_eq!(s.username, "alice");
     assert_eq!(s.password_command, ["pass", "show", "x"]);
     assert_eq!(s.ca_file, None);
+}
+
+#[test]
+fn removed_sync_keys_are_named_errors() {
+    for (key, value) in [
+        ("pair", "\"twydo\""),
+        ("local_storage", "\"twydo_local\""),
+        ("vdirsyncer_config", "\"/x/vdirsyncer\""),
+        ("after_edit", "true"),
+    ] {
+        let e = parse(&sync_toml(&format!("{key} = {value}\n"))).unwrap_err();
+        assert!(
+            matches!(e, twydo_core::config::ConfigError::Invalid { .. }),
+            "{e:?}"
+        );
+        let text = e.to_string();
+        let want = format!(
+            "[sync] {key} is no longer supported: Twydo generates the vdirsyncer config; run `tdo config init`"
+        );
+        assert!(text.ends_with(&want), "{text}");
+    }
+}
+
+#[test]
+fn missing_connection_keys_are_named_errors() {
+    let msg = |toml: &str| parse(toml).unwrap_err().to_string();
+    let required = |key: &str| format!("[sync] {key} is required; run `tdo config init`");
+    assert!(msg("vdir = \"/x\"\n[sync]\n").ends_with(&required("url")));
+    assert!(
+        msg("vdir = \"/x\"\n[sync]\nurl = \"https://dav.example.test/a/\"\n")
+            .ends_with(&required("username"))
+    );
+    assert!(
+        msg("vdir = \"/x\"\n[sync]\nurl = \"https://dav.example.test/a/\"\nusername = \"alice\"\npassword_command = []\n")
+            .ends_with(&required("password_command"))
+    );
+}
+
+#[test]
+fn no_sync_table_means_sync_off() {
+    assert_eq!(parse("vdir = \"/x\"\n").unwrap().sync, None);
+}
+
+#[test]
+fn warnings_are_empty() {
+    assert!(parse(&sync_toml("")).unwrap().warnings().is_empty());
 }

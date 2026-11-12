@@ -25,17 +25,18 @@ pub fn offline() -> (tempfile::TempDir, Config) {
     fs::write(
         &wrapper,
         format!(
-            "#!/usr/bin/env python3\nimport runpy\nrunpy.run_path({:?},run_name='__main__')\n",
+            "#!/usr/bin/env python3\nimport os, runpy\nos.environ['TWYDO_TEST_LIST_CONNECTION']={:?}\nrunpy.run_path({:?},run_name='__main__')\n",
+            connection.to_str().unwrap(),
             backend.to_str().unwrap()
         ),
     )
     .unwrap();
     fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
     cfg.sync = Some(SyncConfig {
-        pair: "synthetic".into(),
-        local_storage: "local".into(),
+        url: "https://dav.example.test/alice/".into(),
+        username: "alice".into(),
+        password_command: vec!["true".into()],
         list_python: wrapper.to_str().unwrap().into(),
-        vdirsyncer_config: Some(connection),
         ..Default::default()
     });
     (d, cfg)

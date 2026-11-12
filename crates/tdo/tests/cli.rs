@@ -287,6 +287,12 @@ mod sync {
                 fake.display()
             )));
             fx.auto_off();
+            // As after a first sync: the generated vdirsyncer config exists, so the fake sees
+            // only the calls a test asks for.
+            let cfg = twydo_core::config::Config::load(&fx.config_path()).unwrap();
+            let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+            twydo_core::sync::vdirsyncer::ensure(&cfg, cfg.sync.as_ref().unwrap(), &state).unwrap();
+            let _ = fs::remove_file(state.join("sync/rediscover"));
             fx
         }
 
@@ -297,7 +303,7 @@ mod sync {
                 self.path("state").display()
             );
             if let Some(body) = sync {
-                text.push_str(&format!("\n[sync]\n{body}\n"));
+                text.push_str(&format!("\n[sync]\n{}{body}\n", crate::common::SYNC_KEYS));
             }
             fs::write(self.config_path(), text).unwrap();
         }
@@ -543,21 +549,6 @@ mod sync {
             .unwrap();
         std::thread::sleep(Duration::from_secs(1));
         assert!(!fx.path("runs.txt").exists(), "a sync ran");
-    }
-
-    #[test]
-    fn sync_prints_the_daemons_config_warnings() {
-        let fx = Fx::with_fake(|_| "exit 0".into());
-        let mut text = fs::read_to_string(fx.config_path()).unwrap();
-        text.push_str("after_edit = true\n");
-        fs::write(fx.config_path(), text).unwrap();
-        for args in [&["sync"][..], &["sync", "off"][..]] {
-            let o = fx.tdo(args);
-            assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
-            assert!(stderr(&o).contains("warning: "), "{args:?}: {}", stderr(&o));
-        }
-        let o = fx.tdo(&["sync", "--background"]);
-        assert!(o.stderr.is_empty(), "{}", stderr(&o));
     }
 
     #[test]

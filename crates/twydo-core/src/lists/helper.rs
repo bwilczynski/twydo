@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::Config;
+use crate::store::bind_vdir_state;
+use crate::sync::vdirsyncer::{LOCAL_STORAGE, PAIR, ensure};
 
 use super::ListError;
 
@@ -71,14 +73,14 @@ impl HelperRequest {
         Ok(Self {
             version: 1,
             action: "probe".into(),
-            pair: sync.pair.clone(),
-            local_storage: sync.local_storage.clone(),
+            pair: PAIR.into(),
+            local_storage: LOCAL_STORAGE.into(),
             vdir: std::path::absolute(&cfg.vdir)?,
-            config: sync
-                .vdirsyncer_config
-                .as_ref()
-                .map(std::path::absolute)
-                .transpose()?,
+            config: Some(std::path::absolute(ensure(
+                cfg,
+                sync,
+                &bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?,
+            )?)?),
             collection: None,
             operation: None,
             state: None,
@@ -312,7 +314,7 @@ pub(crate) fn refusal(code: &str) -> &'static str {
         }
         "stale" => "list changed on the server; sync and review your changes before saving",
         "config" => {
-            "cannot load the collection pair; check vdirsyncer_config, pair and local_storage"
+            "cannot load the collection pair from the generated vdirsyncer config; run tdo config check"
         }
         "credentials" => {
             "collection credential fetch failed; check the existing vdirsyncer credential helper"

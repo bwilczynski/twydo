@@ -82,11 +82,13 @@ fn helper(root: &Path) -> PathBuf {
         &path,
         format!(
             "#!/usr/bin/env python3\nimport os,runpy,sys,time\n\
+             os.environ['TWYDO_TEST_LIST_CONNECTION']={connection:?}\n\
              if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
              if os.path.exists({slow:?}):\n open({started:?}, 'w').close()\n time.sleep(1)\n\
              runpy.run_path({backend:?}, run_name='__main__')\n",
             slow = root.join("slow"),
             started = root.join("started"),
+            connection = root.join("connection.json"),
         ),
     )
     .unwrap();
@@ -150,13 +152,13 @@ fn env_opts(f: impl FnOnce(&mut Config), o: impl FnOnce(&mut DaemonOptions)) -> 
         &path,
         format!(
             "vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             pair = \"synthetic\"\nlocal_storage = \"local\"\ncommand = {:?}\n\
-             list_python = {:?}\nvdirsyncer_config = {:?}\nmetasync = false\n",
+             url = \"https://dav.example.test/alice/\"\nusername = \"alice\"\n\
+             password_command = [\"true\"]\ncommand = {:?}\n\
+             list_python = {:?}\nmetasync = false\n",
             fx.vdir(),
             fx.config().state_dir(),
             vdirsyncer,
             helper(&root),
-            connection,
         ),
     )
     .unwrap();
@@ -920,8 +922,8 @@ fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
     let request = HelperRequest {
         version: 1,
         action: "update".into(),
-        pair: "p".into(),
-        local_storage: "s".into(),
+        pair: "twydo".into(),
+        local_storage: "twydo_local".into(),
         vdir: fx.vdir(),
         config: None,
         collection: Some("inbox".into()),

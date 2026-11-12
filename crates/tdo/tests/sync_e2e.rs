@@ -9,6 +9,7 @@ use std::process::{Command, Output, Stdio};
 
 use twydo_core::conflicts::{ConflictKind, ConflictState, ConflictStore, Side};
 use twydo_core::sync::hook::{HOOK_LOG_ENV, read_hook_log};
+use twydo_core::sync::vdirsyncer;
 
 /// Collection used by [`Pair`].
 const COLL: &str = "c1";
@@ -42,8 +43,8 @@ macro_rules! require_vdirsyncer {
 
 /// A vdirsyncer pair `twydo` between `server/` (storage `twydo_remote`, side a) and `vdir/`
 /// (storage `twydo_local`, side b), both holding collection `c1`, with `tdo conflicts hook`
-/// as the conflict command, and a tdo config (test write mode) whose `[sync]` points at that
-/// vdirsyncer config. `new` syncs three tasks `u1`..`u3` once.
+/// as the conflict command, and a tdo config (test write mode) whose `[sync]` has synthetic
+/// connection keys; the vdirsyncer config is the one Twydo generates. `new` syncs three tasks `u1`..`u3` once.
 struct Pair {
     dir: tempfile::TempDir,
     /// Holds the socket of the short-lived daemons the client commands talk to.
@@ -72,33 +73,14 @@ impl Pair {
         };
         fs::create_dir_all(p.server().join(COLL)).unwrap();
         fs::create_dir_all(p.vdir().join(COLL)).unwrap();
-        fs::create_dir_all(p.root().join("vdirsyncer")).unwrap();
-        // Allowed by the socket scan in term.rs: the conflict hook runs under vdirsyncer with
-        // `Pair::env`'s own TWYDO_SOCKET and never talks to a daemon.
-        let hook = env!("CARGO_BIN_EXE_tdo");
-        fs::write(
-            p.vdirsyncer_config(),
-            format!(
-                "[general]\nstatus_path = \"{status}/\"\n\n\
-                 [pair twydo]\na = \"twydo_remote\"\nb = \"twydo_local\"\n\
-                 collections = [\"from a\", \"from b\"]\n\
-                 conflict_resolution = [\"command\", \"{hook}\", \"conflicts\", \"hook\"]\n\n\
-                 [storage twydo_remote]\ntype = \"filesystem\"\npath = \"{server}/\"\nfileext = \".ics\"\n\n\
-                 [storage twydo_local]\ntype = \"filesystem\"\npath = \"{vdir}/\"\nfileext = \".ics\"\n",
-                status = p.root().join("vdirsyncer/status").display(),
-                server = p.server().display(),
-                vdir = p.vdir().display(),
-            ),
-        )
-        .unwrap();
         fs::create_dir_all(p.root().join("config/twydo")).unwrap();
         fs::write(
             p.root().join("config/twydo/config.toml"),
             format!(
                 "vdir = \"{}\"\ntimezone = \"UTC\"\n[writes]\nmode = \"test\"\n\
-                 [sync]\nvdirsyncer_config = \"{}\"\n{extra}",
+                 [sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\n\
+                 password_command = [\"true\"]\n{extra}",
                 p.vdir().display(),
-                p.vdirsyncer_config().display()
             ),
         )
         .unwrap();
@@ -120,10 +102,9 @@ impl Pair {
         for (uid, s) in [("u1", "one"), ("u2", "two"), ("u3", "three")] {
             p.write_vdir(uid, &task(uid, s));
         }
-        let (code, err) = p.vdirsyncer(&["discover", "twydo"]);
-        assert_eq!(code, 0, "discover: {err}");
-        let (code, err) = p.sync();
-        assert_eq!(code, 0, "initial sync: {err}");
+        // No generated vdirsyncer config exists yet: the first sync writes it and discovers.
+        let o = p.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(0), "initial sync: {o:?}");
         assert_eq!(p.read_server("u3"), Some(task("u3", "three")));
         p
     }
@@ -141,7 +122,7 @@ impl Pair {
     }
 
     fn vdirsyncer_config(&self) -> PathBuf {
-        self.root().join("vdirsyncer/config")
+        twydo_core::sync::vdirsyncer::config_path(&self.vdir_state())
     }
 
     /// `XDG_STATE_HOME` of `tdo`.
@@ -183,7 +164,16 @@ impl Pair {
     }
 
     fn env(&self, cmd: &mut Command) {
+        // The generated conflict hook calls `tdo` by name, so its directory leads PATH.
+        let hook = env!("CARGO_BIN_EXE_tdo");
+        let bin = Path::new(hook).parent().unwrap().to_path_buf();
+        let path = std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        )))
+        .unwrap();
         cmd.env("VDIRSYNCER_CONFIG", self.vdirsyncer_config())
+            .env("PATH", path)
+            .env(vdirsyncer::TEST_REMOTE_ENV, self.server())
             .env("XDG_CONFIG_HOME", self.root().join("config"))
             .env("XDG_STATE_HOME", self.state())
             .env("TWYDO_SOCKET", self.sock_dir.path().join("tdo.sock"))
@@ -467,7 +457,7 @@ fn unknown_side_exits_2_and_changes_nothing() {
     ]);
     assert_eq!(o.status.code(), Some(2), "{o:?}");
     assert!(
-        String::from_utf8_lossy(&o.stderr).contains("local_storage"),
+        String::from_utf8_lossy(&o.stderr).contains("twydo_local"),
         "{o:?}"
     );
     assert_eq!(fs::read_to_string(&x).unwrap(), task("u1", "x"));
@@ -815,6 +805,8 @@ fn download_in_failed_run_disables_auto_force() {
 fn emptying_before_any_twydo_sync_is_not_forced() {
     require_vdirsyncer!();
     let p = Pair::new();
+    // `Pair::new` syncs through Twydo, which records the list; forget that record.
+    fs::remove_file(p.vdir_state().join("sync/manifest.json")).unwrap();
     for u in ["u1", "u2", "u3"] {
         p.op(&["delete", u]);
     }

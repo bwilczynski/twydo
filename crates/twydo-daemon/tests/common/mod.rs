@@ -85,6 +85,11 @@ impl Fixture {
             metasync: false,
             ..SyncConfig::default()
         });
+        // As after a first sync: the generated vdirsyncer config exists and no discovery is
+        // pending, so tests see only the discoveries they ask for.
+        let state = twydo_core::store::bind_vdir_state(&c.state_dir(), &c.vdir).unwrap();
+        twydo_core::sync::vdirsyncer::ensure(&c, c.sync.as_ref().unwrap(), &state).unwrap();
+        let _ = fs::remove_file(state.join("sync/rediscover"));
         c
     }
 
@@ -212,8 +217,10 @@ pub fn full_config() -> Config {
     };
     c.state_dir = Some(PathBuf::from("/synthetic/state"));
     c.sync = Some(SyncConfig {
-        vdirsyncer_config: Some(PathBuf::from("/synthetic/vdirsyncer.conf")),
-        after_edit: Some(true),
+        url: "https://dav.example.test/alice/".into(),
+        username: "alice".into(),
+        password_command: vec!["pass".into(), "show".into(), "twydo/caldav".into()],
+        ca_file: Some(PathBuf::from("/synthetic/ca.pem")),
         ..SyncConfig::default()
     });
     c

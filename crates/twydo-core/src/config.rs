@@ -110,23 +110,15 @@ pub struct SyncConfig {
     pub password_command: Vec<String>,
     /// PEM file with the CA that signed the server certificate.
     pub ca_file: Option<PathBuf>,
-    /// vdirsyncer pair name.
-    pub pair: String,
-    /// vdirsyncer storage name of the vdir side of the pair.
-    pub local_storage: String,
     /// vdirsyncer executable.
     pub command: String,
     /// Python interpreter containing the supported vdirsyncer collection adapter.
     pub list_python: String,
-    /// Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.
-    pub vdirsyncer_config: Option<PathBuf>,
     pub metasync: bool,
     /// Unsynced edits that make a sync due.
     pub batch_size: u32,
     /// Seconds after the oldest unsynced edit at which a sync is due.
     pub max_wait_secs: u64,
-    /// Retired and ignored; see [`Config::warnings`].
-    pub after_edit: Option<bool>,
     pub timeout_secs: u64,
     pub max_backoff_secs: u64,
     pub retention_days: u32,
@@ -139,15 +131,11 @@ impl Default for SyncConfig {
             username: String::new(),
             password_command: Vec::new(),
             ca_file: None,
-            pair: "twydo".into(),
-            local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
             list_python: "python3".into(),
-            vdirsyncer_config: None,
             metasync: true,
             batch_size: 5,
             max_wait_secs: 60,
-            after_edit: None,
             timeout_secs: 300,
             max_backoff_secs: 1800,
             retention_days: 30,
@@ -319,6 +307,7 @@ impl Config {
             path: path.to_path_buf(),
             source,
         })?;
+        check_removed_sync_keys(path, &text)?;
         let mut cfg: Config = toml::from_str(&text).map_err(|source| ConfigError::Parse {
             path: path.to_path_buf(),
             source,
@@ -327,10 +316,6 @@ impl Config {
             cfg.vdir = expand_tilde(&cfg.vdir, Path::new(&home));
             cfg.state_dir = cfg.state_dir.map(|d| expand_tilde(&d, Path::new(&home)));
             if let Some(sync) = &mut cfg.sync {
-                sync.vdirsyncer_config = sync
-                    .vdirsyncer_config
-                    .take()
-                    .map(|p| expand_tilde(&p, Path::new(&home)));
                 sync.ca_file = sync
                     .ca_file
                     .take()
@@ -338,6 +323,19 @@ impl Config {
             }
         }
         if let Some(sync) = &cfg.sync {
+            let missing = |key: &str| ConfigError::Invalid {
+                path: path.to_path_buf(),
+                message: format!("[sync] {key} is required; run `tdo config init`"),
+            };
+            if sync.url.trim().is_empty() {
+                return Err(missing("url"));
+            }
+            if sync.username.trim().is_empty() {
+                return Err(missing("username"));
+            }
+            if sync.password_command.is_empty() {
+                return Err(missing("password_command"));
+            }
             for (key, zero) in [
                 ("batch_size", sync.batch_size == 0),
                 ("max_wait_secs", sync.max_wait_secs == 0),
@@ -353,16 +351,10 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Non-fatal notes about the loaded configuration, for the user to see.
+    /// Non-fatal notes about the loaded configuration, for the user to see. None exist at
+    /// present; the method and the wire field stay.
     pub fn warnings(&self) -> Vec<String> {
-        let mut out = Vec::new();
-        if self.sync.as_ref().is_some_and(|s| s.after_edit.is_some()) {
-            out.push(
-                "[sync] after_edit is no longer used: edits sync in batches (batch_size, max_wait_secs); use `tdo sync off` to keep syncs manual"
-                    .to_string(),
-            );
-        }
-        out
+        Vec::new()
     }
 
     /// Configured zone, else the system zone, else UTC.
@@ -382,6 +374,30 @@ impl Config {
     pub fn list_prefs(&self, id: &str) -> ListPrefs {
         self.lists.get(id).cloned().unwrap_or_default()
     }
+}
+
+/// Keys Twydo no longer reads: it generates the vdirsyncer config itself.
+const REMOVED_SYNC_KEYS: [&str; 4] = ["pair", "local_storage", "vdirsyncer_config", "after_edit"];
+
+/// Checked on the raw table so this message wins over serde's "unknown field".
+fn check_removed_sync_keys(path: &Path, text: &str) -> Result<(), ConfigError> {
+    let Ok(table) = text.parse::<toml::Table>() else {
+        return Ok(());
+    };
+    let Some(sync) = table.get("sync").and_then(|v| v.as_table()) else {
+        return Ok(());
+    };
+    for key in REMOVED_SYNC_KEYS {
+        if sync.contains_key(key) {
+            return Err(ConfigError::Invalid {
+                path: path.to_path_buf(),
+                message: format!(
+                    "[sync] {key} is no longer supported: Twydo generates the vdirsyncer config; run `tdo config init`"
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Pure form of the default state dir. An empty `xdg_state` counts as unset.

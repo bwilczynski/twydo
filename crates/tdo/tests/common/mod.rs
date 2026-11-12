@@ -3,6 +3,9 @@
 //! touched, and no spawned `tdo` inherits `TWYDO_SOCKET`, `XDG_*` or `HOME`.
 #![allow(dead_code)]
 
+/// Synthetic connection keys every `[sync]` table needs.
+pub const SYNC_KEYS: &str = "url = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\n";
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -74,12 +77,18 @@ impl TestEnv {
             let fake = root.join("fake-vdirsyncer");
             write_script(&fake, body);
             format!(
-                "[sync]\ncommand = \"{}\"\nmetasync = false\n",
+                "[sync]\n{SYNC_KEYS}command = \"{}\"\nmetasync = false\n",
                 fake.display()
             )
         });
         fs::create_dir_all(env.state().join("sync")).unwrap();
         fs::write(env.state().join("sync/off"), "").unwrap();
+        // As after a first sync: the generated vdirsyncer config exists and nothing is
+        // waiting to discover.
+        let cfg = twydo_core::config::Config::load(&env.config_path()).unwrap();
+        twydo_core::sync::vdirsyncer::ensure(&cfg, cfg.sync.as_ref().unwrap(), &env.state())
+            .unwrap();
+        let _ = fs::remove_file(env.state().join("sync/rediscover"));
         env
     }
 
@@ -544,8 +553,9 @@ pub fn list_env() -> ListEnv {
     fs::write(
         &helper,
         format!(
-            "#!/usr/bin/env python3\nimport runpy,sys\n\
+            "#!/usr/bin/env python3\nimport os,runpy,sys\n\
              if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
+             os.environ['TWYDO_TEST_LIST_CONNECTION']={connection:?}\n\
              runpy.run_path({backend:?}, run_name='__main__')\n"
         ),
     )
@@ -567,8 +577,8 @@ pub fn list_env() -> ListEnv {
         &config,
         format!(
             "vdir = {vdir:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             pair = \"synthetic\"\nlocal_storage = \"local\"\ncommand = {vdirsyncer:?}\n\
-             list_python = {helper:?}\nvdirsyncer_config = {connection:?}\nmetasync = false\n",
+             {SYNC_KEYS}command = {vdirsyncer:?}\n\
+             list_python = {helper:?}\nmetasync = false\n",
             root.path().join("state"),
         ),
     )

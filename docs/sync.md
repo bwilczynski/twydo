@@ -7,34 +7,35 @@ in [config.md](config.md) (`[sync]`).
 
 ## Setup
 
-1. **vdirsyncer config.** Start from `contrib/vdirsyncer/config.example`. The line that matters is
-
-   ```
-   conflict_resolution = ["command", "tdo", "conflicts", "hook"]
-   ```
-
-   It is not `a wins` / `b wins`. The hook keeps both versions in the conflict store and changes
-   nothing until you choose. `tdo` must be on the `PATH` of vdirsyncer, which the daemon starts.
-   **Do not run `vdirsyncer sync` by hand while the daemon runs.** The daemon does not know
-   about that run: it cannot confirm edits, close conflicts or notice a delete-versus-edit that
-   vdirsyncer settled silently (see [Known limits](#known-limits)). Use `tdo sync`.
-
-2. **Twydo config.** Add a `[sync]` table to the config. An empty table turns sync on with the
-   defaults:
+1. **Twydo config.** Run `tdo config init`; it asks for the server URL, the username and the
+   command that prints the password, and writes the `[sync]` table:
 
    ```toml
    [sync]
-   # pair = "twydo"
-   # local_storage = "twydo_local"
-   # vdirsyncer_config = "~/.config/vdirsyncer/config"
+   url = "https://dav.example.test/alice/"
+   username = "alice"
+   password_command = ["pass", "show", "twydo/caldav"]
+   # ca_file = "~/.config/twydo/ca.pem"   # only for a private CA
    ```
 
-   `local_storage` must be the name of the pair's vdir-side storage in the vdirsyncer config. The
-   hook tells the local file from the remote one by that name.
+   There is no vdirsyncer config to write. Twydo generates it from these keys under its state
+   directory (`<state>/<vdir>/vdirsyncer/config`, with vdirsyncer's own status beside it) and
+   rewrites it whenever the keys change, then discovers the collections again on the next
+   sync. The file is overwritten: do not edit it. It names `tdo conflicts hook` as the
+   conflict command, which keeps both versions in the conflict store and changes nothing until
+   you choose; it is not `a wins` / `b wins`. `tdo` must be on the `PATH` of vdirsyncer, which
+   the daemon starts. `ca_file` is written as vdirsyncer's `verify`.
 
-   If `tdo` runs with a different `XDG_CONFIG_HOME` than vdirsyncer expects (for example a separate
-   test setup), vdirsyncer cannot find its own config: set `vdirsyncer_config`, which Twydo passes
-   to vdirsyncer as `VDIRSYNCER_CONFIG`.
+2. **Running vdirsyncer by hand.** Not needed, and **do not run `vdirsyncer sync` by hand while
+   the daemon runs.** The daemon does not know about that run: it cannot confirm edits, close
+   conflicts or notice a delete-versus-edit that vdirsyncer settled silently (see
+   [Known limits](#known-limits)). Use `tdo sync`. To inspect the connection with vdirsyncer
+   itself, point it at the generated file: `VDIRSYNCER_CONFIG=<state>/<vdir>/vdirsyncer/config
+   vdirsyncer discover twydo`.
+
+   **Upgrading from 0.2.x.** Sync every machine first, then update the config with `tdo config
+   init`. Your old vdirsyncer config and its status directory are left unused; delete them when
+   you like. The first sync after the upgrade discovers the collections again.
 
 3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result. The
    daemon starts when needed.
@@ -228,7 +229,7 @@ The record of a list is only as good as the last sync that wrote it:
 ## New lists from other devices
 
 A list created on another device (the phone) is picked up by discovery. Run
-`vdirsyncer discover <pair>` by hand only once, at setup; after that Twydo discovers for you.
+`vdirsyncer discover twydo` by hand: Twydo discovers for you, including on the first sync.
 Discovery runs at these points only:
 
 - once after the daemon starts: it leaves a `sync/discover` marker, and the first sync that
