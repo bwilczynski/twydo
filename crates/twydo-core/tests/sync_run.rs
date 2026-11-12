@@ -27,6 +27,7 @@ use twydo_core::sync::running::{
     Reaped, Running, StopResult, clear_stop, process_start, reap_orphan, request_stop, running,
 };
 use twydo_core::sync::status::{CollState, SyncStatus, backoff, coll_states};
+use twydo_core::sync::vdirsyncer::{self, LOCAL_STORAGE, PAIR};
 use twydo_core::views::Snapshot;
 
 fn now() -> DateTime<Utc> {
@@ -54,7 +55,19 @@ struct Fx {
 
 impl Fx {
     /// `body` is the fake's shell script; `$1` is `sync` or `metasync`.
+    ///
+    /// The generated vdirsyncer config already exists, as after a first sync, so runs do not
+    /// discover on their own; see [`Fx::fresh`].
     fn new(body: &str) -> Fx {
+        let fx = Fx::fresh(body);
+        let state = fx.state();
+        vdirsyncer::ensure(&fx.cfg, fx.cfg.sync.as_ref().unwrap(), &state).unwrap();
+        fs::remove_file(state.join("sync/rediscover")).unwrap();
+        fx
+    }
+
+    /// Like [`Fx::new`], but nothing has run yet: no generated config.
+    fn fresh(body: &str) -> Fx {
         let dir = tempfile::tempdir().unwrap();
         let vdir = dir.path().join("vdir");
         fs::create_dir_all(vdir.join("c1")).unwrap();
@@ -189,7 +202,7 @@ fn wait_for(p: &Path) -> bool {
 
 #[test]
 fn not_configured_skips() {
-    let mut fx = Fx::new("exit 0");
+    let mut fx = Fx::fresh("exit 0");
     fx.cfg.sync = None;
     let r = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(matches!(r.skipped, Some(Skip::NotConfigured)));
@@ -229,18 +242,50 @@ fn vdirsyncer_config_is_passed_as_env() {
             out.display()
         ),
     );
-    fx.sync_mut().vdirsyncer_config = Some(PathBuf::from("/some/vdirsyncer/config"));
     let r = run(&fx.cfg, &manual(), now()).unwrap();
     let got = fs::read_to_string(&out).unwrap_or_else(|e| panic!("{e}: {r:?}"));
     let hook_log = fx.state().join("sync/hook.log");
     assert_eq!(
         got,
         format!(
-            "/some/vdirsyncer/config|{}|{}",
+            "{}|{}|{}",
+            vdirsyncer::config_path(&fx.state()).display(),
             hook_log.display(),
             fx.cfg.vdir.display()
         )
     );
+}
+
+#[test]
+fn run_passes_the_generated_config() {
+    let fx = Fx::fresh("");
+    let out = fx.path("config-path.txt");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("printf '%s' \"$VDIRSYNCER_CONFIG\" > '{}'", out.display()),
+    );
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let want = vdirsyncer::config_path(&fx.state());
+    assert_eq!(
+        fs::read_to_string(&out).unwrap(),
+        want.display().to_string()
+    );
+    assert!(want.exists());
+}
+
+#[test]
+fn first_run_discovers() {
+    let fx = Fx::fresh("");
+    let calls = fx.path("calls");
+    let fake = fx.cfg.sync.as_ref().unwrap().command.clone();
+    write_script(
+        Path::new(&fake),
+        &format!("echo \"$@\" >> '{}'", calls.display()),
+    );
+    run(&fx.cfg, &manual(), now()).unwrap();
+    let got = fs::read_to_string(&calls).unwrap();
+    assert!(got.lines().any(|l| l == "discover twydo"), "{got}");
 }
 
 #[test]
@@ -585,8 +630,8 @@ fn reconcile_with(
 ) -> twydo_core::sync::reconcile::Reconciled {
     let state = fx.state();
     let sync = fx.cfg.sync.as_ref().unwrap();
-    let out = parse(&sync.pair, stderr);
-    let states = coll_states(&out, &[], &sync.local_storage);
+    let out = parse(PAIR, stderr);
+    let states = coll_states(&out, &[], LOCAL_STORAGE);
     let _lock = VdirLock::exclusive(&state).unwrap();
     reconcile(
         &fx.cfg.vdir,
@@ -1517,7 +1562,7 @@ fn process_start_identifies_a_live_process_only() {
 
 #[test]
 fn stop_with_nothing_running() {
-    let fx = Fx::new("");
+    let fx = Fx::fresh("");
     assert_eq!(request_stop(&fx.cfg).unwrap(), StopResult::NothingRunning);
     assert!(!fx.state().join("sync").join("stop").exists());
 }
@@ -1741,7 +1786,7 @@ fn switched_off_manual_run_still_runs() {
 #[test]
 fn switch_survives_and_clears() {
     use twydo_core::sync::switch::{is_off, set};
-    let fx = Fx::new("exit 0");
+    let fx = Fx::fresh("exit 0");
     assert!(!is_off(&fx.cfg).unwrap());
     assert!(!fx.path("state").exists());
     set(&fx.cfg, true).unwrap();
@@ -2365,19 +2410,27 @@ const DISCOVERY_SCRIPT: &str = r#"
     else
         echo "$1" >> "$dir/calls"
     fi
-    [ "$1" = sync ] && echo 'Syncing synthetic/c1' >&2
+    [ "$1" = sync ] && echo 'Syncing twydo/c1' >&2
     exit 0
 "#;
 
 impl Fx {
     /// Routes the list helper to the offline fake backend over this fixture's vdir.
     fn with_helper(mut self, discover: serde_json::Value) -> Fx {
-        let (donor, donor_cfg) = common::lists::offline();
-        let donor_sync = donor_cfg.sync.clone().unwrap();
         let keep = self.path("helper");
         fs::create_dir_all(&keep).unwrap();
-        fs::copy(donor.path().join("python"), keep.join("python")).unwrap();
         let connection = keep.join("connection.json");
+        let backend = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/common/list_backend.py");
+        fs::write(
+            keep.join("python"),
+            format!(
+                "#!/usr/bin/env python3\nimport os, runpy\nos.environ['TWYDO_TEST_LIST_CONNECTION']={:?}\nrunpy.run_path({:?},run_name='__main__')\n",
+                connection.to_str().unwrap(),
+                backend.to_str().unwrap()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(keep.join("python"), fs::Permissions::from_mode(0o700)).unwrap();
         fs::write(
             &connection,
             serde_json::json!({"vdir": self.cfg.vdir}).to_string(),
@@ -2390,10 +2443,7 @@ impl Fx {
         )
         .unwrap();
         let sync = self.sync_mut();
-        sync.pair = donor_sync.pair;
-        sync.local_storage = donor_sync.local_storage;
         sync.list_python = keep.join("python").to_str().unwrap().into();
-        sync.vdirsyncer_config = Some(connection);
         self
     }
 
@@ -2471,7 +2521,7 @@ fn discovery_runs_once_across_rerun_passes() {
         dir=$(dirname "$TWYDO_SYNC_HOOKLOG")
         echo "$1" >> "$dir/calls"
         [ "$1" = sync ] && [ ! -f "$dir/once" ] && touch "$dir/once" "$dir/requested"
-        [ "$1" = sync ] && echo 'Syncing synthetic/c1' >&2
+        [ "$1" = sync ] && echo 'Syncing twydo/c1' >&2
         exit 0
     "#,
     )

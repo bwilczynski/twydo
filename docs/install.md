@@ -39,7 +39,7 @@ The collection helper is bundled in `tdo`; it does not need a source checkout at
 It needs a Python interpreter with **vdirsyncer 0.21.x** installed. Set
 [`[sync].list_python`](config.md#sync) if that interpreter differs from `python3` (for
 example, a virtual environment's `bin/python`). The helper checks its adapter before
-network access and uses the existing vdirsyncer pair, credentials and TLS settings.
+network access and uses the vdirsyncer config Twydo generates from `[sync]`.
 Task sync still uses `[sync].command` independently.
 
 ## Try it without your data
@@ -72,8 +72,9 @@ regenerate it into an empty folder to start over.
 3. **Check your data.** `tdo check` reports each kind of repeat in your data, whether Twydo has
    verified it against 2Do, and any task it cannot read.
 4. **Open it.** `tdo`. Keys: [tui.md](tui.md).
-5. **Sync.** Add `[sync]` to the config so `tdo sync` and the TUI's `:sync` run vdirsyncer:
-   [sync.md](sync.md).
+5. **Sync.** Run `tdo config init` to add the `[sync]` table (server URL, username, password
+   command) so `tdo sync` and the TUI's `:sync` run vdirsyncer: [sync.md](sync.md). Twydo writes
+   the vdirsyncer config itself.
 
 ## The daemon
 

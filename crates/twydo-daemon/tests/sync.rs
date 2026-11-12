@@ -643,7 +643,10 @@ fn with_helper(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config
     let wrapper = keep.join("python");
     std::fs::write(
         &wrapper,
-        format!("#!/usr/bin/env python3\nimport runpy\nrunpy.run_path({backend:?},run_name='__main__')\n"),
+        format!(
+            "#!/usr/bin/env python3\nimport os, runpy\nos.environ['TWYDO_TEST_LIST_CONNECTION']={:?}\nrunpy.run_path({backend:?},run_name='__main__')\n",
+            keep.join("connection.json").to_str().unwrap()
+        ),
     )
     .unwrap();
     std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -659,10 +662,7 @@ fn with_helper(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config
     )
     .unwrap();
     let sync = cfg.sync.as_mut().unwrap();
-    sync.pair = "synthetic".into();
-    sync.local_storage = "local".into();
     sync.list_python = wrapper.to_str().unwrap().into();
-    sync.vdirsyncer_config = Some(connection);
     (cfg, keep)
 }
 
@@ -677,7 +677,7 @@ fn discoveries(keep: &std::path::Path) -> usize {
         .count()
 }
 
-const OK_SYNC: &str = "[ \"$1\" = sync ] && echo 'Syncing synthetic/c1' >&2\nexit 0";
+const OK_SYNC: &str = "[ \"$1\" = sync ] && echo 'Syncing twydo/c1' >&2\nexit 0";
 
 fn finished(c: &Client, reason: SyncReason) -> SyncResult {
     match wait_event(

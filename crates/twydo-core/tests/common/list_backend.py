@@ -110,20 +110,23 @@ class Connector:
 
 class Config:
     @classmethod
-    def from_filename_or_environment(cls, path):
+    def from_filename_or_environment(cls, _path):
+        # The generated vdirsyncer file is not parsed here: the harness names its own
+        # connection file.
         global STORE
-        settings = json.loads(Path(path).read_text())
-        STORE = Path(path).parent / "server.json"
+        path = Path(os.environ["TWYDO_TEST_LIST_CONNECTION"])
+        settings = json.loads(path.read_text())
+        STORE = path.parent / "server.json"
         self = cls()
         self.general = {"status_path": str(Path(path).parent / "cache")}
-        self.storages = {"local": {"type": "filesystem", "path": settings["vdir"], "instance_name": "local"},
-                         "remote": {"type": "caldav", "url": settings.get("remote_url", "https://example.com/dav/"), "instance_name": "remote"}}
-        self.pair = types.SimpleNamespace(name="synthetic", name_a="remote", name_b="local",
+        self.storages = {"twydo_local": {"type": "filesystem", "path": settings["vdir"], "instance_name": "twydo_local"},
+                         "twydo_remote": {"type": "caldav", "url": settings.get("remote_url", "https://example.com/dav/"), "instance_name": "twydo_remote"}}
+        self.pair = types.SimpleNamespace(name="twydo", name_a="twydo_remote", name_b="twydo_local",
                                           metadata=["displayname", "color"], collections=["from a", "from b"])
         return self
 
     def get_pair(self, name):
-        assert name == "synthetic"
+        assert name == "twydo"
         return self.pair
 
     def get_storage_args(self, name):
@@ -158,8 +161,8 @@ async def collections_for_pair(status, pair, from_cache=True, *, connector):
     if store["flags"].get("discover_sleep"):
         time.sleep(store["flags"]["discover_sleep"])
     script = store.get("discover", {})
-    config = Config.from_filename_or_environment(STORE.parent / "connection.json")
-    local, remote = config.get_storage_args("local"), config.get_storage_args("remote")
+    config = Config.from_filename_or_environment(None)
+    local, remote = config.get_storage_args("twydo_local"), config.get_storage_args("twydo_remote")
     for name in script.get("remote_only", []):
         if not Path(local["path"], name).exists():
             args = await discovery.handle_collection_not_found(local, name)
@@ -170,7 +173,7 @@ async def collections_for_pair(status, pair, from_cache=True, *, connector):
     for name in script.get("local_only", []):
         args = await discovery.handle_collection_not_found(remote, name)
         assert isinstance(args, dict) and "type" in args, "handler must return storage args"
-    Path(status, "synthetic.collections").write_text("verified synthetic discovery")
+    Path(status, "twydo.collections").write_text("verified synthetic discovery")
     return []
 
 

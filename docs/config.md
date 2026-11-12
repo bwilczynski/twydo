@@ -67,17 +67,19 @@ The periodic sync interval (60 seconds) is fixed; there is no key for it.
 
 ## `[sync]`
 
-Optional. A missing `[sync]` table turns sync off; an empty `[sync]` table turns it on with the
-defaults below. Twydo runs the configured vdirsyncer command and has no network code of its own. Setup, behaviour
-and conflict handling are in [sync.md](sync.md).
+Optional. A missing `[sync]` table turns sync off. A `[sync]` table must set `url`, `username`
+and `password_command`: an empty table is an error naming the missing key. Twydo writes the
+vdirsyncer config from these keys and runs the configured vdirsyncer command; it has no network
+code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md).
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `pair` | string | `"twydo"` | vdirsyncer pair to sync. |
-| `local_storage` | string | `"twydo_local"` | Name of the pair's vdir-side storage in the vdirsyncer config. |
+| `url` | string | required | CalDAV server URL (the collection home your server gives the account). |
+| `username` | string | required | CalDAV username. |
+| `password_command` | array of strings | required | Command whose first line of output is the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
+| `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
-| `list_python` | string | `"python3"` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. Independent of `command`, which may be a wrapper. The helper uses this pair's existing connection and credential configuration. |
-| `vdirsyncer_config` | path | none | Passed to vdirsyncer as `VDIRSYNCER_CONFIG`. Needed when `XDG_CONFIG_HOME` is set for `tdo` only, because that hides vdirsyncer's own config. A leading `~` expands to `$HOME`. |
+| `list_python` | string | `"python3"` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. Independent of `command`, which may be a wrapper. The helper uses the generated vdirsyncer config. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
 | `max_wait_secs` | integer | `60` | A sync is due this many seconds after the oldest unsynced edit. Must be at least 1. |
@@ -85,19 +87,14 @@ and conflict handling are in [sync.md](sync.md).
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
 | `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |
 
-`after_edit` is no longer used: it is accepted and ignored, and `tdo sync` and `tdo status` and
-the TUI warn about it. Edits sync in batches (`batch_size`, `max_wait_secs`); `tdo sync off`
-keeps syncs manual.
+`pair`, `local_storage`, `vdirsyncer_config` and `after_edit` are removed: Twydo generates the
+vdirsyncer config itself, so a config that still sets one fails to load with an error naming the
+key. `tdo config init` rewrites the file without them. Edits sync in batches (`batch_size`,
+`max_wait_secs`); `tdo sync off` keeps syncs manual.
 
-The collection adapter accepts a filesystem/CalDAV pair whose local storage matches the
-bound vdir. The vdirsyncer `status_path` must stay outside that vdir, including through
-symlink aliases. Explicit mappings and dynamic `from a`/`from b` layouts are supported
-separately. Mixing three-part aliases with dynamic shortcuts, or multiple logical/local/remote
-bindings, is refused before credentials are fetched. It requires a literal remote `url`;
-dynamic `url.fetch` is unavailable because
-its output could select another account between operation phases. Existing password
-fetching and TLS settings remain in vdirsyncer. This restriction does not change ordinary
-task synchronization.
+The collection adapter works on the generated config: a filesystem/CalDAV pair whose local
+storage is the bound vdir and whose `status_path` is outside it. Its `url` is always literal.
+The password and TLS settings are passed on to vdirsyncer unchanged.
 
 ## `[lists.<id>]`
 

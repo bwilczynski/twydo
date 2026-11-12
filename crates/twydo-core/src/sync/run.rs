@@ -28,6 +28,7 @@ use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
 use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
+use super::vdirsyncer::{self, LOCAL_STORAGE, PAIR};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::lists::helper::Watch;
@@ -163,6 +164,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
         return Ok(skipped(Skip::Off));
     }
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+    let vdirsyncer_config = vdirsyncer::ensure(cfg, sync, &state)?;
     let sync_dir = state.join("sync");
     fs::create_dir_all(&sync_dir)?;
     let requested = sync_dir.join("requested");
@@ -205,6 +207,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
             cfg,
             sync,
             &state,
+            &vdirsyncer_config,
             &force,
             now,
             started,
@@ -245,6 +248,7 @@ fn one_pass(
     cfg: &Config,
     sync: &SyncConfig,
     state: &Path,
+    vdirsyncer_config: &Path,
     force: &[String],
     now: DateTime<Utc>,
     started: DateTime<Utc>,
@@ -290,16 +294,17 @@ fn one_pass(
     fs::write(&hook_log, b"")?;
     let mut args = vec!["sync".to_string()];
     if force.is_empty() {
-        args.push(sync.pair.clone());
+        args.push(PAIR.to_string());
     } else {
         args.push("--force-delete".into());
-        args.extend(force.iter().map(|c| format!("{}/{c}", sync.pair)));
+        args.extend(force.iter().map(|c| format!("{}/{c}", PAIR)));
     }
     let child_env = ChildEnv {
         sync,
         hook_log: &hook_log,
         vdir: &cfg.vdir,
         state,
+        vdirsyncer_config,
         running: &guard,
     };
     let rediscover = state.join("sync/rediscover");
@@ -357,7 +362,7 @@ fn one_pass(
     }
     let mut discovery_reports = BTreeMap::new();
     let discovery = if rediscover.exists() {
-        let mut ran = run_command(&child_env, &["discover".into(), sync.pair.clone()])?;
+        let mut ran = run_command(&child_env, &["discover".into(), PAIR.to_string()])?;
         let success = matches!(&ran.outcome, Outcome::Exited(st) if st.success())
             && !ran
                 .stderr
@@ -367,7 +372,7 @@ fn one_pass(
             remove_durable(&rediscover)?;
             None
         } else {
-            discovery_reports = missing_during_discovery(cfg, sync, status, &ran.stderr)?;
+            discovery_reports = missing_during_discovery(cfg, status, &ran.stderr)?;
             // transient() reports the first critical line. Keep the actual diagnostic
             // there too, even when this vdirsyncer version uses an unrecognized format.
             let detail = ran
@@ -395,11 +400,10 @@ fn one_pass(
         Some(failed) => failed,
         None => run_command(&child_env, &args)?,
     };
-    let mut out = parse(&sync.pair, &ran.stderr);
+    let mut out = parse(PAIR, &ran.stderr);
     report.forced.extend(force.iter().cloned());
     // Local emptied by Twydo itself: rerun forced, once, still under the shared lock.
     let auto = auto_force(
-        sync,
         &out,
         &pending,
         &manifest,
@@ -408,9 +412,9 @@ fn one_pass(
     )?;
     if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
         let mut args = vec!["sync".to_string(), "--force-delete".to_string()];
-        args.extend(auto.iter().map(|c| format!("{}/{c}", sync.pair)));
+        args.extend(auto.iter().map(|c| format!("{}/{c}", PAIR)));
         let second = run_command(&child_env, &args)?;
-        merge_forced(&mut out, parse(&sync.pair, &second.stderr), &auto);
+        merge_forced(&mut out, parse(PAIR, &second.stderr), &auto);
         ran.outcome = second.outcome;
         report.forced.extend(auto.iter().cloned());
         report.auto_forced.extend(auto);
@@ -418,7 +422,7 @@ fn one_pass(
     // Not after a failed sync: a failure that repeats (no password, no network) would make
     // metasync wait the same way while writers still wait for the lock.
     let sync_failed = || {
-        let states = coll_states(&out, &[], &sync.local_storage);
+        let states = coll_states(&out, &[], LOCAL_STORAGE);
         transient(sync, &ran, &out, &states).is_some()
     };
     report.metasync_error = match ran.outcome {
@@ -431,7 +435,7 @@ fn one_pass(
     drop(guard);
     drop(shared);
 
-    let mut collections = coll_states(&out, &hook, &sync.local_storage);
+    let mut collections = coll_states(&out, &hook, LOCAL_STORAGE);
     let killed = match ran.outcome {
         Outcome::TimedOut => Some("sync timed out"),
         Outcome::Stopped => Some("sync stopped"),
@@ -579,7 +583,6 @@ impl Watch for DiscoverWatch<'_> {
 /// missing-collection diagnostics emitted by this discovery. Neither proves deletion.
 fn missing_during_discovery(
     cfg: &Config,
-    sync: &SyncConfig,
     status: &SyncStatus,
     stderr: &str,
 ) -> io::Result<BTreeMap<String, CollState>> {
@@ -607,7 +610,7 @@ fn missing_during_discovery(
         let Some(storage) = storage.strip_suffix('.') else {
             continue;
         };
-        if storage.is_empty() || storage == sync.local_storage {
+        if storage.is_empty() || storage == LOCAL_STORAGE {
             continue;
         }
         let Ok(id) = serde_json::from_str::<String>(name) else {
@@ -663,7 +666,6 @@ pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
 /// collection the journal does not fully account for (files removed by hand, a broken
 /// vdir, no Twydo sync yet) is never forced.
 fn auto_force(
-    sync: &SyncConfig,
     out: &SyncOutput,
     pending: &[crate::store::journal::Entry],
     manifest: &Manifest,
@@ -674,7 +676,7 @@ fn auto_force(
         Some(store) => store.unresolved()?,
         None => Vec::new(),
     };
-    let states = coll_states(out, &[], &sync.local_storage);
+    let states = coll_states(out, &[], LOCAL_STORAGE);
     Ok(out
         .emptied
         .keys()
@@ -866,7 +868,7 @@ fn safe_path(vdir: &Path, rel: &str) -> Option<PathBuf> {
 /// Runs `<command> metasync <pair>`; returns its failure, if any.
 fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
     let sync = env.sync;
-    let args = ["metasync".to_string(), sync.pair.clone()];
+    let args = ["metasync".to_string(), PAIR.to_string()];
     let ran = run_command(env, &args)?;
     // The first `error:`/`critical:` line (progress lines like `Metasyncing …` come first),
     // else the first non-empty line.
@@ -934,6 +936,7 @@ struct ChildEnv<'a> {
     hook_log: &'a Path,
     vdir: &'a Path,
     state: &'a Path,
+    vdirsyncer_config: &'a Path,
     running: &'a RefCell<RunningGuard>,
 }
 
@@ -1019,9 +1022,7 @@ fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
         .stdin(Stdio::from(lock))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(vc) = &sync.vdirsyncer_config {
-        cmd.env("VDIRSYNCER_CONFIG", vc);
-    }
+    cmd.env("VDIRSYNCER_CONFIG", env.vdirsyncer_config);
     // Its own process group, so a timeout also kills what a wrapper script started. A
     // Ctrl-C at the terminal therefore reaches only tdo; the stdin lock covers that.
     #[cfg(unix)]

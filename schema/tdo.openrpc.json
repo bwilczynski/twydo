@@ -2956,14 +2956,6 @@
         "additionalProperties": false,
         "description": "`[sync]` table. Absent means sync is off.",
         "properties": {
-          "after_edit": {
-            "default": null,
-            "description": "Retired and ignored; see [`Config::warnings`].",
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
           "batch_size": {
             "default": 5,
             "description": "Unsynced edits that make a sync due.",
@@ -2989,11 +2981,6 @@
             "description": "Python interpreter containing the supported vdirsyncer collection adapter.",
             "type": "string"
           },
-          "local_storage": {
-            "default": "twydo_local",
-            "description": "vdirsyncer storage name of the vdir side of the pair.",
-            "type": "string"
-          },
           "max_backoff_secs": {
             "default": 1800,
             "format": "uint64",
@@ -3010,11 +2997,6 @@
           "metasync": {
             "default": true,
             "type": "boolean"
-          },
-          "pair": {
-            "default": "twydo",
-            "description": "vdirsyncer pair name.",
-            "type": "string"
           },
           "password_command": {
             "default": [],
@@ -3045,14 +3027,6 @@
             "default": "",
             "description": "CalDAV username.",
             "type": "string"
-          },
-          "vdirsyncer_config": {
-            "default": null,
-            "description": "Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "type": "object"

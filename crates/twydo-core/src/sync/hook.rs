@@ -23,6 +23,7 @@ use crate::ical;
 use crate::model::tasks_from_calendar;
 use crate::store::bind_vdir_state;
 use crate::store::fsio::VdirLock;
+use crate::sync::vdirsyncer::LOCAL_STORAGE;
 use crate::vdir;
 
 /// Environment variable naming the hook log; the runner sets it for vdirsyncer.
@@ -57,7 +58,7 @@ pub enum HookError {
     #[error("sync is not configured (no [sync] table in the config)")]
     NotConfigured,
     #[error(
-        "cannot tell which file is the local side: exactly one of {} and {} must be named after sync.local_storage",
+        "cannot tell which file is the local side: exactly one of {} and {} must be named after twydo_local",
         .0.display(), .1.display()
     )]
     UnknownSide(PathBuf, PathBuf),
@@ -126,18 +127,15 @@ fn find_local(root: &Path, uid: &str, local: &str) -> Result<(String, String), H
 }
 
 /// Handles one conflicted item; see the module docs. `a` and `b` are vdirsyncer's temp files,
-/// one named after `sync.local_storage`.
+/// one named after `twydo_local`.
 pub fn conflict_hook(
     cfg: &Config,
     a: &Path,
     b: &Path,
     now: DateTime<Utc>,
 ) -> Result<HookOutcome, HookError> {
-    let sync = cfg.sync.as_ref().ok_or(HookError::NotConfigured)?;
-    let is_local = |p: &Path| {
-        p.file_name()
-            .is_some_and(|n| n == sync.local_storage.as_str())
-    };
+    cfg.sync.as_ref().ok_or(HookError::NotConfigured)?;
+    let is_local = |p: &Path| p.file_name().is_some_and(|n| n == LOCAL_STORAGE);
     let (local_path, remote_path) = match (is_local(a), is_local(b)) {
         (true, false) => (a, b),
         (false, true) => (b, a),

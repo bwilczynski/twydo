@@ -134,9 +134,7 @@ fn both_reports_see_a_queued_creation_without_draining_or_syncing() {
     let fx = fx();
     let marker_dir = tempfile::tempdir().unwrap();
     let marker = marker_dir.path().join("sync-ran");
-    let mut cfg = fx.with_sync(&format!("touch '{}'", marker.display()));
-    // Keep enqueueing separate from the report's responsibility for leaving sync alone.
-    cfg.sync.as_mut().unwrap().after_edit = Some(false);
+    let cfg = fx.with_sync(&format!("touch '{}'", marker.display()));
     let td = TestDaemon::start_cfg(&fx, cfg.clone(), |_| {});
     let c = td.client();
     let job = td.handle().hold_long(LongKind::Test);

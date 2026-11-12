@@ -19,6 +19,7 @@ use crate::config::SyncConfig;
 use crate::conflicts::{Conflict, ConflictKind, ConflictState, ConflictStore, NewConflict, Side};
 use crate::store::journal::{Entry, Journal, Stage};
 use crate::store::queue::Queue;
+use crate::sync::vdirsyncer::LOCAL_STORAGE;
 
 /// What [`reconcile`] did.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -92,10 +93,10 @@ pub fn reconcile(
     let mut rec = Reconciled::default();
     // Step 4 counts whatever the collection's state: the upload line is the only trace of
     // the phone's deletion, and the next clean run would confirm the entry without it.
-    remote_deletes(vdir, conflicts, sync, pending, out, now, &mut rec)?;
+    remote_deletes(vdir, conflicts, pending, out, now, &mut rec)?;
     if out.unattributed.is_empty() {
         settle(
-            vdir, journal, conflicts, sync, states, pending, out, hook, now, &mut rec,
+            vdir, journal, conflicts, states, pending, out, hook, now, &mut rec,
         )?;
     }
     // A retention too long to subtract keeps everything.
@@ -119,7 +120,6 @@ fn settle(
     vdir: &Path,
     journal: &Journal,
     conflicts: &ConflictStore,
-    sync: &SyncConfig,
     states: &BTreeMap<String, CollState>,
     pending: &[Entry],
     out: &SyncOutput,
@@ -205,7 +205,6 @@ fn settle(
             vdir,
             conflicts,
             &all_conflicts,
-            sync,
             out,
             &order,
             path,
@@ -245,7 +244,6 @@ fn check_path(
     vdir: &Path,
     conflicts: &ConflictStore,
     known: &[Conflict],
-    sync: &SyncConfig,
     out: &SyncOutput,
     order: &[&Entry],
     path: &str,
@@ -261,7 +259,7 @@ fn check_path(
         (f.last_entry, f.expected, f.uid.clone(), f.file.clone());
     let transferred = |action: Action, to_local: bool| {
         uid.as_deref()
-            .is_some_and(|uid| transferred(out, sync, coll, uid, action, to_local))
+            .is_some_and(|uid| transferred(out, coll, uid, action, to_local))
     };
     let mut record = |c: NewConflict| -> io::Result<Outcome> {
         record_once(conflicts, known, last_entry, c, now, rec)?;
@@ -269,7 +267,7 @@ fn check_path(
     };
 
     // Step 4.
-    if let Some(c) = remote_delete(&f, out, sync, coll, path) {
+    if let Some(c) = remote_delete(&f, out, coll, path) {
         return record(c);
     }
 
@@ -403,19 +401,12 @@ fn facts<'a>(vdir: &Path, order: &[&'a Entry], path: &str) -> Option<Facts<'a>> 
 }
 
 /// Whether `out` has an `action` of `uid` in `coll`, to the local storage or not.
-fn transferred(
-    out: &SyncOutput,
-    sync: &SyncConfig,
-    coll: &str,
-    uid: &str,
-    action: Action,
-    to_local: bool,
-) -> bool {
+fn transferred(out: &SyncOutput, coll: &str, uid: &str, action: Action, to_local: bool) -> bool {
     out.transfers.iter().any(|t| {
         t.action == action
             && t.uid == uid
             && t.collection == coll
-            && (t.storage == sync.local_storage) == to_local
+            && (t.storage == LOCAL_STORAGE) == to_local
     })
 }
 
@@ -423,16 +414,10 @@ fn transferred(
 /// server that had deleted the item (F6). A path created here is skipped: its upload is the
 /// create itself. That also skips a create uploaded in an earlier run that did not count,
 /// edited since and deleted on the other device (a documented limit, docs/sync.md).
-fn remote_delete(
-    f: &Facts,
-    out: &SyncOutput,
-    sync: &SyncConfig,
-    coll: &str,
-    path: &str,
-) -> Option<NewConflict> {
+fn remote_delete(f: &Facts, out: &SyncOutput, coll: &str, path: &str) -> Option<NewConflict> {
     let local = f.expected?;
     let uid = f.uid.as_deref()?;
-    if f.created_here || !transferred(out, sync, coll, uid, Action::Upload, false) {
+    if f.created_here || !transferred(out, coll, uid, Action::Upload, false) {
         return None;
     }
     Some(NewConflict {
@@ -477,7 +462,6 @@ fn record_once(
 fn remote_deletes(
     vdir: &Path,
     conflicts: &ConflictStore,
-    sync: &SyncConfig,
     pending: &[Entry],
     out: &SyncOutput,
     now: DateTime<Utc>,
@@ -486,7 +470,7 @@ fn remote_deletes(
     if !out
         .transfers
         .iter()
-        .any(|t| t.action == Action::Upload && t.storage != sync.local_storage)
+        .any(|t| t.action == Action::Upload && t.storage != LOCAL_STORAGE)
     {
         return Ok(());
     }
@@ -499,7 +483,7 @@ fn remote_deletes(
         let Some(f) = facts(vdir, &order, path) else {
             continue;
         };
-        if let Some(c) = remote_delete(&f, out, sync, coll, path) {
+        if let Some(c) = remote_delete(&f, out, coll, path) {
             record_once(conflicts, &known, f.last_entry, c, now, rec)?;
         }
     }
