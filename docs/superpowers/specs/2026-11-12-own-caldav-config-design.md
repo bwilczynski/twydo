@@ -51,7 +51,7 @@ does not start it.
 | `ca_file` | path | none | CA certificate (PEM) to verify a server whose certificate is not otherwise trusted; written as vdirsyncer's `verify`. Leading `~` expands. |
 
 Kept unchanged: `command`, `list_python`, `metasync`, `batch_size`, `max_wait_secs`,
-`timeout_secs`, `max_backoff_secs`, `retention_days`, and the retired-and-warned `after_edit`.
+`timeout_secs`, `max_backoff_secs` and `retention_days`.
 
 `[sync]` without `url`, `username` and `password_command` is a config error naming the missing
 key and pointing at `tdo config init`. (An empty `[sync]` table no longer means "sync on with
@@ -59,11 +59,14 @@ defaults".)
 
 ### Removed keys
 
-`pair`, `local_storage` and `vdirsyncer_config` are removed. A config that still sets any of
+`pair`, `local_storage`, `vdirsyncer_config` and the retired `after_edit` are removed. Since this
+is a breaking release anyway, `after_edit` loses its accept-and-warn handling (the field,
+`Config::warnings`' message about it, and the warnings shown by `tdo sync`, `tdo status` and the
+TUI for it) and is treated like the other removed keys. A config that still sets any of
 them fails to load with an error naming the key and saying to run `tdo config init` (which
 rewrites the file without them). They are not silently ignored: the user's stowed config would
 otherwise keep pointing at the old hand-written vdirsyncer file without anyone noticing.
-*(Builder's call made in the conversation: error, not warning.)*
+*(My call: error, not warning.)*
 
 `contrib/vdirsyncer/config.example` is deleted.
 
@@ -76,8 +79,9 @@ which never needs the daemon, so a hard stop until then is clear and cheap.)*
 
 ### Versioning
 
-Removing keys is a breaking config change: the commit that removes them is marked breaking
-(`feat(config)!:` with a `BREAKING CHANGE:` footer), so release-plz bumps to `0.3.0`. The
+This is a breaking change (decided by the user). One commit during the implementation, the one
+that removes the keys, is marked `feat!:` with a `BREAKING CHANGE:` footer naming the removed
+keys and `tdo config init`, so release-plz bumps to `0.3.0`. The
 protocol schema (`schema/*.openrpc.json`) does not describe `config.toml`; if a snapshot does
 carry `[sync]` fields, it is regenerated as part of the change. *(My call.)*
 
