@@ -141,7 +141,7 @@ any step fails, else 0.
 | `tdo on PATH` | an executable named `tdo` is on the PATH (the conflict hook runs `tdo` by name, so the daemon and vdirsyncer need it on their PATH); skipped when sync is off |
 | `list helper` | `[sync].list_python` imports vdirsyncer 0.21.x |
 | `password` | `password_command` exits 0 and prints a single non-empty line (vdirsyncer uses the whole output, trailing newlines removed). The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
-| `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound) |
+| `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound); fails when the state directory is not writable |
 | `ca file` | `ca_file`, when set, is a readable file |
 
 The two version probes are killed after 10 seconds.
