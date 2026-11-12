@@ -11,6 +11,7 @@ pub const PAIR: &str = "twydo";
 pub const LOCAL_STORAGE: &str = "twydo_local";
 pub const REMOTE_STORAGE: &str = "twydo_remote";
 /// Test-only seam: when set, the remote storage is a filesystem directory instead of CalDAV.
+/// The daemon and CLI processes both generate the config, so they must see the same value.
 pub const TEST_REMOTE_ENV: &str = "TWYDO_TEST_REMOTE_DIR";
 
 /// Where the generated config lives under the per-vdir state directory.
@@ -67,7 +68,8 @@ pub fn render(vdir: &Path, sync: &SyncConfig, vstate: &Path, test_remote: Option
 }
 
 /// Writes the generated config if it is missing or differs, first leaving the rediscover
-/// marker so the next sync discovers collections again. Returns the config path.
+/// marker so the next sync discovers collections again. Returns the config path. Reads
+/// [`TEST_REMOTE_ENV`] (a test-only seam): every process that calls this must agree on it.
 pub fn ensure(cfg: &Config, sync: &SyncConfig, vstate: &Path) -> io::Result<PathBuf> {
     let test_remote = std::env::var_os(TEST_REMOTE_ENV)
         .filter(|v| !v.is_empty())

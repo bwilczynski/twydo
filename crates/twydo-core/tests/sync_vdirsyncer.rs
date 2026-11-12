@@ -86,14 +86,12 @@ fn ensure_writes_once_and_marks_rediscover() {
     assert!(path.is_file() && marker.is_file());
 
     std::fs::remove_file(&marker).unwrap();
-    let before = std::fs::metadata(&path).unwrap().modified().unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    use std::os::unix::fs::MetadataExt;
+    let before = std::fs::metadata(&path).unwrap().ino();
     ensure(&cfg, &sync(), &vstate).unwrap();
     assert!(!marker.exists());
-    assert_eq!(
-        std::fs::metadata(&path).unwrap().modified().unwrap(),
-        before
-    );
+    // A rewrite (atomic replace) would give the file a new inode.
+    assert_eq!(std::fs::metadata(&path).unwrap().ino(), before);
 
     let mut changed = sync();
     changed.username = "bob".into();
