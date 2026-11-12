@@ -418,8 +418,8 @@ impl ListService {
                 .ok_or_else(|| invalid("missing deletion backup"))?,
         )?;
         // Once retired the directory is gone, which is how a repeat knows to skip this.
-        if self.config.vdir.join(&collection).try_exists()? {
-            crate::retired::forget_fenced(
+        if record.retired.is_none() && self.config.vdir.join(&collection).try_exists()? {
+            let retired = crate::retired::forget_fenced(
                 &self.config,
                 &crate::retired::Preview {
                     collection,
@@ -430,6 +430,9 @@ impl ListService {
                 },
                 Utc::now(),
             )?;
+            // Recorded before the fence is released, so the result names this exact copy.
+            record.retired = Some(retired.id);
+            operation::save(&state, &record)?;
         }
         operation::finish_deleted(&self.config, &mut record)?;
         self.deleted(&record)
@@ -447,10 +450,16 @@ impl ListService {
             .clone()
             .ok_or_else(|| invalid("missing deletion backup"))?;
         let saved = get(&self.config, &backup)?;
-        let retired = crate::retired::list(&self.config)?
-            .into_iter()
-            .find(|b| b.collection == collection && b.retired && b.created >= record.created)
-            .ok_or_else(|| invalid("the retired local copy is missing"))?;
+        let retired = match &record.retired {
+            Some(id) => crate::retired::get(&self.config, id)?,
+            // Interrupted between retiring the copy and recording it: the newest
+            // retirement since this operation began is the one.
+            None => crate::retired::list(&self.config)?
+                .into_iter()
+                .filter(|b| b.collection == collection && b.retired && b.created >= record.created)
+                .max_by_key(|b| b.created)
+                .ok_or_else(|| invalid("the retired local copy is missing"))?,
+        };
         Ok(ListResult::Deleted {
             operation: record.id.clone(),
             collection,
