@@ -102,6 +102,14 @@ pub struct Writes {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct SyncConfig {
+    /// CalDAV server URL.
+    pub url: String,
+    /// CalDAV username.
+    pub username: String,
+    /// Command (argv) that prints the CalDAV password; run by vdirsyncer.
+    pub password_command: Vec<String>,
+    /// PEM file with the CA that signed the server certificate.
+    pub ca_file: Option<PathBuf>,
     /// vdirsyncer pair name.
     pub pair: String,
     /// vdirsyncer storage name of the vdir side of the pair.
@@ -127,6 +135,10 @@ pub struct SyncConfig {
 impl Default for SyncConfig {
     fn default() -> Self {
         SyncConfig {
+            url: String::new(),
+            username: String::new(),
+            password_command: Vec::new(),
+            ca_file: None,
             pair: "twydo".into(),
             local_storage: "twydo_local".into(),
             command: "vdirsyncer".into(),
@@ -317,6 +329,10 @@ impl Config {
             if let Some(sync) = &mut cfg.sync {
                 sync.vdirsyncer_config = sync
                     .vdirsyncer_config
+                    .take()
+                    .map(|p| expand_tilde(&p, Path::new(&home)));
+                sync.ca_file = sync
+                    .ca_file
                     .take()
                     .map(|p| expand_tilde(&p, Path::new(&home)));
             }
