@@ -466,6 +466,34 @@ fn deleting_the_open_list_returns_to_today_and_drops_it_from_the_sidebar() {
 }
 
 #[test]
+fn another_lists_deletion_keeps_an_open_delete_confirmation() {
+    use twydo_core::lists::ListResult;
+    let (_d, _cfg, _path, mut app) = setup();
+    let preview = open_delete_confirmation(&mut app, "a");
+    app.confirmation = Some(tdo::app::Confirmation::DeleteList(preview.clone()));
+    // A reconcile of an earlier deletion of list b finishes in the background.
+    app.list_finished(ListCompletion {
+        action: ListAction::Reconcile {
+            operation: "op-b".into(),
+            keep_server: false,
+        },
+        result: Ok(ListResult::Deleted {
+            operation: "op-b".into(),
+            collection: "b".into(),
+            name: "Same".into(),
+            backup: "backup-b".into(),
+            retired: "retired-b".into(),
+        }),
+        pending: None,
+        server_values: None,
+    });
+    assert!(matches!(
+        &app.confirmation,
+        Some(tdo::app::Confirmation::DeleteList(p)) if *p == preview
+    ));
+}
+
+#[test]
 fn changed_since_backup_refusal_is_shown_and_dd_previews_again() {
     let (_d, _cfg, _path, mut app) = setup();
     let preview = open_delete_confirmation(&mut app, "a");

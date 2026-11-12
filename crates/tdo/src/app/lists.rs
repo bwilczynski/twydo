@@ -300,7 +300,11 @@ impl App {
                 self.list_form = None;
                 self.mode = Mode::Normal;
             }
-            self.confirmation = None;
+            // Only this list's confirmation: another prompt may be open meanwhile.
+            if matches!(&self.confirmation, Some(Confirmation::DeleteList(p)) if &p.collection == collection)
+            {
+                self.confirmation = None;
+            }
             self.message = Some(format!("Deleted {name} from CalDAV; backup {backup} kept"));
             self.sync_sidebar();
             return;
