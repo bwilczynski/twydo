@@ -50,11 +50,24 @@ impl Env {
         )
     }
 
-    fn run(&self) -> Output {
+    /// Run with a PATH holding only a fake `tdo` (when `with_tdo`) or nothing useful.
+    fn run_path(&self, with_tdo: bool) -> Output {
+        let bin = self.p("bin");
+        fs::create_dir_all(&bin).unwrap();
+        if with_tdo {
+            let t = bin.join("tdo");
+            fs::write(&t, "#!/bin/sh\n").unwrap();
+            fs::set_permissions(&t, fs::Permissions::from_mode(0o755)).unwrap();
+        }
         tdo_bin(&self.p("none.sock"), &self.p("config"), &self.p("state"))
+            .env("PATH", &bin)
             .args(["config", "check"])
             .output()
             .unwrap()
+    }
+
+    fn run(&self) -> Output {
+        self.run_path(true)
     }
 }
 
@@ -193,5 +206,50 @@ fn vdir_failure_skips_only_generated_config() {
     line(&out, "✗ vdir");
     assert!(line(&out, "– generated config").contains("skipped: vdir failed"));
     line(&out, "✓ vdirsyncer");
+    line(&out, "✓ password");
+}
+
+#[test]
+fn tdo_on_path_is_checked() {
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret");
+    e.config(&e.sync(&pw, ""));
+    let o = e.run_path(false);
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    line(&out, "✗ tdo on PATH");
+    assert!(
+        out.contains("the conflict hook runs `tdo` by name"),
+        "{out}"
+    );
+    // Independent steps still run.
+    line(&out, "✓ password");
+
+    let o = e.run_path(true);
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}");
+    assert!(
+        line(&out, "✓ tdo on PATH").contains(&e.p("bin/tdo").display().to_string()),
+        "{out}"
+    );
+}
+
+#[test]
+fn tdo_on_path_skipped_when_sync_off() {
+    let e = Env::new();
+    e.config("");
+    let out = text(&e.run_path(false));
+    assert!(line(&out, "– tdo on PATH").contains("sync off"), "{out}");
+}
+
+#[test]
+fn password_kept_by_grandchild_pipe_still_counts() {
+    let e = Env::new();
+    // The background sleep inherits stdout and keeps the pipe open past the command's exit.
+    let pw = e.script("pw", "echo s3cret; sleep 5 &");
+    e.config(&e.sync(&pw, ""));
+    let o = e.run();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(0), "{out}");
     line(&out, "✓ password");
 }
