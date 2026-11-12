@@ -243,6 +243,32 @@ class ListHelperTests(unittest.TestCase):
                 with self.h.operation_guard(request):
                     self.fail("stale operation entered its remote phase")
 
+    def test_delete_reconcile_ignores_local_edits_but_execute_does_not(self):
+        import json
+        for mode, phase, blocked in (("reconcile", "uncertain", False), ("execute", "prepared", True)):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                vdir, state = root / "vdir", root / "state"
+                (vdir / "synthetic").mkdir(parents=True)
+                (state / "lists/operations").mkdir(parents=True)
+                (state / "sync").mkdir()
+                (state / "vdir").write_text(str(vdir.resolve()) + "\n")
+                (state / "lists/active").write_text("operation1")
+                request = self.request()
+                request.update(action="delete", backup="b1", vdir=str(vdir), state=str(state),
+                               operation=str(state / "lists/operations/operation1.json"))
+                record = dict(format=1, id="operation1", phase=phase, vdir=str(vdir), request=request, holds={})
+                Path(request["operation"]).write_text(json.dumps(record))
+                (vdir / "synthetic/new.ics").write_text("edited after the delete")
+                request = dict(request, mode=mode)
+                if blocked:
+                    with self.assertRaises(self.h.Refused):
+                        with self.h.operation_guard(request):
+                            self.fail("changed local list entered its remote phase")
+                else:
+                    with self.h.operation_guard(request) as entered:
+                        self.assertEqual(entered["id"], "operation1")
+
     def test_metadata_edit_writes_only_requested_property_and_verifies_it(self):
         transport = MemoryDAV()
         result = asyncio.run(self.h.write_metadata(transport, {"name": "After"}, {"name": "Before", "color": "#3289D2"}))

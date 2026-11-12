@@ -489,3 +489,57 @@ fn interrupted_retirement_with_partial_directory_resumes() {
     assert!(!cfg.vdir.join("synthetic").exists());
     no_active(&cfg);
 }
+
+#[cfg(unix)]
+#[test]
+fn uncertain_delete_with_local_edit_reconciles_and_preserves_edit() {
+    // The server applied the DELETE; the helper timed out and the list was edited afterwards.
+    let (d, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "hang_after_delete_once");
+    assert!(service.delete_list(&preview).is_err());
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    fs::write(
+        cfg.vdir.join("synthetic/local.ics"),
+        b"edited while uncertain",
+    )
+    .unwrap();
+    let ListResult::Deleted { retired, .. } = service.reconcile(id.trim()).unwrap() else {
+        panic!("expected a deletion")
+    };
+    assert_eq!(deletes(d.path()), 1);
+    assert!(!cfg.vdir.join("synthetic").exists());
+    no_active(&cfg);
+    let kept = twydo_core::retired::data_dir(&cfg, &retired).unwrap();
+    assert_eq!(
+        fs::read(kept.join("synthetic/local.ics")).unwrap(),
+        b"edited while uncertain"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn uncertain_delete_with_local_edit_and_list_still_present_releases_the_fence() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "fail_delete_once");
+    assert!(service.delete_list(&preview).is_err());
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    fs::write(
+        cfg.vdir.join("synthetic/local.ics"),
+        b"edited while uncertain",
+    )
+    .unwrap();
+    let message = service.reconcile(id.trim()).unwrap_err().to_string();
+    assert!(message.contains("still exists"), "{message}");
+    no_active(&cfg);
+    assert_eq!(
+        fs::read(cfg.vdir.join("synthetic/local.ics")).unwrap(),
+        b"edited while uncertain"
+    );
+}
