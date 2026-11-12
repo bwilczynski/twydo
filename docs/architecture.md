@@ -264,11 +264,16 @@ state at DELETE time. It requires the `list-delete` capability, a valid backup n
 previewed list and unchanged local bytes, then prepares a `delete` operation (refused for
 pending or queued task edits and unresolved conflicts). The helper revalidates the server
 against the backup's remote inventory and sends one unconditional DELETE; only 200, 202,
-204 or 404 count as deleted. A changed inventory refuses before any DELETE and releases the
-fence. After a confirmed deletion the local list is retired through the forgotten-list
-path (backup kept, `sync/rediscover` written) and the operation completes; ordinary sync
-stays fenced until then. An interrupted deletion is reconciled read-only: an absent
+204 or 404 count as deleted. Any refusal or failure while revalidating, including a changed
+inventory, happens before the DELETE is sent, so it releases the fence. After a confirmed
+deletion the local list is retired through the forgotten-list path (backup kept,
+`sync/rediscover` written) and the operation completes; ordinary sync stays fenced until
+then. Completion resumes a retirement interrupted at any point, including after the local
+directory was removed. An interrupted deletion is reconciled read-only: an absent
 collection finishes retirement, a still-present one releases the fence without a DELETE.
+A collection that keeps only some of the backed-up resources, with nothing else changed,
+was partly deleted: the local copy is retired first (it may hold edits made after the
+backup), then the fence is released and the user is told which backup holds every task.
 The approved lifecycle probe demonstrated that a changing calendar-export ETag was
 insufficient: the server ignored a stale `If-Match` on DELETE. Only that disposable
 test collection was removed. All three resources, including the remote-only task, were

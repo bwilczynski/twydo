@@ -544,6 +544,8 @@ class InventoryDAV:
             root = ET.Element("{DAV:}multistatus")
             names = ("", "remote.ics", "unknown.bin") + (("added.ics",) if self.fault == "extra" else ())
             for index, name in enumerate(names):
+                if name == "remote.ics" and self.fault == "partial":
+                    continue  # removed by a partly applied DELETE
                 row = ET.SubElement(root, "{DAV:}response")
                 href = self.url + name
                 if name and self.fault == "foreign": href = "https://elsewhere.example.org/" + name

@@ -58,6 +58,14 @@ class Session(memory.MemoryDAV):
             store["calls"].append(method)
             save(store)
             raise OSError("synthetic transport failure")
+        elif method == "DELETE" and load()["flags"].get("partial_delete_once"):
+            # The server removes one resource, then the transport fails: the collection stays.
+            store = load()
+            store["flags"].pop("partial_delete_once")
+            store["flags"]["inventory_fault"] = "partial"
+            store["calls"].append(method)
+            save(store)
+            raise OSError("synthetic transport failure")
         else:
             result = await super().request(method, path, **kwargs)
         store = load()

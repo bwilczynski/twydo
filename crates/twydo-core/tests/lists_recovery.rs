@@ -521,6 +521,107 @@ fn interrupted_retirement_with_partial_directory_resumes() {
 
 #[cfg(unix)]
 #[test]
+fn retirement_interrupted_after_removing_the_directory_is_finished() {
+    let (d, cfg, mut service, id, state) = confirmed_but_unretired();
+    // A crash inside resume_locked after remove_dir_all, before the copy is marked retired.
+    let files = twydo_core::lists::operation::snapshot(&cfg.vdir.join("synthetic"))
+        .unwrap()
+        .unwrap();
+    let retired_id = "20261112T000000Z-removed";
+    let dir = state.join("retired").join(retired_id);
+    for (name, bytes) in &files {
+        let path = dir.join("data/synthetic").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+    }
+    let manifest = twydo_core::retired::Backup {
+        format: 1,
+        id: retired_id.into(),
+        collection: "synthetic".into(),
+        name: "Before".into(),
+        created: chrono::Utc::now(),
+        tasks: 1,
+        pending: 0,
+        files: files.keys().cloned().collect(),
+        journal: vec![],
+        conflicts: vec![],
+        retired: false,
+        recovery: None,
+        destination: None,
+    };
+    fs::write(
+        dir.join("backup.json"),
+        serde_json::to_vec(&manifest).unwrap(),
+    )
+    .unwrap();
+    fs::remove_dir_all(cfg.vdir.join("synthetic")).unwrap();
+    let ListResult::Deleted { retired, .. } = service.reconcile(&id).unwrap() else {
+        panic!("expected a deletion")
+    };
+    assert_eq!(retired, retired_id);
+    assert!(twydo_core::retired::get(&cfg, retired_id).unwrap().retired);
+    assert_eq!(deletes(d.path()), 1);
+    no_active(&cfg);
+}
+
+#[cfg(unix)]
+#[test]
+fn refusal_before_delete_is_sent_releases_the_fence() {
+    // Every GET answers with a new ETag, so the pre-DELETE inventory is refused.
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    let mut value = server(d.path());
+    value["flags"]["inventory_fault"] = "get-stale".into();
+    fs::write(d.path().join("server.json"), value.to_string()).unwrap();
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(!message.contains("needs reconciliation"), "{message}");
+    assert_eq!(deletes(d.path()), 0);
+    no_active(&cfg);
+    assert!(cfg.vdir.join("synthetic").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn partially_applied_delete_retires_the_local_copy_and_releases_the_fence() {
+    // The DELETE removes one resource on the server, then the transport fails.
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "partial_delete_once");
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("needs reconciliation"), "{message}");
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    // Edited after the preview: only the retired copy can hold this.
+    fs::write(
+        cfg.vdir.join("synthetic/local.ics"),
+        b"edited while uncertain",
+    )
+    .unwrap();
+    let message = service.reconcile(id.trim()).unwrap_err().to_string();
+    assert!(message.contains("partly"), "{message}");
+    assert!(message.contains(&preview.backup), "{message}");
+    assert_eq!(deletes(d.path()), 1);
+    no_active(&cfg);
+    // The local copy is retired, so the next sync rediscovers what is left on the server.
+    assert!(!cfg.vdir.join("synthetic").exists());
+    assert!(state.join("sync/rediscover").exists());
+    let kept = twydo_core::retired::list(&cfg)
+        .unwrap()
+        .into_iter()
+        .find(|b| b.collection == "synthetic" && b.retired)
+        .expect("a retired copy");
+    let data = twydo_core::retired::data_dir(&cfg, &kept.id).unwrap();
+    assert_eq!(
+        fs::read(data.join("synthetic/local.ics")).unwrap(),
+        b"edited while uncertain"
+    );
+    assert!(backup::get(&cfg, &preview.backup).is_ok());
+}
+
+#[cfg(unix)]
+#[test]
 fn uncertain_delete_with_local_edit_reconciles_and_preserves_edit() {
     // The server applied the DELETE; the helper timed out and the list was edited afterwards.
     let (d, mut cfg) = offline();

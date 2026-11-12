@@ -379,6 +379,18 @@ impl ListService {
             "present" => {
                 "the list still exists on the server; delete it again if you still want to"
             }
+            "partial" => {
+                // The server lost some tasks and keeps the rest. Retire the local copy (it may
+                // hold edits made after the backup) so the next sync rediscovers what is left
+                // instead of silently dropping the removed tasks from it.
+                self.retire_local(record)?;
+                operation::release_present(&self.config, id)?;
+                let backup = record.request.backup.as_deref().unwrap_or_default();
+                return Err(ListError::Refused(format!(
+                    "the deletion was only partly applied: the list still exists on the server \
+                     with some tasks removed; backup {backup} has all of them"
+                )));
+            }
             "changed" => CHANGED,
             code => {
                 return Err(ListError::Refused(format!(
@@ -396,12 +408,6 @@ impl ListService {
     fn complete_delete(&mut self, id: &str) -> Result<ListResult, ListError> {
         let state = bind_vdir_state(&self.config.state_dir(), &self.config.vdir)?;
         let mut record = operation::read(&state, id)?;
-        let collection = record
-            .request
-            .collection
-            .clone()
-            .filter(|c| plain_id(c))
-            .ok_or_else(|| invalid("missing collection identity"))?;
         if record.phase != Phase::RemoteConfirmed
             || record.receipt.as_ref().and_then(|r| r.get("deleted")) != Some(&true.into())
         {
@@ -409,6 +415,34 @@ impl ListService {
                 "list deletion is not confirmed on the server".into(),
             ));
         }
+        if record.retired.is_none()
+            && let Some(retired) = self.retire_local(&record)?
+        {
+            // Recorded before the fence is released, so the result names this exact copy.
+            record.retired = Some(retired);
+            operation::save(&state, &record)?;
+        }
+        operation::finish_deleted(&self.config, &mut record)?;
+        self.deleted(&record)
+    }
+
+    /// Retire the fenced list's local copy, resuming a retirement a crash interrupted.
+    /// `None` when there is nothing left to retire: the directory is gone and no
+    /// retirement of the list is unfinished.
+    fn retire_local(&self, record: &ListOperation) -> Result<Option<String>, ListError> {
+        let collection = record
+            .request
+            .collection
+            .clone()
+            .filter(|c| plain_id(c))
+            .ok_or_else(|| invalid("missing collection identity"))?;
+        let unfinished = crate::retired::list(&self.config)?
+            .iter()
+            .any(|b| !b.retired && b.collection == collection);
+        if !unfinished && !self.config.vdir.join(&collection).try_exists()? {
+            return Ok(None);
+        }
+        let state = bind_vdir_state(&self.config.state_dir(), &self.config.vdir)?;
         let saved = read(
             &state,
             record
@@ -417,25 +451,18 @@ impl ListService {
                 .as_deref()
                 .ok_or_else(|| invalid("missing deletion backup"))?,
         )?;
-        // Once retired the directory is gone, which is how a repeat knows to skip this.
-        if record.retired.is_none() && self.config.vdir.join(&collection).try_exists()? {
-            let retired = crate::retired::forget_fenced(
-                &self.config,
-                &crate::retired::Preview {
-                    collection,
-                    name: saved.name.clone(),
-                    tasks: saved.local.keys().filter(|f| f.ends_with(".ics")).count(),
-                    pending: 0,
-                    files: saved.local.clone(),
-                },
-                Utc::now(),
-            )?;
-            // Recorded before the fence is released, so the result names this exact copy.
-            record.retired = Some(retired.id);
-            operation::save(&state, &record)?;
-        }
-        operation::finish_deleted(&self.config, &mut record)?;
-        self.deleted(&record)
+        let retired = crate::retired::forget_fenced(
+            &self.config,
+            &crate::retired::Preview {
+                collection,
+                name: saved.name.clone(),
+                tasks: saved.local.keys().filter(|f| f.ends_with(".ics")).count(),
+                pending: 0,
+                files: saved.local.clone(),
+            },
+            Utc::now(),
+        )?;
+        Ok(Some(retired.id))
     }
 
     pub(super) fn deleted(&self, record: &ListOperation) -> Result<ListResult, ListError> {
