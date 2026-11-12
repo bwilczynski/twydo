@@ -228,8 +228,8 @@ The record of a list is only as good as the last sync that wrote it:
 
 ## New lists from other devices
 
-A list created on another device (the phone) is picked up by discovery. Run
-`vdirsyncer discover twydo` by hand: Twydo discovers for you, including on the first sync.
+A list created on another device (the phone) is picked up by discovery. There is
+no need to run `vdirsyncer discover` by hand: Twydo discovers for you, including on the first sync.
 Discovery runs at these points only:
 
 - once after the daemon starts: it leaves a `sync/discover` marker, and the first sync that

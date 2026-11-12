@@ -274,6 +274,27 @@ fn run_passes_the_generated_config() {
     assert!(want.exists());
 }
 
+/// A run that finds the run lock taken must not touch the generated config or leave the
+/// rediscover marker: the run holding the lock could then remove it unseen.
+#[test]
+fn busy_run_writes_neither_the_generated_config_nor_the_marker() {
+    let fx = Fx::fresh("exit 0");
+    let sync_dir = fx.state().join("sync");
+    fs::create_dir_all(&sync_dir).unwrap();
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(sync_dir.join("run.lock"))
+        .unwrap();
+    held.lock().unwrap();
+    let r = run(&fx.cfg, &background(), now()).unwrap();
+    assert!(matches!(r.skipped, Some(Skip::Busy)));
+    assert!(!vdirsyncer::config_path(&fx.state()).exists());
+    assert!(!sync_dir.join("rediscover").exists());
+}
+
 #[test]
 fn first_run_discovers() {
     let fx = Fx::fresh("");
