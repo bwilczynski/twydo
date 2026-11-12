@@ -533,10 +533,10 @@ def same_metadata(field, left, right):
 
 
 async def write_metadata(session, changes, expected):
-    """Unverified prototype: preflight/readback do not protect concurrent edits.
+    """Best-effort metadata write: preflight/readback do not protect concurrent edits.
 
-    The shipping service keeps list-metadata gated in every write mode until a
-    server-enforced write precondition is implemented and demonstrated.
+    Admitted under `accepted_risk`; the server enforces no precondition, so the
+    read-back is the only check.
     """
     if not changes or not set(changes) <= {"name", "color"}:
         raise Refused("protocol")
