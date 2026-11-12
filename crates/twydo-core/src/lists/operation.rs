@@ -431,6 +431,63 @@ pub fn finish(cfg: &Config, operation: &mut ListOperation) -> Result<(), ListErr
     Ok(())
 }
 
+/// Complete a confirmed `delete` once its local copy has been retired. Retirement is not a
+/// metadata edit, so the usual local-confirmation phase does not apply: the list must simply
+/// be gone from the vdir.
+pub fn finish_deleted(cfg: &Config, operation: &mut ListOperation) -> Result<(), ListError> {
+    let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+    private_dir(&state.join("sync"))?;
+    let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
+    let _lock = VdirLock::exclusive(&state)?;
+    let _fence = coordinate(&state)?;
+    let saved = read(&state, &operation.id)?;
+    let collection = saved
+        .request
+        .collection
+        .as_deref()
+        .filter(|id| plain_id(id))
+        .ok_or_else(|| invalid("missing collection identity"))?;
+    if saved.request.action != "delete"
+        || saved.phase != Phase::RemoteConfirmed
+        || saved.receipt.as_ref().and_then(|r| r.get("deleted")) != Some(&true.into())
+        || saved.vdir != fs::canonicalize(&cfg.vdir)?
+        || snapshot(&saved.vdir.join(collection))?.is_some()
+        || fs::read_to_string(state.join("lists/active"))?.trim() != saved.id
+    {
+        return Err(invalid("list deletion is not confirmed and retired").into());
+    }
+    let mut saved = saved;
+    saved.phase = Phase::Complete;
+    save(&state, &saved)?;
+    remove_durable(&state.join("lists/active"))?;
+    *operation = saved;
+    Ok(())
+}
+
+/// Release the fence of a `delete` whose reconciliation found the list still on the server,
+/// unchanged or changed: nothing was removed, so nothing needs recovery.
+pub fn release_present(cfg: &Config, id: &str) -> Result<(), ListError> {
+    let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+    private_dir(&state.join("sync"))?;
+    let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
+    let _lock = VdirLock::exclusive(&state)?;
+    let _fence = coordinate(&state)?;
+    let mut record = read(&state, id)?;
+    if record.request.action != "delete"
+        || record.phase != Phase::Uncertain
+        || record.receipt.as_ref().and_then(|r| r.get("present")) != Some(&true.into())
+        || record.local_after.is_some()
+        || record.vdir != fs::canonicalize(&cfg.vdir)?
+        || fs::read_to_string(state.join("lists/active"))?.trim() != id
+    {
+        return Err(invalid("collection outcome needs reconciliation").into());
+    }
+    record.phase = Phase::Complete;
+    save(&state, &record)?;
+    remove_durable(&state.join("lists/active"))?;
+    Ok(())
+}
+
 /// Plan local metadata before writing it, so a mixed before/after state is recoverable.
 pub fn finalize_metadata(cfg: &Config, operation: &mut ListOperation) -> Result<(), ListError> {
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;

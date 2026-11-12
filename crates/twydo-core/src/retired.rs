@@ -268,6 +268,17 @@ pub(crate) fn in_collection(path: &str, collection: &str) -> bool {
 }
 
 pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backup> {
+    retire(cfg, p, now, true)
+}
+
+/// [`forget`] for a list the server has just deleted, under that deletion's operation fence.
+/// Journal recovery refuses to run while the fence is up, and the operation was prepared
+/// with no pending task writes for the list, so it is skipped here.
+pub(crate) fn forget_fenced(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backup> {
+    retire(cfg, p, now, false)
+}
+
+fn retire(cfg: &Config, p: &Preview, now: DateTime<Utc>, recover: bool) -> io::Result<Backup> {
     if !plain(&p.collection) {
         return Err(invalid("invalid collection id"));
     }
@@ -276,7 +287,11 @@ pub fn forget(cfg: &Config, p: &Preview, now: DateTime<Utc>) -> io::Result<Backu
     let _run = run_lock(&state.join("sync"), false)?;
     let _lock = VdirLock::exclusive(&state)?;
     let journal = Journal::open(&state)?;
-    let recovered = recover_locked(&cfg.vdir, &journal)?;
+    let recovered = if recover {
+        recover_locked(&cfg.vdir, &journal)?
+    } else {
+        Default::default()
+    };
     if !recovered.stuck.is_empty() {
         return Err(invalid(
             "unfinished journal operations must be resolved first",

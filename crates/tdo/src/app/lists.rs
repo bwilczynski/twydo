@@ -317,6 +317,12 @@ impl App {
                 }
                 self.confirmation = Some(Confirmation::DeleteList(preview));
             }
+            // Stopgap until the TUI handles list deletion properly.
+            Ok(ListResult::Deleted { name, retired, .. }) => {
+                self.message = Some(format!(
+                    "Deleted list {name:?}; local copy preserved as {retired}"
+                ));
+            }
             Err(error) => {
                 if self.list_form.is_none() {
                     self.message = Some(error.clone());

@@ -34,6 +34,15 @@ pub enum ListResult {
         state: ListState,
     },
     DeletePreview(super::backup::DeletePreview),
+    /// The collection was deleted on the server and retired locally; `retired` is the id of
+    /// the preserved local copy (see [`crate::retired`]).
+    Deleted {
+        operation: String,
+        collection: String,
+        name: String,
+        backup: String,
+        retired: String,
+    },
     Exported {
         backup: String,
         destination: std::path::PathBuf,
@@ -205,6 +214,9 @@ impl ListService {
     }
 
     fn result(&self, record: &ListOperation) -> Result<ListResult, ListError> {
+        if record.request.action == "delete" {
+            return self.deleted(record);
+        }
         let collection = record
             .request
             .collection
@@ -246,6 +258,9 @@ impl ListService {
             return Err(ListError::Refused(
                 "Interrupted read-only deletion preview cleared; request a fresh preview".into(),
             ));
+        }
+        if record.request.action == "delete" {
+            return self.reconcile_delete(&record);
         }
         if record.phase == Phase::LocalConfirmed {
             operation::finish(&self.config, &mut record)?;

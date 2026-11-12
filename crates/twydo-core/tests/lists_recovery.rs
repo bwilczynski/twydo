@@ -1,7 +1,7 @@
 use std::fs;
 use twydo_core::{
     config::{Config, SyncConfig, WriteMode},
-    lists::{ListService, backup},
+    lists::{ListResult, ListService, backup},
 };
 
 fn offline() -> (tempfile::TempDir, Config) {
@@ -81,13 +81,6 @@ fn preview_preserves_remote_only_malformed_and_local_raw_content_without_deletin
             .unwrap()
             .iter()
             .any(|v| v == "DELETE")
-    );
-    assert!(
-        service
-            .delete_list(&preview)
-            .unwrap_err()
-            .to_string()
-            .contains("server-enforced")
     );
     let export = d.path().join("export");
     backup::export(&cfg, &preview.backup, &export).unwrap();
@@ -206,4 +199,198 @@ fn backup_integrity_and_private_directory_permissions_are_checked_before_export(
     fs::write(&manifest, value.to_string()).unwrap();
     assert!(backup::export(&cfg, &preview.backup, &d.path().join("export")).is_err());
     assert!(!d.path().join("export").exists());
+}
+
+fn server(d: &std::path::Path) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(d.join("server.json")).unwrap()).unwrap()
+}
+fn deletes(d: &std::path::Path) -> usize {
+    server(d)["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| **v == "DELETE")
+        .count()
+}
+fn set_flag(d: &std::path::Path, name: &str) {
+    let mut value = server(d);
+    value["flags"][name] = true.into();
+    fs::write(d.join("server.json"), value.to_string()).unwrap();
+}
+fn no_active(cfg: &Config) {
+    assert!(twydo_core::lists::operation::active(cfg).unwrap().is_none());
+}
+
+#[test]
+fn delete_sends_one_delete_retires_local_copy_and_keeps_backup() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    let ListResult::Deleted {
+        collection,
+        name,
+        backup: saved,
+        retired,
+        ..
+    } = service.delete_list(&preview).unwrap()
+    else {
+        panic!("expected a deletion")
+    };
+    assert_eq!(
+        (collection.as_str(), name.as_str()),
+        ("synthetic", "Before")
+    );
+    assert_eq!(saved, preview.backup);
+    assert_eq!(deletes(d.path()), 1);
+    assert!(server(d.path())["collections"].get("synthetic").is_none());
+    assert!(!cfg.vdir.join("synthetic").exists());
+    assert!(backup::get(&cfg, &saved).is_ok());
+    backup::export(&cfg, &saved, &d.path().join("export")).unwrap();
+    let kept = twydo_core::retired::get(&cfg, &retired).unwrap();
+    assert!(kept.retired);
+    assert_eq!(kept.collection, "synthetic");
+    no_active(&cfg);
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    assert!(state.join("sync/rediscover").exists());
+}
+
+#[test]
+fn delete_refuses_changed_local_bytes_without_sending_delete() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    fs::write(cfg.vdir.join("synthetic/local.ics"), b"edited after backup").unwrap();
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("review deletion again"), "{message}");
+    assert_eq!(deletes(d.path()), 0);
+    no_active(&cfg);
+    assert!(cfg.vdir.join("synthetic").exists());
+}
+
+#[test]
+fn delete_refuses_changed_remote_inventory_without_sending_delete() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "mutate_before_delete");
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("review deletion again"), "{message}");
+    assert_eq!(deletes(d.path()), 0);
+    no_active(&cfg);
+    assert!(cfg.vdir.join("synthetic").exists());
+}
+
+#[test]
+fn delete_refuses_a_preview_whose_backup_belongs_to_another_list() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let mut preview = service.preview_delete("synthetic").unwrap();
+    fs::create_dir(cfg.vdir.join("other")).unwrap();
+    preview.collection = "other".into();
+    assert!(service.delete_list(&preview).is_err());
+    assert_eq!(deletes(d.path()), 0);
+    no_active(&cfg);
+}
+
+#[test]
+fn delete_refuses_pending_queue_for_the_list() {
+    use twydo_core::edit::{NewTask, Op};
+    use twydo_core::store::{Store, Submitted};
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    let view =
+        twydo_core::views::Snapshot::new(twydo_core::vdir::load(&cfg.vdir).unwrap(), cfg.clone());
+    let (mut store, _) = Store::open(&cfg).unwrap();
+    // While a sync (here, the lock) holds the vdir the edit waits in the queue.
+    let lock = twydo_core::store::fsio::VdirLock::exclusive(store.state_dir()).unwrap();
+    let submitted = store
+        .submit(
+            &view,
+            &Op::Create(NewTask::plain("synthetic", "Synthetic task")),
+            "create",
+            "test",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    assert!(matches!(submitted, Submitted::Queued(_)));
+    drop(lock);
+    drop(store);
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("queued task edits"), "{message}");
+    assert_eq!(deletes(d.path()), 0);
+    no_active(&cfg);
+}
+
+#[cfg(unix)]
+#[test]
+fn timeout_after_delete_reconciles_absence_and_retires_without_a_second_delete() {
+    let (d, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "hang_after_delete_once");
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("needs reconciliation"), "{message}");
+    assert!(
+        cfg.vdir.join("synthetic").exists(),
+        "no retirement before confirmation"
+    );
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    let result = service.reconcile(id.trim()).unwrap();
+    assert!(matches!(result, ListResult::Deleted { .. }), "{result:?}");
+    assert_eq!(deletes(d.path()), 1);
+    assert!(!cfg.vdir.join("synthetic").exists());
+    no_active(&cfg);
+    // The finished operation reports the same result when asked again.
+    assert!(matches!(
+        service.reconcile(id.trim()).unwrap(),
+        ListResult::Deleted { .. }
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn reconcile_with_list_still_present_releases_the_fence() {
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    set_flag(d.path(), "fail_delete_once");
+    let message = service.delete_list(&preview).unwrap_err().to_string();
+    assert!(message.contains("needs reconciliation"), "{message}");
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let id = fs::read_to_string(state.join("lists/active")).unwrap();
+    let message = service.reconcile(id.trim()).unwrap_err().to_string();
+    assert!(message.contains("still exists"), "{message}");
+    no_active(&cfg);
+    assert!(cfg.vdir.join("synthetic/local.ics").exists());
+    assert!(server(d.path())["collections"].get("synthetic").is_some());
+    // The list can be deleted again from a fresh preview.
+    let preview = service.preview_delete("synthetic").unwrap();
+    assert!(matches!(
+        service.delete_list(&preview).unwrap(),
+        ListResult::Deleted { .. }
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn deleted_list_is_not_recreated_by_the_next_sync() {
+    use twydo_core::sync::discover::discover;
+    let (d, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let preview = service.preview_delete("synthetic").unwrap();
+    service.delete_list(&preview).unwrap();
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let found = discover(&cfg, &state).unwrap();
+    assert!(found.adopted.is_empty());
+    assert!(!cfg.vdir.join("synthetic").exists());
+    assert!(
+        !server(d.path())["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "MKCALENDAR")
+    );
 }

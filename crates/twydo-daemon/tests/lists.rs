@@ -359,8 +359,10 @@ fn archive_and_unarchive_write_the_config() {
     );
 }
 
+/// The daemon runs the service's best-effort deletion. Its result is still the generic
+/// forgotten-list one (the daemon protocol gets a proper deletion result later).
 #[test]
-fn delete_keeps_todays_refusal() {
+fn delete_retires_the_list_through_the_daemon() {
     let e = env();
     let p = preview(&e, "c1");
     assert_eq!(p.collection, "c1");
@@ -373,13 +375,12 @@ fn delete_keeps_todays_refusal() {
             preview: p,
         },
     );
-    let (kind, message) = failed(finished(&e.c, &job));
-    assert_eq!(kind, ErrorKind::Blocked);
+    let finished = finished(&e.c, &job);
     assert!(
-        message.starts_with("List deletion is unavailable"),
-        "{message}"
+        matches!(&finished, JobState::Finished { result: JobResult::Forgot { name, .. } } if name == "Synthetic one"),
+        "{finished:?}"
     );
-    assert!(e.fx.vdir().join("c1/u1.ics").exists());
+    assert!(!e.fx.vdir().join("c1").exists());
 }
 
 /// Edits of a task in the list a job is changing, saved while the job runs, are queued. When
@@ -923,6 +924,7 @@ fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
         config: None,
         collection: Some("inbox".into()),
         operation: None,
+        backup: None,
         state: None,
         name: Some("Renamed".into()),
         color: Some("#112233".into()),
