@@ -2956,20 +2956,20 @@
         "additionalProperties": false,
         "description": "`[sync]` table. Absent means sync is off.",
         "properties": {
-          "after_edit": {
-            "default": null,
-            "description": "Retired and ignored; see [`Config::warnings`].",
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
           "batch_size": {
             "default": 5,
             "description": "Unsynced edits that make a sync due.",
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "ca_file": {
+            "default": null,
+            "description": "PEM file with the CA that signed the server certificate.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "command": {
             "default": "vdirsyncer",
@@ -2979,11 +2979,6 @@
           "list_python": {
             "default": "python3",
             "description": "Python interpreter containing the supported vdirsyncer collection adapter.",
-            "type": "string"
-          },
-          "local_storage": {
-            "default": "twydo_local",
-            "description": "vdirsyncer storage name of the vdir side of the pair.",
             "type": "string"
           },
           "max_backoff_secs": {
@@ -3003,10 +2998,13 @@
             "default": true,
             "type": "boolean"
           },
-          "pair": {
-            "default": "twydo",
-            "description": "vdirsyncer pair name.",
-            "type": "string"
+          "password_command": {
+            "default": [],
+            "description": "Command (argv) whose output (trailing newlines removed) is the CalDAV password; run by vdirsyncer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "retention_days": {
             "default": 30,
@@ -3020,13 +3018,15 @@
             "minimum": 0,
             "type": "integer"
           },
-          "vdirsyncer_config": {
-            "default": null,
-            "description": "Passed to vdirsyncer as `VDIRSYNCER_CONFIG`.",
-            "type": [
-              "string",
-              "null"
-            ]
+          "url": {
+            "default": "",
+            "description": "CalDAV server URL.",
+            "type": "string"
+          },
+          "username": {
+            "default": "",
+            "description": "CalDAV username.",
+            "type": "string"
           }
         },
         "type": "object"
@@ -3911,7 +3911,7 @@
   },
   "info": {
     "title": "tdo",
-    "version": "1"
+    "version": "2"
   },
   "methods": [
     {
@@ -4752,5 +4752,5 @@
       }
     }
   },
-  "x-protocol": 1
+  "x-protocol": 2
 }
