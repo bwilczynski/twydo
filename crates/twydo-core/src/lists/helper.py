@@ -510,7 +510,7 @@ async def delete_collection(session, backup):
         if not isinstance(error, NotFoundError):
             raise
         status = 404
-    if not (200 <= status < 300 or status == 404):
+    if status not in (200, 202, 204, 404):
         raise Refused("dav")
 
 

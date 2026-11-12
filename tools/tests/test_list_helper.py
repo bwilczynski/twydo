@@ -395,7 +395,7 @@ class ListHelperTests(unittest.TestCase):
     def test_delete_treats_404_as_deleted_and_other_statuses_as_dav_failures(self):
         backup = self.captured()
         asyncio.run(self.h.delete_collection(InventoryDAV(delete_status=404), backup))
-        for status in (403, 405, 409, 423, 500):
+        for status in (207, 201, 403, 405, 409, 423, 500):
             with self.subTest(status=status), self.assertRaises(self.h.Refused) as caught:
                 asyncio.run(self.h.delete_collection(InventoryDAV(delete_status=status), backup))
             self.assertEqual(caught.exception.code, "dav")
