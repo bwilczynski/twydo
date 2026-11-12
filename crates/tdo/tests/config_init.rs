@@ -90,3 +90,54 @@ fn non_interactive_with_flags_writes_sync() {
     assert!(t.contains("password_command = [\"echo\", \"pw\"]"), "{t}");
     assert!(e.dir.path().join("home/.local/share/twydo/vdir").is_dir());
 }
+
+#[test]
+fn empty_flag_values_are_rejected_and_write_nothing() {
+    for (flag, args) in [
+        (
+            "--url",
+            [
+                "--url",
+                "",
+                "--username",
+                "alice",
+                "--password-command",
+                "true",
+            ],
+        ),
+        (
+            "--username",
+            [
+                "--url",
+                "https://dav.example.test/a/",
+                "--username",
+                " ",
+                "--password-command",
+                "true",
+            ],
+        ),
+        (
+            "--password-command",
+            [
+                "--url",
+                "https://dav.example.test/a/",
+                "--username",
+                "alice",
+                "--password-command",
+                "",
+            ],
+        ),
+    ] {
+        let e = Env::new();
+        let mut full = vec!["config", "init"];
+        full.extend(args);
+        let o = e.run(&full);
+        assert_eq!(o.status.code(), Some(2), "{flag}");
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains(flag),
+            "{flag}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        assert!(!e.cfg().exists(), "{flag}");
+    }
+}

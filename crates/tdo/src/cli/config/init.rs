@@ -51,6 +51,8 @@ pub enum InitError {
     Toml(#[from] toml_edit::TomlError),
     #[error("--password-command: {0}")]
     BadCommand(String),
+    #[error("{flag} must not be empty")]
+    Empty { flag: &'static str },
 }
 
 /// What the existing file says, read leniently (any keys allowed).
@@ -127,6 +129,11 @@ fn text_value(
     missing: Option<&'static str>,
 ) -> Result<String, InitError> {
     if let Some(f) = flag {
+        if f.trim().is_empty() {
+            return Err(InitError::Empty {
+                flag: missing.unwrap_or("the value"),
+            });
+        }
         return Ok(f);
     }
     let fallback = existing.or(default.map(String::from));
