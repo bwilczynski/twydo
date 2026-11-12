@@ -162,6 +162,18 @@ fn sidebar_card_create_edit_and_cancel_do_not_touch_task_data() {
 }
 
 #[test]
+fn card_explains_best_effort_overwrite_risk() {
+    let (_d, _cfg, _path, mut app) = setup();
+    select(&mut app, "a");
+    app.handle_key(key(KeyCode::Char('i')));
+    let text = render(&app).replace(['│', ' '], "");
+    assert!(
+        text.contains("canoverwriteasimultaneouschangemadeonanotherdevice"),
+        "{text}"
+    );
+}
+
+#[test]
 fn focus_views_cannot_be_edited_as_lists() {
     let (_d, _cfg, _path, mut app) = setup();
     app.focus = Pane::Sidebar;
