@@ -21,3 +21,5 @@ twydo-daemon = { path = "../twydo-daemon" }
 signal-hook = "0.3"
 libc = "0.2"
 unicode-width = "0.2.3"
+shell-words = "1"
+toml_edit = "0.25"

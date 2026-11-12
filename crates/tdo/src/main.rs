@@ -135,7 +135,11 @@ fn main() {
                 detach,
             ),
         }),
-        Command::Config { command } => std::process::exit(cli::config::run(command)),
+        Command::Config { command } => std::process::exit(cli::config::run(
+            command,
+            cli.vdir.as_deref(),
+            cli.socket.as_deref(),
+        )),
         Command::Conflicts { command } => {
             let target =
                 tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
