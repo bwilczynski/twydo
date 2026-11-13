@@ -287,10 +287,13 @@ impl Store {
     /// Runs recovery, then opens the journal. While any entry is stuck, writes return
     /// [`WriteError::Stuck`] until it is [abandoned](Store::abandon).
     pub fn open_with(cfg: &Config, matrix: Matrix) -> Result<(Store, RecoveryReport), WriteError> {
-        let writer = Writer::open(cfg, matrix)?;
         // Recovery takes the lock itself; the store holds none between operations (R2). A sync
         // holding the vdir defers it to the first write, which recovers under the lock anyway.
-        let report = try_recover(&writer.vdir, &writer.state)?.unwrap_or_default();
+        // It runs before the writer opens the journal: opening creates `journal/`, and a
+        // state directory without one is skipped by recovery.
+        let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
+        let report = try_recover(&cfg.vdir, &state)?.unwrap_or_default();
+        let writer = Writer::open(cfg, matrix)?;
         Ok((Store::shell(cfg, writer), report))
     }
 

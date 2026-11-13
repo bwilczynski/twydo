@@ -115,11 +115,11 @@ fn enqueue_then_drain_applies_the_item_once() {
 const DATA: &str = "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:0a04f22aeb294b719633c978fe1975e5\n\
                     SUMMARY:A2\nEND:VTODO\nEND:VCALENDAR\n";
 
-/// A 0.3.1 queue item (`kind: "op"`, with `prepared`) and journal entry, as the code at this
-/// task's base wrote them, with the task text shortened.
+/// A 0.3.1-shaped queue item (`kind: "op"`, with `prepared`) and journal entry. Generated
+/// after the refactor, with serde code unchanged by it, then shortened to a synthetic task.
 fn item_json() -> String {
     r#"{"format":1,"id":"20261104T150000000000Z-00000000-0000265988","created":"2026-11-04T15:00:00Z",
-"origin":{"tool":"op","pid":265988,"started":"2026-11-13T21:56:18.851287398Z"},
+"origin":{"tool":"op","pid":1,"started":"2026-01-01T00:00:00Z"},
 "label":"Synthetic title","request":{"session":"s1","request_id":"r1"},
 "kind":"op","op":{"Edit":{"uid":"0a04f22aeb294b719633c978fe1975e5","changes":[{"Summary":"Synthetic title"}]}},
 "prepared":{"entry":{"format":1,"id":"20261104T150000Z-fabb82b5","created":"2026-11-04T15:00:00Z",
@@ -160,4 +160,56 @@ fn a_0_3_1_queue_item_and_journal_entry_still_decode() {
         };
         assert_eq!(back, want, "{what} re-serializes to the same JSON");
     }
+}
+
+/// Marks a collection operation as active with a record that cannot be read: `ensure_idle`
+/// then refuses, as it does for an unfinished operation.
+fn fence(env: &Env) {
+    std::fs::create_dir_all(env.state.join("lists")).unwrap();
+    std::fs::write(env.state.join("lists/active"), "unfinished-op").unwrap();
+}
+
+#[test]
+fn commit_refuses_while_a_collection_operation_is_unfinished() {
+    let env = env();
+    let writer = Writer::open(&env.cfg, matrix()).unwrap();
+    let prepared = writer.plan(&env.snap(), &title("Fenced"), now()).unwrap();
+    fence(&env);
+    let lock = writer.lock(Duration::ZERO).unwrap().expect("lock is free");
+    assert!(lock.commit(prepared, &ctx(&env)).is_err());
+    drop(lock);
+    assert!(env.journal().is_empty());
+}
+
+#[test]
+fn enqueue_at_drain_skips_the_fence_that_enqueue_now_checks() {
+    let env = env();
+    let writer = Writer::open(&env.cfg, matrix()).unwrap();
+    let ctx = ctx(&env);
+    let op = title("Fenced");
+    let kind = |op: &Op| Kind::Op {
+        op: op.clone(),
+        prepared: writer.plan(&env.snap(), op, now()).unwrap(),
+    };
+    fence(&env);
+    assert!(
+        writer
+            .enqueue(kind(&op), "t", "daemon", Fence::Now, &ctx)
+            .is_err()
+    );
+    assert!(Queue::open(&env.state).unwrap().list().unwrap().is_empty());
+    writer
+        .enqueue(kind(&op), "t", "daemon", Fence::AtDrain, &ctx)
+        .unwrap();
+    assert_eq!(Queue::open(&env.state).unwrap().list().unwrap().len(), 1);
+}
+
+#[test]
+fn opening_a_store_recovers_before_the_journal_exists() {
+    let env = env();
+    // A state directory with no journal is skipped by recovery, even with a fence that would
+    // make `recover_locked` fail.
+    fence(&env);
+    let (_store, report) = twydo_core::store::Store::open_with(&env.cfg, matrix()).unwrap();
+    assert!(report.stuck.is_empty() && report.resumed.is_empty());
 }
