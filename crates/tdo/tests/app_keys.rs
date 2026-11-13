@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tdo::app::{App, Mode, Outcome, Pane, default_list};
+use tdo::app::{App, Mode, Outcome, Pane, SidebarEntry, default_list, inbox_list};
 use tdo::form::{Field, NewTarget};
 use tdo::write::Request;
 use twydo_core::config::Config;
@@ -539,22 +539,108 @@ fn sidebar_navigation_opens_views() {
     assert_eq!(
         items,
         vec![
+            View::List("inbox".into()),
             View::Today,
             View::All,
             View::Scheduled,
             View::Done,
             View::List("bills".into()),
-            View::List("inbox".into()),
             View::List("personal".into()),
             View::Next3Days,
         ]
     );
+    assert_eq!(items[a.sidebar_cursor], View::Today, "opens on Today");
     a.handle_key(key('h'));
     assert_eq!(a.focus, tdo::app::Pane::Sidebar);
     a.handle_key(key('j'));
     a.handle_key(code(KeyCode::Enter));
     assert_eq!(a.view, View::All);
     assert_eq!(a.focus, tdo::app::Pane::Tasks);
+}
+
+/// #68: the Inbox heads the focus lists: the config's `default_list`, else the list named
+/// Inbox, never an arbitrary first list; a hidden or archived Inbox stays out.
+#[test]
+fn inbox_heads_the_focus_lists() {
+    let focus = |s: Snapshot| {
+        let a = App::new(s, now());
+        a.sidebar_entries()
+            .into_iter()
+            .take_while(|e| *e != SidebarEntry::Heading("Lists".into()))
+            .collect::<Vec<_>>()
+    };
+    let item = |v: View| SidebarEntry::Item(v);
+    assert_eq!(
+        focus(snapshot_of(report())),
+        vec![
+            item(View::List("inbox".into())),
+            item(View::Today),
+            item(View::All),
+            item(View::Scheduled),
+            item(View::Done),
+        ]
+    );
+
+    let mut s = snapshot_of(report());
+    s.config.default_list = Some("personal".into());
+    assert_eq!(inbox_list(&s).as_deref(), Some("personal"));
+    let a = App::new(s, now());
+    assert_eq!(a.sidebar_items()[0], View::List("personal".into()));
+    assert_eq!(
+        a.sidebar_items()
+            .iter()
+            .filter(|v| **v == View::List("personal".into()))
+            .count(),
+        1,
+        "not repeated under Lists"
+    );
+    assert!(a.sidebar_items().contains(&View::List("inbox".into())));
+
+    let mut s = snapshot_of(report());
+    s.config.default_list = Some("gone".into());
+    assert_eq!(
+        inbox_list(&s).as_deref(),
+        Some("inbox"),
+        "an unknown default_list falls back to the list named Inbox"
+    );
+
+    let mut r = report();
+    r.collections.retain(|c| c.id != "inbox");
+    r.tasks.retain(|t| t.collection != "inbox");
+    let s = snapshot_of(r);
+    assert_eq!(inbox_list(&s), None, "no first-list fallback");
+    assert_eq!(App::new(s, now()).sidebar_items()[0], View::Today);
+
+    for archived in [false, true] {
+        let mut s = snapshot_of(report());
+        let prefs = s.config.lists.entry("inbox".into()).or_default();
+        if archived {
+            prefs.archived = true;
+        } else {
+            prefs.hidden = true;
+        }
+        let mut a = App::new(s, now());
+        assert_eq!(a.sidebar_items()[0], View::Today, "archived: {archived}");
+        assert!(!a.sidebar_items().contains(&View::List("inbox".into())));
+        // Like `:list`, `0` still opens it.
+        a.handle_key(key('0'));
+        assert_eq!(a.view, View::List("inbox".into()));
+    }
+}
+
+#[test]
+fn zero_opens_the_inbox() {
+    let mut a = app();
+    a.handle_key(key('0'));
+    assert_eq!(a.view, View::List("inbox".into()));
+
+    let mut r = report();
+    r.collections.retain(|c| c.id != "inbox");
+    r.tasks.retain(|t| t.collection != "inbox");
+    let mut a = App::new(snapshot_of(r), now());
+    a.handle_key(key('0'));
+    assert_eq!(a.view, View::Today);
+    assert_eq!(a.message.as_deref(), Some("no Inbox list"));
 }
 
 #[test]
