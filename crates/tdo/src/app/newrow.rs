@@ -167,6 +167,23 @@ impl App {
             .unwrap_or_else(|| self.snapshot.tasks[p].uid.clone())
     }
 
+    /// The task the open row is drawn next to. A row that appends to a parent (`a`, the
+    /// `Enter` chain) follows the parent's last nested item in the current snapshot, so items
+    /// that arrive after the save's answer still come before it.
+    pub fn new_row_anchor(&self) -> Option<String> {
+        let row = self.new_row.as_ref()?;
+        let appending = row.insertion.is_none() && row.below;
+        match row
+            .target
+            .parent
+            .as_deref()
+            .and_then(|p| self.snapshot.find(p))
+        {
+            Some(p) if appending => Some(self.last_item_anchor(p)),
+            _ => row.anchor.clone(),
+        }
+    }
+
     fn show_row(&mut self, target: NewTarget, anchor: Option<String>, below: bool) {
         self.message = None;
         self.new_row = Some(NewRow {

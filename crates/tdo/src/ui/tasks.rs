@@ -149,6 +149,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     let width = inner.width as usize;
     let items = items(app);
     let new_row = app.new_row.as_ref();
+    let new_anchor = app.new_row_anchor();
     if items.is_empty()
         && let Some(row) = new_row
     {
@@ -241,7 +242,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
                 }
                 row_no += 1;
                 let uid = &app.snapshot.tasks[r.task].uid;
-                let anchored = new_row.filter(|n| n.anchor.as_ref() == Some(uid));
+                let anchored = new_row.filter(|_| new_anchor.as_ref() == Some(uid));
                 let new_line = |below: bool| {
                     anchored.filter(|n| n.below == below).map(|n| {
                         let into = n.target.parent.as_ref() == Some(uid);
