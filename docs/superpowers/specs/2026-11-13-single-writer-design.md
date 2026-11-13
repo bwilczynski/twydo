@@ -186,12 +186,21 @@ pub struct History { done: Vec<Step>, undone: Vec<Step> }
 
 impl History {
     pub fn record(&mut self, title: String, s: &Submitted);
-    pub fn undo(&mut self, access: Access<'_>, ctx: &Ctx) -> Result<(Submitted, Option<Step>), WriteError>;
-    pub fn redo(&mut self, access: Access<'_>, ctx: &Ctx) -> Result<(Submitted, Option<Step>), WriteError>;
+    pub fn undo(&mut self, access: Access<'_>, origin: &str, ctx: &Ctx, drained: &mut Vec<Drained>)
+        -> Result<(Submitted, Step), WriteError>;
+    pub fn redo(/* the same */);
 }
 
-pub enum Access<'a> { Locked(&'a Locked<'a>), Queue(&'a Writer, Fence) }
+pub enum Access<'a> {
+    Try { writer: &'a Writer, wait: Duration, fence: Fence },   // lock only if a step needs it
+    Queue(&'a Writer, Fence),                                   // a long job holds the vdir
+}
 ```
+
+The history takes the vdir lock itself and only when a step needs it, which keeps today's
+waits: none to cancel a queued step, `wait` to revert an applied one, a single probe after
+re-queueing a cancelled one. Every drain it runs is appended to `drained`, also when the call
+then fails, so nothing is collected in a field.
 
 One list carries both the step and its title. `undo` and `redo` are today's `undo_last`,
 `redo_last` and `revert_step`, with the same rules: a queued step is cancelled if it is still
@@ -207,19 +216,21 @@ order; the plan confirms it against the `undid` title tests before deleting the 
 
 ### 4.4 The daemon
 
-`Shared` gains `writer: Writer`. One function in `writes.rs` is the only caller of
-`Writer::lock`:
+`Shared` gains `writer: Writer`. One function in `writes.rs` is the only way to the
+writer:
 
 ```rust
 fn with_vdir<T>(shared: &Shared, lane: &impl LaneHeld,
-                f: impl FnOnce(Option<&Locked>) -> Result<T, WriteError>) -> Result<T, RpcError>;
+                f: impl FnOnce(&Writer) -> T) -> Result<T, RpcError>;
 ```
 
-It takes the commit gate's read side, then the vdir lock, and runs `f`. `LaneHeld` is
-implemented by the write guard and the long guard, so the call needs a lane guard to compile.
-Every committing path goes through it: `op.submit`, `op.undo`, `op.redo`, `journal.revert`,
-`journal.abandon`, `journal.recover`, `conflicts.resolve`, `lists.recover`, the drains and
-startup recovery.
+It takes the commit gate's read side and runs `f` with the writer. `LaneHeld` is implemented
+by the write guard and the long guard, so the call needs a lane guard to compile. Every path
+that can commit, queue or drain goes through it: `op.submit`, `op.undo`, `op.redo`,
+`journal.revert`, `journal.abandon`, `journal.recover`, `conflicts.resolve`, `lists.recover`,
+the drains and startup recovery. Inside it the vdir lock is taken through the writer
+(`lock(250 ms)` for a task write or a drain, lazily by the history for an undo or redo,
+`lock_waiting` for the paths that cannot be queued).
 
 A task write then reads:
 
@@ -236,7 +247,7 @@ drainer can have missed the item, and an outside holder never drains. The `LongB
 already request a drain when the job has ended meanwhile (`writes.rs:620`).
 
 The lock-order comment shrinks accordingly: steps 3 to 5 of a task write (lane, commit gate,
-vdir lock) become "the lane, then `with_vdir`".
+vdir lock) become "the lane, then `with_vdir`, then the writer's lock".
 
 ### 4.5 The sync runner and conflict resolution
 
