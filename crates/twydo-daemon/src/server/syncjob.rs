@@ -6,7 +6,7 @@ use std::sync::Arc;
 use chrono::Utc;
 use serde_json::Value;
 use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, messages, switch_message};
-use twydo_core::sync::run::{RunOptions, run};
+use twydo_core::sync::run::{RunOptions, run_with};
 use twydo_core::sync::running;
 use twydo_core::sync::switch;
 
@@ -88,7 +88,7 @@ pub fn run_sync(
         reason,
     });
     shared.test_point("sync");
-    let ran = run(&shared.cfg, &opts, Utc::now());
+    let ran = run_with(&shared.cfg, &shared.matrix, &opts, Utc::now());
     let result = match ran {
         Ok(mut report) => {
             let mut m = messages(&shared.cfg, &report);
