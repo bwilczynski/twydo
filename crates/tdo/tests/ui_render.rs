@@ -232,12 +232,12 @@ fn glyphs_and_counts() {
     );
     let checklist = row_text(&buf, "Packing list");
     assert!(
-        checklist.contains('☰') && checklist.contains("[3]"),
+        checklist.contains('≡') && checklist.contains("[3]"),
         "{checklist}"
     );
     let water = row_text(&buf, "Water plants");
     assert!(water.contains('↺') && water.contains("weekly"), "{water}");
-    assert!(!water.contains('▤') && !water.contains('☰'), "{water}");
+    assert!(!water.contains('▤') && !water.contains('≡'), "{water}");
     for v in [View::Today, View::All, View::Scheduled] {
         let c = counts(&a.snapshot, &v, now());
         let want = if c.due_or_overdue > 0 {
@@ -1584,7 +1584,7 @@ fn type_marks_are_the_same_in_every_view() {
             continue;
         }
         let row = row_text(&buf, "Packing list");
-        assert!(row.contains("○ ☰"), "{view:?}: {row}");
+        assert!(row.contains("○ ≡"), "{view:?}: {row}");
         assert!(row.contains("[3]"), "{view:?}: {row}");
         assert!(!row.contains("checklist"), "{view:?}: {row}");
     }
@@ -1612,7 +1612,7 @@ fn repeating_parent_shows_repeat_and_mark() {
     let mut a = App::new(snapshot_at(dir.path()), now());
     a.view = View::All;
     let row = row_text(&render(&mut a, 160, 40), "Monthly checks");
-    for want in ["↺ ☰", "[1]", "monthly"] {
+    for want in ["↺ ≡", "[1]", "monthly"] {
         assert!(row.contains(want), "{want:?} not in {row}");
     }
 }
@@ -1671,7 +1671,7 @@ fn finished_parent_keeps_status_and_mark() {
     assert!(parent.contains("[3]"), "{parent}");
     let child = row_text(&buf, "Finished child");
     assert!(child.contains('✓'), "{child}");
-    assert!(!child.contains('▤') && !child.contains('☰'), "{child}");
+    assert!(!child.contains('▤') && !child.contains('≡'), "{child}");
 }
 
 #[test]

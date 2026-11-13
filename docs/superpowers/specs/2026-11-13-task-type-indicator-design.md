@@ -38,7 +38,7 @@ Row layout (Tasks pane):
 
 - **Status glyph:** `✓` completed, `✗` cancelled, `↺` repeating, `○` otherwise. This now
   applies to parents as well, which today show `[n]` in this column.
-- **Type mark:** `▤` project, `☰` checklist, blank for a plain task. A plain task with items
+- **Type mark:** `▤` project, `≡` checklist, blank for a plain task. A plain task with items
   shows `▤`, matching the documented "a plain task with items shows as a project". The column
   is 2 cells wide (mark plus a space) and is drawn only when some visible row has a mark, so a
   view with no parents keeps its current width. *(My call.)*
@@ -57,7 +57,8 @@ Details pane:
 
 ## Constraints
 
-- Keep the marks single-width. Before settling on `▤` / `☰`, check that they render one cell
+- Keep the marks single-width. The first pick for checklists, `☰` (U+2630), rendered two cells wide
+  in the demo terminal (Unicode 16 made the trigram block wide), so checklists use `≡` (U+2261). Before settling on `▤` / `≡`, check that they render one cell
   wide in a common terminal font; swap them for other single-width glyphs if they don't.
 - Update `docs/tui.md` (the Tasks-pane description and the ASCII sketch).
 

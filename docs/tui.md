@@ -14,7 +14,7 @@
 │   All   2│10 ││                                      ││ List    Inbox         │
 │   Scheduled 1││ TODAY                              2 ││ Type    Task          │
 │   Done      2││ ▌↺   Water plants      weekly  Today ││ Due     Yesterday     │
-│ ─ Lists ──── ││ ▌○ ☰ Packing list  [3]         Today ││                       │
+│ ─ Lists ──── ││ ▌○ ≡ Packing list  [3]         Today ││                       │
 │ ▌ Bills     6││                                      ││                       │
 │ ▌ Personal1│2││                                      ││                       │
 │ ─ Smart lists││                                      ││                       │
@@ -30,7 +30,7 @@
   shows. List groups come from `[[groups]]` in [config.md](config.md).
 - **Tasks** (middle): the current view under date-group headers. Each row starts with its
   status: `○` open, `✓` done, `✗` cancelled, `↺` repeating (with its rule on the right). A
-  type mark follows: `▤` a project, `☰` a checklist, nothing for a plain task (a plain task
+  type mark follows: `▤` a project, `≡` a checklist, nothing for a plain task (a plain task
   with items shows as a project). The same marks appear in every view, on empty, repeating and
   finished parents too, and `[3]` on the right counts a parent's items. The bar on the left is
   the list's colour. Overdue rows are red. Completed titles are struck through, including
