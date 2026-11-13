@@ -71,8 +71,8 @@ impl Store {
                 self.writer.check_holds(&w.path, w.before.as_deref())?;
             }
             let id = lock.run(entry)?;
-            self.done.push(super::Step::Applied(id.clone()));
-            self.undone.clear();
+            self.history
+                .record(String::new(), &super::Submitted::Applied(id.clone()));
             return Ok((id, true));
         }
         let mut source = crate::retired::snapshot(&active.config, backup_id)?;
@@ -178,8 +178,8 @@ impl Store {
         b.recovery = Some(entry.clone());
         crate::retired::save(&self.writer.state, &b)?;
         let id = lock.run(entry)?;
-        self.done.push(super::Step::Applied(id.clone()));
-        self.undone.clear();
+        self.history
+            .record(String::new(), &super::Submitted::Applied(id.clone()));
         Ok((id, true))
     }
 }

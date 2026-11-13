@@ -7,6 +7,7 @@
 
 mod family;
 pub mod fsio;
+pub mod history;
 pub mod journal;
 mod order;
 pub mod plan;
@@ -30,8 +31,9 @@ use crate::ical;
 use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
 use journal::{Entry, FORMAT, RequestRef, Stage, new_op_id, try_recover};
-use queue::{Item, Kind, Prepared, Queue};
+use queue::{Item, Kind, Prepared};
 
+pub use history::{Access, History, Step, StepState};
 pub use journal::RecoveryReport;
 pub use writer::{Ctx, Fence, Locked, Writer};
 
@@ -162,10 +164,8 @@ pub fn existing_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<Option<P
 pub struct Store {
     cfg: Config,
     writer: Writer,
-    /// Entries applied (or redone) this session, oldest first; `u` reverts the last.
-    done: Vec<Step>,
-    /// Undo entries of this session; `Ctrl-r` reverts the last. A new apply clears it.
-    undone: Vec<Step>,
+    /// The steps applied, queued or undone this session.
+    history: History,
     /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
     lock_wait: Option<Duration>,
     /// Stamped on every entry and queue item this store creates.
@@ -192,18 +192,6 @@ pub enum Submitted {
     Queued(Item),
     /// An undo removed a queued item before anything committed it.
     Cancelled,
-}
-
-/// One step of the session's undo or redo stack.
-#[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)]
-pub enum Step {
-    /// A committed journal entry.
-    Applied(String),
-    /// An item waiting in the queue (or committed since, which the journal then names).
-    Queued(Item),
-    /// An item an undo removed from the queue; a redo puts it back.
-    Cancelled(Item),
 }
 
 /// A queued item a drain dealt with.
@@ -262,6 +250,26 @@ macro_rules! ctx {
     };
 }
 
+/// What became of `item` among the `steps` a drain dealt with: committed, refused (the error
+/// behind it) or still queued.
+pub(crate) fn drained_outcome(steps: Vec<DrainStep>, item: Item) -> Result<Submitted, WriteError> {
+    for step in steps {
+        if step.drained.item.id != item.id {
+            continue;
+        }
+        return match (step.drained.outcome, step.error) {
+            (DrainOutcome::Applied(id) | DrainOutcome::AlreadyApplied(id), _) => {
+                Ok(Submitted::Applied(id))
+            }
+            (DrainOutcome::Refused(reason), error) => Err(match error {
+                Some(e) => e,
+                None => WriteError::Blocked(Blocked(reason)),
+            }),
+        };
+    }
+    Ok(Submitted::Queued(item))
+}
+
 /// The vdir lock as the store waits for it: blocking when `wait` is `None`, else retried
 /// for up to `wait` and [`WriteError::Busy`] if it stays held.
 fn lock_for(writer: &Writer, wait: Option<Duration>) -> Result<Locked<'_>, WriteError> {
@@ -307,8 +315,7 @@ impl Store {
         Store {
             cfg: cfg.clone(),
             writer,
-            done: Vec::new(),
-            undone: Vec::new(),
+            history: History::new(),
             lock_wait: None,
             request: None,
             vdir_busy: false,
@@ -386,8 +393,8 @@ impl Store {
         let prepared = self.prepare(snap, op, now)?;
         let lock = lock_for(&self.writer, self.lock_wait)?;
         let id = self.commit(&lock, prepared, now)?;
-        self.done.push(Step::Applied(id.clone()));
-        self.undone.clear();
+        self.history
+            .record(String::new(), &Submitted::Applied(id.clone()));
         Ok(id)
     }
 
@@ -457,9 +464,9 @@ impl Store {
             let drained = lock.drain(&ctx!(self, now))?;
             keep(&mut self.drained, self.collect_drained, &drained);
             let id = self.commit(&lock, prepared, now)?;
-            self.done.push(Step::Applied(id.clone()));
-            self.undone.clear();
-            return Ok(Submitted::Applied(id));
+            let submitted = Submitted::Applied(id);
+            self.history.record(String::new(), &submitted);
+            return Ok(submitted);
         }
         let item = self.writer.enqueue(
             Kind::Op {
@@ -472,17 +479,7 @@ impl Store {
             &ctx!(self, now),
         )?;
         let submitted = self.settle_pushed(item, now, after_push)?;
-        match &submitted {
-            Submitted::Applied(id) => {
-                self.done.push(Step::Applied(id.clone()));
-                self.undone.clear();
-            }
-            Submitted::Queued(item) => {
-                self.done.push(Step::Queued(item.clone()));
-                self.undone.clear();
-            }
-            Submitted::Cancelled => {}
-        }
+        self.history.record(String::new(), &submitted);
         Ok(submitted)
     }
 
@@ -512,21 +509,7 @@ impl Store {
         if self.collect_drained {
             self.drained.extend(steps.iter().map(|s| s.drained.clone()));
         }
-        for step in steps {
-            if step.drained.item.id != item.id {
-                continue;
-            }
-            return match (step.drained.outcome, step.error) {
-                (DrainOutcome::Applied(id) | DrainOutcome::AlreadyApplied(id), _) => {
-                    Ok(Submitted::Applied(id))
-                }
-                (DrainOutcome::Refused(reason), error) => Err(match error {
-                    Some(e) => e,
-                    None => WriteError::Blocked(Blocked(reason)),
-                }),
-            };
-        }
-        Ok(Submitted::Queued(item))
+        drained_outcome(steps, item)
     }
 
     /// Commits the queued items, oldest first, once the lock is free. [`WriteError::Busy`]
@@ -560,86 +543,57 @@ impl Store {
     /// while a sync holds it.
     pub fn undo(&mut self, id: &str, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
         let done = self.revert_or_queue(id, "op", "undo", now)?;
-        self.done
-            .retain(|d| !matches!(d, Step::Applied(d) if d == id));
+        self.history.forget_applied(id);
         Ok(done)
     }
 
     /// Undo the last step applied, queued or redone this session. Waits at most [`TRY_LOCK`]
     /// for the lock, never for a sync: a held lock queues the revert.
     pub fn undo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        while let Some(step) = self.done.last().cloned() {
-            match self.revert_step(&step, "undo", now)? {
-                Some((done, new)) => {
-                    self.done.pop();
-                    self.undone.push(new);
-                    return Ok(done);
-                }
-                None => {
-                    self.done.pop();
-                }
-            }
-        }
-        Err(WriteError::NothingToUndo)
+        self.step_history(true, now)
     }
 
     /// Redo the last undo of this session by reverting it.
     pub fn redo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        while let Some(step) = self.undone.last().cloned() {
-            match self.revert_step(&step, "redo", now)? {
-                Some((done, new)) => {
-                    self.undone.pop();
-                    self.done.push(new);
-                    return Ok(done);
-                }
-                None => {
-                    self.undone.pop();
-                }
-            }
-        }
-        Err(WriteError::NothingToRedo)
+        self.step_history(false, now)
     }
 
-    /// Reverts `step`: the result and the step for the other stack. `None` when `step` was a
-    /// queued item a drain refused, so nothing of it was ever written.
-    fn revert_step(
-        &mut self,
-        step: &Step,
-        label: &str,
-        now: DateTime<Utc>,
-    ) -> Result<Option<(Submitted, Step)>, WriteError> {
-        let done = match step {
-            Step::Applied(id) => self.revert_or_queue(id, "tui", label, now)?,
-            Step::Queued(item) => {
-                if self.writer.cancel(item, &ctx!(self, now))? {
-                    return Ok(Some((Submitted::Cancelled, Step::Cancelled(item.clone()))));
-                }
-                // A drainer got there first: the entry it commits names the item. Until that
-                // entry exists the drainer is mid-commit, unless it refused the item.
-                let Some(entry) = self.writer.journal.by_queue_id(&item.id)? else {
-                    if Queue::open(&self.writer.state)?.is_refused(&item.id)? {
-                        return Ok(None);
-                    }
-                    return Err(WriteError::Busy);
-                };
-                self.revert_or_queue(&entry.id, "tui", label, now)?
-            }
-            Step::Cancelled(item) => {
-                // The redo is a new request: its item, and the entry drained from it, carry it.
-                // A new id too, so the withdrawn item's record keeps answering for it.
-                let mut item = item.clone();
-                item.id = queue::new_id(now);
-                item.request = self.request.clone();
-                self.writer.push(&item, self.fence())?;
-                self.settle_pushed(item, now, &mut || {})?
+    /// [`History::undo`] (`undo`) or [`History::redo`]: under the lock when it is free within
+    /// [`TRY_LOCK`], else by queueing the revert and looking at the lock once more, so a revert
+    /// queued just as a sync released it is not stranded.
+    fn step_history(&mut self, undo: bool, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
+        let ctx = ctx!(self, now);
+        let run = |h: &mut History, access: Access<'_>| {
+            if undo {
+                h.undo(access, "tui", &ctx)
+            } else {
+                h.redo(access, "tui", &ctx)
             }
         };
-        let new = match &done {
-            Submitted::Applied(id) => Step::Applied(id.clone()),
-            Submitted::Queued(item) => Step::Queued(item.clone()),
-            Submitted::Cancelled => unreachable!("only a queued step is cancelled"),
+        if !self.vdir_busy
+            && let Some(lock) = self.writer.lock(TRY_LOCK)?
+        {
+            let result = run(&mut self.history, Access::Locked(&lock));
+            let own = self.history.take_drained();
+            keep(&mut self.drained, self.collect_drained, &own);
+            return result.map(|(done, _)| done);
+        }
+        let access = Access::Queue(&self.writer, self.fence());
+        let (done, moved) = run(&mut self.history, access)?;
+        let Submitted::Queued(item) = done else {
+            return Ok(done);
         };
-        Ok(Some((done, new)))
+        match self.settle_pushed(item.clone(), now, &mut || {}) {
+            Ok(Submitted::Applied(id)) => {
+                self.history.settled(&item.id, &id);
+                Ok(Submitted::Applied(id))
+            }
+            Ok(other) => Ok(other),
+            Err(e) => {
+                self.history.refused(undo, &item.id, moved);
+                Err(e)
+            }
+        }
     }
 
     /// Reverts entry `id` now if the lock is free within [`TRY_LOCK`], else queues the revert.
