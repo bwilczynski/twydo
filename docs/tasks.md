@@ -22,8 +22,17 @@ change archive state on the phone. Use `:lists` to find and unarchive a list.
 | **Project** | A task with items that are full tasks: each has its own due date, start date and repeat |
 
 In the TUI, a checklist shows `[3]` (its number of items) and the word `checklist`; a project shows
-`project`. `Enter` expands or collapses a parent in All and in lists; the Details pane lists its
-items. Today, Scheduled and Next 3 Days show a checklist's items under it.
+`project`. `Enter` expands or collapses a parent in every view; the Details pane lists its
+items. Parents start collapsed, except that Today, Scheduled and Next 3 Days show a checklist's
+items under it until you collapse it. Expanding or collapsing a parent in one view does the
+same in the others.
+
+In those date views and in Done, an expanded parent shows only the items that are not already
+rows of their own: a project task due today stays in its own date group in Today, while its
+undated tasks appear under the project. Done shows a parent's completed items; the other date
+views show its open ones, leaving out those not yet started except in Scheduled. A nested
+parent opens beneath its parent the same way. When every item is a row of its own, `Enter`
+says so instead of expanding, and the Details pane offers no `Enter` hint.
 
 Twydo reads nested projects and checklists (a parent inside a parent) but does not write to them.
 
@@ -313,9 +322,11 @@ Items nested under a checklist or project keep their own sequence: `DisplayOrder
 then creation time for tied positions. Missing or invalid positions count as zero; missing
 creation times come last, and remaining ties use UID for a stable order. The list's sort does
 not reorder nested items. In All and ordinary lists, children in the same active/future-start/
-completed section as their parent appear beneath it when expanded. Children in a different
-section appear separately with parent context, so a collapsed open parent cannot hide its
-completed children. Ordinary due-date buckets do not split an active family.
+completed section as their parent appear beneath it when expanded. An open child with no due or
+start date belongs to its open parent's section, as a checklist item does, so the undated tasks
+of a project that starts later sit under the project instead of under No due date. Other
+children in a different section appear separately with parent context, so a collapsed open
+parent cannot hide its completed children. Ordinary due-date buckets do not split an active family.
 Project items shown independently in Today and other flat date
 views still use that view's ordinary date sort.
 The Details pane uses the same item sequence. For legacy items tied on both position and

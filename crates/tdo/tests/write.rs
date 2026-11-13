@@ -571,7 +571,7 @@ mod verified_recurrence_tui {
             e.snapshot(),
             at.with_timezone(&chrono_tz::America::New_York),
         );
-        a.expanded.insert(parent.into());
+        a.expansion.expanded.insert(parent.into());
         a
     }
 

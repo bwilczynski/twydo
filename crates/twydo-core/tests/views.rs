@@ -1,6 +1,6 @@
 //! View membership, date groups, sorting and counts. All content is synthetic.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday};
@@ -11,7 +11,9 @@ use twydo_core::config::{Config, ListPrefs, Sort, SortField};
 use twydo_core::ical::value::IcalDateTime;
 use twydo_core::model::{Metadata, Status, Task, TaskKind};
 use twydo_core::vdir::{Collection, LoadReport, load};
-use twydo_core::views::{DateGroup, Snapshot, View, ViewResult, build_view, counts, date_group};
+use twydo_core::views::{
+    DateGroup, Expansion, Snapshot, View, ViewResult, build_view, counts, date_group, nested_count,
+};
 
 // ---------- builders ----------
 
@@ -188,8 +190,8 @@ fn uids(s: &Snapshot, r: &ViewResult) -> Vec<String> {
     flat(s, r).into_iter().map(|(_, u, _)| u).collect()
 }
 
-fn no_expand() -> HashSet<String> {
-    HashSet::new()
+fn no_expand() -> Expansion {
+    Expansion::default()
 }
 
 // ---------- tests ----------
@@ -565,7 +567,7 @@ fn counts_today_all() {
         11
     );
     // Expanded: children nest at depth 1 right after their parent.
-    let expanded: HashSet<String> = ["sv-bills-4", "sv-personal-2"]
+    let expanded: Expansion = ["sv-bills-4", "sv-personal-2"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -604,7 +606,7 @@ fn orphan_and_cyclic_parents_render_top_level() {
             s.tasks[i].warnings
         );
     }
-    let all: HashSet<String> = ["a", "b", "self"].iter().map(|s| s.to_string()).collect();
+    let all: Expansion = ["a", "b", "self"].iter().map(|s| s.to_string()).collect();
     let r = build_view(&s, &View::All, now(), &all);
     let mut rows = flat(&s, &r);
     rows.sort_by(|x, y| x.1.cmp(&y.1));
@@ -705,7 +707,8 @@ fn captured_checklist_and_project_keep_phone_item_order_under_list_sort_override
                     .uid
                     .clone();
                 for view in [View::All, View::List("list1".into())] {
-                    let result = build_view(&s, &view, now(), &HashSet::from([parent.clone()]));
+                    let result =
+                        build_view(&s, &view, now(), &[parent.clone()].into_iter().collect());
                     let titles: Vec<_> = result
                         .groups
                         .iter()
@@ -786,7 +789,7 @@ fn phone_edits_of_appended_items_keep_identity_order_and_unchanged_neighbors() {
                 .unwrap()
                 .uid
                 .clone();
-            let result = build_view(snap, &View::All, now(), &HashSet::from([parent]));
+            let result = build_view(snap, &View::All, now(), &[parent].into_iter().collect());
             let titles: Vec<_> = result
                 .groups
                 .iter()
@@ -825,7 +828,7 @@ fn nested_order_uses_position_then_creation_then_uid_with_safe_missing_values() 
             tasks.push(child);
         }
         let s = snapshot(tasks, &[]);
-        let result = build_view(&s, &View::All, now(), &HashSet::from(["parent".into()]));
+        let result = build_view(&s, &View::All, now(), &expand(&["parent"]));
         assert_eq!(
             uids(&s, &result),
             ["parent", "a", "b", "c", "d", "e", "f", "g"]
@@ -1233,7 +1236,7 @@ fn family_sections_show_completed_and_future_children_once_even_when_collapsed()
     );
     let r = build_view(&s, &View::All, now(), &no_expand());
     assert_eq!(uids(&s, &r), ["parent", "future-child", "done-child"]);
-    let r = build_view(&s, &View::All, now(), &HashSet::from(["parent".into()]));
+    let r = build_view(&s, &View::All, now(), &expand(&["parent"]));
     assert_eq!(
         uids(&s, &r),
         ["parent", "active-child", "future-child", "done-child"]
@@ -1384,4 +1387,290 @@ fn expired_completed_parent_does_not_hide_recent_children() {
         assert_eq!(uids(&s, &r), ["recent-child"]);
         assert_eq!(r.groups[0].1[0].parent_hint, Some(idx(&s, "old-parent")));
     }
+}
+
+// ---------- expansion in flat views (#8) ----------
+
+fn expand(uids: &[&str]) -> Expansion {
+    uids.iter().map(|u| u.to_string()).collect()
+}
+
+fn rows_of(s: &Snapshot, r: &ViewResult) -> Vec<(String, u8)> {
+    flat(s, r).into_iter().map(|(_, u, d)| (u, d)).collect()
+}
+
+fn row(u: &str, d: u8) -> (String, u8) {
+    (u.to_string(), d)
+}
+
+#[test]
+fn expanded_project_in_flat_view_shows_children_not_already_shown() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .due("2026-11-04")
+                .build(),
+            // Qualifies on its own: stays in place, not repeated under the parent.
+            TaskBuilder::new("due", "inbox")
+                .parent("p")
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("undated", "inbox").parent("p").build(),
+            TaskBuilder::new("later", "inbox")
+                .parent("p")
+                .start("2026-11-10")
+                .build(),
+            TaskBuilder::new("finished", "inbox")
+                .parent("p")
+                .completed_at("2026-11-03 09:00")
+                .build(),
+        ],
+        &[],
+    );
+    let p = idx(&s, "p");
+    let collapsed = build_view(&s, &View::Today, now(), &no_expand());
+    assert_eq!(rows_of(&s, &collapsed), [row("due", 0), row("p", 0)]);
+    assert!(!no_expand().is_open(&s, &View::Today, p));
+
+    let open = expand(&["p"]);
+    assert!(open.is_open(&s, &View::Today, p));
+    let r = build_view(&s, &View::Today, now(), &open);
+    assert_eq!(
+        rows_of(&s, &r),
+        [row("due", 0), row("p", 0), row("undated", 1)]
+    );
+    let undated = r
+        .groups
+        .iter()
+        .flat_map(|(_, rows)| rows)
+        .find(|row| row.task == idx(&s, "undated"))
+        .unwrap();
+    assert_eq!(undated.parent_hint, Some(p));
+    assert_eq!(r.counts, collapsed.counts, "expansion never changes counts");
+    assert_eq!(nested_count(&s, &View::Today, now(), p), 1);
+}
+
+#[test]
+fn checklists_in_date_views_start_open_and_collapse() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("cl", "inbox")
+                .kind(TaskKind::Checklist)
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("item", "inbox").parent("cl").build(),
+        ],
+        &[],
+    );
+    let cl = idx(&s, "cl");
+    let mut e = Expansion::default();
+    assert!(e.is_open(&s, &View::Today, cl));
+    assert!(!e.is_open(&s, &View::All, cl), "tree views start collapsed");
+    e.toggle(&s, &View::Today, cl);
+    assert!(!e.is_open(&s, &View::Today, cl));
+    assert_eq!(uids(&s, &build_view(&s, &View::Today, now(), &e)), ["cl"]);
+    e.toggle(&s, &View::Today, cl);
+    assert!(e.is_open(&s, &View::Today, cl));
+    assert_eq!(
+        uids(&s, &build_view(&s, &View::Today, now(), &e)),
+        ["cl", "item"]
+    );
+    // The state is shared: Today's toggle opened it in All too, and collapsing it in All
+    // collapses it in Today.
+    assert!(e.is_open(&s, &View::All, cl));
+    e.toggle(&s, &View::All, cl);
+    assert!(!e.is_open(&s, &View::Today, cl));
+    assert!(!e.is_open(&s, &View::All, cl));
+    e.toggle(&s, &View::Today, cl);
+    assert!(e.is_open(&s, &View::All, cl));
+    // Opening explicitly (adding an item) clears a collapse.
+    e.toggle(&s, &View::Today, cl);
+    e.open("cl");
+    assert!(e.is_open(&s, &View::Today, cl));
+    assert!(e.is_open(&s, &View::All, cl));
+}
+
+#[test]
+fn expanded_parent_in_done_shows_its_completed_children() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("cl", "inbox")
+                .kind(TaskKind::Checklist)
+                .completed_at("2026-11-04 08:00")
+                .build(),
+            TaskBuilder::new("ticked", "inbox")
+                .parent("cl")
+                .completed_at("2026-11-04 07:00")
+                .build(),
+            TaskBuilder::new("left", "inbox").parent("cl").build(),
+        ],
+        &[],
+    );
+    let cl = idx(&s, "cl");
+    assert!(!Expansion::default().is_open(&s, &View::Done, cl));
+    assert_eq!(
+        uids(&s, &build_view(&s, &View::Done, now(), &no_expand())),
+        ["cl"]
+    );
+    assert_eq!(
+        rows_of(&s, &build_view(&s, &View::Done, now(), &expand(&["cl"]))),
+        [row("cl", 0), row("ticked", 1)]
+    );
+}
+
+#[test]
+fn expanded_project_in_scheduled_shows_open_children() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .start("2026-11-10")
+                .build(),
+            TaskBuilder::new("undated", "inbox").parent("p").build(),
+            TaskBuilder::new("later", "inbox")
+                .parent("p")
+                .start("2026-11-12")
+                .build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::Scheduled, now(), &expand(&["p"]));
+    assert_eq!(
+        rows_of(&s, &r),
+        [row("p", 0), row("undated", 1), row("later", 0)]
+    );
+}
+
+#[test]
+fn undated_children_follow_a_future_parent_like_checklist_items() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .start("2026-11-10")
+                .due("2026-11-20")
+                .build(),
+            TaskBuilder::new("undated", "inbox").parent("p").build(),
+            // A child with its own date keeps its own place.
+            TaskBuilder::new("dated", "inbox")
+                .parent("p")
+                .due("2026-11-05")
+                .build(),
+            TaskBuilder::new("cl", "inbox")
+                .kind(TaskKind::Checklist)
+                .start("2026-11-10")
+                .build(),
+            TaskBuilder::new("item", "inbox").parent("cl").build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::All, now(), &no_expand());
+    assert_eq!(
+        rows_of(&s, &r),
+        [row("dated", 0), row("p", 0), row("cl", 0)]
+    );
+    assert_eq!(r.groups.last().unwrap().0, DateGroup::Future);
+    let r = build_view(&s, &View::All, now(), &expand(&["p", "cl"]));
+    assert_eq!(
+        rows_of(&s, &r),
+        [
+            row("dated", 0),
+            row("p", 0),
+            row("undated", 1),
+            row("cl", 0),
+            row("item", 1)
+        ]
+    );
+}
+
+#[test]
+fn undated_open_children_of_a_completed_parent_stay_visible() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .completed_at("2026-11-03 09:00")
+                .build(),
+            TaskBuilder::new("left", "inbox").parent("p").build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::All, now(), &no_expand());
+    assert_eq!(uids(&s, &r), ["left", "p"]);
+}
+
+#[test]
+fn expanding_a_project_in_done_adds_nothing_when_its_children_are_rows() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .completed_at("2026-11-04 08:00")
+                .build(),
+            TaskBuilder::new("c", "inbox")
+                .parent("p")
+                .completed_at("2026-11-03 08:00")
+                .build(),
+        ],
+        &[],
+    );
+    let p = idx(&s, "p");
+    assert_eq!(nested_count(&s, &View::Done, now(), p), 0);
+    assert_eq!(
+        uids(&s, &build_view(&s, &View::Done, now(), &expand(&["p"]))),
+        ["p", "c"]
+    );
+}
+
+#[test]
+fn next_3_days_nests_started_children_only() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .due("2026-11-05")
+                .build(),
+            TaskBuilder::new("undated", "inbox").parent("p").build(),
+            TaskBuilder::new("later", "inbox")
+                .parent("p")
+                .start("2026-11-10")
+                .build(),
+        ],
+        &[],
+    );
+    let p = idx(&s, "p");
+    assert_eq!(nested_count(&s, &View::Next3Days, now(), p), 1);
+    assert_eq!(
+        rows_of(
+            &s,
+            &build_view(&s, &View::Next3Days, now(), &expand(&["p"]))
+        ),
+        [row("p", 0), row("undated", 1)]
+    );
+}
+
+#[test]
+fn nested_parents_open_in_flat_views_like_tree_views() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("p", "inbox")
+                .kind(TaskKind::Project)
+                .due("2026-11-04")
+                .build(),
+            TaskBuilder::new("sub", "inbox")
+                .kind(TaskKind::Project)
+                .parent("p")
+                .build(),
+            TaskBuilder::new("leaf", "inbox").parent("sub").build(),
+        ],
+        &[],
+    );
+    let r = build_view(&s, &View::Today, now(), &expand(&["p"]));
+    assert_eq!(rows_of(&s, &r), [row("p", 0), row("sub", 1)]);
+    let r = build_view(&s, &View::Today, now(), &expand(&["p", "sub"]));
+    assert_eq!(
+        rows_of(&s, &r),
+        [row("p", 0), row("sub", 1), row("leaf", 2)]
+    );
 }

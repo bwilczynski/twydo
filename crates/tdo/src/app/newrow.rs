@@ -151,8 +151,7 @@ impl App {
 
     /// The item row at the end of parent `p`'s items, expanding it.
     fn open_item_row(&mut self, p: usize) {
-        let uid = self.snapshot.tasks[p].uid.clone();
-        self.expanded.insert(uid);
+        self.expansion.open(&self.snapshot.tasks[p].uid);
         let anchor = self.last_item_anchor(p);
         let target = self.item_target(p);
         self.show_row(target, Some(anchor), true);
@@ -161,11 +160,9 @@ impl App {
     fn last_item_anchor(&self, p: usize) -> String {
         self.visible_rows()
             .iter()
-            // Detached Future/Done children are not anchors for this parent's item row.
-            .rfind(|r| {
-                self.snapshot.parent(r.task) == Some(p)
-                    && (r.depth > 0 || !matches!(self.view, View::All | View::List(_)))
-            })
+            // Children shown on their own rows (detached sections, other date groups) are not
+            // anchors for this parent's item row; only those nested beneath it are.
+            .rfind(|r| self.snapshot.parent(r.task) == Some(p) && r.depth > 0)
             .map(|r| self.snapshot.tasks[r.task].uid.clone())
             .unwrap_or_else(|| self.snapshot.tasks[p].uid.clone())
     }

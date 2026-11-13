@@ -118,7 +118,7 @@ fn enter_toggles_parent() {
     a.cursor = pos;
     let uid = a.snapshot.tasks[a.selected().unwrap()].uid.clone();
     a.handle_key(code(KeyCode::Enter));
-    assert!(a.expanded.contains(&uid));
+    assert!(a.expansion.expanded.contains(&uid));
     assert!(
         a.form.is_none(),
         "Enter on a parent toggles, it does not edit"
@@ -126,8 +126,61 @@ fn enter_toggles_parent() {
     assert_eq!(a.visible_rows().len(), before + 2);
     assert!(a.message.is_none());
     a.handle_key(code(KeyCode::Enter));
-    assert!(!a.expanded.contains(&uid));
+    assert!(!a.expansion.expanded.contains(&uid));
     assert_eq!(a.visible_rows().len(), before);
+}
+
+#[test]
+fn enter_toggles_parents_in_date_views() {
+    // A project and a checklist due today; the project's tasks fall on later days.
+    let mut r = report();
+    for t in r.tasks.iter_mut() {
+        if t.uid == "sv-bills-4" || t.uid == "sv-personal-2" {
+            t.due = Some(twydo_core::ical::value::IcalDateTime::Date(
+                now().date_naive(),
+            ));
+        }
+    }
+    let mut a = App::new(snapshot_of(r), now());
+    a.handle_key(key('1'));
+    assert_eq!(a.view, View::Today);
+    let select = |a: &mut App, title: &str| {
+        a.cursor = titles(a).iter().position(|t| t == title).unwrap();
+    };
+
+    let before = titles(&a);
+    assert!(!before.contains(&"Collect receipts".to_string()));
+    select(&mut a, "Prepare tax return");
+    a.handle_key(code(KeyCode::Enter));
+    assert!(
+        a.form.is_none(),
+        "Enter on a parent toggles, it does not edit"
+    );
+    let open = titles(&a);
+    let p = open.iter().position(|t| t == "Prepare tax return").unwrap();
+    assert_eq!(open.len(), before.len() + 2);
+    assert!(open[p + 1..p + 3].contains(&"Collect receipts".to_string()));
+    // The expansion carries into All, where the project's tasks nest beneath it.
+    a.handle_key(key('2'));
+    let all = titles(&a);
+    let p = all.iter().position(|t| t == "Prepare tax return").unwrap();
+    assert!(all[p + 1..p + 3].contains(&"Collect receipts".to_string()));
+    a.handle_key(key('1'));
+    select(&mut a, "Prepare tax return");
+    a.handle_key(code(KeyCode::Enter));
+    assert_eq!(titles(&a), before);
+
+    // Checklists in Today start open; Enter collapses them.
+    assert!(before.contains(&"Passport".to_string()));
+    select(&mut a, "Packing list");
+    a.handle_key(code(KeyCode::Enter));
+    assert!(!titles(&a).contains(&"Passport".to_string()));
+    assert_eq!(
+        a.snapshot.tasks[a.selected().unwrap()].summary,
+        "Packing list"
+    );
+    a.handle_key(code(KeyCode::Enter));
+    assert_eq!(titles(&a), before);
 }
 
 #[test]
@@ -1738,9 +1791,12 @@ fn a_on_parent_opens_row_at_end_and_expands() {
     let mut a = app();
     in_all(&mut a, "Prepare tax return");
     let project = selected_uid(&a);
-    assert!(!a.expanded.contains(&project));
+    assert!(!a.expansion.expanded.contains(&project));
     a.handle_key(key('a'));
-    assert!(a.expanded.contains(&project), "the parent expands");
+    assert!(
+        a.expansion.expanded.contains(&project),
+        "the parent expands"
+    );
     let last_item = |a: &App| {
         let p = a.snapshot.find(&project).unwrap();
         a.visible_rows()
@@ -2234,7 +2290,7 @@ fn completing_an_item_selects_the_next_item_instead_of_done() {
                 }
                 let mut a = App::new(snapshot_of(r.clone()), now());
                 a.view = view.clone();
-                a.expanded.insert("sv-bills-4".into());
+                a.expansion.expanded.insert("sv-bills-4".into());
                 a.cursor = a
                     .visible_rows()
                     .iter()
@@ -2271,7 +2327,7 @@ fn completing_an_item_selects_the_next_item_instead_of_done() {
 fn refused_item_completion_preserves_selection_after_reordering() {
     let mut a = app();
     a.view = View::List("bills".into());
-    a.expanded.insert("sv-bills-4".into());
+    a.expansion.expanded.insert("sv-bills-4".into());
     a.cursor = a
         .visible_rows()
         .iter()
@@ -2322,7 +2378,7 @@ fn reopening_detached_child_keeps_selection_under_a_collapsed_parent() {
             // An unchanged reload keeps the child detached and its parent collapsed.
             a.reload(completed.clone());
             assert_eq!(selected_uid(&a), uid);
-            assert!(!a.expanded.contains(&parent_uid));
+            assert!(!a.expansion.expanded.contains(&parent_uid));
             assert_eq!(
                 write_op(a.handle_key(key('x'))),
                 Op::Reopen { uid: uid.clone() }
@@ -2335,7 +2391,7 @@ fn reopening_detached_child_keeps_selection_under_a_collapsed_parent() {
 
             assert_eq!(selected_uid(&a), uid, "{view:?}, {kind:?}");
             assert_eq!(a.visible_rows()[a.cursor].depth, 1);
-            assert!(a.expanded.contains(&parent_uid));
+            assert!(a.expansion.expanded.contains(&parent_uid));
         }
     }
 }
@@ -2410,7 +2466,7 @@ fn structure_app() -> App {
 fn structure_keys_indent_to_nearest_parent_in_list() {
     let mut a = structure_app();
     // The nearest eligible displayed parent above a leaf is the actual requested parent.
-    a.expanded.extend(
+    a.expansion.expanded.extend(
         a.snapshot
             .tasks
             .iter()
@@ -2458,7 +2514,7 @@ fn structure_keys_indent_to_nearest_parent_in_list() {
 #[test]
 fn structure_keys_outdent_and_checklist_confirmation() {
     let mut a = structure_app();
-    a.expanded.extend(
+    a.expansion.expanded.extend(
         a.snapshot
             .tasks
             .iter()
@@ -2625,7 +2681,7 @@ fn delete_targets_the_selected_item_and_reload_keeps_its_empty_parent() {
         let uid = format!("{parent}-{child}");
         let at = NY.with_ymd_and_hms(2026, 11, 7, 11, 0, 0).unwrap();
         let mut a = App::new(snapshot_of(r.clone()), at);
-        a.expanded.insert(parent.clone());
+        a.expansion.expanded.insert(parent.clone());
         a.handle_key(key(if done { '4' } else { '2' }));
         a.cursor = a
             .visible_rows()

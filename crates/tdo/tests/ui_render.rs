@@ -207,7 +207,7 @@ fn completed_parents_and_nested_items_have_crossed_out_titles() {
     }
     let mut a = App::new(snap, now());
     a.view = View::All;
-    a.expanded.insert("p".into());
+    a.expansion.expanded.insert("p".into());
     let buf = render(&mut a, 160, 40);
     for title in ["Synthetic project", "Finished child"] {
         let (x, y) = find_in_tasks(&buf, title);
@@ -486,7 +486,7 @@ fn overdue_red_is_decided_per_row() {
     let later = NY.with_ymd_and_hms(2026, 11, 10, 10, 0, 0).unwrap();
     let mut a = App::new(snapshot_at(&root), later);
     a.view = View::All;
-    a.expanded.insert("sv-bills-4".into());
+    a.expansion.expanded.insert("sv-bills-4".into());
     let buf = render(&mut a, 120, 40);
     let (x, y) = find_in_tasks(&buf, "Collect receipts");
     assert_eq!(buf[(x, y)].fg, Color::Red, "{}", text(&buf));
@@ -1101,7 +1101,7 @@ fn details_and_task_list_share_captured_checklist_and_project_item_order() {
         }
         let mut a = App::new(snapshot_at(dir.path()), now());
         let parent = select(&mut a, title);
-        a.expanded.insert(parent);
+        a.expansion.expanded.insert(parent);
         let buf = render(&mut a, 160, 30);
         let details = details_lines(&buf);
         let mut previous = 0;
@@ -1141,7 +1141,7 @@ fn details_list_a_projects_open_tasks_and_completed_count() {
     assert!(lines[sooner].contains("Tomorrow"), "{}", lines[sooner]);
     assert!(at("+ 1 completed") > sooner);
     assert!(!lines.iter().any(|l| l.contains("Finished child")));
-    at("Enter: expand in list");
+    at("Enter: expand");
 }
 
 #[test]
@@ -1149,9 +1149,9 @@ fn details_of_an_expanded_project_offer_collapse() {
     let dir = project_vdir();
     let mut a = App::new(snapshot_at(dir.path()), now());
     let uid = select(&mut a, "Synthetic project");
-    a.expanded.insert(uid);
+    a.expansion.expanded.insert(uid);
     let t = details_lines(&render(&mut a, 140, 30)).join("\n");
-    assert!(t.contains("Enter: collapse in list"), "{t}");
+    assert!(t.contains("Enter: collapse"), "{t}");
 }
 
 #[test]
@@ -1164,7 +1164,7 @@ fn details_of_a_leaf_task_have_no_task_list() {
 }
 
 #[test]
-fn details_in_a_flat_view_list_tasks_without_the_enter_hint() {
+fn details_in_a_flat_view_offer_enter_like_tree_views() {
     let parent = todo(
         "p",
         "Synthetic project",
@@ -1181,7 +1181,88 @@ fn details_in_a_flat_view_list_tasks_without_the_enter_hint() {
     let t = details_lines(&render(&mut a, 140, 30)).join("\n");
     assert!(t.contains("Synthetic project"), "{t}");
     assert!(t.contains("Undated child"), "{t}");
+    assert!(t.contains("Enter: expand"), "{t}");
+    a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let t = details_lines(&render(&mut a, 140, 30)).join("\n");
+    assert!(t.contains("Enter: collapse"), "{t}");
+}
+
+/// A project due today with child "c" (`child_extra` adds its fields) and, if `undated`, an
+/// undated child "u".
+fn family_app(child_extra: &str, undated: bool) -> (tempfile::TempDir, App) {
+    let parent = todo(
+        "p",
+        "Synthetic project",
+        "X-2DOAPP-METADATA:@tasktype:project\r\nDUE;VALUE=DATE:20261104\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let child = todo(
+        "c",
+        "Synthetic child",
+        &format!("RELATED-TO:p\r\n{child_extra}STATUS:NEEDS-ACTION\r\n"),
+    );
+    let u = todo(
+        "u",
+        "Undated child",
+        "RELATED-TO:p\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let mut files = vec![("p.ics", parent.as_str()), ("c.ics", child.as_str())];
+    if undated {
+        files.push(("u.ics", u.as_str()));
+    }
+    let dir = vdir_with(&files);
+    let a = App::new(snapshot_at(dir.path()), now());
+    (dir, a)
+}
+
+fn cursor_on(a: &mut App, title: &str) {
+    a.cursor = a
+        .visible_rows()
+        .iter()
+        .position(|r| a.snapshot.tasks[r.task].summary == title)
+        .unwrap();
+}
+
+#[test]
+fn enter_explains_a_parent_with_nothing_to_nest() {
+    // The only child is due today, so it is a row of its own in Today.
+    let (_dir, mut a) = family_app("DUE;VALUE=DATE:20261104\r\n", false);
+    cursor_on(&mut a, "Synthetic project");
+    let rows = a.visible_rows().len();
+    let t = details_lines(&render(&mut a, 140, 30)).join("\n");
+    assert!(t.contains("Synthetic child"), "{t}");
     assert!(!t.contains("Enter:"), "{t}");
+    a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(a.message.as_deref().is_some_and(|m| m.contains("own rows")));
+    assert!(a.expansion.expanded.is_empty());
+    assert_eq!(a.visible_rows().len(), rows);
+}
+
+#[test]
+fn rows_nested_under_their_parent_have_no_parent_hint() {
+    let (_dir, mut a) = family_app("DUE;VALUE=DATE:20261104\r\n", true);
+    assert_eq!(a.view, View::Today);
+    a.expansion.open("p");
+    let t = text(&render(&mut a, 140, 30));
+    let row = |title: &str| {
+        let task = format!("○   {title}");
+        t.lines().find(|l| l.contains(&task)).unwrap().to_string()
+    };
+    assert!(!row("Undated child").contains('↳'), "{t}");
+    assert!(
+        row("Synthetic child").contains("↳ Synthetic project"),
+        "{t}"
+    );
+}
+
+#[test]
+fn new_item_row_follows_nested_items_not_detached_children() {
+    // In Next 3 Days the child due tomorrow is its own row in a later group.
+    let (_dir, mut a) = family_app("DUE;VALUE=DATE:20261105\r\n", true);
+    a.view = View::Next3Days;
+    cursor_on(&mut a, "Synthetic project");
+    a.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    let row = a.new_row.as_ref().expect("the item row opens");
+    assert_eq!(row.anchor.as_deref(), Some("u"));
 }
 
 /// Two tasks due today; the first ("Long notes task") has 40 lines of notes.
