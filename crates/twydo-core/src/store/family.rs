@@ -19,7 +19,8 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 
-use super::{Plan, Store, Target, WriteError, create};
+use super::plan::{Plan, Planner, Target, create};
+use super::{Store, WriteError};
 
 use super::journal::{FamilyGuard as Family, check_family};
 use crate::edit::Op;
@@ -31,6 +32,20 @@ use crate::ical;
 use crate::model::{Status, TaskKind};
 use crate::views::Snapshot;
 
+impl Store {
+    /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
+    /// item of the parent that was not loaded. The caller holds the lock.
+    pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
+        check_family(&self.vdir, f).map_err(|err| match err {
+            super::journal::ApplyError::Conflict { path } => {
+                WriteError::Stale(self.vdir.join(path))
+            }
+            super::journal::ApplyError::Io(err) => err.into(),
+            err => super::io_error(std::io::ErrorKind::InvalidInput, err.to_string()),
+        })
+    }
+}
+
 /// A loaded child and its status.
 struct Child {
     uid: String,
@@ -38,7 +53,7 @@ struct Child {
     target: Target,
 }
 
-impl Store {
+impl Planner<'_> {
     /// Keep the text capability's structural dependencies through recovery and undo.
     pub(super) fn text_edit_head(&self, snap: &Snapshot, op: &Op) -> Option<usize> {
         let (uid, changes) = match op {
@@ -209,18 +224,6 @@ impl Store {
             },
         ];
         Ok(guards)
-    }
-
-    /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
-    /// item of the parent that was not loaded. The caller holds the lock.
-    pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
-        check_family(&self.vdir, f).map_err(|err| match err {
-            super::journal::ApplyError::Conflict { path } => {
-                WriteError::Stale(self.vdir.join(path))
-            }
-            super::journal::ApplyError::Io(err) => err.into(),
-            err => super::io_error(std::io::ErrorKind::InvalidInput, err.to_string()),
-        })
     }
 
     fn children(&self, snap: &Snapshot, idx: usize) -> Result<Vec<Child>, WriteError> {
