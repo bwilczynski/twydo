@@ -558,42 +558,32 @@ impl Store {
         self.step_history(false, now)
     }
 
-    /// [`History::undo`] (`undo`) or [`History::redo`]: under the lock when it is free within
-    /// [`TRY_LOCK`], else by queueing the revert and looking at the lock once more, so a revert
-    /// queued just as a sync released it is not stranded.
+    /// [`History::undo`] (`undo`) or [`History::redo`], locking lazily for at most [`TRY_LOCK`]
+    /// unless a sync is known to be running.
     fn step_history(&mut self, undo: bool, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
         let ctx = ctx!(self, now);
-        let run = |h: &mut History, access: Access<'_>| {
-            if undo {
-                h.undo(access, "tui", &ctx)
-            } else {
-                h.redo(access, "tui", &ctx)
+        let fence = self.fence();
+        let access = if self.vdir_busy {
+            Access::Queue(&self.writer, fence)
+        } else {
+            Access::Try {
+                writer: &self.writer,
+                wait: TRY_LOCK,
+                fence,
             }
         };
-        if !self.vdir_busy
-            && let Some(lock) = self.writer.lock(TRY_LOCK)?
-        {
-            let result = run(&mut self.history, Access::Locked(&lock));
-            let own = self.history.take_drained();
-            keep(&mut self.drained, self.collect_drained, &own);
-            return result.map(|(done, _)| done);
-        }
-        let access = Access::Queue(&self.writer, self.fence());
-        let (done, moved) = run(&mut self.history, access)?;
-        let Submitted::Queued(item) = done else {
-            return Ok(done);
+        let mut scratch = Vec::new();
+        let sink = if self.collect_drained {
+            &mut self.drained
+        } else {
+            &mut scratch
         };
-        match self.settle_pushed(item.clone(), now, &mut || {}) {
-            Ok(Submitted::Applied(id)) => {
-                self.history.settled(&item.id, &id);
-                Ok(Submitted::Applied(id))
-            }
-            Ok(other) => Ok(other),
-            Err(e) => {
-                self.history.refused(undo, &item.id, moved);
-                Err(e)
-            }
-        }
+        let moved = if undo {
+            self.history.undo(access, "tui", &ctx, sink)
+        } else {
+            self.history.redo(access, "tui", &ctx, sink)
+        };
+        moved.map(|(done, _)| done)
     }
 
     /// Reverts entry `id` now if the lock is free within [`TRY_LOCK`], else queues the revert.
