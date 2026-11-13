@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/bwilczynski/twydo/compare/v0.3.1...v0.3.2) - 2026-11-13
+
+### Added
+
+- *(tui)* name the task type in details
+- *(tui)* mark projects and checklists on every row
+
+### Fixed
+
+- *(tui)* mark checklists with a single-width glyph
+
 ## [0.3.1](https://github.com/bwilczynski/twydo/compare/v0.3.0...v0.3.1) - 2026-11-13
 
 ### Added
