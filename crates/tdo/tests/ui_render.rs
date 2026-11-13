@@ -1730,3 +1730,49 @@ fn narrow_pane_drops_hint_before_count() {
         }
     }
 }
+
+/// The value on the Details line labelled `Type`, and whether it follows the `List` line.
+fn details_type(a: &mut App) -> (String, bool) {
+    let lines = details_lines(&render(a, 140, 30));
+    let at = lines
+        .iter()
+        .position(|l| l.contains("Type    "))
+        .unwrap_or_else(|| panic!("no Type line:\n{}", lines.join("\n")));
+    let after_list = at > 0 && lines[at - 1].contains("List    ");
+    let value = lines[at].split("Type").nth(1).unwrap().trim();
+    (value.trim_end_matches('│').trim().to_string(), after_list)
+}
+
+#[test]
+fn details_show_the_type() {
+    for (title, want) in [
+        ("Prepare tax return", "Project"),
+        ("Packing list", "Checklist"),
+        ("Pay water bill", "Task"),
+    ] {
+        let mut a = app();
+        a.view = View::All;
+        render(&mut a, 140, 30);
+        cursor_on(&mut a, title);
+        assert_eq!(details_type(&mut a), (want.to_string(), true), "{title}");
+    }
+}
+
+#[test]
+fn details_type_of_plain_task_with_items_is_project() {
+    let dir = vdir_with(&[
+        (
+            "t.ics",
+            &todo("t", "Plain parent", "STATUS:NEEDS-ACTION\r\n"),
+        ),
+        (
+            "t1.ics",
+            &todo("t1", "Its item", "RELATED-TO:t\r\nSTATUS:NEEDS-ACTION\r\n"),
+        ),
+    ]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.view = View::All;
+    render(&mut a, 140, 30);
+    cursor_on(&mut a, "Plain parent");
+    assert_eq!(details_type(&mut a).0, "Project");
+}

@@ -11,7 +11,9 @@ use twydo_core::model::Status;
 use twydo_core::model::repeat::{describe, parse_rrule};
 use twydo_core::views::{compare_items, nested_count};
 
-use super::tasks::glyph;
+use twydo_core::model::TaskKind;
+
+use super::tasks::{glyph, shown_kind, type_mark};
 use super::{dim, list_name, pane_block, theme};
 use crate::app::{App, Pane};
 
@@ -41,6 +43,15 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
         Line::styled(t.summary.clone(), Style::new().add_modifier(Modifier::BOLD)),
         Line::raw(""),
         field("List", list_name(&app.snapshot, &t.collection)),
+        field(
+            "Type",
+            match shown_kind(app, idx) {
+                TaskKind::Task => "Task",
+                TaskKind::Project => "Project",
+                TaskKind::Checklist => "Checklist",
+            }
+            .into(),
+        ),
     ];
     if let Some(d) = &t.due {
         lines.push(field("Due", relative_date(d, app.now)));
@@ -111,7 +122,11 @@ fn children(app: &App, idx: usize) -> Vec<Line<'static>> {
     ];
     for c in open {
         let t = &snap.tasks[c];
-        let mut spans = vec![Span::raw(format!("{} {}", glyph(app, c), t.summary))];
+        let mark = match type_mark(app, c) {
+            "" => String::new(),
+            m => format!("{m} "),
+        };
+        let mut spans = vec![Span::raw(format!("{} {mark}{}", glyph(app, c), t.summary))];
         if let Some(d) = &t.due {
             spans.push(Span::styled(
                 format!("  {}", relative_date(d, app.now)),
