@@ -8,13 +8,13 @@
 ## The screen
 
 ```
-╭ Views ───────╮╭ Today · Monday 2 Nov ─────────────────╮╭ Details ──────────────╮
-│ ▌ Inbox   1│2││ OVERDUE                             1 ││ Renew library books   │
-│ ◷ Today  2│3 ││ ▌○ Renew library books    Yesterday  ││                       │
+╭ Views ───────╮╭ Today · Monday 2 Nov ────────────────╮╭ Details ──────────────╮
+│ ▌ Inbox   1│2││ OVERDUE                            1 ││ Renew library books   │
+│ ◷ Today  2│3 ││ ▌○   Renew library books   Yesterday ││                       │
 │   All   2│10 ││                                      ││ List    Inbox         │
-│   Scheduled 1││ TODAY                               1 ││ Due     Yesterday     │
-│   Done      2││ ▌↺ Water plants    weekly   Today    ││                       │
-│ ─ Lists ──── ││                                      ││                       │
+│   Scheduled 1││ TODAY                              2 ││ Type    Task          │
+│   Done      2││ ▌↺   Water plants      weekly  Today ││ Due     Yesterday     │
+│ ─ Lists ──── ││ ▌○ ☰ Packing list  [3]         Today ││                       │
 │ ▌ Bills     6││                                      ││                       │
 │ ▌ Personal1│2││                                      ││                       │
 │ ─ Smart lists││                                      ││                       │
@@ -28,11 +28,14 @@
   else the list named Inbox; without either, the focus lists start at Today. `2│3` is
   "due today or overdue │ all"; see [tasks.md](tasks.md#views-and-date-groups) for what each view
   shows. List groups come from `[[groups]]` in [config.md](config.md).
-- **Tasks** (middle): the current view under date-group headers. `○` a task, `↺` a repeating
-  task with its rule, `[3]` a checklist or project with 3 items. The bar on the left is the
-  list's colour. Overdue rows are red. Completed titles are struck through, including
+- **Tasks** (middle): the current view under date-group headers. Each row starts with its
+  status: `○` open, `✓` done, `✗` cancelled, `↺` repeating (with its rule on the right). A
+  type mark follows: `▤` a project, `☰` a checklist, nothing for a plain task (a plain task
+  with items shows as a project). The same marks appear in every view, on empty, repeating and
+  finished parents too, and `[3]` on the right counts a parent's items. The bar on the left is
+  the list's colour. Overdue rows are red. Completed titles are struck through, including
   selected rows, projects/checklists and their completed items.
-- **Details** (right): the selected task's list, dates, repeat, alerts, warnings, its items (on a
+- **Details** (right): the selected task's list, type (Task, Project or Checklist), dates, repeat, alerts, warnings, its items (on a
   parent) and notes. It appears when the terminal is at least 110 columns wide.
 - **Status line**: the mode (`NORMAL`, `INSERT`, `COMMAND`), the focused pane, key hints or the
   last message, and the position in the view. An indicator appears when files could not be read
