@@ -1238,7 +1238,7 @@ mod item_order {
                 &snap,
                 &twydo_core::views::View::All,
                 now().with_timezone(&chrono_tz::America::New_York),
-                &std::collections::HashSet::from([parent.clone()]),
+                &[parent.clone()].into_iter().collect(),
             );
             let titles: Vec<_> = result
                 .groups

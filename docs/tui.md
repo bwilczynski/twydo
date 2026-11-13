@@ -77,7 +77,7 @@ gets no answer within 8 seconds, it says
 | `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
 | `Enter` in the sidebar | open the view or list |
 | `o` / `i` in the sidebar | create / edit a list |
-| `Enter` on a parent | expand or collapse its items (All and lists) |
+| `Enter` on a parent | expand or collapse its items, in every view |
 | `/`, then `n` / `N` | search the current view by title; `Enter` keeps the filter, `Esc` clears it |
 | `?` | help; `Esc` closes it |
 
@@ -194,7 +194,8 @@ Today, Scheduled, Done and Next 3 Days keep their own membership rules.
 Sidebar counts describe unfinished work, including future-start tasks; completed rows do not
 increase them. The dedicated Done view shows its completed total. A child in a different
 active/future-start/completed section from its parent appears separately with parent context;
-otherwise `Enter` expands or collapses the family's items as before.
+an open child with no due or start date counts as being in its open parent's section.
+Otherwise `Enter` expands or collapses the family's items as before.
 Completing a task or item keeps the cursor on the same row, selecting the next task or
 item when one follows, rather than following the completed task into Done. At the end of open
 work, it selects the previous open row if one remains; otherwise it clamps to the remaining

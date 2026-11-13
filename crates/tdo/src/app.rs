@@ -17,7 +17,6 @@ pub use lists::{CollectionBackups, ListAction, ListCompletion};
 pub use newrow::{NewRow, default_list};
 
 use std::cell::Cell;
-use std::collections::HashSet;
 
 use chrono::DateTime;
 use chrono_tz::Tz;
@@ -29,7 +28,7 @@ use twydo_core::dateinput::{DueShift, shift_due};
 use twydo_core::edit::{Change, Op};
 use twydo_core::model::{Status, TaskKind};
 use twydo_core::sync::resolve::Keep;
-use twydo_core::views::{Row, Snapshot, View, build_view};
+use twydo_core::views::{Expansion, Row, Snapshot, View, build_view, nested_count};
 use twydo_daemon::protocol::admin::ConflictView;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,7 +172,7 @@ pub struct App {
     pub focus: Pane,
     pub cursor: usize,
     pub sidebar_cursor: usize,
-    pub expanded: HashSet<String>,
+    pub expansion: Expansion,
     pub mode: Mode,
     /// The text being typed in Search or Command mode.
     pub input: String,
@@ -253,7 +252,7 @@ impl App {
             focus: Pane::Tasks,
             cursor: 0,
             sidebar_cursor: 0,
-            expanded: HashSet::new(),
+            expansion: Expansion::default(),
             mode: Mode::Normal,
             input: String::new(),
             search: None,
@@ -366,7 +365,7 @@ impl App {
 
     /// The current view's rows in group order, search filter applied. Headers are not rows.
     pub fn visible_rows(&self) -> Vec<Row> {
-        let result = build_view(&self.snapshot, &self.view, self.now, &self.expanded);
+        let result = build_view(&self.snapshot, &self.view, self.now, &self.expansion);
         let needle = self.search.as_ref().map(|q| q.to_lowercase());
         result
             .groups
@@ -502,7 +501,7 @@ impl App {
         {
             let mut parent = self.snapshot.parent(i);
             while let Some(p) = parent {
-                self.expanded.insert(self.snapshot.tasks[p].uid.clone());
+                self.expansion.open(&self.snapshot.tasks[p].uid);
                 parent = self.snapshot.parent(p);
             }
         }
@@ -794,10 +793,11 @@ impl App {
             self.open_form(Field::Title);
             return;
         }
-        let uid = self.snapshot.tasks[i].uid.clone();
-        if !self.expanded.remove(&uid) {
-            self.expanded.insert(uid);
+        if nested_count(&self.snapshot, &self.view, self.now, i) == 0 {
+            self.message = Some("its tasks are shown on their own rows in this view".into());
+            return;
         }
+        self.expansion.toggle(&self.snapshot, &self.view, i);
     }
 
     fn normal_char(&mut self, c: char, pending: Option<char>) -> Outcome {
@@ -900,7 +900,7 @@ impl App {
             return Outcome::Continue;
         };
         // Use the original groups so a move never crosses a displayed section.
-        let result = build_view(&self.snapshot, &self.view, self.now, &self.expanded);
+        let result = build_view(&self.snapshot, &self.view, self.now, &self.expansion);
         let siblings: Vec<_> = result
             .groups
             .iter()

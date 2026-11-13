@@ -598,8 +598,8 @@ pub fn compare_items(s: &Snapshot, tz: Tz, a: usize, b: usize) -> Ordering {
 struct Plan {
     key: Key,
     descending: bool,
-    /// Tree views nest children under expanded parents; flat views show checklist items
-    /// under their checklist (when `items` is set).
+    /// Tree views nest children under expanded parents; flat views show an open parent's
+    /// children that are not rows of their own. With `items`, checklists start open.
     tree: bool,
     items: bool,
 }
@@ -633,6 +633,70 @@ fn plan(s: &Snapshot, v: &View) -> Plan {
     }
 }
 
+/// Which parents show their children, shared by every view: expanding or collapsing a parent in
+/// one view does the same in the others. A parent in neither set is collapsed, except that
+/// checklists in Today, Next 3 Days and Scheduled start open.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Expansion {
+    pub expanded: HashSet<String>,
+    pub collapsed: HashSet<String>,
+}
+
+impl FromIterator<String> for Expansion {
+    /// Expanded parents, by UID.
+    fn from_iter<I: IntoIterator<Item = String>>(uids: I) -> Self {
+        Expansion {
+            expanded: uids.into_iter().collect(),
+            collapsed: HashSet::new(),
+        }
+    }
+}
+
+impl Expansion {
+    fn opens_by_default(s: &Snapshot, v: &View, idx: usize) -> bool {
+        plan(s, v).items && s.tasks[idx].kind == TaskKind::Checklist
+    }
+
+    /// Whether parent `idx` shows its children in view `v`.
+    pub fn is_open(&self, s: &Snapshot, v: &View, idx: usize) -> bool {
+        let uid = &s.tasks[idx].uid;
+        if Self::opens_by_default(s, v, idx) {
+            !self.collapsed.contains(uid)
+        } else {
+            self.expanded.contains(uid)
+        }
+    }
+
+    /// Expand parent `idx` if it is collapsed in view `v`, else collapse it, in every view.
+    pub fn toggle(&mut self, s: &Snapshot, v: &View, idx: usize) {
+        let uid = &s.tasks[idx].uid;
+        if self.is_open(s, v, idx) {
+            self.expanded.remove(uid);
+            self.collapsed.insert(uid.clone());
+        } else {
+            self.open(uid);
+        }
+    }
+
+    /// Open the parent with this UID in every view.
+    pub fn open(&mut self, uid: &str) {
+        self.expanded.insert(uid.to_string());
+        self.collapsed.remove(uid);
+    }
+}
+
+/// Whether child `k` of an open parent belongs beneath it in flat view `v`, when it is not a
+/// row of its own: completed children in Done, open ones elsewhere (in Today and Next 3 Days
+/// only those already started).
+fn flat_child(s: &Snapshot, v: &View, c: &Clock, k: usize) -> bool {
+    let t = &s.tasks[k];
+    match v {
+        View::Done => t.status == Status::Completed,
+        View::Scheduled => t.status == Status::Open,
+        _ => t.status == Status::Open && !c.future_start(t),
+    }
+}
+
 /// Tree sections are independent of ordinary date buckets: active families stay together.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TreeSection {
@@ -641,19 +705,39 @@ enum TreeSection {
     Completed,
 }
 
-fn tree_section(s: &Snapshot, c: &Clock, idx: usize) -> TreeSection {
-    if s.tasks[idx].status == Status::Completed {
-        TreeSection::Completed
-    } else if c.future_start(&s.tasks[idx]) {
-        TreeSection::Future
-    } else {
-        TreeSection::Active
+/// A task's section. An open child with no due or start date follows its open parent in the
+/// view, as checklist items do: it has no date of its own to place it elsewhere.
+fn tree_section(s: &Snapshot, c: &Clock, in_view: &[bool], idx: usize) -> TreeSection {
+    let t = &s.tasks[idx];
+    if t.status == Status::Completed {
+        return TreeSection::Completed;
+    }
+    if c.future_start(t) {
+        return TreeSection::Future;
+    }
+    match s.parent(idx) {
+        Some(p)
+            if t.due.is_none()
+                && t.start.is_none()
+                && in_view[p]
+                && s.tasks[p].status == Status::Open =>
+        {
+            tree_section(s, c, in_view, p)
+        }
+        _ => TreeSection::Active,
     }
 }
 
-fn group_of(s: &Snapshot, v: &View, plan: &Plan, c: &Clock, idx: usize) -> DateGroup {
+fn group_of(
+    s: &Snapshot,
+    v: &View,
+    plan: &Plan,
+    c: &Clock,
+    in_view: &[bool],
+    idx: usize,
+) -> DateGroup {
     if plan.tree {
-        match tree_section(s, c, idx) {
+        match tree_section(s, c, in_view, idx) {
             TreeSection::Completed => return DateGroup::Done,
             TreeSection::Future => return DateGroup::Future,
             TreeSection::Active => {}
@@ -679,81 +763,113 @@ fn group_order(a: &DateGroup, b: &DateGroup) -> Ordering {
     }
 }
 
-/// Append `idx` and, when expanded, its eligible descendants.
-#[allow(clippy::too_many_arguments)]
-fn push_tree(
-    s: &Snapshot,
-    c: &Clock,
-    in_view: &[bool],
-    expanded: &HashSet<String>,
-    idx: usize,
-    depth: u8,
-    out: &mut Vec<Row>,
-) {
-    out.push(Row {
-        task: idx,
-        depth,
-        parent_hint: s.parent(idx),
-    });
-    if !expanded.contains(&s.tasks[idx].uid) {
-        return;
-    }
-    let mut kids: Vec<usize> = s
-        .children(idx)
-        .iter()
-        .copied()
-        .filter(|&k| in_view[k] && tree_section(s, c, k) == tree_section(s, c, idx))
-        .collect();
-    kids.sort_by(|&a, &b| compare_items(s, c.tz, a, b));
-    for k in kids {
-        push_tree(s, c, in_view, expanded, k, depth.saturating_add(1), out);
-    }
+/// One view's placement rules over a snapshot.
+struct Layout<'a> {
+    s: &'a Snapshot,
+    v: &'a View,
+    plan: Plan,
+    c: Clock,
+    in_view: Vec<bool>,
 }
 
-/// Rows of view `v` under date-group headers, plus its counts. `expanded` holds the UIDs of
-/// parents to show open in All and list views. The result is deterministic.
-pub fn build_view(
-    s: &Snapshot,
-    v: &View,
-    now: DateTime<Tz>,
-    expanded: &HashSet<String>,
-) -> ViewResult {
-    let c = Clock::new(now);
-    let plan = plan(s, v);
-    let in_view: Vec<bool> = (0..s.tasks.len()).map(|i| eligible(s, i, v, &c)).collect();
+impl<'a> Layout<'a> {
+    fn new(s: &'a Snapshot, v: &'a View, now: DateTime<Tz>) -> Self {
+        let c = Clock::new(now);
+        let in_view = (0..s.tasks.len()).map(|i| eligible(s, i, v, &c)).collect();
+        Layout {
+            s,
+            v,
+            plan: plan(s, v),
+            c,
+            in_view,
+        }
+    }
 
-    // Tree roots include children whose parent is absent or in another section. Ordinary
-    // active date buckets do not split families. Flat views omit checklist items here.
-    let mut top: Vec<usize> = (0..s.tasks.len())
-        .filter(|&i| in_view[i])
-        .filter(|&i| {
-            if plan.tree {
+    fn section(&self, idx: usize) -> TreeSection {
+        tree_section(self.s, &self.c, &self.in_view, idx)
+    }
+
+    /// Whether task `i` is a row of its own. Tree roots include children whose parent is
+    /// absent or in another section; ordinary active date buckets do not split families.
+    /// Flat views list every eligible task except checklist items.
+    fn is_root(&self, i: usize) -> bool {
+        let s = self.s;
+        self.in_view[i]
+            && if self.plan.tree {
                 s.parent(i)
-                    .is_none_or(|p| !in_view[p] || tree_section(s, &c, p) != tree_section(s, &c, i))
+                    .is_none_or(|p| !self.in_view[p] || self.section(p) != self.section(i))
             } else {
                 !s.is_item(i)
             }
-        })
-        .collect();
+    }
+
+    /// The children shown beneath `parent` when it is open, in item order. Tree views nest
+    /// children in the parent's section; flat views nest those not already rows of their own.
+    fn nested(&self, parent: usize) -> Vec<usize> {
+        let s = self.s;
+        let mut kids: Vec<usize> = s
+            .children(parent)
+            .iter()
+            .copied()
+            .filter(|&k| {
+                if self.plan.tree {
+                    self.in_view[k] && self.section(k) == self.section(parent)
+                } else {
+                    !self.is_root(k) && flat_child(s, self.v, &self.c, k)
+                }
+            })
+            .collect();
+        kids.sort_by(|&a, &b| compare_items(s, self.c.tz, a, b));
+        kids
+    }
+
+    /// Append `idx` and, when it is open, its nested descendants.
+    fn push_family(&self, expansion: &Expansion, idx: usize, depth: u8, out: &mut Vec<Row>) {
+        out.push(Row {
+            task: idx,
+            depth,
+            parent_hint: self.s.parent(idx),
+        });
+        if self.s.children(idx).is_empty() || !expansion.is_open(self.s, self.v, idx) {
+            return;
+        }
+        for k in self.nested(idx) {
+            self.push_family(expansion, k, depth.saturating_add(1), out);
+        }
+    }
+}
+
+/// How many of parent `idx`'s children appear beneath it in view `v` when it is open. Zero
+/// when they are all rows of their own, or none belongs in the view.
+pub fn nested_count(s: &Snapshot, v: &View, now: DateTime<Tz>, idx: usize) -> usize {
+    Layout::new(s, v, now).nested(idx).len()
+}
+
+/// Rows of view `v` under date-group headers, plus its counts. `expansion` says which parents
+/// show their children. The result is deterministic.
+pub fn build_view(s: &Snapshot, v: &View, now: DateTime<Tz>, expansion: &Expansion) -> ViewResult {
+    let layout = Layout::new(s, v, now);
+    let (c, plan) = (&layout.c, &layout.plan);
+    let mut top: Vec<usize> = (0..s.tasks.len()).filter(|&i| layout.is_root(i)).collect();
     top.sort_by(|&a, &b| {
         if plan.tree {
             let a_done = s.tasks[a].status == Status::Completed;
             let b_done = s.tasks[b].status == Status::Completed;
             a_done.cmp(&b_done).then_with(|| {
                 if a_done {
-                    compare(s, &c, Key::Completed, false, a, b)
+                    compare(s, c, Key::Completed, false, a, b)
                 } else {
-                    compare(s, &c, plan.key, plan.descending, a, b)
+                    compare(s, c, plan.key, plan.descending, a, b)
                 }
             })
         } else {
-            compare(s, &c, plan.key, plan.descending, a, b)
+            compare(s, c, plan.key, plan.descending, a, b)
         }
     });
 
     let mut groups: Vec<(DateGroup, Vec<Row>)> = Vec::new();
     for idx in top {
-        let g = group_of(s, v, &plan, &c, idx);
+        let g = group_of(s, v, plan, c, &layout.in_view, idx);
         let rows = match groups.iter_mut().find(|(k, _)| *k == g) {
             Some((_, rows)) => rows,
             None => {
@@ -761,29 +877,7 @@ pub fn build_view(
                 &mut groups.last_mut().expect("just pushed").1
             }
         };
-        if plan.tree {
-            push_tree(s, &c, &in_view, expanded, idx, 0, rows);
-            continue;
-        }
-        rows.push(Row {
-            task: idx,
-            depth: 0,
-            parent_hint: s.parent(idx),
-        });
-        if plan.items && s.tasks[idx].kind == TaskKind::Checklist {
-            let mut items: Vec<usize> = s
-                .children(idx)
-                .iter()
-                .copied()
-                .filter(|&k| s.tasks[k].status == Status::Open && !c.future_start(&s.tasks[k]))
-                .collect();
-            items.sort_by(|&a, &b| compare_items(s, c.tz, a, b));
-            rows.extend(items.into_iter().map(|k| Row {
-                task: k,
-                depth: 1,
-                parent_hint: Some(idx),
-            }));
-        }
+        layout.push_family(expansion, idx, 0, rows);
     }
     groups.sort_by(|a, b| {
         if plan.tree {
@@ -799,6 +893,6 @@ pub fn build_view(
 
     ViewResult {
         groups,
-        counts: counts_with(s, v, &c),
+        counts: counts_with(s, v, c),
     }
 }

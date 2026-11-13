@@ -260,7 +260,7 @@ const HELP: &[(&str, &str, bool)] = &[
         "manage lists, including hidden and archived",
         false,
     ),
-    ("Enter", "expand/collapse a parent (All, lists)", false),
+    ("Enter", "expand/collapse a parent", false),
     (
         "Enter on a leaf, i",
         "edit task in a card (Tab fields, Enter save)",

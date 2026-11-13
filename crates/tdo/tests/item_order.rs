@@ -82,7 +82,7 @@ impl Env {
         let mut a = App::new(self.snap(), now().with_timezone(&chrono_tz::UTC));
         a.handle_key(key('2'));
         a.focus = Pane::Tasks;
-        a.expanded.insert(self.parent.clone());
+        a.expansion.expanded.insert(self.parent.clone());
         a
     }
     fn writer(&self) -> WriteDaemon {

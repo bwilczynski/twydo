@@ -105,7 +105,7 @@ enum Item {
 /// Group headers and rows in display order, restricted to the rows `App::visible_rows` keeps.
 fn items(app: &App) -> Vec<Item> {
     let visible = app.visible_rows();
-    let result = build_view(&app.snapshot, &app.view, app.now, &app.expanded);
+    let result = build_view(&app.snapshot, &app.view, app.now, &app.expansion);
     let today = app.now.date_naive();
     let mut next = 0;
     let mut out = Vec::new();
@@ -375,10 +375,10 @@ fn row_line(
     let right = (if hint_w > 0 { hint_w + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
     let title_w = width.saturating_sub(left + right);
 
-    // Keep parent context for independently displayed Today rows and detached tree roots.
+    // Keep parent context for independently displayed Today rows and detached tree roots;
+    // rows nested beneath their parent need none.
     let parent_hint = match (&app.view, r.parent_hint) {
-        (View::Today, Some(p)) => Some(format!("  ↳ {}", app.snapshot.tasks[p].summary)),
-        (View::All | View::List(_), Some(p)) if r.depth == 0 => {
+        (View::Today | View::All | View::List(_), Some(p)) if r.depth == 0 => {
             Some(format!("  ↳ {}", app.snapshot.tasks[p].summary))
         }
         _ => None,
