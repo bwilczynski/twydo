@@ -1,13 +1,14 @@
 //! Candidate single-leaf relocation with durable dependencies on both families.
 use super::journal::FamilyGuard;
-use super::{Plan, Store, WriteError, create, parent_json_uid};
+use super::plan::{Plan, Planner, create};
+use super::{WriteError, parent_json_uid};
 use crate::edit::{new_uid, reparented_copy};
 use crate::model::{TaskKind, meta_edit::MetaJson};
 use crate::views::Snapshot;
 use chrono::{DateTime, Utc};
 use std::collections::BTreeSet;
 
-impl Store {
+impl Planner<'_> {
     pub(super) fn plan_reparent(
         &self,
         snap: &Snapshot,

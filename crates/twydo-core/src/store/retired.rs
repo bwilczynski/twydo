@@ -89,6 +89,13 @@ impl Store {
             ));
         }
         let today = now.with_timezone(&source.tz()).date_naive();
+        let planner = super::plan::Planner {
+            vdir: &self.vdir,
+            policy: super::plan::Policy {
+                matrix: &self.matrix,
+                mode: self.mode,
+            },
+        };
         let mut writes = Vec::new();
         let mut mapping = std::collections::BTreeMap::new();
         for i in 0..source.tasks.len() {
@@ -99,9 +106,8 @@ impl Store {
                 uid: source.tasks[i].uid.clone(),
                 to: to.into(),
             };
-            gate::check(&source, &self.matrix, self.mode, &op, today)
-                .map_err(WriteError::Blocked)?;
-            let plan = self.plan(&source, &op, now)?;
+            planner.gate(&source, &op, today)?;
+            let plan = planner.plan(&source, &op, now)?;
             for pair in plan.uids.as_chunks::<2>().0 {
                 mapping.insert(pair[0].clone(), pair[1].clone());
             }

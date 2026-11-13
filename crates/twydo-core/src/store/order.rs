@@ -2,7 +2,8 @@
 
 use chrono::{DateTime, Utc};
 
-use super::{Plan, Store, WriteError, create, parent_json_uid};
+use super::plan::{Plan, Planner, create};
+use super::{WriteError, parent_json_uid};
 use crate::edit::{Due, EditError, Op, Placement, new_task, new_uid, touch};
 use crate::ical::value::IcalDateTime;
 use crate::model::{TaskKind, meta_edit::MetaJson};
@@ -28,7 +29,7 @@ fn rank(cal: &mut crate::ical::Calendar, value: i64) -> Result<(), WriteError> {
     Ok(())
 }
 
-impl Store {
+impl Planner<'_> {
     pub(super) fn plan_order(
         &self,
         snap: &Snapshot,
