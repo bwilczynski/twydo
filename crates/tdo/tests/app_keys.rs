@@ -1746,6 +1746,32 @@ fn enter_in_parent_chains_next_item() {
     );
 }
 
+/// The daemon can answer a save before the snapshot holding the new item arrives. The chain's
+/// row must still end up after the parent's last item once that snapshot lands.
+#[test]
+fn chain_row_follows_items_that_arrive_after_the_answer() {
+    let mut a = app();
+    in_all(&mut a, "Packing list");
+    a.handle_key(key('a'));
+    type_str(&mut a, "Socks");
+    create_op(a.handle_key(code(KeyCode::Enter)));
+    a.write_finished(Ok("added".into()));
+    let mut r = with_task(report(), "new-1", "Socks", "personal", Some(PACKING));
+    let socks = r.tasks.iter_mut().find(|t| t.uid == "new-1").unwrap();
+    socks.meta = twydo_core::model::parse_metadata("<2Do Meta>{\"DisplayOrder\":99}</2Do Meta>");
+    a.reload(snapshot_of(r));
+    let parent = a.snapshot.find(PACKING).unwrap();
+    let last = a
+        .visible_rows()
+        .iter()
+        .rfind(|r| r.depth > 0 && a.snapshot.parent(r.task) == Some(parent))
+        .map(|r| a.snapshot.tasks[r.task].uid.clone())
+        .unwrap();
+    assert_eq!(last, "new-1", "the saved item sorts last");
+    assert!(a.new_row.as_ref().is_some_and(|r| r.below));
+    assert_eq!(a.new_row_anchor().as_deref(), Some("new-1"));
+}
+
 #[test]
 fn enter_on_empty_row_closes() {
     let mut a = app();

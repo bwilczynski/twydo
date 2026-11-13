@@ -1265,6 +1265,48 @@ fn new_item_row_follows_nested_items_not_detached_children() {
     assert_eq!(row.anchor.as_deref(), Some("u"));
 }
 
+/// The daemon can answer a save before the snapshot with the new item arrives: the chain's
+/// empty row is still drawn after the last item once it does.
+#[test]
+fn chain_row_is_drawn_after_an_item_that_arrives_after_the_answer() {
+    let checklist = todo(
+        "cl",
+        "Synthetic checklist",
+        "X-2DOAPP-METADATA:@tasktype:checklist\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let item = |uid: &str, title: &str, order: u32| {
+        todo(
+            uid,
+            title,
+            &format!(
+                "RELATED-TO:cl\r\nX-2DOAPP-METADATA:<2Do Meta>{{\"DisplayOrder\":{order}}}</2Do Meta>\r\nSTATUS:NEEDS-ACTION\r\n"
+            ),
+        )
+    };
+    let (one, two) = (item("i1", "Item one", 1), item("i2", "Item two", 2));
+    let before = vdir_with(&[("cl.ics", &checklist), ("i1.ics", &one), ("i2.ics", &two)]);
+    let mut a = App::new(snapshot_at(before.path()), now());
+    select(&mut a, "Synthetic checklist");
+    a.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    for c in "Item three".chars() {
+        a.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    a.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    a.write_finished(Ok("added".into()));
+    let three = item("i3", "Item three", 3);
+    let after = vdir_with(&[
+        ("cl.ics", &checklist),
+        ("i1.ics", &one),
+        ("i2.ics", &two),
+        ("i3.ics", &three),
+    ]);
+    a.reload(snapshot_at(after.path()));
+    let t = text(&render(&mut a, 140, 30));
+    let lines: Vec<&str> = t.lines().collect();
+    let three = lines.iter().position(|l| l.contains("Item three")).unwrap();
+    assert!(lines[three + 1].contains('›'), "{t}");
+}
+
 /// Two tasks due today; the first ("Long notes task") has 40 lines of notes.
 fn long_notes_app() -> (tempfile::TempDir, App) {
     let notes = (1..=40)
