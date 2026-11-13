@@ -163,7 +163,7 @@ fn sync_defaults() {
             password_command: vec!["true".into()],
             ca_file: None,
             command: "vdirsyncer".into(),
-            list_python: "python3".into(),
+            list_python: None,
             metasync: true,
             batch_size: 5,
             max_wait_secs: 60,
@@ -304,4 +304,15 @@ fn no_sync_table_means_sync_off() {
 #[test]
 fn warnings_are_empty() {
     assert!(parse(&sync_toml("")).unwrap().warnings().is_empty());
+}
+
+#[test]
+fn unset_list_python_is_absent_on_the_wire() {
+    // Released clients read `list_python` as a string; null would not parse.
+    let c = parse(&sync_toml("")).unwrap();
+    let v = serde_json::to_value(c.sync.as_ref().unwrap()).unwrap();
+    assert!(v.get("list_python").is_none(), "{v}");
+    let c = parse(&sync_toml("list_python = \"/usr/bin/python\"\n")).unwrap();
+    let v = serde_json::to_value(c.sync.as_ref().unwrap()).unwrap();
+    assert_eq!(v["list_python"], "/usr/bin/python");
 }

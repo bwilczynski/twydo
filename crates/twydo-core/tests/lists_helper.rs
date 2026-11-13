@@ -81,10 +81,10 @@ fn wrapper_fixture_waits_until_new_scripts_are_executable() {
 fn invalid_helper_output_does_not_leak_raw_output_or_stderr() {
     let d = tempfile::tempdir().unwrap();
     let mut cfg = config(d.path());
-    cfg.sync.as_mut().unwrap().list_python = executable(
+    cfg.sync.as_mut().unwrap().list_python = Some(executable(
         d.path(),
         "cat >/dev/null\necho private-account-secret\necho private-secret >&2",
-    );
+    ));
     let message = invoke(&cfg, &HelperRequest::probe(&cfg).unwrap())
         .unwrap_err()
         .to_string();
@@ -98,7 +98,7 @@ fn hung_helper_is_killed_with_a_bounded_timeout() {
     let d = tempfile::tempdir().unwrap();
     let mut cfg = config(d.path());
     let sync = cfg.sync.as_mut().unwrap();
-    sync.list_python = executable(d.path(), "cat >/dev/null\nsleep 60");
+    sync.list_python = Some(executable(d.path(), "cat >/dev/null\nsleep 60"));
     sync.timeout_secs = 1;
     let start = std::time::Instant::now();
     let result = invoke(&cfg, &HelperRequest::probe(&cfg).unwrap())
@@ -113,14 +113,49 @@ fn hung_helper_is_killed_with_a_bounded_timeout() {
 fn helper_preserves_caller_directory_for_relative_vdirsyncer_settings() {
     let d = tempfile::tempdir().unwrap();
     let mut cfg = config(d.path());
-    cfg.sync.as_mut().unwrap().list_python = executable(
+    cfg.sync.as_mut().unwrap().list_python = Some(executable(
         d.path(),
         r#"cat >/dev/null
 python3 -c 'import os,json; print(json.dumps({"version":1,"ok":True,"result":{"cwd":os.getcwd()}}))'"#,
-    );
+    ));
     let result = invoke(&cfg, &HelperRequest::probe(&cfg).unwrap()).unwrap();
     assert_eq!(
         result.result["cwd"].as_str(),
         std::env::current_dir().unwrap().to_str()
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_missing_dependency_names_the_interpreter() {
+    let d = tempfile::tempdir().unwrap();
+    let mut cfg = config(d.path());
+    let python = executable(
+        d.path(),
+        r#"cat >/dev/null
+echo '{"version":1,"ok":false,"code":"dependency"}'"#,
+    );
+    cfg.sync.as_mut().unwrap().list_python = Some(python.clone());
+    let message = invoke(&cfg, &HelperRequest::probe(&cfg).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        message.contains(&format!("{python} ([sync].list_python)")),
+        "{message}"
+    );
+    assert!(message.contains("vdirsyncer 0.21.x"), "{message}");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interpreter_that_cannot_start_is_named() {
+    let d = tempfile::tempdir().unwrap();
+    let mut cfg = config(d.path());
+    let gone = d.path().join("no-such-python");
+    cfg.sync.as_mut().unwrap().list_python = Some(gone.to_str().unwrap().into());
+    let message = invoke(&cfg, &HelperRequest::probe(&cfg).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(message.contains("cannot start"), "{message}");
+    assert!(message.contains(gone.to_str().unwrap()), "{message}");
 }

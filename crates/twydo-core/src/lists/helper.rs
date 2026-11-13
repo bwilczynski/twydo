@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::Config;
+use crate::sync::list_python::{self, ListPython};
 use crate::sync::vdirsyncer::{LOCAL_STORAGE, PAIR, config_path};
 
 use super::ListError;
@@ -112,7 +113,7 @@ pub fn invoke(cfg: &Config, request: &HelperRequest) -> Result<HelperReply, List
     if reply.ok {
         Ok(reply)
     } else {
-        Err(ListError::Refused(refusal(&reply.code).into()))
+        Err(ListError::Refused(refusal(cfg, &reply.code)))
     }
 }
 
@@ -190,7 +191,8 @@ pub(crate) fn exchange_watched(
     if watch.stop_requested() {
         return Err(ExchangeError::Stopped);
     }
-    let mut command = Command::new(&sync.list_python);
+    let python = list_python::resolve(sync);
+    let mut command = Command::new(&python.program);
     command.args(["-I", "-c", SOURCE]);
     let piped = lock.is_none();
     match lock {
@@ -211,9 +213,9 @@ pub(crate) fn exchange_watched(
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command.spawn().map_err(|_| {
-        ExchangeError::Unavailable(
-            "cannot start collection helper; check [sync].list_python".into(),
-        )
+        ExchangeError::Unavailable(format!(
+            "cannot start collection helper with {python}; check [sync].list_python"
+        ))
     })?;
     watch.started(child.id());
     let finish = |child: &mut std::process::Child| {
@@ -278,9 +280,9 @@ pub(crate) fn exchange_watched(
     // (a broken venv, a wrapper rejecting `-I`), not a verdict from the helper. A signal
     // (its own alarm) is not.
     if bytes.is_empty() && status.code().is_some_and(|c| c != 0) {
-        return Err(ExchangeError::Unavailable(
-            "collection helper exited without a reply; check [sync].list_python".into(),
-        ));
+        return Err(ExchangeError::Unavailable(format!(
+            "collection helper exited without a reply from {python}; check [sync].list_python"
+        )));
     }
     if bytes.len() as u64 > MAX_REPLY {
         return Err(ListError::Refused("collection helper reply is too large".into()).into());
@@ -291,17 +293,33 @@ pub(crate) fn exchange_watched(
         return Err(ListError::Refused("collection helper protocol mismatch".into()).into());
     }
     if !status.success() && reply.ok {
-        return Err(ListError::Refused(refusal("").into()).into());
+        return Err(ListError::Refused(refusal(cfg, "")).into());
     }
     Ok(reply)
 }
 
 /// Only our protocol's known error codes are displayable. Never forward arbitrary
-/// helper/credential output, even when it happens to be valid JSON.
-pub(crate) fn refusal(code: &str) -> &'static str {
+/// helper/credential output, even when it happens to be valid JSON. A missing dependency
+/// names the interpreter that was run.
+pub(crate) fn refusal(cfg: &Config, code: &str) -> String {
+    match code {
+        "dependency" => dependency(cfg.sync.as_ref().map(list_python::resolve)),
+        code => known_refusal(code).into(),
+    }
+}
+
+fn dependency(python: Option<ListPython>) -> String {
+    match python {
+        Some(python) => format!(
+            "collection helper needs vdirsyncer 0.21.x for {python}; install it there or set [sync].list_python"
+        ),
+        None => "collection helper needs vdirsyncer 0.21.x; check [sync].list_python".into(),
+    }
+}
+
+fn known_refusal(code: &str) -> &'static str {
     match code {
         "protocol" => "collection helper protocol/request is invalid",
-        "dependency" => "collection helper needs vdirsyncer 0.21.x; check [sync].list_python",
         "mapping" => "collection helper could not validate this pair and exact list identity",
         "dav" => "collection helper could not verify the CalDAV response",
         "inventory" => {

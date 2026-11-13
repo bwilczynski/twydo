@@ -2464,7 +2464,7 @@ impl Fx {
         )
         .unwrap();
         let sync = self.sync_mut();
-        sync.list_python = keep.join("python").to_str().unwrap().into();
+        sync.list_python = Some(keep.join("python").to_str().unwrap().into());
         self
     }
 
@@ -2657,7 +2657,7 @@ fn unavailable_helper_is_a_warning_when_discovery_was_not_requested() {
         let mut fx = Fx::new(DISCOVERY_SCRIPT)
             .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
         let python = unavailable_helpers(&fx)[index].clone();
-        fx.sync_mut().list_python = python;
+        fx.sync_mut().list_python = Some(python);
         let state = fx.state();
         fs::create_dir_all(state.join("sync")).unwrap();
         fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
@@ -2678,7 +2678,7 @@ fn unavailable_helper_is_a_problem_and_persisted_for_an_explicit_discover() {
         let mut fx = Fx::new(DISCOVERY_SCRIPT)
             .with_helper(serde_json::json!({"remote_only":[],"local_only":[]}));
         let python = unavailable_helpers(&fx)[index].clone();
-        fx.sync_mut().list_python = python;
+        fx.sync_mut().list_python = Some(python);
         let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
         let m = messages(&fx.cfg, &report);
         assert_eq!(m.problems.len(), 1, "{index}: {m:?}");
@@ -2876,7 +2876,7 @@ fn discovery_helper_inherits_the_vdir_lock_as_stdin() {
             lock.display()
         ),
     );
-    fx.sync_mut().list_python = script.to_str().unwrap().into();
+    fx.sync_mut().list_python = Some(script.to_str().unwrap().into());
     let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
     assert_eq!(report.adopted, ["lock-ok"], "{report:?}");
 }
@@ -2899,7 +2899,7 @@ fn a_timed_out_discovery_is_retried_once_then_the_marker_is_spent() {
 fn scripted_helper(fx: &mut Fx, body: &str) {
     let script = fx.path("helper/odd-python");
     write_script(&script, &format!("#!/bin/sh\n{body}\n"));
-    fx.sync_mut().list_python = script.to_str().unwrap().into();
+    fx.sync_mut().list_python = Some(script.to_str().unwrap().into());
 }
 
 #[test]

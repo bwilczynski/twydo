@@ -2977,8 +2977,7 @@
             "type": "string"
           },
           "list_python": {
-            "default": "python3",
-            "description": "Python interpreter containing the supported vdirsyncer collection adapter.",
+            "description": "Python interpreter containing the supported vdirsyncer collection adapter. Unset means\nvdirsyncer's own interpreter (from the shebang of `command`), else `python3`.",
             "type": "string"
           },
           "max_backoff_secs": {

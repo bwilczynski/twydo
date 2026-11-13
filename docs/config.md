@@ -79,7 +79,7 @@ code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md
 | `password_command` | array of strings | required | Command whose output (trailing newlines removed) is the password, so it must print only the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
 | `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
-| `list_python` | string | `"python3"` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. Independent of `command`, which may be a wrapper. The helper uses the generated vdirsyncer config. |
+| `list_python` | string | vdirsyncer's interpreter (from its shebang), else `python3` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. When unset, `command` is looked up on the daemon's PATH, symlinks are followed, and an absolute `#!…/python`, `python3` or `python3.N` first line is used, as is the interpreter pip's `#!/bin/sh` launcher (`'''exec' …`) runs for paths too long for a shebang; `#!/usr/bin/env …`, a binary or another wrapper falls back to `python3` on PATH. Set it when `command` is a wrapper or its shebang goes through `env`. An explicit `list_python = "python3"`, the old default, turns this detection off: delete the line to use it. The helper uses the generated vdirsyncer config. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
 | `max_wait_secs` | integer | `60` | A sync is due this many seconds after the oldest unsynced edit. Must be at least 1. |
@@ -139,7 +139,7 @@ any step fails, else 0.
 | `sync` | `[sync]` is present; without it this is `sync off` and the steps below are skipped |
 | `vdirsyncer` | `[sync].command --version` reports 0.21.x |
 | `tdo on PATH` | an executable named `tdo` is on the PATH (the conflict hook runs `tdo` by name, so the daemon and vdirsyncer need it on their PATH); skipped when sync is off |
-| `list helper` | `[sync].list_python` imports vdirsyncer 0.21.x |
+| `list helper` | the helper's interpreter imports vdirsyncer 0.21.x in isolated mode (`-I`, as the helper runs it, so a user site or `PYTHONPATH` does not count); the detail names where the interpreter came from (`vdirsyncer's interpreter` or `default` when `[sync].list_python` is unset). Resolved on the PATH `tdo config check` runs with, which may differ from the daemon's |
 | `password` | `password_command` exits 0 and prints a single non-empty line (vdirsyncer uses the whole output, trailing newlines removed). The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
 | `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound); fails when the state directory is not writable |
 | `ca file` | `ca_file`, when set, is a readable file |

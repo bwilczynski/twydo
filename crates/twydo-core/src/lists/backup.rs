@@ -339,7 +339,10 @@ impl ListService {
             } else if reply.code == "changed" {
                 Err(ListError::Refused(CHANGED.into()))
             } else {
-                Err(ListError::Refused(helper::refusal(&reply.code).into()))
+                Err(ListError::Refused(helper::refusal(
+                    &self.config,
+                    &reply.code,
+                )))
             }
         });
         if let Err(error) = outcome {
@@ -395,7 +398,7 @@ impl ListService {
             code => {
                 return Err(ListError::Refused(format!(
                     "list operation {id} remains unresolved: {}",
-                    helper::refusal(code)
+                    helper::refusal(&self.config, code)
                 )));
             }
         };

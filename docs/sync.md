@@ -279,8 +279,8 @@ itself or, when it was killed before it could (stopped, timed out, a signal), by
 A failed discovery (server unreachable, a pair layout the helper refuses, a stale list,
 timeout) keeps the previous cached collection set. With `tdo sync --discover` it counts as a
 problem: the ordinary sync still runs, but the exit code is 1. At daemon startup it is only
-a warning on the startup sync. A helper that cannot run at all (the `[sync].list_python`
-interpreter does not start, or vdirsyncer is not importable from it) is likewise only a
+a warning on the startup sync. A helper that cannot run at all (the helper's interpreter,
+[`[sync].list_python`](config.md#sync) or vdirsyncer's own, does not start, or vdirsyncer is not importable from it) is likewise only a
 warning, and is not saved, when the discovery was not requested (the startup marker and the
 `:forget-list` recovery); `tdo sync --discover` reports and saves it. Any other failure is saved in
 `sync/status.json` (`discovery_error`) and shown as `discovery error:` in `tdo status` and in

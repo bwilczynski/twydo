@@ -4,6 +4,7 @@
 pub mod batch;
 pub mod discover;
 pub mod hook;
+pub mod list_python;
 pub mod lock;
 pub mod manifest;
 pub mod output;
