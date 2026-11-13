@@ -174,7 +174,9 @@ impl Writer {
         Ok(item)
     }
 
-    /// Pushes a ready item; the fence is checked only for [`Fence::Now`] (`Queue::push` does
+    /// Pushes a ready item; `pub` because the test wrapper outside this crate re-queues a
+    /// cancelled item with its original `created`, `origin` and `label`, which
+    /// [`Writer::enqueue`] would overwrite. The fence is checked only for [`Fence::Now`] (`Queue::push` does
     /// not check it).
     pub fn push(&self, item: &Item, fence: Fence) -> Result<(), WriteError> {
         if fence == Fence::Now {
