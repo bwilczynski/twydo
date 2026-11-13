@@ -750,3 +750,60 @@ fn a_drain_by_the_sync_runner_uses_the_daemons_matrix() {
     assert!(matches!(state, OpState::Refused { .. }), "{state:?}");
     assert!(fx.read("inbox/u1.ics").contains("SUMMARY:One"));
 }
+
+#[test]
+fn an_edit_admitted_by_the_daemons_matrix_is_applied_by_the_sync_runners_drain() {
+    use twydo_core::compat::{ContractId, Verdict};
+    use twydo_core::edit::{Due, NewTask, Op};
+    let fx = fx();
+    let dir = fx.vdir().parent().unwrap().to_path_buf();
+    let gate = dir.join("gate");
+    let entered = dir.join("entered");
+    std::fs::write(&gate, "").unwrap();
+    let body = format!(
+        "touch '{}'\nwhile [ -e '{}' ]; do sleep 0.05; done\necho 'Syncing twydo/inbox' >&2\nexit 0",
+        entered.display(),
+        gate.display()
+    );
+    // The embedded matrix refuses a repeat on the last day of the month; this daemon's admits it.
+    let mut admitting = Matrix::embedded().clone();
+    let row = admitting
+        .contract
+        .iter_mut()
+        .find(|r| r.id == ContractId::SetRepeatLastDay)
+        .unwrap();
+    assert_eq!(row.iphone_baseline, Verdict::Fail);
+    row.iphone_baseline = Verdict::Pass;
+    row.twydo_to_iphone = Verdict::Pass;
+    row.iphone_to_twydo = Verdict::Pass;
+    let td = TestDaemon::start_cfg(&fx, fx.with_sync(&body), |o| o.matrix = admitting.clone());
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let _: serde_json::Value = c
+        .call(
+            "sync.run",
+            twydo_daemon::protocol::sync::SyncRunParams {
+                request_id: c.next_request_id(),
+                force_delete: Vec::new(),
+                discover: false,
+            },
+        )
+        .unwrap();
+    let t = Instant::now();
+    while !entered.exists() {
+        assert!(t.elapsed() < BOUND, "the sync never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let day = chrono::NaiveDate::from_ymd_opt(2030, 1, 31).unwrap();
+    let op = Op::Create(NewTask {
+        due: Some(Due::Date(day)),
+        repeat: twydo_core::repeatinput::parse("last day", day, &[]).unwrap(),
+        ..NewTask::plain("inbox", "Monthly end")
+    });
+    let a = submit(&c, op).unwrap();
+    assert_eq!(a.outcome, WriteOutcome::Queued);
+    std::fs::remove_file(&gate).unwrap();
+    let (_, state) = op_finished(&c, &a.op_id);
+    assert!(matches!(state, OpState::Applied { .. }), "{state:?}");
+    assert_eq!(count_titled(&td, "Monthly end"), 1);
+}
