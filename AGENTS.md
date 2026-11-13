@@ -52,6 +52,15 @@ access. Existing captures and local preservation tests should be reused first.
 - The spec refers to acceptance cases **P1, P2, L1** by label. Their real names live outside the
   repo in `../rea-private/acceptance-cases.md` (on the user's machine only). You may read it locally
   for acceptance testing; never copy its contents into the repo.
+- **Commit messages and PR titles must pass commitlint** (`.commitlintrc.json`,
+  `@commitlint/config-conventional`); PR validation checks every commit and the PR title. Use
+  `type(scope): subject` with a lowercase type such as `feat`, `fix`, `docs`, `test`, `refactor`,
+  `ci` or `chore`. The subject must not start with a capital letter, even for a key or proper
+  name: write `feat(tui): toggle parents with Enter`, not `feat(tui): Enter toggles parents`.
+  No trailing full stop, header at most 100 characters, a blank line before the body, and body
+  lines at most 100 characters. Before pushing, run
+  `npx --yes -p @commitlint/cli -p @commitlint/config-conventional commitlint --from=origin/main --to=HEAD`
+  and pipe the PR title through the same command (`printf '%s\n' "<title>" | npx … commitlint`).
 - Code lives in this repository as a Cargo workspace at the root:
   - `crates/twydo-core/`: core library (data model, storage, views)
   - `crates/tdo/`: the `tdo` binary (CLI and TUI)
