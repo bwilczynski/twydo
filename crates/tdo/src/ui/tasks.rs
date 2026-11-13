@@ -75,7 +75,7 @@ pub(super) fn shown_kind(app: &App, idx: usize) -> TaskKind {
 pub(super) fn type_mark(app: &App, idx: usize) -> &'static str {
     match shown_kind(app, idx) {
         TaskKind::Project => "▤",
-        TaskKind::Checklist => "☰",
+        TaskKind::Checklist => "≡",
         TaskKind::Task => "",
     }
 }
