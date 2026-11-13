@@ -46,7 +46,8 @@ in [config.md](config.md) (`[sync]`).
    resolve such operations (reconcile them) before upgrading, and otherwise check on the server
    whether the change happened.
 
-3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result. The
+3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result, with
+   each list's state under `lists:` by id and display name (`<id> (<name>): ok`). The
    daemon starts when needed.
 
 4. **Background sync.** Nothing to set up: while the daemon runs it syncs by itself (at startup,

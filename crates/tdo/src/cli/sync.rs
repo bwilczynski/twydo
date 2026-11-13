@@ -369,10 +369,23 @@ pub fn status(target: &Target) -> i32 {
     if !sync.collections.is_empty() {
         println!("lists:");
         for (coll, state) in &sync.collections {
-            println!("  {coll}: {}", describe_wire(state));
+            println!("  {}: {}", list_label(&snap, coll), describe_wire(state));
         }
     }
     0
+}
+
+/// A list as `tdo status` names it: its id, then its display name when it has another one.
+fn list_label(snap: &WireSnapshot, id: &str) -> String {
+    match snap
+        .collections
+        .iter()
+        .find(|c| c.id == id)
+        .and_then(|c| c.display_name.as_deref())
+    {
+        Some(name) if name != id => format!("{id} ({name})"),
+        _ => id.to_string(),
+    }
 }
 
 fn ask<R: serde::de::DeserializeOwned>(client: &Client, method: &str) -> Result<R, ClientError> {

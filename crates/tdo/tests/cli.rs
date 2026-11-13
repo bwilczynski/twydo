@@ -417,7 +417,16 @@ mod sync {
         assert!(o.stdout.is_empty() && o.stderr.is_empty(), "{o:?}");
         let out = stdout(&fx.tdo(&["status"]));
         assert!(!out.contains("last sync: never"), "{out}");
-        assert!(out.contains("c1: ok"), "{out}");
+        assert!(
+            out.contains("  c1: ok"),
+            "no display name: the id alone: {out}"
+        );
+        // #70: a named list shows its name next to the id.
+        fs::write(fx.path("vdir/c1/displayname"), "Errands\n").unwrap();
+        let o = fx.tdo(&["sync"]);
+        assert_eq!(o.status.code(), Some(0), "{}", stderr(&o));
+        let out = stdout(&fx.tdo(&["status"]));
+        assert!(out.contains("  c1 (Errands): ok"), "{out}");
     }
 
     #[test]
