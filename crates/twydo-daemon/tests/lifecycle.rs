@@ -761,13 +761,15 @@ mod during_a_job {
         std::fs::create_dir_all(&helper_dir).unwrap();
         let done = helper_dir.join("done");
         let mut cfg = fx.with_sync("exit 0");
-        cfg.sync.as_mut().unwrap().list_python = fake_vdirsyncer(
-            &helper_dir,
-            &format!("sleep 1.5\ntouch '{}'", done.display()),
-        )
-        .to_str()
-        .unwrap()
-        .to_string();
+        cfg.sync.as_mut().unwrap().list_python = Some(
+            fake_vdirsyncer(
+                &helper_dir,
+                &format!("sleep 1.5\ntouch '{}'", done.display()),
+            )
+            .to_str()
+            .unwrap()
+            .to_string(),
+        );
         let td = TestDaemon::start_cfg(&fx, cfg, |o| {
             o.shutdown_grace = Duration::from_millis(100);
             o.stop_wait = Duration::from_millis(100);

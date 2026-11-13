@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use twydo_core::config::Config;
 use twydo_core::store::existing_vdir_state;
-use twydo_core::sync::vdirsyncer;
+use twydo_core::sync::{list_python, vdirsyncer};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const PASSWORD_TIMEOUT: Duration = Duration::from_secs(60);
@@ -155,7 +155,7 @@ pub fn run(path: &Path) -> Report {
     }
 
     // tdo on PATH: the conflict hook runs `tdo` by name
-    match find_on_path("tdo") {
+    match twydo_core::which::on_path("tdo") {
         Some(p) => b.pass("tdo on PATH", p.display().to_string()),
         None => b.fail(
             "tdo on PATH",
@@ -166,14 +166,22 @@ pub fn run(path: &Path) -> Report {
 
     // list helper
     let step = "list helper";
+    let python = list_python::resolve(sync);
+    let interpreter = match python.source {
+        list_python::Source::Configured => python.program.clone(),
+        _ => python.to_string(),
+    };
+    // `-I` as the helper runs it: a user site or PYTHONPATH must not make the check pass.
     match probe(
-        &sync.list_python,
-        &["-c", "import vdirsyncer; print(vdirsyncer.__version__)"],
+        &python.program,
+        &[
+            "-I",
+            "-c",
+            "import vdirsyncer; print(vdirsyncer.__version__)",
+        ],
         |out| out.lines().next().map(|l| l.trim().to_string()),
     ) {
-        Ok(v) if v.starts_with("0.21.") => {
-            b.pass(step, format!("{} vdirsyncer {v}", sync.list_python))
-        }
+        Ok(v) if v.starts_with("0.21.") => b.pass(step, format!("{interpreter} vdirsyncer {v}")),
         Ok(v) => b.fail(
             step,
             format!("unsupported vdirsyncer version {v} (need 0.21.x)"),
@@ -242,18 +250,6 @@ pub fn run(path: &Path) -> Report {
         },
     }
     b.done()
-}
-
-/// The first executable regular file named `name` in a PATH directory.
-fn find_on_path(name: &str) -> Option<std::path::PathBuf> {
-    use std::os::unix::fs::PermissionsExt;
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .filter(|d| !d.as_os_str().is_empty())
-        .map(|d| d.join(name))
-        .find(|c| {
-            std::fs::metadata(c).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-        })
 }
 
 /// The text after `marker` up to the next whitespace, when it looks like `d.d.d`.

@@ -36,7 +36,7 @@ pub fn offline() -> (tempfile::TempDir, Config) {
         url: "https://dav.example.test/alice/".into(),
         username: "alice".into(),
         password_command: vec!["true".into()],
-        list_python: wrapper.to_str().unwrap().into(),
+        list_python: Some(wrapper.to_str().unwrap().into()),
         ..Default::default()
     });
     (d, cfg)

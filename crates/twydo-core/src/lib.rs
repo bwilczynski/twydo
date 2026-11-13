@@ -16,3 +16,4 @@ pub mod store;
 pub mod sync;
 pub mod vdir;
 pub mod views;
+pub mod which;

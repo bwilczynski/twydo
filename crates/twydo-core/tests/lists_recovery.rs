@@ -45,7 +45,7 @@ fn offline() -> (tempfile::TempDir, Config) {
         url: "https://dav.example.test/alice/".into(),
         username: "alice".into(),
         password_command: vec!["true".into()],
-        list_python: wrapper.to_str().unwrap().into(),
+        list_python: Some(wrapper.to_str().unwrap().into()),
         ..Default::default()
     });
     fs::write(d.path().join("server.json"),serde_json::json!({"calls":[],"flags":{},"collections":{"synthetic":{"name":"Before","color":"#3289D2","unknown":"preserved"}}}).to_string()).unwrap();

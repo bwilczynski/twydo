@@ -309,3 +309,65 @@ fn read_only_state_dir_fails_generated_config() {
     let l = line(&out, "✗ generated config");
     assert!(l.contains("ermission denied"), "{l}");
 }
+
+#[test]
+fn unset_list_python_uses_vdirsyncers_interpreter() {
+    let e = Env::new();
+    // Stands in for both vdirsyncer's interpreter and the helper's.
+    let py = e.script(
+        "python3",
+        "if [ \"$1\" = -I ]; then echo 0.21.1; else echo 'vdirsyncer, version 0.21.1'; fi",
+    );
+    let vd = e.p("vds");
+    let pw = e.script("pw", "echo s3cret");
+    let sync = e.sync(&pw, "");
+    fs::write(&vd, format!("#!{py}\nimport vdirsyncer\n")).unwrap();
+    let sync: String = sync
+        .lines()
+        .filter(|l| !l.starts_with("list_python"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    e.config(&sync);
+    let out = text(&e.run());
+    let l = line(&out, "✓ list helper");
+    assert!(
+        l.contains(&format!(
+            "{py} (vdirsyncer's interpreter) vdirsyncer 0.21.1"
+        )),
+        "{l}"
+    );
+}
+
+#[test]
+fn configured_list_python_is_shown_bare() {
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret");
+    e.config(&e.sync(&pw, ""));
+    let out = text(&e.run());
+    let l = line(&out, "✓ list helper");
+    assert!(
+        l.contains(&format!("{} vdirsyncer 0.21.1", e.p("py").display())),
+        "{l}"
+    );
+    assert!(!l.contains('('), "{l}");
+}
+
+#[test]
+fn list_helper_probe_is_isolated() {
+    // vdirsyncer importable only through a user site or PYTHONPATH: the helper runs with
+    // `-I`, so the check must too.
+    let e = Env::new();
+    let pw = e.script("pw", "echo s3cret");
+    let py = e.script(
+        "py-site",
+        "if [ \"$1\" = -I ]; then echo 'ModuleNotFoundError' >&2; exit 1; fi; echo 0.21.1",
+    );
+    e.config(&e.sync(&pw, "").replace(
+        &format!("list_python = \"{}\"", e.p("py").display()),
+        &format!("list_python = \"{py}\""),
+    ));
+    let o = e.run();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    line(&out, "✗ list helper");
+}

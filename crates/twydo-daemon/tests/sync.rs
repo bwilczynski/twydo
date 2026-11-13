@@ -662,7 +662,7 @@ fn with_helper(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config
     )
     .unwrap();
     let sync = cfg.sync.as_mut().unwrap();
-    sync.list_python = wrapper.to_str().unwrap().into();
+    sync.list_python = Some(wrapper.to_str().unwrap().into());
     (cfg, keep)
 }
 

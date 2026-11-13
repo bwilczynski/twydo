@@ -98,16 +98,16 @@ pub(crate) fn discover_watched(
                 DiscoverError::Missing { id: id.clone() }
             }
             _ if reply.code == "dependency" => {
-                DiscoverError::Unavailable(refusal("dependency").into())
+                DiscoverError::Unavailable(refusal(cfg, "dependency"))
             }
-            _ => DiscoverError::Failed(refusal(&reply.code).into()),
+            _ => DiscoverError::Failed(refusal(cfg, &reply.code)),
         });
     }
     let adopted = reply
         .result
         .get("adopted")
         .and_then(|v| serde_json::from_value::<Vec<String>>(v.clone()).ok())
-        .ok_or_else(|| DiscoverError::Failed(refusal("protocol").into()))?;
+        .ok_or_else(|| DiscoverError::Failed(refusal(cfg, "protocol")))?;
     Ok(Discovered { adopted })
 }
 
