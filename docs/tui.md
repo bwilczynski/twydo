@@ -9,13 +9,13 @@
 
 ```
 ╭ Views ───────╮╭ Today · Monday 2 Nov ─────────────────╮╭ Details ──────────────╮
-│ ◷ Today  2│3 ││ OVERDUE                             1 ││ Renew library books   │
-│   All   2│10 ││ ▌○ Renew library books    Yesterday  ││                       │
-│   Scheduled 1││                                      ││ List    Inbox         │
-│   Done      2││ TODAY                               1 ││ Due     Yesterday     │
-│ ─ Lists ──── ││ ▌↺ Water plants    weekly   Today    ││                       │
+│ ▌ Inbox   1│2││ OVERDUE                             1 ││ Renew library books   │
+│ ◷ Today  2│3 ││ ▌○ Renew library books    Yesterday  ││                       │
+│   All   2│10 ││                                      ││ List    Inbox         │
+│   Scheduled 1││ TODAY                               1 ││ Due     Yesterday     │
+│   Done      2││ ▌↺ Water plants    weekly   Today    ││                       │
+│ ─ Lists ──── ││                                      ││                       │
 │ ▌ Bills     6││                                      ││                       │
-│ ▌ Inbox   1│2││                                      ││                       │
 │ ▌ Personal1│2││                                      ││                       │
 │ ─ Smart lists││                                      ││                       │
 │   Next 3 Days││                                      ││                       │
@@ -23,7 +23,9 @@
  NORMAL Tasks · j/k move  x done  t today  ] +1d  o new  / search  : cmd  ? help   Today·1/2
 ```
 
-- **Views** (left): the views, your lists with their colour bars, and smart lists. `2│3` is
+- **Views** (left): the focus lists (your Inbox, then the views), your other lists with their
+  colour bars, and smart lists. The Inbox is the `default_list` from [config.md](config.md),
+  else the list named Inbox; without either, the focus lists start at Today. `2│3` is
   "due today or overdue │ all"; see [tasks.md](tasks.md#views-and-date-groups) for what each view
   shows. List groups come from `[[groups]]` in [config.md](config.md).
 - **Tasks** (middle): the current view under date-group headers. `○` a task, `↺` a repeating
@@ -74,6 +76,7 @@ gets no answer within 8 seconds, it says
 |---|---|
 | `j` / `k`, `gg` / `G`, `Ctrl-d` / `Ctrl-u` | move down / up, to the top / bottom, half a page. With Details focused they scroll it instead |
 | `h` / `l`, `Tab` | focus the previous / next pane |
+| `0` | the Inbox, even when it is hidden or archived (like `:list`) |
 | `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
 | `Enter` in the sidebar | open the view or list |
 | `o` / `i` in the sidebar | create / edit a list |

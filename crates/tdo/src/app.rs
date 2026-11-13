@@ -14,7 +14,7 @@ pub use sync_activity::SyncActivity;
 pub use sync_state::ClientSync;
 
 pub use lists::{CollectionBackups, ListAction, ListCompletion};
-pub use newrow::{NewRow, default_list};
+pub use newrow::{NewRow, default_list, inbox_list};
 
 use std::cell::Cell;
 
@@ -241,7 +241,7 @@ const MESSAGE_SECS: i64 = 5;
 
 impl App {
     pub fn new(snapshot: Snapshot, now: DateTime<Tz>) -> App {
-        App {
+        let mut app = App {
             lookup: Box::new(FileLookup(snapshot.config.clone())),
             list_form: None,
             collection_backups: None,
@@ -282,7 +282,10 @@ impl App {
             details_uid: None,
             completing: None,
             details_max: Cell::new(0),
-        }
+        };
+        // The Inbox may come before Today in the sidebar.
+        app.sync_sidebar();
+        app
     }
 
     /// Whether the Details pane is drawn; set by [`App::resize`], which must run before drawing.
@@ -299,9 +302,10 @@ impl App {
         }
     }
 
-    /// The sidebar in display order: the four main views, then visible lists (each configured
-    /// group under its heading, in order; the rest by display name under "Lists"), then the
-    /// smart lists. The renderer draws exactly this, so navigation follows what is shown.
+    /// The sidebar in display order: the focus lists (the visible [`inbox_list`], then the four
+    /// main views), then the other visible lists (each configured group under its heading, in
+    /// order; the rest by display name under "Lists"), then the smart lists. The renderer
+    /// draws exactly this, so navigation follows what is shown.
     pub fn sidebar_entries(&self) -> Vec<SidebarEntry> {
         let s = &self.snapshot;
         let shown = |id: &str| {
@@ -311,12 +315,15 @@ impl App {
         let name = |c: &twydo_core::vdir::Collection| {
             c.display_name.clone().unwrap_or_else(|| c.id.clone())
         };
-        let mut out: Vec<SidebarEntry> = [View::Today, View::All, View::Scheduled, View::Done]
-            .into_iter()
+        let inbox = inbox_list(s).filter(|id| shown(id));
+        let mut out: Vec<SidebarEntry> = inbox
+            .iter()
+            .map(|id| View::List(id.clone()))
+            .chain([View::Today, View::All, View::Scheduled, View::Done])
             .map(SidebarEntry::Item)
             .collect();
 
-        let mut placed: Vec<&str> = Vec::new();
+        let mut placed: Vec<&str> = inbox.iter().map(String::as_str).collect();
         for g in &s.config.groups {
             let mut lists: Vec<&str> = Vec::new();
             for l in &g.lists {
@@ -859,6 +866,10 @@ impl App {
                     _ => Pane::Tasks,
                 }
             }
+            '0' => match inbox_list(&self.snapshot) {
+                Some(id) => self.open(View::List(id)),
+                None => self.message = Some("no Inbox list".into()),
+            },
             '1'..='5' => self.open(NUMBERED_VIEWS[c as usize - '1' as usize].clone()),
             '/' => {
                 self.mode = Mode::Search;

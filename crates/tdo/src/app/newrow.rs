@@ -39,27 +39,33 @@ pub(super) struct Adding {
     before: HashSet<String>,
 }
 
-/// The list new tasks go to outside a list: the config's `default_list` when that list
-/// exists, else the list named Inbox, else the first list. Empty when there is no list.
-pub fn default_list(snap: &Snapshot) -> String {
+/// The Inbox: the config's `default_list` when that list exists, else the list named Inbox.
+/// `None` when neither exists; it never falls back to an arbitrary list.
+pub fn inbox_list(snap: &Snapshot) -> Option<String> {
     let lists = &snap.collections;
     let configured = snap
         .config
         .default_list
         .as_ref()
         .filter(|id| lists.iter().any(|c| &c.id == *id));
-    let inbox = || {
-        lists.iter().find(|c| {
-            c.display_name
-                .as_deref()
-                .unwrap_or(&c.id)
-                .eq_ignore_ascii_case("inbox")
-        })
-    };
-    configured
-        .cloned()
-        .or_else(|| inbox().map(|c| c.id.clone()))
-        .or_else(|| lists.first().map(|c| c.id.clone()))
+    configured.cloned().or_else(|| {
+        lists
+            .iter()
+            .find(|c| {
+                c.display_name
+                    .as_deref()
+                    .unwrap_or(&c.id)
+                    .eq_ignore_ascii_case("inbox")
+            })
+            .map(|c| c.id.clone())
+    })
+}
+
+/// The list new tasks go to outside a list: the [`inbox_list`], else the first list. Empty
+/// when there is no list.
+pub fn default_list(snap: &Snapshot) -> String {
+    inbox_list(snap)
+        .or_else(|| snap.collections.first().map(|c| c.id.clone()))
         .unwrap_or_default()
 }
 

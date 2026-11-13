@@ -291,7 +291,7 @@ const HELP: &[(&str, &str, bool)] = &[
         false,
     ),
     ("/  n  N", "search in view", false),
-    ("1-5", "Today All Scheduled Done Next 3 Days", false),
+    ("0-5", "Inbox Today All Scheduled Done Next 3 Days", false),
     (":list <name>  :q", "open list / quit", false),
     (
         ":errors",
