@@ -15,6 +15,6 @@ Set CursorBlink false
 
 Hide
 # render.sh sets PATH and TZ and builds the demo config in $TWYDO_DEMO_DIR.
-Type `export XDG_CONFIG_HOME=$TWYDO_DEMO_DIR/config XDG_STATE_HOME=$TWYDO_DEMO_DIR/state PS1='\[\e[1;38;2;203;166;247m\]❯\[\e[0m\] ' && clear`
+Type `export XDG_CONFIG_HOME=$TWYDO_DEMO_DIR/config XDG_STATE_HOME=$TWYDO_DEMO_DIR/state VISUAL='nvim --clean' PS1='\[\e[1;38;2;203;166;247m\]❯\[\e[0m\] ' && clear`
 Enter
 Show
