@@ -81,14 +81,26 @@ impl Locked<'_> {
 // store/history.rs
 pub struct Step { pub title: String, pub state: StepState }
 pub enum StepState { Applied(String), Queued(Item), Cancelled(Item) }
-pub enum Access<'a> { Locked(&'a Locked<'a>), Queue(&'a Writer, Fence) }
+pub enum Access<'a> {
+    /// The vdir may be free: lock (waiting at most `wait`) only when a step needs it;
+    /// queue with `fence` when someone outside holds it.
+    Try { writer: &'a Writer, wait: Duration, fence: Fence },
+    /// A long job holds the vdir: never lock, always queue.
+    Queue(&'a Writer, Fence),
+}
 impl History {
     pub fn new() -> History;
     pub fn record(&mut self, title: String, s: &Submitted);
-    pub fn undo(&mut self, access: Access<'_>, origin: &str, ctx: &Ctx<'_>) -> Result<(Submitted, Step), WriteError>;
-    pub fn redo(&mut self, access: Access<'_>, origin: &str, ctx: &Ctx<'_>) -> Result<(Submitted, Step), WriteError>;
+    pub fn forget_applied(&mut self, entry: &str);   // an entry reverted by id, outside the history
+    pub fn undo(&mut self, access: Access<'_>, origin: &str, ctx: &Ctx<'_>, drained: &mut Vec<Drained>) -> Result<(Submitted, Step), WriteError>;
+    pub fn redo(&mut self, access: Access<'_>, origin: &str, ctx: &Ctx<'_>, drained: &mut Vec<Drained>) -> Result<(Submitted, Step), WriteError>;
 }
 ```
+
+`History` takes the vdir lock itself, lazily (amended after Task 4's review): a queued step is
+cancelled with no lock, an applied step waits `wait` for it, a cancelled step's redo probes
+once without waiting. Every drain it runs is appended to `drained`, also on `Err`.
+`Writer::push(&Item, Fence)` (Task 3) queues an existing item unchanged.
 
 `History::undo`/`redo` return the step that moved (its `title`, and the id it named before the
 move, are what the daemon puts in `undid`). An empty list is `WriteError::NothingToUndo` /
@@ -221,11 +233,11 @@ Rules of `undo`/`redo` (today's `undo_last`, `redo_last`, `revert_step`):
 - Consumes: `plan`, `Writer`, `Locked`, `Ctx`, `Fence`, `History`, `Access`, `Shared.writer`.
 - Produces in `writes.rs`:
   - `pub(super) trait LaneHeld {}` implemented in `lane.rs` for `WriteGuard<'_>` and `LongGuard<'_>`.
-  - `pub(super) fn with_vdir<T>(shared: &Shared, _lane: &impl LaneHeld, wait: Option<Duration>, f: impl FnOnce(Option<&Locked<'_>>) -> T) -> Result<T, RpcError>`: takes the commit gate's read side (closed → the existing `stopping()` error), then `shared.writer.lock(wait)` (`None` wait = `lock_waiting`), runs `f`, releases both. It is the only place in the daemon that takes the vdir lock for a task write, an undo/redo, a revert, an abandon, a journal recovery or a drain.
+  - `pub(super) fn with_vdir<T>(shared: &Shared, _lane: &impl LaneHeld, f: impl FnOnce(&Writer) -> T) -> Result<T, RpcError>`: takes the commit gate's read side (closed → the existing `stopping()` error), runs `f` with `&shared.writer`, releases the gate. Every daemon call that can commit, queue or drain goes through it, so each needs a lane guard to compile. Inside `f` the vdir lock is taken with `writer.lock(TRY_LOCK)` for a task write or a drain, by `History` (via `Access::Try { wait: TRY_LOCK, .. }`) for an undo or redo, and with `writer.lock_waiting()` for the paths that cannot be queued.
   - `Session { pub history: History }`; `Titled`, `Session.store`, `Session::pushed`, `Session::prune_refused`, `sessions::step`, `writes::prune_refused_steps` are removed. `Sessions::new` no longer needs the config or matrix.
   - `Ctx.config` is the publisher's current configuration (the live one), `Ctx.request` the `RequestRef` of the RPC.
 
-Task write flow (spec §4.4), for `op.submit`; `op.undo`/`op.redo`/`journal.revert` follow the same table with `History::undo`/`redo` or `Locked::revert` in place of plan + commit:
+Task write flow (spec §4.4), for `op.submit`; `op.undo`/`op.redo`/`journal.revert` follow the same table with `History::undo`/`redo` (lane free: `Access::Try { wait: TRY_LOCK, fence: Fence::Now }`; `LongBusy`: `Access::Queue` with the row's fence) or `Locked::revert` in place of plan + commit:
 
 | Lane | Vdir lock | Action |
 |---|---|---|
@@ -234,7 +246,7 @@ Task write flow (spec §4.4), for `op.submit`; `op.undo`/`op.redo`/`journal.reve
 | `Err(LongBusy(Sync))` | not tried | `plan`, `enqueue(.., Fence::Now, ..)` |
 | `Err(LongBusy(List))` | not tried | `plan`, `enqueue(.., Fence::AtDrain, ..)` |
 
-The plan happens before the lane is taken where it does today (the view comes from `planning_view`). `journal.revert` uses no session history. `drain_passes` uses `with_vdir` with the 250 ms wait and keeps its `DRAIN_PASSES`/`DRAIN_BUSY_TRIES` loop, treating a `None` lock as today's `WriteError::Busy`. Startup recovery (`server/mod.rs:574`) becomes `shared.writer.lock(Duration::ZERO)` → `recover()`, keeping "a busy vdir defers recovery" as today. `journal.abandon` and `journal.recover` use `with_vdir(.., None, ..)` under their waiting lane.
+The plan happens before the lane is taken where it does today (the view comes from `planning_view`). `journal.revert` uses no session history. `drain_passes` uses `with_vdir` and `writer.lock(TRY_LOCK)` and keeps its `DRAIN_PASSES`/`DRAIN_BUSY_TRIES` loop, treating a `None` lock as today's `WriteError::Busy`. Startup recovery (`server/mod.rs:574`) becomes `shared.writer.lock(Duration::ZERO)` → `recover()`, keeping "a busy vdir defers recovery" as today. `journal.abandon` and `journal.recover` use `with_vdir` and `writer.lock_waiting()` under their waiting lane.
 
 - [ ] **Step 1: Write the failing tests:**
   - `crates/twydo-daemon/tests/queue.rs::an_edit_saved_while_an_outside_process_holds_the_vdir_lock_is_queued_then_applied`: hold `VdirLock::exclusive(state)` from the test, `submit(edit_title)` answers `WriteOutcome::Queued` within 2 s, release the lock, the item's `op.finished` reports applied without any further request and the file holds the new title.
