@@ -29,6 +29,7 @@ use super::reconcile::reconcile;
 use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use super::vdirsyncer::{self, LOCAL_STORAGE, PAIR};
+use crate::compat::Matrix;
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::lists::helper::Watch;
@@ -154,6 +155,16 @@ fn skipped(s: Skip) -> RunReport {
 ///    left a collection in `Error`, is a transient failure and backs off.
 /// 7. Repeats from 3, at most twice, while `sync/requested` exists.
 pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunReport, SyncError> {
+    run_with(cfg, Matrix::embedded(), opts, now)
+}
+
+/// [`run`], gating the queued edits the run drains with `matrix` (the daemon passes its own).
+pub fn run_with(
+    cfg: &Config,
+    matrix: &Matrix,
+    opts: &RunOptions,
+    now: DateTime<Utc>,
+) -> Result<RunReport, SyncError> {
     // Capture before taking run.lock: an orphan stop cannot record backoff while we hold
     // that lock, even if we have not reached recovery yet. Every pass must honor that stop.
     let started = Utc::now();
@@ -208,6 +219,7 @@ pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunRep
             opts.discover,
             &opts.hold_queue,
             cfg,
+            matrix,
             sync,
             &state,
             &vdirsyncer_config,
@@ -249,6 +261,7 @@ fn one_pass(
     discover_requested: bool,
     hold_queue: &AtomicBool,
     cfg: &Config,
+    matrix: &Matrix,
     sync: &SyncConfig,
     state: &Path,
     vdirsyncer_config: &Path,
@@ -259,7 +272,7 @@ fn one_pass(
     report: &mut RunReport,
 ) -> Result<bool, SyncError> {
     // Step 3: recovery under the exclusive lock.
-    if !recover_and_park(cfg, state, now, hold_queue, report)? {
+    if !recover_and_park(cfg, matrix, state, now, hold_queue, report)? {
         report.stopped = true;
         return Ok(false);
     }
@@ -491,7 +504,7 @@ fn one_pass(
         }
         // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
         // sends them.
-        let drained = drain_into(cfg, &_excl, now, hold_queue, &mut report.warnings);
+        let drained = drain_into(cfg, matrix, &_excl, now, hold_queue, &mut report.warnings);
         // Not after a stopped or failed pass: a rerun would stop or fail the same way, and the
         // batch waiter covers those edits.
         let failed =
@@ -756,6 +769,7 @@ fn transient(
 /// may have been waited for (another process held it) while the caller began shutting down.
 fn recover_and_park(
     cfg: &Config,
+    matrix: &Matrix,
     state: &Path,
     now: DateTime<Utc>,
     hold_queue: &AtomicBool,
@@ -771,8 +785,14 @@ fn recover_and_park(
     let mut ids = Vec::new();
     if report.stuck.is_empty() {
         // Nothing stuck: apply what was queued while no sync held the lock.
-        out.drained
-            .extend(drain_into(cfg, &lock, now, hold_queue, &mut out.warnings));
+        out.drained.extend(drain_into(
+            cfg,
+            matrix,
+            &lock,
+            now,
+            hold_queue,
+            &mut out.warnings,
+        ));
         return Ok(true);
     }
     let conflicts = ConflictStore::open(state)?;
@@ -842,6 +862,7 @@ fn recover_and_park(
 /// never a failed run; the items stay queued.
 fn drain_into(
     cfg: &Config,
+    matrix: &Matrix,
     held: &VdirLock,
     now: DateTime<Utc>,
     hold_queue: &AtomicBool,
@@ -850,7 +871,7 @@ fn drain_into(
     if hold_queue.load(Ordering::SeqCst) {
         return Vec::new();
     }
-    match drain_with_lock(cfg, held, now) {
+    match drain_with_lock(cfg, matrix, held, now) {
         Ok(d) => d,
         Err(e) => {
             warnings.push(format!("queued edits were not applied: {e}"));

@@ -682,3 +682,71 @@ fn shutdown_does_not_wait_for_a_reload_stuck_behind_an_outside_lock() {
     assert_eq!(publisher.current().0, before);
     assert!(fx.read("inbox/u1.ics").contains("SUMMARY:One"));
 }
+
+#[test]
+fn a_drain_by_the_sync_runner_uses_the_daemons_matrix() {
+    use twydo_core::compat::{ContractId, Verdict};
+    let fx = fx();
+    let dir = fx.vdir().parent().unwrap().to_path_buf();
+    let gate = dir.join("gate");
+    let entered = dir.join("entered");
+    std::fs::write(&gate, "").unwrap();
+    // The fake vdirsyncer holds the sync open until `gate` is removed.
+    let body = format!(
+        "touch '{}'\nwhile [ -e '{}' ]; do sleep 0.05; done\necho 'Syncing twydo/inbox' >&2\nexit 0",
+        entered.display(),
+        gate.display()
+    );
+    // The embedded matrix admits a title edit; this one refuses it.
+    let mut refusing = Matrix::embedded().clone();
+    refusing
+        .contract
+        .iter_mut()
+        .find(|r| r.id == ContractId::EditTitleResource)
+        .unwrap()
+        .iphone_baseline = Verdict::Fail;
+    let td = TestDaemon::start_cfg(&fx, fx.with_sync(&body), |o| o.matrix = refusing.clone());
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let _: serde_json::Value = c
+        .call(
+            "sync.run",
+            twydo_daemon::protocol::sync::SyncRunParams {
+                request_id: c.next_request_id(),
+                force_delete: Vec::new(),
+                discover: false,
+            },
+        )
+        .unwrap();
+    let t = Instant::now();
+    while !entered.exists() {
+        assert!(t.elapsed() < BOUND, "the sync never started");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // The daemon's own gate would refuse the edit at once, so queue it as an earlier owner
+    // with the embedded matrix would have: it waits for the runner's drain.
+    let mut store = Store::without_recovery(&fx.config(), Matrix::embedded().clone()).unwrap();
+    store.set_request(Some(RequestRef {
+        session: "s-earlier".into(),
+        request_id: "s-earlier-1-1".into(),
+    }));
+    let queued = store
+        .submit(
+            &fx.snapshot(),
+            &edit_title("u1", "Renamed"),
+            "One",
+            "daemon",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+    assert!(matches!(queued, Submitted::Queued(_)), "{queued:?}");
+    std::fs::remove_file(&gate).unwrap();
+    let t = Instant::now();
+    while queue_len(&fx) > 0 {
+        assert!(t.elapsed() < BOUND, "the edit was never drained");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let state = op_get(&c, None, Some("s-earlier-1-1"));
+    assert!(matches!(state, OpState::Refused { .. }), "{state:?}");
+    assert!(fx.read("inbox/u1.ics").contains("SUMMARY:One"));
+}

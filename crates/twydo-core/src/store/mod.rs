@@ -379,12 +379,6 @@ impl Store {
         Ok((store, report))
     }
 
-    /// A store for a caller that already holds the vdir lock and drains the queue (the sync
-    /// runner): no recovery, the embedded matrix.
-    pub(crate) fn for_drain(cfg: &Config) -> Result<Store, WriteError> {
-        Store::without_recovery(cfg, Matrix::embedded().clone())
-    }
-
     /// A store that skips recovery (the caller holds the vdir lock, or recovers itself), with
     /// `matrix`.
     pub fn without_recovery(cfg: &Config, matrix: Matrix) -> Result<Store, WriteError> {

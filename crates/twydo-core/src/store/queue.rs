@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
 use super::journal::{Entry, FamilyGuard, Journal, RequestRef, Write};
 use super::{Drained, Store, WriteError, existing_vdir_state};
+use crate::compat::Matrix;
 use crate::config::Config;
 use crate::edit::Op;
 use crate::vdir::LoadReport;
@@ -143,13 +144,14 @@ pub fn refusal_message(r: &Refusal) -> String {
 }
 
 /// Drains the queue for a caller that holds the vdir lock (the sync runner), with the
-/// embedded compatibility matrix.
+/// compatibility matrix `matrix`.
 pub fn drain_with_lock(
     cfg: &Config,
+    matrix: &Matrix,
     held: &VdirLock,
     now: DateTime<Utc>,
 ) -> Result<Vec<Drained>, WriteError> {
-    Store::for_drain(cfg)?.drain_locked(held, now)
+    Store::without_recovery(cfg, matrix.clone())?.drain_locked(held, now)
 }
 
 /// Whether every file `item` was planned against still holds what it read: its writes'
