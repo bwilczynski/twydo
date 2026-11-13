@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/bwilczynski/twydo/compare/v0.3.0...v0.3.1) - 2026-11-13
+
+### Added
+
+- *(cli)* name each list next to its id in tdo status
+- *(tui)* show the inbox first in the focus lists
+- *(tui)* toggle parents with Enter in every view
+
+### Fixed
+
+- *(tui)* keep the Enter chain's row after items that arrive late
+- *(lists)* default the helper's interpreter to vdirsyncer's own
+
 ## [0.3.0](https://github.com/bwilczynski/twydo/compare/v0.2.2...v0.3.0) - 2026-11-12
 
 ### Added
