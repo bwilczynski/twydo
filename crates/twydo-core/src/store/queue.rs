@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
 use super::journal::{Entry, FamilyGuard, Journal, RequestRef, Write};
-use super::{Drained, Store, WriteError, existing_vdir_state};
+use super::{Ctx, Drained, WriteError, Writer, existing_vdir_state};
 use crate::compat::Matrix;
 use crate::config::Config;
 use crate::edit::Op;
@@ -151,7 +151,13 @@ pub fn drain_with_lock(
     held: &VdirLock,
     now: DateTime<Utc>,
 ) -> Result<Vec<Drained>, WriteError> {
-    Store::without_recovery(cfg, matrix.clone())?.drain_locked(held, now)
+    let writer = Writer::open(cfg, matrix.clone())?;
+    let ctx = Ctx {
+        now,
+        request: None,
+        config: cfg,
+    };
+    writer.with_lock(held).drain(&ctx)
 }
 
 /// Whether every file `item` was planned against still holds what it read: its writes'

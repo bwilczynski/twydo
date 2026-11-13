@@ -12,15 +12,15 @@ impl Store {
         to: &str,
         now: DateTime<Utc>,
     ) -> Result<(String, bool), WriteError> {
-        let _lock = self.lock()?;
-        self.check_not_stuck()?;
+        let lock = lock_for(&self.writer, self.lock_wait)?;
+        lock.check_not_stuck()?;
         if !crate::retired::plain(to) || !active.collections.iter().any(|c| c.id == to) {
             return Err(io_error(
                 io::ErrorKind::InvalidInput,
                 "choose an existing destination list",
             ));
         }
-        let dest = self.vdir.join(to);
+        let dest = self.writer.vdir.join(to);
         let metadata = fs::symlink_metadata(&dest)?;
         if !metadata.is_dir() || metadata.is_symlink() {
             return Err(io_error(
@@ -28,7 +28,7 @@ impl Store {
                 "destination must be a plain list directory",
             ));
         }
-        let mut b = crate::retired::read(&self.state, backup_id)?;
+        let mut b = crate::retired::read(&self.writer.state, backup_id)?;
         if !b.retired {
             return Err(io_error(
                 io::ErrorKind::InvalidInput,
@@ -49,7 +49,7 @@ impl Store {
                 ));
             }
             if entry.writes.iter().all(|w| {
-                fs::read(self.vdir.join(&w.path)).ok().as_deref()
+                fs::read(self.writer.vdir.join(&w.path)).ok().as_deref()
                     == w.after.as_ref().map(String::as_bytes)
             }) {
                 return Ok((entry.id, false));
@@ -57,6 +57,7 @@ impl Store {
             // After undo, use ordinary redo. This avoids resurrecting tasks removed or
             // edited since recovery by interpreting their absence as a fresh import.
             if self
+                .writer
                 .journal
                 .get(&entry.id)?
                 .is_some_and(|e| e.stage == Stage::Applied)
@@ -67,9 +68,9 @@ impl Store {
                 ));
             }
             for w in &entry.writes {
-                self.check_holds(&w.path, w.before.as_deref())?;
+                self.writer.check_holds(&w.path, w.before.as_deref())?;
             }
-            let id = self.run(entry)?;
+            let id = lock.run(entry)?;
             self.done.push(super::Step::Applied(id.clone()));
             self.undone.clear();
             return Ok((id, true));
@@ -90,10 +91,10 @@ impl Store {
         }
         let today = now.with_timezone(&source.tz()).date_naive();
         let planner = super::plan::Planner {
-            vdir: &self.vdir,
+            vdir: &self.writer.vdir,
             policy: super::plan::Policy {
-                matrix: &self.matrix,
-                mode: self.mode,
+                matrix: &self.writer.matrix,
+                mode: self.writer.mode,
             },
         };
         let mut writes = Vec::new();
@@ -155,7 +156,7 @@ impl Store {
                 String::from_utf8(ical::serialize(&cal))
                     .map_err(|e| io_error(io::ErrorKind::InvalidData, e.to_string()))?,
             );
-            self.check_holds(&w.path, None)?;
+            self.writer.check_holds(&w.path, None)?;
         }
         let entry = Entry {
             format: FORMAT,
@@ -175,8 +176,8 @@ impl Store {
         };
         b.destination = Some(to.into());
         b.recovery = Some(entry.clone());
-        crate::retired::save(&self.state, &b)?;
-        let id = self.run(entry)?;
+        crate::retired::save(&self.writer.state, &b)?;
+        let id = lock.run(entry)?;
         self.done.push(super::Step::Applied(id.clone()));
         self.undone.clear();
         Ok((id, true))

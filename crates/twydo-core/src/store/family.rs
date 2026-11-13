@@ -10,7 +10,7 @@
 //! its items' own dates (`create/family-roundtrip/initial-phone-edit/list1`).
 //!
 //! The loaded files' bytes do not show an item a sync added after the snapshot, so these ops
-//! also rescan the task's list under the lock ([`Store::check_family`]) and are refused if
+//! also rescan the task's list under the lock ([`Writer::check_family`]) and are refused if
 //! the task has an item that was not loaded, including a first item of a task that had none.
 //! A change of type is rescanned too: whether a task may become a task, checklist or project
 //! depends on its items.
@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 
 use super::plan::{Plan, Planner, Target, create};
-use super::{Store, WriteError};
+use super::{WriteError, Writer};
 
 use super::journal::{FamilyGuard as Family, check_family};
 use crate::edit::Op;
@@ -32,7 +32,7 @@ use crate::ical;
 use crate::model::{Status, TaskKind};
 use crate::views::Snapshot;
 
-impl Store {
+impl Writer {
     /// Refuse with [`WriteError::Stale`] (naming the file) if the parent's list now holds an
     /// item of the parent that was not loaded. The caller holds the lock.
     pub(super) fn check_family(&self, f: &Family) -> Result<(), WriteError> {
