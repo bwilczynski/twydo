@@ -220,14 +220,24 @@ fn completed_parents_and_nested_items_have_crossed_out_titles() {
 fn glyphs_and_counts() {
     let mut a = app();
     a.view = View::All;
-    let t = text(&render(&mut a, 120, 40));
+    let buf = render(&mut a, 120, 40);
+    let t = text(&buf);
     assert!(t.contains('↺'), "{t}");
     assert!(t.contains('○'), "{t}");
-    assert!(t.contains("[3]"), "{t}");
-    assert!(t.contains("[2]"), "{t}");
     assert!(t.contains("monthly"), "{t}");
-    assert!(t.contains("project"), "{t}");
-    assert!(t.contains("checklist"), "{t}");
+    let project = row_text(&buf, "Prepare tax return");
+    assert!(
+        project.contains('▤') && project.contains("[2]"),
+        "{project}"
+    );
+    let checklist = row_text(&buf, "Packing list");
+    assert!(
+        checklist.contains('☰') && checklist.contains("[3]"),
+        "{checklist}"
+    );
+    let water = row_text(&buf, "Water plants");
+    assert!(water.contains('↺') && water.contains("weekly"), "{water}");
+    assert!(!water.contains('▤') && !water.contains('☰'), "{water}");
     for v in [View::Today, View::All, View::Scheduled] {
         let c = counts(&a.snapshot, &v, now());
         let want = if c.due_or_overdue > 0 {
@@ -1550,4 +1560,173 @@ fn syncing_replaces_last_sync_age_and_preserves_diagnostics() {
     a.tick(now() + chrono::Duration::minutes(1));
     assert!(status_line(&render(&mut a, 140, 20)).contains("synced 1m ago"));
     assert_eq!(a.message.as_deref(), Some("saved"));
+}
+
+/// The Tasks-pane part of the line that shows `title`.
+fn row_text(buf: &Buffer, title: &str) -> String {
+    let (_, y) = find_in_tasks(buf, title);
+    let start = (1..buf.area.width)
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap();
+    let end = (start + 1..buf.area.width)
+        .find(|&x| buf[(x, 0)].symbol() == "╭")
+        .unwrap_or(buf.area.width);
+    (start..end).map(|x| buf[(x, y)].symbol()).collect()
+}
+
+#[test]
+fn type_marks_are_the_same_in_every_view() {
+    for view in [View::Today, View::All, View::List("personal".into())] {
+        let mut a = app();
+        a.view = view.clone();
+        let buf = render(&mut a, 160, 40);
+        if !text(&buf).contains("Packing list") {
+            continue;
+        }
+        let row = row_text(&buf, "Packing list");
+        assert!(row.contains("○ ☰"), "{view:?}: {row}");
+        assert!(row.contains("[3]"), "{view:?}: {row}");
+        assert!(!row.contains("checklist"), "{view:?}: {row}");
+    }
+}
+
+/// A monthly checklist due today with one item.
+fn repeating_checklist_vdir() -> tempfile::TempDir {
+    let parent = todo(
+        "rc",
+        "Monthly checks",
+        "X-2DOAPP-METADATA:@tasktype:checklist\r\nDUE;VALUE=DATE:20261104\r\n\
+         RRULE:FREQ=MONTHLY\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    let item = todo(
+        "rc1",
+        "Check smoke alarm",
+        "RELATED-TO:rc\r\nSTATUS:NEEDS-ACTION\r\n",
+    );
+    vdir_with(&[("rc.ics", &parent), ("rc1.ics", &item)])
+}
+
+#[test]
+fn repeating_parent_shows_repeat_and_mark() {
+    let dir = repeating_checklist_vdir();
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.view = View::All;
+    let row = row_text(&render(&mut a, 160, 40), "Monthly checks");
+    for want in ["↺ ☰", "[1]", "monthly"] {
+        assert!(row.contains(want), "{want:?} not in {row}");
+    }
+}
+
+#[test]
+fn empty_project_is_marked() {
+    let dir = vdir_with(&[(
+        "e.ics",
+        &todo(
+            "e",
+            "Empty plan",
+            "X-2DOAPP-METADATA:@tasktype:project\r\nSTATUS:NEEDS-ACTION\r\n",
+        ),
+    )]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.view = View::All;
+    let row = row_text(&render(&mut a, 160, 40), "Empty plan");
+    assert!(row.contains("○ ▤"), "{row}");
+    assert!(!row.contains('['), "{row}");
+    assert!(!row.contains("project"), "{row}");
+}
+
+#[test]
+fn plain_task_with_items_shows_as_project() {
+    let dir = vdir_with(&[
+        (
+            "t.ics",
+            &todo("t", "Plain parent", "STATUS:NEEDS-ACTION\r\n"),
+        ),
+        (
+            "t1.ics",
+            &todo("t1", "Its item", "RELATED-TO:t\r\nSTATUS:NEEDS-ACTION\r\n"),
+        ),
+    ]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.view = View::All;
+    let row = row_text(&render(&mut a, 160, 40), "Plain parent");
+    assert!(row.contains("○ ▤"), "{row}");
+    assert!(row.contains("[1]"), "{row}");
+}
+
+#[test]
+fn finished_parent_keeps_status_and_mark() {
+    let dir = project_vdir();
+    let mut snap = snapshot_at(dir.path());
+    for task in &mut snap.tasks {
+        task.status = twydo_core::model::Status::Completed;
+        task.completed = Some(twydo_core::ical::value::IcalDateTime::Utc(now().to_utc()));
+    }
+    let mut a = App::new(snap, now());
+    a.view = View::All;
+    a.expansion.expanded.insert("p".into());
+    let buf = render(&mut a, 160, 40);
+    let parent = row_text(&buf, "Synthetic project");
+    assert!(parent.contains("✓ ▤"), "{parent}");
+    assert!(parent.contains("[3]"), "{parent}");
+    let child = row_text(&buf, "Finished child");
+    assert!(child.contains('✓'), "{child}");
+    assert!(!child.contains('▤') && !child.contains('☰'), "{child}");
+}
+
+#[test]
+fn no_type_column_without_parents() {
+    let dir = vdir_with(&[
+        ("a.ics", &todo("a", "Plain one", "STATUS:NEEDS-ACTION\r\n")),
+        ("b.ics", &todo("b", "Plain two", "STATUS:NEEDS-ACTION\r\n")),
+    ]);
+    let mut a = App::new(snapshot_at(dir.path()), now());
+    a.view = View::All;
+    let buf = render(&mut a, 160, 40);
+    assert!(row_text(&buf, "Plain one").contains("○ Plain one"));
+    assert!(row_text(&buf, "Plain two").contains("○ Plain two"));
+}
+
+#[test]
+fn titles_line_up_with_and_without_marks() {
+    let mut a = app();
+    a.view = View::All;
+    let buf = render(&mut a, 160, 40);
+    let (parent_x, _) = find_in_tasks(&buf, "Prepare tax return");
+    let (plain_x, _) = find_in_tasks(&buf, "Renew library books");
+    assert_eq!(parent_x, plain_x, "{}", text(&buf));
+}
+
+#[test]
+fn new_row_title_lines_up_with_type_column() {
+    let mut a = app();
+    a.view = View::All;
+    render(&mut a, 160, 40);
+    cursor_on(&mut a, "Renew library books");
+    press(&mut a, 'o');
+    for c in "New".chars() {
+        press(&mut a, c);
+    }
+    let buf = render(&mut a, 160, 40);
+    let (new_x, _) = find_in_tasks(&buf, "New▏");
+    let (plain_x, _) = find_in_tasks(&buf, "Renew library books");
+    assert_eq!(new_x, plain_x, "{}", text(&buf));
+}
+
+#[test]
+fn narrow_pane_drops_hint_before_count() {
+    let dir = repeating_checklist_vdir();
+    for w in [120, 80, 60, 40] {
+        let mut a = App::new(snapshot_at(dir.path()), now());
+        a.view = View::All;
+        let buf = render(&mut a, w, 30);
+        let t = text(&buf);
+        if !t.contains("Monthly") {
+            continue;
+        }
+        let row = row_text(&buf, "Monthly");
+        if row.contains("monthly") {
+            assert!(row.contains("[1]"), "width {w}: {row}");
+        }
+    }
 }

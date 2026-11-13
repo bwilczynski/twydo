@@ -49,32 +49,52 @@ fn group_title(g: DateGroup, today: NaiveDate) -> Option<String> {
     })
 }
 
-pub(super) fn glyph(app: &App, idx: usize) -> String {
+/// The status glyph: completed, cancelled, repeating or open.
+pub(super) fn glyph(app: &App, idx: usize) -> &'static str {
     let t = &app.snapshot.tasks[idx];
-    let n = app.snapshot.children(idx).len();
-    if n > 0 {
-        format!("[{n}]")
-    } else if t.status == Status::Completed {
-        "✓".into()
+    if t.status == Status::Completed {
+        "✓"
     } else if t.status == Status::Cancelled {
-        "✗".into()
+        "✗"
     } else if t.rrule.is_some() {
-        "↺".into()
+        "↺"
     } else {
-        "○".into()
+        "○"
     }
 }
 
-/// The repeat hint, or `project` / `checklist`, or nothing.
+/// The type a row shows: its own, except that a plain task with items shows as a project.
+pub(super) fn shown_kind(app: &App, idx: usize) -> TaskKind {
+    match app.snapshot.tasks[idx].kind {
+        TaskKind::Task if !app.snapshot.children(idx).is_empty() => TaskKind::Project,
+        k => k,
+    }
+}
+
+/// The type mark after the status glyph; blank for a plain task.
+pub(super) fn type_mark(app: &App, idx: usize) -> &'static str {
+    match shown_kind(app, idx) {
+        TaskKind::Project => "▤",
+        TaskKind::Checklist => "☰",
+        TaskKind::Task => "",
+    }
+}
+
+/// `[n]` for a parent with n items, else nothing.
+fn count(app: &App, idx: usize) -> String {
+    match app.snapshot.children(idx).len() {
+        0 => String::new(),
+        n => format!("[{n}]"),
+    }
+}
+
+/// The repeat hint, or nothing.
 fn hint(t: &Task) -> String {
-    if let Some(r) = t.rrule.as_deref().and_then(|r| parse_rrule(r).ok()) {
-        return short_hint(&r);
-    }
-    match t.kind {
-        TaskKind::Project => "project".into(),
-        TaskKind::Checklist => "checklist".into(),
-        TaskKind::Task => String::new(),
-    }
+    t.rrule
+        .as_deref()
+        .and_then(|r| parse_rrule(r).ok())
+        .map(|r| short_hint(&r))
+        .unwrap_or_default()
 }
 
 fn date_text(app: &App, t: &Task) -> String {
@@ -153,7 +173,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     if items.is_empty()
         && let Some(row) = new_row
     {
-        let line = new_row_line(app, row, 0, width, (1, 0));
+        let line = new_row_line(app, row, 0, width, &Cols::default());
         f.render_widget(Paragraph::new(line), inner);
         return false;
     }
@@ -188,7 +208,13 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
             .unwrap_or(0)
             .min(cap)
     };
-    let glyph_w = col(&|r| glyph(app, r.task), 5);
+    let glyph_w = 1;
+    let type_w = if task_rows.iter().any(|r| !type_mark(app, r.task).is_empty()) {
+        2
+    } else {
+        0
+    };
+    let mut count_w = col(&|r| count(app, r.task), 6);
     let mut hint_w = col(&|r| hint(&app.snapshot.tasks[r.task]), MAX_HINT);
     let date_w = col(&|r| date_text(app, &app.snapshot.tasks[r.task]), MAX_DATE);
     let max_depth = task_rows
@@ -204,12 +230,24 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     } else {
         0
     };
-    let left_fixed = 2 + max_depth + glyph_w + 1 + mark_w;
-    let right =
-        |h: usize| (if h > 0 { h + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
-    if width < left_fixed + right(hint_w) + MIN_TITLE {
+    let left_fixed = 2 + max_depth + glyph_w + 1 + type_w + mark_w;
+    let gap = |w: usize| if w > 0 { w + 1 } else { 0 };
+    let right = |c: usize, h: usize| gap(c) + gap(h) + gap(date_w);
+    // Narrow panes lose the repeat hint first, then the item count.
+    if width < left_fixed + right(count_w, hint_w) + MIN_TITLE {
         hint_w = 0;
     }
+    if width < left_fixed + right(count_w, hint_w) + MIN_TITLE {
+        count_w = 0;
+    }
+    let cols = Cols {
+        glyph: glyph_w,
+        kind: type_w,
+        mark: mark_w,
+        count: count_w,
+        hint: hint_w,
+        date: date_w,
+    };
 
     let mut lines: Vec<Line> = Vec::new();
     let mut card_at: Option<usize> = None;
@@ -247,7 +285,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
                     anchored.filter(|n| n.below == below).map(|n| {
                         let into = n.target.parent.as_ref() == Some(uid);
                         let depth = r.depth as usize + usize::from(into);
-                        new_row_line(app, n, depth, width, (glyph_w, mark_w))
+                        new_row_line(app, n, depth, width, &cols)
                     })
                 };
                 if let Some(l) = new_line(false) {
@@ -257,13 +295,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
                 // The card takes its task's row; a new task's card opens below the cursor.
                 let card_here = card.filter(|(e, _)| e.uid.as_ref() == Some(uid));
                 if card_here.is_none() {
-                    lines.push(row_line(
-                        app,
-                        r,
-                        selected,
-                        width,
-                        (glyph_w, mark_w, hint_w, date_w),
-                    ));
+                    lines.push(row_line(app, r, selected, width, &cols));
                 }
                 let new_here = card.filter(|(e, _)| e.uid.is_none() && selected);
                 if let Some((_, h)) = card_here.or(new_here) {
@@ -280,7 +312,7 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
     // A row whose anchor the view does not show goes on top.
     if let Some(n) = new_row {
         selected_line = row_at.unwrap_or_else(|| {
-            lines.insert(0, new_row_line(app, n, 0, width, (glyph_w, mark_w)));
+            lines.insert(0, new_row_line(app, n, 0, width, &cols));
             0
         });
     }
@@ -317,16 +349,10 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) -> bool {
 
 /// The new row: the target list's bar, an open glyph, and the typed title with the cursor,
 /// lined up with the rows' titles. Highlighted as the selection.
-fn new_row_line(
-    app: &App,
-    row: &NewRow,
-    depth: usize,
-    width: usize,
-    (glyph_w, mark_w): (usize, usize),
-) -> Line<'static> {
+fn new_row_line(app: &App, row: &NewRow, depth: usize, width: usize, cols: &Cols) -> Line<'static> {
     let indent = depth * 2;
-    let glyph_w = glyph_w.max(1);
-    let title_w = width.saturating_sub(2 + indent + glyph_w + 1 + mark_w);
+    let glyph_w = cols.glyph.max(1);
+    let title_w = width.saturating_sub(2 + indent + glyph_w + 1 + cols.kind + cols.mark);
     let title = tail(&format!("{}▏", row.title), title_w);
     let filler = title_w.saturating_sub(title.width());
     let spans = vec![
@@ -337,7 +363,7 @@ fn new_row_line(
         ),
         Span::raw(" ".repeat(indent)),
         Span::raw(pad("○", glyph_w)),
-        Span::raw(" ".repeat(1 + mark_w)),
+        Span::raw(" ".repeat(1 + cols.kind + cols.mark)),
         Span::raw(title),
         Span::raw(" ".repeat(filler)),
     ];
@@ -359,21 +385,37 @@ fn tail(s: &str, width: usize) -> String {
     out.into_iter().rev().collect()
 }
 
+/// Column widths shared by every row, so titles, counts and dates line up.
+#[derive(Clone, Copy, Default)]
+struct Cols {
+    glyph: usize,
+    /// The type mark and its space; 0 when no row is a project or checklist.
+    kind: usize,
+    /// The `!` flag column.
+    mark: usize,
+    count: usize,
+    hint: usize,
+    date: usize,
+}
+
 /// Follows the title of a task whose edit waits in the write queue.
 const QUEUED_MARKER: &str = " (queued)";
 
-fn row_line(
-    app: &App,
-    r: &Row,
-    selected: bool,
-    width: usize,
-    (glyph_w, mark_w, hint_w, date_w): (usize, usize, usize, usize),
-) -> Line<'static> {
+fn row_line(app: &App, r: &Row, selected: bool, width: usize, cols: &Cols) -> Line<'static> {
+    let Cols {
+        glyph: glyph_w,
+        kind: type_w,
+        mark: mark_w,
+        count: count_w,
+        hint: hint_w,
+        date: date_w,
+    } = *cols;
     let t = &app.snapshot.tasks[r.task];
     let overdue = is_overdue(app, r.task);
     let indent = r.depth as usize * 2;
-    let left = 2 + indent + glyph_w + 1 + mark_w;
-    let right = (if hint_w > 0 { hint_w + 1 } else { 0 }) + if date_w > 0 { date_w + 1 } else { 0 };
+    let left = 2 + indent + glyph_w + 1 + type_w + mark_w;
+    let gap = |w: usize| if w > 0 { w + 1 } else { 0 };
+    let right = gap(count_w) + gap(hint_w) + gap(date_w);
     let title_w = width.saturating_sub(left + right);
 
     // Keep parent context for independently displayed Today rows and detached tree roots;
@@ -420,9 +462,12 @@ fn row_line(
             Style::new().fg(bar_color(&app.snapshot, &t.collection)),
         ),
         Span::raw(" ".repeat(indent)),
-        Span::styled(pad(&glyph(app, r.task), glyph_w), text),
+        Span::styled(pad(glyph(app, r.task), glyph_w), text),
         Span::raw(" "),
     ];
+    if type_w > 0 {
+        spans.push(Span::styled(pad(type_mark(app, r.task), type_w), text));
+    }
     if mark_w > 0 {
         let mark = if flagged(app, t) { "!" } else { " " };
         spans.push(Span::styled(
@@ -443,6 +488,13 @@ fn row_line(
         Span::styled(suffix, dim()),
         Span::raw(" ".repeat(filler)),
     ]);
+    if count_w > 0 {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            pad(&truncate(&count(app, r.task), count_w), count_w),
+            dim(),
+        ));
+    }
     if hint_w > 0 {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(
