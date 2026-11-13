@@ -37,11 +37,20 @@ pub fn plan(
     policy: Policy<'_>,
     now: DateTime<Utc>,
 ) -> Result<Prepared, WriteError> {
+    plan_in(&snap.config.vdir, snap, op, policy, now)
+}
+
+/// [`plan`] with the vdir named by the caller (the writer's own) instead of the snapshot's
+/// configuration.
+pub(super) fn plan_in(
+    vdir: &Path,
+    snap: &Snapshot,
+    op: &Op,
+    policy: Policy<'_>,
+    now: DateTime<Utc>,
+) -> Result<Prepared, WriteError> {
     let today = now.with_timezone(&snap.tz()).date_naive();
-    let planner = Planner {
-        vdir: &snap.config.vdir,
-        policy,
-    };
+    let planner = Planner { vdir, policy };
     planner.gate(snap, op, today)?;
     let mut plan = planner.plan(snap, op, now)?;
     let mut holds = std::mem::take(&mut plan.holds);
