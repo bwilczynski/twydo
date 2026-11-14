@@ -1028,6 +1028,38 @@ fn a_daemon_starts_over_an_unfinished_list_operation() {
     assert!(!fx.read("inbox/u1.ics").contains("Changed"));
 }
 
+/// The daemon opens its writer (which creates `journal/`) before recovery, so the fence is
+/// checked explicitly at startup: a state directory that had no journal starts the same way.
+#[test]
+fn a_daemon_starts_over_an_unfinished_list_operation_without_a_journal() {
+    use twydo_daemon::protocol::lists::PendingListOp;
+    use twydo_daemon::protocol::methods::StatusView;
+    let fx = Fixture::new(&[("inbox", "u1", "One", None)]);
+    let mut cfg = fx.config();
+    cfg.sync = Some(twydo_core::config::SyncConfig::default());
+    assert!(!fx.state().join("journal").exists());
+    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+    request.action = "preview-delete".into();
+    request.collection = Some("inbox".into());
+    let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
+    let c = td.client();
+    let pending: Option<PendingListOp> = c.call("lists.pending", empty()).unwrap();
+    assert_eq!(
+        pending.expect("the operation is pending").operation,
+        record.id
+    );
+    assert_eq!(common::snapshot(&c).tasks.len(), 1);
+    let st: StatusView = c.call("status.get", empty()).unwrap();
+    assert!(
+        st.drain_error
+            .as_deref()
+            .is_some_and(|m| m.contains("waits for the unfinished operation")),
+        "{:?}",
+        st.drain_error
+    );
+}
+
 /// With the lane free, a write into a fenced collection is refused by the fence itself, before
 /// the plan and before the drain: the item already queued in that list is neither refused by
 /// a drain this submit triggered nor lost.
