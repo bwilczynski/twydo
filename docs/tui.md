@@ -81,7 +81,8 @@ gets no answer within 8 seconds, it says
 | `h` / `l`, `Tab` | focus the previous / next pane |
 | `0` | the Inbox, even when it is hidden or archived (like `:list`) |
 | `1`–`5` | Today, All, Scheduled, Done, Next 3 Days |
-| `Enter` in the sidebar | open the view or list |
+| moving in the sidebar | opens the view or list under the cursor; focus stays in the sidebar |
+| `Enter` / `l` in the sidebar | focus the opened view's tasks |
 | `o` / `i` in the sidebar | create / edit a list |
 | `Enter` on a parent | expand or collapse its items, in every view |
 | `/`, then `n` / `N` | search the current view by title; `Enter` keeps the filter, `Esc` clears it |
