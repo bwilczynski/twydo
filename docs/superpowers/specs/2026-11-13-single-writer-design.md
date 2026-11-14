@@ -66,7 +66,9 @@ covers it.)
 3. Whatever varies per call (request, time, whether the vdir is free) is an argument or a
    type, never a field set beforehand.
 4. A session's undo history is one list.
-5. Every drain, whoever runs it, uses the daemon's matrix and its live configuration.
+5. Every drain, whoever runs it, uses the daemon's matrix. The sync runner and
+   `lists.recover` pass the daemon's startup configuration in `Ctx` (time zone and work days
+   are restart-bound, so it equals the live one where it matters).
 
 ## 3. Non-goals
 
@@ -155,7 +157,12 @@ Points that matter:
 - **`drain` returns what it drained.** There is no collector flag. A commit that must drain
   first calls `drain` and then `commit`, and has both results in hand.
 - **`Fence` replaces `set_fence_at_drain`.** `enqueue` checks the collection fence for
-  `Fence::Now` and leaves it to the drain for `Fence::AtDrain`. `commit` always checks it.
+  `Fence::Now` and leaves it to the drain for `Fence::AtDrain`. `commit` always checks it. The
+  daemon also checks it before the plan (`Writer::check_fence`), so the order is fence, plan
+  (gate), lock, drain, commit, as before the refactor.
+- **Queue items carry no request in `prepared.entry.request`.** Items written now have
+  `prepared.entry.request: null` (0.3.1 stamped it); both old and new drains overwrite it
+  from `item.request`, so either daemon reads either file.
 - **The drain takes the live configuration** from `Ctx`, so a time-zone change is not
   half-applied (deferred from daemon plan 2, task 9). As built, `timezone` and `work_days` only
   take effect after a daemon restart, so a half-applied change was not observable and no test
@@ -229,7 +236,7 @@ fn with_vdir<T>(shared: &Shared, lane: &impl LaneHeld,
 ```
 
 It takes the commit gate's read side and runs `f` with the writer. `LaneHeld` is implemented
-by the write guard and the long guard, so the call needs a lane guard to compile. Every path
+by the write guard, so the call needs a lane guard to compile. Every path
 that can commit, queue or drain goes through it: `op.submit`, `op.undo`, `op.redo`,
 `journal.revert`, `journal.abandon`, `journal.recover`, `conflicts.resolve`, `lists.recover`,
 the drains and startup recovery. Inside it the vdir lock is taken through the writer
@@ -249,6 +256,12 @@ Row 2 is today's fallthrough when the 250 ms poll fails. The wait stays 250 ms. 
 probe after the push is dropped: with the write lane held no long job runs, so no other
 drainer can have missed the item, and an outside holder never drains. The `LongBusy` rows
 already request a drain when the job has ended meanwhile (`writes.rs:620`).
+
+As built, not every path goes through `with_vdir`: `conflicts.resolve` takes the commit gate
+directly; `lists.recover` takes the writer's lock without the commit gate (as before); the
+sync runner's drain and startup recovery run outside the gate; and the drain passes use the
+gate entry point without a lane proof (`with_gate`). Teardown waits for jobs before it closes
+the gate and startup runs before ready, so this is safe.
 
 The lock-order comment shrinks accordingly: steps 3 to 5 of a task write (lane, commit gate,
 vdir lock) become "the lane, then `with_vdir`, then the writer's lock".
@@ -280,6 +293,12 @@ As built, `submit` did not disappear: it moved into the daemon (`run_submit`) an
 test wrapper (`crates/twydo-core/tests/common/store.rs`). `History` keeps one no-wait lock
 probe after it queues an item (the second probe after a push that §1 describes is gone from
 the submit path only).
+
+### Notes for write-queue plan 3
+
+`plan` is not deterministic: it draws `new_uid` for creates, `new_op_id`, and stamps from
+`now`. Re-planning a queued create at drain time needs an identity input so the item keeps the
+UID the view showed.
 
 ## 5. The one behavior change
 

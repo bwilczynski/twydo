@@ -154,10 +154,11 @@ steps and answers:
 2. **Edit.** The `edit` functions produce the new file contents. Only the properties the
    operation is about change, plus `DTSTAMP`, `LAST-MODIFIED` and their counterparts in 2Do's
    metadata; every other line keeps its bytes.
-3. **Writer.** The daemon plans the operation with `Writer::plan` (gate and plan, a pure
+3. **Writer.** The daemon takes the lane and the commit gate, checks the collection fence
+   (`Writer::check_fence`), then plans the operation with `Writer::plan` (gate and plan, a pure
    function of the snapshot the client planned against with queued writes laid over it, see
-   [The write queue](#the-write-queue)). It then takes the lane and the commit gate and tries the
-   exclusive vdir lock for 250 ms. With the lock it drains the queue and commits; if a long job
+   [The write queue](#the-write-queue)). The order is fence, plan (gate), vdir lock, drain,
+   commit. It tries the exclusive vdir lock for 250 ms. With the lock it drains the queue and commits; if a long job
    (a sync or a list job) holds the lane, or something outside the daemon holds the lock, the
    planned operation is queued instead and a drain is requested. There is one `Writer` per daemon,
    so every session, the sync runner and the drain share its journal, queue and write policy.

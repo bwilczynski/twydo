@@ -291,4 +291,5 @@ The plan happens before the lane is taken where it does today (the view comes fr
 - Task 5 dropped the test `resolve_does_not_run_journal_recovery`.
 - Task 6 dropped the live-time-zone-at-a-drain daemon test, for the same reason as Task 3.
 - The one observable value change: `undid.op_id` for a redo of a cancelled step is now the withdrawn item's id (it was none).
+- The final review's fix restored the fence-before-gate order in `run_submit` (`Writer::check_fence`, before `plan`), as before the refactor; undo, redo and `journal.revert` keep their old order.
 - A known flaky test, seen once before Task 4: `crates/twydo-daemon/tests/sync.rs::stop_request_is_withdrawn_after_the_stopped_sync`.
