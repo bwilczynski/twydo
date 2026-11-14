@@ -123,7 +123,6 @@ impl Lane {
 pub(super) trait LaneHeld {}
 
 impl LaneHeld for WriteGuard<'_> {}
-impl LaneHeld for LongGuard<'_> {}
 
 /// The lane held for one write (plan, commit, publish).
 pub struct WriteGuard<'a> {
