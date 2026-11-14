@@ -71,6 +71,7 @@ fn task(start: Option<IcalDateTime>) -> Task {
         parent: None,
         kind: TaskKind::Task,
         alarms: vec![],
+        custom_alert: Default::default(),
         meta: Metadata::default(),
         from_completion: false,
         warnings: vec![],

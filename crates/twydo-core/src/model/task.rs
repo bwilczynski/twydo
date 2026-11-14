@@ -77,6 +77,9 @@ pub struct Task {
     pub parent: Option<String>,
     pub kind: TaskKind,
     pub alarms: Vec<Alarm>,
+    /// The single alert Twydo can edit ([`super::alert`]).
+    #[serde(default)]
+    pub custom_alert: super::alert::CustomAlert,
     pub meta: Metadata,
     pub from_completion: bool,
     pub warnings: Vec<String>,
@@ -256,6 +259,7 @@ fn read_todo(c: &Component, collection: &str, path: &Path) -> Task {
         parent,
         kind,
         alarms,
+        custom_alert: super::alert::custom_alert(c),
         from_completion: meta.has("repeatfromcompletion"),
         meta,
         warnings,
