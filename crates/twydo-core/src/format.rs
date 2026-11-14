@@ -40,7 +40,7 @@ pub fn describe_alarm(a: &Alarm, task: &Task, tz: Tz) -> String {
             offset,
             related_end,
         } => {
-            let anchor = if *related_end || task.start.is_none() {
+            let anchor = if task.alert_anchor(*related_end) == task.due.as_ref() {
                 "due"
             } else {
                 "start"
