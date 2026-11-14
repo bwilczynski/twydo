@@ -15,6 +15,7 @@ use crate::model::meta_edit::{MetaJson, default_task_meta};
 use crate::model::repeat::{End, RRule, parse_rrule};
 use crate::repeatinput::RepeatSpec;
 
+mod alert;
 pub mod complete;
 pub mod create;
 pub mod describe;
@@ -59,6 +60,9 @@ pub enum Change {
     /// Set the repeat rule, or `None` to remove it. A task without a due date must get one
     /// first (a `Change::Due` earlier in the same list): 2Do makes the due date today.
     Repeat(Option<RepeatSpec>),
+    /// Set, change or (`None`) remove the task's custom alert, in minutes before the due
+    /// value. Needs a due date; tasks with alerts Twydo can't edit are refused.
+    Alert(Option<crate::model::AlertOffset>),
     /// Turn the task into a task, checklist or project. A single-resource edit of the task's
     /// own metadata: whether its items allow it is the gate's call.
     Kind(TaskKind),
@@ -321,6 +325,7 @@ fn apply_one(todo: &mut Component, change: &Change) -> Result<(), EditError> {
         Change::RepeatInterval(n) => set_interval(todo, *n),
         Change::Repeat(spec) => set_repeat(todo, spec.as_ref()),
         Change::Kind(kind) => set_kind(todo, *kind),
+        Change::Alert(a) => alert::set_alert(todo, *a),
     }
 }
 
@@ -451,6 +456,13 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
         Meta::UnreadableJson => return Err(unsupported("this task's 2Do metadata is unreadable")),
         Meta::Absent | Meta::Tokens => None,
     };
+    // Only a task that gains a due time gets the automatic alert: moving a time keeps the
+    // alerts as they are, so a removed alert stays removed.
+    let was_timed = todo.prop("DUE").is_some_and(|p| {
+        p.value.contains('T')
+            && p.param("VALUE")
+                .is_none_or(|v| !v.eq_ignore_ascii_case("DATE"))
+    });
     match due {
         Some(d) => {
             let v = match d {
@@ -487,7 +499,7 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
             _ => m.remove("duetime"),
         }
         write_meta(todo, Some(&orig), &m);
-        if timed && !todo.children.iter().any(is_auto_alarm) {
+        if timed && !was_timed && todo.children_named("VALARM").next().is_none() {
             let summary = todo.prop("SUMMARY").map_or("", |p| p.value.as_str());
             let alarm = auto_alarm(summary);
             todo.push_child(alarm);
@@ -495,6 +507,10 @@ fn set_due(todo: &mut Component, due: Option<Due>) -> Result<(), EditError> {
     }
     if !timed {
         todo.remove_children(is_auto_alarm);
+    }
+    if due.is_none() {
+        // 2Do drops a custom alert with the due date (alerts round, A3).
+        todo.remove_children(|c| crate::model::alert::custom_offset(c).is_some());
     }
     Ok(())
 }
@@ -532,11 +548,7 @@ fn has_own_dtstart(todo: &Component) -> bool {
     }
 }
 
-fn is_auto_alarm(c: &Component) -> bool {
-    c.name == "VALARM"
-        && c.prop("X-2DOAPP-ISAUTO")
-            .is_some_and(|p| p.value.trim() == "1")
-}
+use crate::model::alert::is_auto_alarm;
 
 /// The start date lives only in `<2Do Meta>` `StartDate` (epoch seconds of UTC midnight, H9).
 /// A task without metadata gets 2Do's default metadata first, unless it has its own

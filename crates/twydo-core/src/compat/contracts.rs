@@ -16,6 +16,7 @@ pub enum OperationId {
     SetDue,
     SetStart,
     SetRepeat,
+    SetAlert,
     Convert,
     Complete,
     Reopen,
@@ -37,6 +38,7 @@ impl OperationId {
             Self::SetDue => "set-due",
             Self::SetStart => "set-start",
             Self::SetRepeat => "set-repeat",
+            Self::SetAlert => "set-alert",
             Self::Convert => "convert",
             Self::Complete => "complete",
             Self::Reopen => "reopen",
@@ -72,6 +74,7 @@ contracts! {
     SetDueChecklist => SetDue, "set-due.recurring-checklist", "changing a recurring checklist's due date";
     SetDueItemCleanup => SetDue, "set-due.checklist-item-cleanup", "changing a checklist's date while its items have dates of their own";
     SetStartTask => SetStart, "set-start.task", "changing a start date";
+    SetAlertTask => SetAlert, "set-alert.task", "setting an alert";
     SetRepeatInterval => SetRepeat, "set-repeat.interval", "changing a repeat interval";
     SetRepeatTask => SetRepeat, "set-repeat.task", "changing a task's repeat rule";
     SetRepeatChecklist => SetRepeat, "set-repeat.checklist", "changing a checklist's repeat rule";

@@ -59,6 +59,7 @@ impl TaskBuilder {
             parent: None,
             kind: TaskKind::Task,
             alarms: vec![],
+            custom_alert: Default::default(),
             meta: Metadata::default(),
             from_completion: false,
             warnings: vec![],

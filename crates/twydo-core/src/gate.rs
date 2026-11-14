@@ -1093,6 +1093,7 @@ fn operation_contracts(
                     Change::Description(_) => C::EditNotesResource,
                     Change::Due(_) => C::SetDueTask,
                     Change::Start(_) => C::SetStartTask,
+                    Change::Alert(_) => C::SetAlertTask,
                     Change::RepeatInterval(_) => C::SetRepeatInterval,
                     Change::Repeat(_) if !reshaped => C::SetRepeatInterval,
                     Change::Repeat(_) => {
