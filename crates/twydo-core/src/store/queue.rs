@@ -25,7 +25,8 @@ pub const FORMAT: u32 = 1;
 /// Who queued an item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Origin {
-    /// `"tui"` or `"op"`.
+    /// The program that queued the item: `"daemon"` for every item the daemon queues. Files
+    /// written before the daemon owned the queue hold `"tui"` or `"op"`. Nothing reads it.
     pub tool: String,
     pub pid: u32,
     /// Process start (first use of [`origin`]), to tell a recycled pid from the original.
