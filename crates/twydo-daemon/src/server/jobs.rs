@@ -574,6 +574,7 @@ fn end_sync_after_panic(shared: &Arc<Shared>) {
             },
             status_rev,
         });
+    shared.sync_finished_notifier();
     shared.poke_scheduler();
 }
 
@@ -632,7 +633,7 @@ fn run_job(shared: &Arc<Shared>, view: JobView, run: JobBody, lane: LongKind) {
 /// Is a background sync to be skipped before it starts (no `[sync]`, switched off, backing
 /// off)? A skip found here sends nothing. An error reading the switch or the status does not
 /// skip: the runner checks again itself.
-fn skip_background(shared: &Shared) -> bool {
+pub(super) fn skip_background(shared: &Shared) -> bool {
     if shared.cfg.sync.is_none() {
         return true;
     }

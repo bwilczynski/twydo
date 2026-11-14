@@ -58,6 +58,7 @@ impl SyncDone {
                 eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
             }
         }
+        shared.sync_finished_notifier();
         shared.poke_scheduler();
     }
 }

@@ -221,6 +221,7 @@ fn run(core: &Core, shared: &Weak<Shared>) {
 impl Shared {
     /// Wakes the scheduler, if it runs.
     pub fn poke_scheduler(&self) {
+        self.poke_notifier();
         if let Some(s) = self.scheduler.lock().unwrap().as_ref() {
             s.poke();
         }

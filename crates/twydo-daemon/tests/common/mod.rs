@@ -3,12 +3,14 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use twydo_core::edit::{Change, NewTask, Op};
+use twydo_core::remind::Delivery;
 use twydo_daemon::client::{Client, ClientError, Notification};
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::methods::{
@@ -16,6 +18,7 @@ use twydo_daemon::protocol::methods::{
 };
 use twydo_daemon::protocol::rpc::{ErrorData, ErrorKind};
 use twydo_daemon::protocol::wire::{WireSnapshot, WireTask};
+use twydo_daemon::server::notifier::Sink;
 use twydo_daemon::server::schedule::Clock;
 use twydo_daemon::server::{Daemon, DaemonHandle, DaemonOptions};
 
@@ -102,6 +105,20 @@ impl Fixture {
         Snapshot::new(vdir::load(&self.vdir()).unwrap(), self.config())
     }
 
+    /// Writes the open task `uid` titled `summary` at `rel`, due at the floating local time
+    /// `due` (`YYYYMMDDTHHMMSS`) with the automatic alert at the due time (as 2Do writes it).
+    pub fn write_reminder(&self, rel: &str, uid: &str, summary: &str, due: &str) {
+        self.write(
+            rel,
+            &format!(
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+                 UID:{uid}\r\nSUMMARY:{summary}\r\nDUE:{due}\r\nBEGIN:VALARM\r\n\
+                 ACTION:DISPLAY\r\nTRIGGER;RELATED=END:PT0S\r\nEND:VALARM\r\n\
+                 END:VTODO\r\nEND:VCALENDAR\r\n"
+            ),
+        );
+    }
+
     /// Write `text` at `rel` (relative to the vdir), as a change from outside.
     pub fn write(&self, rel: &str, text: &str) {
         let p = self.vdir().join(rel);
@@ -164,6 +181,46 @@ impl FakeClock {
     pub fn advance(&self, d: Duration) {
         let mut g = self.now.lock().unwrap();
         *g = (*g).max(Utc::now()) + chrono::Duration::from_std(d).unwrap();
+    }
+}
+
+impl FakeClock {
+    /// A clock standing at exactly `at` (reminder tests need fixed dates).
+    pub fn at(at: DateTime<Utc>) -> Arc<FakeClock> {
+        Arc::new(FakeClock {
+            now: Mutex::new(at),
+        })
+    }
+
+    /// Moves the clock to exactly `at`, backwards included.
+    pub fn set(&self, at: DateTime<Utc>) {
+        *self.now.lock().unwrap() = at;
+    }
+}
+
+/// A notification sink that records what it was asked to deliver; fails while `fail` is set.
+#[derive(Default)]
+pub struct RecordingSink {
+    pub got: Mutex<Vec<Delivery>>,
+    pub fail: AtomicBool,
+    /// Fails (only) the delivery with this key while set.
+    pub fail_key: Mutex<Option<String>>,
+    /// The next delivery panics (once).
+    pub panic_once: AtomicBool,
+}
+
+impl Sink for RecordingSink {
+    fn deliver(&self, d: &Delivery) -> Result<(), String> {
+        if self.panic_once.swap(false, Ordering::SeqCst) {
+            panic!("sink panic");
+        }
+        if self.fail.load(Ordering::SeqCst)
+            || self.fail_key.lock().unwrap().as_deref() == Some(d.key.as_str())
+        {
+            return Err("boom".to_string());
+        }
+        self.got.lock().unwrap().push(d.clone());
+        Ok(())
     }
 }
 

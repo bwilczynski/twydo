@@ -45,6 +45,8 @@ struct State {
     stuck: Vec<String>,
     /// Why the last queue drain stopped with items left; see [`StatusView::drain_error`].
     drain_error: Option<String>,
+    /// Why the reminder notifier cannot deliver or save; see [`StatusView::notifier_error`].
+    notifier_error: Option<String>,
     /// Why journal recovery waits (an unfinished list operation fences the vdir); shown as
     /// `drain_error` while nothing else is.
     recovery_deferred: Option<String>,
@@ -95,6 +97,7 @@ impl Publisher {
                 status: None,
                 stuck: Vec::new(),
                 drain_error: None,
+                notifier_error: None,
                 recovery_deferred: None,
                 sync_running: None,
                 config_status: ConfigStatus::default(),
@@ -150,6 +153,12 @@ impl Publisher {
     /// Takes effect at the next [`Publisher::refresh_status`].
     pub fn set_drain_error(&self, e: Option<String>) {
         self.state.lock().unwrap().drain_error = e;
+    }
+
+    /// Records the notifier's error for the status (`None`: it delivers and saves).
+    /// Takes effect at the next [`Publisher::refresh_status`].
+    pub fn set_notifier_error(&self, e: Option<String>) {
+        self.state.lock().unwrap().notifier_error = e;
     }
 
     /// Is journal recovery deferred by a list operation?
@@ -315,19 +324,27 @@ impl Publisher {
             }
             return rev;
         }
-        let (stuck, drain_error, sync_running, config_status, old_rev) = {
+        let (stuck, drain_error, notifier_error, sync_running, config_status, old_rev) = {
             let s = self.state.lock().unwrap();
             (
                 s.stuck.clone(),
                 s.drain_error
                     .clone()
                     .or_else(|| s.recovery_deferred.clone()),
+                s.notifier_error.clone(),
                 s.sync_running.clone(),
                 s.config_status.clone(),
                 s.status.as_ref().map_or(0, |v| v.status_rev),
             )
         };
-        let built = self.build_status(&stuck, drain_error, sync_running, config_status, old_rev);
+        let built = self.build_status(
+            &stuck,
+            drain_error,
+            notifier_error,
+            sync_running,
+            config_status,
+            old_rev,
+        );
         let mut next = match built {
             Ok(v) => v,
             Err(e) => {
@@ -359,6 +376,7 @@ impl Publisher {
         &self,
         stuck: &[String],
         drain_error: Option<String>,
+        notifier_error: Option<String>,
         sync_running: Option<Option<String>>,
         config: ConfigStatus,
         status_rev: u64,
@@ -447,6 +465,7 @@ impl Publisher {
             },
             refusals,
             drain_error,
+            notifier_error,
             queue_unreadable,
             config,
         })
