@@ -11,7 +11,7 @@ use super::{Drained, Submitted, WriteError, drained_outcome};
 /// One entry of the history.
 #[derive(Debug, Clone)]
 pub struct Step {
-    /// What the step did, for messages; the shell records steps with an empty title.
+    /// What the step did, for messages; a caller with no title leaves it empty.
     pub title: String,
     pub state: StepState,
 }

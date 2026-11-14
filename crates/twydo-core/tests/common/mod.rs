@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common::store::Store;
 use chrono::{DateTime, Utc};
 use twydo_core::compat::Matrix;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::ical::{Calendar, Component, Param, parse};
-use twydo_core::store::Store;
 use twydo_core::store::journal::{Entry, Journal};
 use twydo_core::views::Snapshot;
 
@@ -359,6 +359,8 @@ pub fn check_lines(
 }
 
 pub mod recurrence;
+pub mod store;
+pub mod sync;
 
 pub mod item_deletion;
 pub mod lists;

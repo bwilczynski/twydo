@@ -1,3 +1,5 @@
+mod common;
+
 use std::fs;
 use twydo_core::{
     config::{Config, SyncConfig, WriteMode},
@@ -324,8 +326,9 @@ fn delete_refuses_a_preview_whose_backup_belongs_to_another_list() {
 
 #[test]
 fn delete_refuses_pending_queue_for_the_list() {
+    use crate::common::store::Store;
     use twydo_core::edit::{NewTask, Op};
-    use twydo_core::store::{Store, Submitted};
+    use twydo_core::store::Submitted;
     let (d, cfg) = offline();
     let mut service = ListService::open(&cfg, None).unwrap();
     let preview = service.preview_delete("synthetic").unwrap();

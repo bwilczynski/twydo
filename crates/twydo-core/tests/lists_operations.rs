@@ -1,12 +1,16 @@
 //! Collection markers must fence task writes, queueing and ordinary sync.
+
+mod common;
+
 use chrono::Utc;
+use common::store::Store;
 use std::fs;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::lists::{
     helper::HelperRequest,
     operation::{self, Phase},
 };
-use twydo_core::store::{Store, journal::Journal};
+use twydo_core::store::journal::Journal;
 
 fn setup() -> (tempfile::TempDir, Config, HelperRequest) {
     let root = tempfile::tempdir().unwrap();
@@ -28,7 +32,7 @@ fn unfinished_operation_fences_recovery_and_sync_without_running_a_command() {
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     assert!(operation::ensure_idle(&state).is_err());
     assert!(Store::open(&cfg).is_err());
-    let sync = twydo_core::sync::run::run(&cfg, &Default::default(), Utc::now());
+    let sync = common::sync::run(&cfg, &Default::default(), Utc::now());
     assert!(sync.is_err());
     assert!(Journal::open(&state).unwrap().list().unwrap().is_empty());
     assert_eq!(

@@ -9,13 +9,14 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use common::store::Store;
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::ical::{Component, parse};
 use twydo_core::model::meta_edit::MetaJson;
 use twydo_core::store::journal::{Entry, Journal, Stage, Write};
-use twydo_core::store::{self, Store, Submitted, WriteError};
+use twydo_core::store::{self, Submitted, WriteError};
 
 use common::Env;
 

@@ -7,14 +7,14 @@ mod common;
 use std::time::{Duration, Instant};
 
 use common::{
-    Fixture, TestDaemon, count_titled, edit_title, empty, kind, snapshot, submit, task, todo_ics,
-    undo,
+    Fixture, TestDaemon, count_titled, edit_title, empty, kind, queue_op, snapshot, submit, task,
+    todo_ics, undo,
 };
 use twydo_core::compat::Matrix;
+use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::RequestRef;
 use twydo_core::store::queue::Queue;
-use twydo_core::store::{Store, Submitted, bind_vdir_state};
 use twydo_daemon::client::{Client, Notification};
 use twydo_daemon::protocol::events::{Cause, Event};
 use twydo_daemon::protocol::methods::{
@@ -403,22 +403,17 @@ fn queued_items_left_by_an_earlier_daemon_drain_at_startup() {
     {
         // A sync of an earlier owner holds the vdir: the edit is queued.
         let _lock = VdirLock::shared(&state).unwrap();
-        let mut store = Store::without_recovery(&cfg, Matrix::embedded().clone()).unwrap();
-        store.set_request(Some(RequestRef {
-            session: "s-earlier".into(),
-            request_id: "s-earlier-1-1".into(),
-        }));
-        let snap = fx.snapshot();
-        let s = store
-            .submit(
-                &snap,
-                &edit_title("u1", "Renamed"),
-                "One",
-                "daemon",
-                chrono::Utc::now(),
-            )
-            .unwrap();
-        assert!(matches!(s, Submitted::Queued(_)), "{s:?}");
+        queue_op(
+            &cfg,
+            &fx.snapshot(),
+            &edit_title("u1", "Renamed"),
+            "One",
+            Some(RequestRef {
+                session: "s-earlier".into(),
+                request_id: "s-earlier-1-1".into(),
+            }),
+            chrono::Utc::now(),
+        );
     }
     assert_eq!(queue_len(&fx), 1);
     let td = TestDaemon::start(&fx);
@@ -743,21 +738,17 @@ fn a_drain_by_the_sync_runner_uses_the_daemons_matrix() {
     }
     // The daemon's own gate would refuse the edit at once, so queue it as an earlier owner
     // with the embedded matrix would have: it waits for the runner's drain.
-    let mut store = Store::without_recovery(&fx.config(), Matrix::embedded().clone()).unwrap();
-    store.set_request(Some(RequestRef {
-        session: "s-earlier".into(),
-        request_id: "s-earlier-1-1".into(),
-    }));
-    let queued = store
-        .submit(
-            &fx.snapshot(),
-            &edit_title("u1", "Renamed"),
-            "One",
-            "daemon",
-            chrono::Utc::now(),
-        )
-        .unwrap();
-    assert!(matches!(queued, Submitted::Queued(_)), "{queued:?}");
+    queue_op(
+        &fx.config(),
+        &fx.snapshot(),
+        &edit_title("u1", "Renamed"),
+        "One",
+        Some(RequestRef {
+            session: "s-earlier".into(),
+            request_id: "s-earlier-1-1".into(),
+        }),
+        chrono::Utc::now(),
+    );
     std::fs::remove_file(&gate).unwrap();
     let t = Instant::now();
     while queue_len(&fx) > 0 {

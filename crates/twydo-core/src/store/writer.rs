@@ -253,7 +253,7 @@ fn ends_repeat_in_place(w: &Write) -> bool {
 }
 
 /// `path` must be a plain `<collection>/<file>` vdir-relative path.
-pub(super) fn check_plain_path(path: &str) -> Result<(), WriteError> {
+fn check_plain_path(path: &str) -> Result<(), WriteError> {
     let plain = Path::new(path).components().count() == 2
         && Path::new(path)
             .components()

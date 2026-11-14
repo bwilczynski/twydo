@@ -8,12 +8,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use common::{Fixture, TestDaemon, create, edit_title, empty, submit, submit_at, todo_ics};
+use common::{
+    Fixture, TestDaemon, create, edit_title, empty, queue_op, submit, submit_at, todo_ics,
+};
 use twydo_core::compat::Matrix;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, FromQueue, Journal, RequestRef, Stage, Write};
 use twydo_core::store::queue::Queue;
-use twydo_core::store::{Store, Submitted, bind_vdir_state};
+use twydo_core::store::{Writer, bind_vdir_state};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::methods::{
     AckParams, AckResult, OpGetParams, OpState, StatusView, WriteOutcome,
@@ -56,21 +58,17 @@ fn file_contains_until(fx: &Fixture, rel: &str, text: &str) {
 /// A queued item left on disk by an earlier owner (the vdir was held while it was saved).
 fn leave_queued_edit(fx: &Fixture, request_id: &str) {
     let _lock = VdirLock::shared(&state_dir(fx)).unwrap();
-    let mut store = Store::without_recovery(&fx.config(), Matrix::embedded().clone()).unwrap();
-    store.set_request(Some(RequestRef {
-        session: "s-earlier".into(),
-        request_id: request_id.into(),
-    }));
-    let s = store
-        .submit(
-            &fx.snapshot(),
-            &edit_title("u1", "Renamed"),
-            "One",
-            "daemon",
-            Utc::now(),
-        )
-        .unwrap();
-    assert!(matches!(s, Submitted::Queued(_)), "{s:?}");
+    queue_op(
+        &fx.config(),
+        &fx.snapshot(),
+        &edit_title("u1", "Renamed"),
+        "One",
+        Some(RequestRef {
+            session: "s-earlier".into(),
+            request_id: request_id.into(),
+        }),
+        Utc::now(),
+    );
 }
 
 #[test]
@@ -117,8 +115,12 @@ fn drain_error_is_reported_and_cleared() {
     );
     assert!(!fx.read("inbox/u1.ics").contains("Renamed"));
 
-    let mut store = Store::without_recovery(&fx.config(), Matrix::embedded().clone()).unwrap();
-    store.abandon("unfinished-1").unwrap();
+    let writer = Writer::open(&fx.config(), Matrix::embedded().clone()).unwrap();
+    writer
+        .lock_waiting()
+        .unwrap()
+        .abandon("unfinished-1")
+        .unwrap();
     drop(td.handle().hold_long(LongKind::Test));
     status_until(&c, "the drain error stays", |s| s.drain_error.is_none());
     file_contains_until(&fx, "inbox/u1.ics", "SUMMARY:Renamed");

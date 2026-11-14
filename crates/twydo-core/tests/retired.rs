@@ -1,9 +1,12 @@
+mod common;
+
 use chrono::{TimeZone, Utc};
+use common::store::Store;
 use std::fs;
 use twydo_core::config::{Config, WriteMode};
 use twydo_core::retired;
+use twydo_core::store::bind_vdir_state;
 use twydo_core::store::journal::{Entry, FORMAT, Journal, Stage, Write};
-use twydo_core::store::{Store, bind_vdir_state};
 use twydo_core::views::Snapshot;
 
 fn now() -> chrono::DateTime<Utc> {
