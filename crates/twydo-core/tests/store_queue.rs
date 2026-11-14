@@ -1,5 +1,6 @@
-//! `Store::submit` and the queue drain: apply when the vdir lock is free, queue while a sync
-//! holds it, and commit the queue under the next lock holder. Synthetic fixture content.
+//! The test wrapper's `submit` and the queue drain: apply when the vdir lock is free, queue
+//! while a sync holds it, and commit the queue under the next lock holder. Synthetic fixture
+//! content.
 
 mod common;
 

@@ -30,7 +30,7 @@ pub struct Policy<'a> {
 
 /// The gate and the plan: the journal entry `op` produces on the files loaded in `snap`,
 /// with the holds and family it must find unchanged when it is committed. Reads nothing
-/// beyond `snap`. The entry carries no request; the store stamps it.
+/// beyond `snap`. The entry carries no request; the writer stamps it.
 pub fn plan(
     snap: &Snapshot,
     op: &Op,
