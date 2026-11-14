@@ -16,7 +16,7 @@ reads the file: `check`, `export-json`, `status`, `conflicts` and the rest ask t
 | `timezone` | IANA name | system zone, else UTC | Zone used for "today" and floating times. |
 | `week_start` | `"mon"`..`"sun"` (or full names, any case) | `"mon"` | First day of the week. Reserved: accepted, not used yet. |
 | `work_days` | list of `"mon"`..`"sun"` | `["mon", "tue", "wed", "thu", "fri"]` | The days the repeat field's `workdays` stands for (2Do's "Work days" preset). Must not be empty. |
-| `morning_time` | `"HH:MM"` | `"09:00"` | Time for date-only tasks that need one, such as reminders. Reserved: accepted, not used yet (notifications are not available yet). |
+| `morning_time` | `"HH:MM"` | `"09:00"` | Time of the morning digest of reminders. |
 | `default_list` | list id | none | The Inbox: the list shown first in the TUI sidebar (key `0`), and where new tasks go when added in the TUI outside a list (Today, All, Scheduled, …). Unset or unknown: the list named Inbox; without one, new tasks go to the first list and the sidebar shows no Inbox. `tdo op add` takes `--list` instead. |
 | `state_dir` | path | `$XDG_STATE_HOME/twydo`, else `~/.local/state/twydo` | Where Twydo keeps its write journal and other state, per vdir under `vdirs/<id>/` (see [architecture.md](architecture.md#the-operation-journal)). A leading `~` expands to `$HOME`. |
 
@@ -56,6 +56,10 @@ that are stuck.
 `tdo daemon --matrix <path>` and `tdo op check <uid> --matrix <path>` are hidden test-only hooks:
 they replace the compatibility matrix built into `tdo` with the file at `<path>` (writes go
 through the daemon, which owns the matrix). Never use them on real data.
+
+`TWYDO_NOTIFIER=off` in the environment of `tdo daemon` is a hidden test-only hook too: it
+switches the desktop sink off, so a test run raises no real notification. A `[notifications]
+command` still works. The tests set it for every `tdo` they start.
 
 ## `[daemon]`
 
@@ -159,10 +163,27 @@ The two version probes are killed after 10 seconds.
 | `show_in_done` | bool | `true` | Include its tasks in the Done view. |
 | `sort` | `{ field, descending }` | `{ field = "due", descending = false }` | `field` is one of `due`, `start`, `creation`, `title`. |
 
-Hidden and archived lists will not notify once notifications exist (not available yet).
+Hidden and archived lists do not notify.
 
 These preferences are a local fallback. They are not stored in CalDAV and do not sync between
 devices.
+
+## `[notifications]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `enabled` | bool | `true` | Raise desktop reminders. |
+| `catch_up_hours` | integer | `24` | How far back a missed reminder (daemon down, machine asleep) still fires. Must be at least 1. |
+| `command` | list of strings | none | Command to run instead of the desktop notification. Must not be empty when set. Twydo starts it without a shell and appends the title and the body as the last two arguments, exactly as they are; a title can start with `-`, so a wrapper script treats them as text. |
+
+Changes to this table apply to the running daemon at once; no restart is needed.
+
+`tdo notify test` sends a test notification through the running daemon (even when `enabled` is
+false) and prints `notification sent`, or the reason it failed with exit code 1. When reminders
+cannot be delivered or recorded, `tdo status` and the TUI status line show the daemon's reason
+as it is (for example `cannot deliver reminders: <why>` or `cannot save reminder state: <why>`),
+until a later attempt succeeds. The text never names a task. When reminders are sent and when
+they are not is described in [tasks.md](tasks.md#desktop-reminders).
 
 ## `[[groups]]`
 

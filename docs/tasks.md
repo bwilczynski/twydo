@@ -347,8 +347,55 @@ project-item scheduling are unaffected.
 
 Twydo keeps every alert a task has, shows them in the Details pane (`15 min before due`), and
 copies them with a repeating task's completed occurrence. Setting or removing a due time adds or
-drops 2Do's automatic at-due-time alert, as 2Do does. Editing alerts in the TUI (`a`) and
-desktop notifications are not available yet.
+drops 2Do's automatic at-due-time alert, as 2Do does. Editing alerts in the TUI (`a`) is not
+available.
+
+### Desktop reminders
+
+The daemon raises a desktop notification for:
+
+- **Each alert** of an open task, at the alert's time. A relative alert counts from the due
+  value when it is marked related to the end or the task has no start, otherwise from the start
+  value; a date-only value counts from local midnight. An alert with no such value has no time.
+- **Each due time.** An open task whose due value has a time notifies at that time, with or
+  without an alert. Triggers of one task at the same instant make one notification, so the
+  automatic at-due-time alert and the due time give one popup.
+- **The morning digest.** Once a day, at `morning_time`, one notification lists the tasks due
+  today without a time and the tasks that are overdue (a due date before today, or a due time
+  before that morning's `morning_time`): the title reads like `3 due today, 2 overdue`, and the
+  body lists up to five titles and `+N more`. The digest is decided once per day, at the first
+  moment at or past `morning_time`; when both groups are empty nothing is sent, and none is sent
+  later that day. A task that falls due later in the day has only its own reminder. A task
+  stays in each morning's digest until it is done.
+
+Nothing notifies for a completed or cancelled task, a task in a hidden or archived list, or a
+checklist item (a child of a checklist). A project's children notify on their own. A start date
+in the future does not suppress an alert. A completion that is still queued behind a sync
+already stops the task's reminders.
+
+**Catch-up.** A reminder that fell due while the daemon was not running or the machine slept is
+sent when the daemon next plans, up to `catch_up_hours` (24) after its time. An older one is not
+sent by itself; the task shows as overdue in the next digest. A digest missed in the morning is
+decided at the first plan that day, by the same rule (an empty one is skipped, not sent later).
+The same rule covers a task that arrives by sync with a time in the recent past.
+
+**Waiting for the sync.** After the daemon starts, and after the machine wakes from sleep, nothing
+is sent until the first sync has finished (whatever its result), or two minutes have passed: the
+tasks on disk are from before, and the sync brings what changed meanwhile, so a task added on the
+phone overnight is in the digest and one finished there sends nothing. Then everything that fell
+due meanwhile is sent by the catch-up rule. This applies only when syncing is set up, automatic
+sync is on and the sync is not backing off after a failure; `tdo notify test` is not held.
+
+**Duplicates.** A reminder is recorded as sent only after its notification command succeeds, in
+`notifier.json` in the vdir's state directory, and entries are dropped after twice the catch-up
+window (a morning digest's entry is kept until its date is two days past). A failed delivery is retried with a growing delay, and does not hold back the other
+reminders. A crash between a delivery and its
+record, a lost or unreadable record file, or a second machine running its own daemon can repeat a
+reminder; a reminder is not skipped to avoid that. Changing a task's date or advancing a
+repeat gives it new times, which notify again.
+
+`tdo notify test` checks that delivery works ([install.md](install.md#reminders)); the settings
+are in [config.md](config.md#notifications).
 
 ### Detached history reopening
 

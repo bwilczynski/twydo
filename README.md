@@ -32,6 +32,8 @@ the rest with a reason, so the phone never gets something it would misread.
   missed occurrences, completed the way 2Do completes them
 - Sync through vdirsyncer with conflict handling: when the phone and Twydo change the same task,
   both versions are kept until you choose
+- Desktop reminders for alerts and due times, and a morning digest, from the daemon
+  ([details](docs/tasks.md#desktop-reminders))
 - Crash-safe writes: every change is journaled and recovered after an interruption
 - `tdo op` to script every change, `tdo export-json` to read everything
 
@@ -39,7 +41,7 @@ the rest with a reason, so the phone never gets something it would misread.
 
 - Natural-language input on the new row (planned: `Pay rent fri every month @Bills`, typed
   with the title); today the title goes in the row and dates and repeats in the card
-- Desktop notifications for alerts, and editing alerts
+- Editing alerts
 - Manual ordering, and creating or renaming lists
 - Project repeat changes and empty-project-to-checklist conversion; repeating-checklist
   creation/completion outside the monthly scope above, ordinary schedule/type edits, and

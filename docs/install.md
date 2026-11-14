@@ -132,6 +132,33 @@ daemon install`. Turn that off with `[daemon] unit_warning = false` ([config.md]
 `tdo daemon uninstall` stops the daemon, disables the unit and removes its file; the daemon then
 starts on demand again.
 
+### Reminders
+
+The daemon raises the desktop reminders of [tasks.md](tasks.md#desktop-reminders), so it has to be
+running at the time they fall due. A daemon started on demand does that until it stops or the
+machine restarts; the service unit above is what makes reminders reliable, because it starts the
+daemon at login and restarts it after a failure.
+
+- **Linux:** notifications go through `notify-send` (libnotify), which must be on `PATH` of the
+  daemon, and to whatever notification service your session runs.
+- **macOS:** `terminal-notifier` is used when it is on `PATH`; otherwise `osascript` shows the
+  notifications, and they appear under "Script Editor".
+
+The `PATH` of the launchd unit is the one of the shell that installed it, so a `terminal-notifier`
+outside it is not found; `tdo notify test` shows which program delivers (the source app of the
+notification).
+
+Check the setup without waiting for a task:
+
+```sh
+tdo notify test
+```
+
+It sends one notification through the running daemon and prints `notification sent`, or the
+reason it failed, with exit code 1. A `[notifications] command` in the config replaces the
+platform commands ([config.md](config.md#notifications)). While a reminder cannot be delivered,
+`tdo status` and the TUI status line show the reason.
+
 ### After an upgrade
 
 After upgrading `tdo` (`mise up`) the old daemon keeps running until the next `tdo` that is newer
