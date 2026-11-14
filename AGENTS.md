@@ -35,7 +35,9 @@ an isolated test daemon with `tdo daemon stop`. A custom write-policy matrix is 
 `tdo daemon --matrix`; per-report overrides do not alter the daemon's write policy.
 
 The notifier (Plan 2, [design](docs/superpowers/specs/2026-11-14-notifier-design.md)) is
-implemented: a daemon thread over the pure planner `remind::plan`. Next: write-queue plan 3
+implemented: a daemon thread over the pure planner `remind::plan`. Alert editing (issue #111,
+[plan](docs/superpowers/plans/2026-11-14-alert-editing.md)) is implemented; the alerts round is
+complete. Next: write-queue plan 3
 (rebasing inside the daemon, re-planning with `store::plan`).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.
@@ -43,7 +45,7 @@ language input. Read the current plan and as-is documentation before choosing ne
 ## Device and data boundaries
 
 No new phone/server rounds are authorized by this handoff. Plan 8 batch 1, RF/RA, item deletion
-and both item-reordering/insertion rounds are complete; do not repeat them. Saved phone ranks
+and both item-reordering/insertion rounds and the alerts round are complete; do not repeat them. Saved phone ranks
 require **Manually**. Preserve the synthetic lists/families and private backups/session state
 outside git. Do not change accounts, global write mode or other data. Any further device scope
 needs a bounded unresolved question and fresh approval; ask before production 2Do, NAS or iPhone

@@ -671,3 +671,20 @@ fn two_do_task_with_start_counts_relative_alert_from_due() {
         "15 min before due"
     );
 }
+
+/// B1 from the alerts round, phase B: Twydo set 1h30m and the phone rewrote the task.
+#[test]
+fn plans_twydo_written_alert() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/set-alert/twydo-roundtrip/phone-checked/list1/b3e55a188f7f4aca9aac91090b7941b0.ics",
+    );
+    let cal = parse(&std::fs::read(&path).unwrap()).unwrap();
+    let t = tasks_from_calendar(&cal, "list1", &path).pop().unwrap();
+    assert_eq!(
+        timed(&t, WARSAW),
+        vec![
+            entry("20261121T073000Z", vec![Cause::Alert { index: 0 }]),
+            entry("20261121T090000Z", vec![Cause::Due]),
+        ]
+    );
+}

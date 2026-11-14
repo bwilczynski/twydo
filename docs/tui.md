@@ -108,6 +108,7 @@ These act when the Tasks or Details pane has focus.
 | `ct` / `cp` / `cc` | change the selected task's type to task / project / checklist; any other second key cancels. A project with items can't be converted, as on the iPhone: the write is refused with the reason. The type it already has writes nothing (a plain task with items shows as a project, but `ct` on it says it is already a task) |
 | `i`, or `Enter` on a task without items | edit card |
 | `r` | edit card, on the Repeat field |
+| `A` | edit card, on the Alert field |
 
 On a checklist or project, a write acts on the whole family; see
 [tasks.md](tasks.md#completing-reopening-moving-deleting).
@@ -281,11 +282,12 @@ Fields, in `Tab` order:
 | Type | Task, Project or Checklist: `Space` or `l` next, `h` previous. Saving converts the task ([tasks.md](tasks.md)) |
 | Due, Start | a date (below) |
 | Repeat | a typed rule (below); `none` when the task does not repeat |
+| Alert | how long before the due date or time to remind (below); `none` for no alert. Not on a new task's or a checklist's card |
 | Notes | `Enter` opens `$VISUAL` or `$EDITOR` (else `vi`); save and quit to bring the text back |
 
 An item of a project has no List (it lives in its parent's list). An item of a checklist shows
-only Title and Notes: checklist items have no dates or repeat of their own, and `r` on one says
-so.
+only Title and Notes: checklist items have no dates, repeat or alert of their own, and `r` or
+`A` on one says so.
 
 - `Tab` / `Shift-Tab` (or `↓` / `↑`) move between fields; `Enter` saves (on List and Notes it
   opens the picker or the editor), `Ctrl-s` saves from any field.
@@ -331,6 +333,21 @@ Repeat takes a rule, then any modifiers:
 | `2nd tue`, `last fri` | on that weekday of each month |
 | `1st weekday`, `last weekend day` | on that workday (Monday to Friday) or weekend day of each month |
 | modifiers: `after done`, `until 2027-06-01`, `10 times` | from the completion date; until a date; that many times |
+
+**Alert** input:
+
+| Input | Means |
+|---|---|
+| empty, `none` | no alert (on a task with one: removes it) |
+| `15m`, `15min`, `4h`, `1d`, `2w` | that long before the due date or time; a date-only task counts from midnight |
+| `15 min`, `2 hours`, `1 day`, `1h 30m` | the same, with spaces or words |
+| `1h30m`, `1d2h` | units combined, largest first |
+| `at due` | 2Do's automatic alert at the due time: shown, kept, removed with `none`; Twydo does not add it |
+| a trailing `before` | ignored: `15m before` is `15m` |
+
+The card shows the stored alert in the largest unit that divides it (`24h` reads back as `1d`),
+and saving it unchanged writes nothing. On a task with alerts Twydo can't write back the field is
+read-only ([tasks.md](tasks.md#alerts)).
 
 Verified mode now supports plain daily/yearly repeat changes, captured monthly/weekly checklist
 repeat changes, monthly checklist completion/reset, and narrowly scoped until completion and
@@ -444,7 +461,7 @@ keeps its existing compatibility checks. Details:
 
 ## Not in the TUI yet
 
-Natural-language input on the new row (dates typed with the title), alerts and list management.
+Natural-language input on the new row (dates typed with the title) and list management.
 
 Completed history tasks and flat history families can be reopened with `x` or
 `Space` in Done. A family reopen changes every completed member in one undo step;

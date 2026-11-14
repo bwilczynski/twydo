@@ -260,6 +260,7 @@ The newly enabled operations are:
 
 | Matrix case / operation | Verified scope |
 |---|---|
+| `set-alert.task` | Set, change or remove one 2Do alert before the due date/time, or remove the automatic one, on an open task, project or project item (not a checklist), timed or date-only, with or without a start date or repeat; the alert replaces the automatic one, as on the phone. From-completion tasks take it only in a save without date changes ([evidence](reference/evidence.md)) |
 | `set-repeat.task` | Set, remove or change between plain due-anchored daily/weekly/monthly/yearly rules, without ends or weekday selectors |
 | `set-repeat.task` | Same scope; existing interval encodings are preserved |
 | `set-repeat.checklist` | Set/remove plain date-only monthly/weekly recurrence on an existing checklist |
@@ -308,8 +309,8 @@ Existing repeat completion support remains: daily, weekly, weekday sets, monthly
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
 The [Plan 7 session](reference/evidence.md) supplies those fixtures. Recurring projects
 that end or repeat from completion remain refused. Moving one item, editing existing
-weekly/interval-2 from-completion scheduling, project repeat changes, empty-project-to-checklist
-conversion and native alert editing remain unverified. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
+weekly/interval-2 from-completion scheduling, project repeat changes and empty-project-to-checklist
+conversion remain unverified. Absolute, multiple and after-due alerts stay read-only. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
 The [issue 27 session](reference/evidence.md) verifies representative
@@ -364,7 +365,8 @@ has stricter shape restrictions because it advances dates and creates history.
 
 Task/checklist/project and item creation and the previously verified type conversions remain
 as documented in [tasks.md](tasks.md). `tdo op add` takes `--kind`, `--parent` and `--repeat`;
-`tdo op edit` takes `--repeat`, `--no-repeat` and `--kind`. The TUI card exposes the same gate.
+`tdo op edit` takes `--repeat`, `--no-repeat`, `--alert`, `--no-alert` and `--kind`. The TUI card
+exposes the same gate.
 Known unsafe conversions and the three misread rule classes remain refused.
 
 Three repeat kinds fail on the iPhone and Twydo never sets or executes them in any mode: the last day of

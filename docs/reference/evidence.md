@@ -46,6 +46,7 @@ default way to make a test task.
 | Completion/reopening | [Recurrence profiles](../../fixtures/complete/recurrence-profiles/case.toml), [family lifecycle](../../fixtures/complete/family-lifecycle/case.toml), [checklists and UNTIL](../../fixtures/complete/checklist-and-until/case.toml) | Ordinary completion, advancement, reset, history, ended series and detached history differ |
 | Move | [Standalone destination](../../fixtures/move/standalone-destination/case.toml), [family round trips](../../fixtures/move/family-roundtrip/case.toml) | Whole resource/family identity maps; foreign series identities remain unchanged |
 | Delete | [Family items](../../fixtures/delete/family-items/case.toml), [mixed families](../../fixtures/complete/family-lifecycle/case.toml) | Standalone, whole-family and individual-item removal; open, completed and last items |
+| Alerts | [Phone encodings](../../fixtures/set-alert/phone-encodings/case.toml), [Twydo round trip](../../fixtures/set-alert/twydo-roundtrip/case.toml) | One relative VALARM per task; offset change rewrites only `TRIGGER`; removal and due removal drop it |
 | Insert/reorder | [Checklist append](../../fixtures/insert/checklist-items/case.toml), [project append](../../fixtures/insert/project-items/case.toml), [saved ranks](../../fixtures/reorder/family-items/case.toml) | DisplayOrder-only changes; phone must select **Manually** to display saved ranks |
 | Collections | [Creation confirmation](../../fixtures/list-create/phone-confirmation/case.toml), [phone-created discovery](../../fixtures/list-create/phone-created-discovery/case.toml), [archive observation](../../fixtures/list-metadata/archive-observation/case.toml), [server preconditions](../../fixtures/list-metadata/server-preconditions/case.toml) | Archive is local; successful round trips alone do not establish atomic writes |
 
@@ -74,7 +75,7 @@ shapes. This list records useful unresolved questions, not permission to run the
 - Phone archive/unarchive changed neither the captured task bytes/ETags nor the 14
   inspected collection properties. Archive remains local; no shared encoding is claimed.
 
-Plan 8 batch 1 and the RF/RA phone rounds are complete. Item-deletion and both
+Plan 8 batch 1, the RF/RA phone rounds and the alerts round (2026-11-14) are complete. Item-deletion and both
 item-reordering/insertion rounds are complete. Do not repeat their uploads or phone
 actions. Do not delete the synthetic families/lists, change accounts or global write
 mode, or touch other data. Private session state and backups remain outside git.
