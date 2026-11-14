@@ -178,6 +178,17 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         return result;
     }
 
+    // An alert edit changes only VALARMs: it needs no recurrence or family evidence of its
+    // own. Mixed with other fields, each keeps its own checks below.
+    if let (Some(i), Op::Edit { changes, .. }) = (target, op)
+        && changes.iter().any(|c| matches!(c, Change::Alert(_)))
+    {
+        alert_shape(snap, i, changes, checker)?;
+        if changes.iter().all(|c| matches!(c, Change::Alert(_))) {
+            return require(m, mode, ContractId::SetAlertTask);
+        }
+    }
+
     if let (Some(i), Op::Move { to, .. }) = (target, op) {
         return relocate::check(snap, m, mode, i, to, checker.relationships());
     }
@@ -651,6 +662,77 @@ fn new_repeat(changes: &[Change]) -> Option<Option<&RepeatSpec>> {
         Change::Repeat(r) => Some(r.as_ref()),
         _ => None,
     })
+}
+
+/// The shapes a custom alert edit is admitted on (spec "Capture results"): an open task or
+/// project item with a due value after the edit and alerts Twydo can read back.
+fn alert_shape(
+    snap: &Snapshot,
+    idx: usize,
+    changes: &[Change],
+    checker: &Checker<'_>,
+) -> Result<(), Blocked> {
+    use crate::edit::alert::{CANT_EDIT, NEEDS_DUE};
+    const UNWRITABLE: &str = "alert editing needs a recognized task with one readable 2Do resource";
+    let t = &snap.tasks[idx];
+    if snap
+        .parent(idx)
+        .is_some_and(|p| declared_kind(&snap.tasks[p]) == TaskKind::Checklist)
+    {
+        return blocked("checklist items have no alerts");
+    }
+    if declared_kind(t) == TaskKind::Checklist {
+        return blocked("an alert on a checklist is not verified yet");
+    }
+    // The structural checks the text-edit path makes, for the one resource an alert rewrites.
+    let head = snap.parent(idx).unwrap_or(idx);
+    checker.relationships().check(snap, head)?;
+    checker.relationships().check_identity(idx)?;
+    if !known_task_type(t) || t.meta.unreadable || json_meta(t).is_none() {
+        return blocked(UNWRITABLE);
+    }
+    let cal = snap
+        .source(&t.path)
+        .and_then(|b| crate::ical::parse(b).ok())
+        .ok_or_else(|| Blocked(UNWRITABLE.into()))?;
+    let todos: Vec<_> = cal.root.children_named("VTODO").collect();
+    if todos.len() != 1
+        || todos[0].prop("RECURRENCE-ID").is_some()
+        || todos[0].props_named("UID").count() != 1
+    {
+        return blocked(UNWRITABLE);
+    }
+    if t.status != Status::Open {
+        return blocked("only an open task's alert can be changed");
+    }
+    if t.custom_alert == crate::model::CustomAlert::Unsupported {
+        return blocked(CANT_EDIT);
+    }
+    let sets = changes.iter().rev().find_map(|c| match c {
+        Change::Alert(a) => Some(a.is_some()),
+        _ => None,
+    });
+    if sets == Some(true) && due_after(snap, idx, changes).is_none() {
+        return blocked(NEEDS_DUE);
+    }
+    // From-completion date edits were captured with the automatic alert only.
+    let from_completion_after = match new_repeat(changes) {
+        Some(Some(r)) => r.from_completion,
+        Some(None) => false,
+        None => t.from_completion,
+    };
+    let dates = changes.iter().any(|c| {
+        matches!(
+            c,
+            Change::Due(_) | Change::Start(_) | Change::Repeat(_) | Change::RepeatInterval(_)
+        )
+    });
+    if sets == Some(true) && dates && (t.from_completion || from_completion_after) {
+        return blocked(
+            "set the alert of a task that repeats from completion in a save of its own",
+        );
+    }
+    Ok(())
 }
 
 /// The task's due date after `changes`: the last `Change::Due`, else its own.

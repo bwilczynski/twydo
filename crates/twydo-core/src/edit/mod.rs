@@ -15,7 +15,7 @@ use crate::model::meta_edit::{MetaJson, default_task_meta};
 use crate::model::repeat::{End, RRule, parse_rrule};
 use crate::repeatinput::RepeatSpec;
 
-mod alert;
+pub(crate) mod alert;
 pub mod complete;
 pub mod create;
 pub mod describe;
