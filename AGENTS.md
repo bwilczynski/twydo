@@ -15,11 +15,17 @@ Continue building Twydo (`tdo`), a terminal task app sharing CalDAV tasks with 2
 ## Current work and roadmap
 
 The [operation-evidence plan](docs/superpowers/plans/2026-11-11-operation-evidence.md)
-implements the approved [operation-contract design](docs/superpowers/specs/2026-11-11-operation-evidence-design.md).
-Continue its first unfinished task and execution ledger; do not start another plan over it.
-This is breaking `tdo` version `0.2.0`: custom matrices use version 2. Fixtures live under
-`fixtures/<operation>/<case>/`, with complete named states and case metadata. Do not revive
-numbered session snapshots, inherited states, stored diffs or the old global rule/edge gate.
+implemented the approved [operation-contract design](docs/superpowers/specs/2026-11-11-operation-evidence-design.md)
+and is complete; do not start another plan over it. This is breaking `tdo` version `0.2.0`:
+custom matrices use version 2. Fixtures live under `fixtures/<operation>/<case>/`, with
+complete named states and case metadata. Do not revive numbered session snapshots, inherited
+states, stored diffs or the old global rule/edge gate.
+
+The [single-writer refactor](docs/superpowers/plans/2026-11-13-single-writer.md) is done. The
+stateful `Store` is gone: `store::plan` is a pure planner, one `Writer` per daemon
+(`store/writer.rs`) owns the journal, the queue and the vdir lock, and each session keeps a
+`History` (`store/history.rs`). Store-style core tests use the test wrapper
+`crates/twydo-core/tests/common/store.rs`.
 
 The phase-0 gate passed and was approved on 2026-11-01. Writable task operations, TUI editing,
 flat families/recurrence, ordering, list management, the durable write queue and daemon plans
@@ -28,7 +34,8 @@ use its Unix socket. Tests must isolate both `XDG_CONFIG_HOME` and `TWYDO_SOCKET
 an isolated test daemon with `tdo daemon stop`. A custom write-policy matrix is supplied to
 `tdo daemon --matrix`; per-report overrides do not alter the daemon's write policy.
 
-After this refactor: write-queue plan 3 (rebasing inside the daemon), then Plan 2 (notifier).
+Next: write-queue plan 3 (rebasing inside the daemon, re-planning with `store::plan`), then
+Plan 2 (notifier).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.
 
