@@ -346,9 +346,31 @@ project-item scheduling are unaffected.
 ## Alerts
 
 Twydo keeps every alert a task has, shows them in the Details pane (`15 min before due`), and
-copies them with a repeating task's completed occurrence. Setting or removing a due time adds or
-drops 2Do's automatic at-due-time alert, as 2Do does. Editing alerts in the TUI (`a`) is not
-available.
+copies them with a repeating task's completed occurrence. Giving a task without an alert a due
+time adds 2Do's automatic at-due-time alert, and removing the time drops it, as 2Do does. Moving
+a due time that is already set leaves the alerts as they are, so a removed alert stays removed.
+
+**Editing the alert.** A task has one alert you can set, change or remove: `A` in the TUI opens
+the card on its Alert field ([tui.md](tui.md#the-edit-card)), and `tdo op edit <uid> --alert
+1h30m` or `--no-alert` does the same from the CLI. The alert counts back from the due date or
+time by any whole number of minutes: `15m`, `4h`, `1d`, `2w`, `1h30m` (or `15 min`, `2 hours`);
+a date-only task counts from midnight of its due day. Like 2Do, Twydo gives the task a single
+alert: a new alert takes the place of the automatic one, changing it rewrites only its offset,
+and removing it leaves the task without an alert. The automatic alert shows as `at due` and can
+be removed the same way; Twydo does not add it back, and typing `at due` on a task without it
+says so. Removing the due date also removes
+the alert. The phone shows a Twydo-written alert at its exact time and keeps it when it edits
+the task (verified both ways on 2026-11-14).
+
+An alert can't be set without a due date, on a checklist or a checklist item, on a completed
+task, or on a task Twydo can't write back (an unrecognized type, unreadable 2Do metadata or a
+recurrence override). A task that repeats from completion takes an alert only in a save of its
+own, not together with a date or repeat change. A task
+that has an alert Twydo can't write back (a fixed date and time, an alert after the due time,
+one related to the end, several alerts, or an alert not written by 2Do) keeps it unchanged: the
+card shows the field read-only and an edit is refused with `this task has alerts Twydo can't
+edit`. Some captured scheduling edits (from-completion due/repeat changes, ended-series
+completion, repeating checklists) still need a task with no alert or only the automatic one.
 
 ### Desktop reminders
 

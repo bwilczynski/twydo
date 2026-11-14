@@ -150,7 +150,7 @@ it does not mean the code is known to produce the right result.
 | Remove a repeat's due date without removing its repeat | Explicit policy block | Capture whether the phone permits this or fills a date; never produce an uncompletable series |
 | Checklist date removal/time/start while items carry inherited date copies | Only replacing the due date with another date-only value is supported | Capture each other change; extend family date cleanup without dropping unrelated item data |
 | Nested parents (project/checklist inside a parent) | All writes blocked | Establish phone support first; a separate family-model change if needed, not just a matrix row |
-| Custom alert creation/edit/removal | No `Change`/CLI/card editor; existing alerts are preserved and displayed | Capture absolute, relative, multiple and start-relative alarms, add core changes, then CLI and card fields |
+| Custom alert creation/edit/removal | Done for one relative alert ([alert editing plan](2026-11-14-alert-editing.md)); absolute and multiple alerts stay read-only | Capture absolute and multiple alerts only if they are wanted |
 
 ### Imported shapes and edge cases
 
@@ -300,7 +300,7 @@ switch production writes to test mode. Keep credentials and raw production expor
 
 ### Task 5 — New editors and structural features
 
-- [ ] Write a focused design/implementation plan for alert editing, then capture encodings,
+- [x] Write a focused design/implementation plan for alert editing, then capture encodings,
   implement core/CLI/card support and verify round trips.
 - [ ] Plan and implement indent/outdent/reparent/move, then yank/paste with new family identities.
 - [ ] Plan and verify list/group management; resolve collection deletion scope with the user.
