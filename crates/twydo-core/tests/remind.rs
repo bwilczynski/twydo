@@ -647,3 +647,27 @@ fn absurd_alert_offset_is_dropped_and_others_still_fire() {
     );
     assert_eq!(timed(&other, WARSAW).len(), 1);
 }
+
+/// A8 from the alerts round: 2Do keeps the real start (2026-11-18) only in its JSON metadata and
+/// mirrors `DUE` into `DTSTART`, so a relative alert counts from the due time, as on the phone.
+#[test]
+fn two_do_task_with_start_counts_relative_alert_from_due() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/set-alert/phone-encodings/phone-a-batch1/list1/42200c41e91e4e289db9aed8e481d356.ics",
+    );
+    let cal = parse(&std::fs::read(&path).unwrap()).unwrap();
+    let t = tasks_from_calendar(&cal, "list1", &path).pop().unwrap();
+    assert!(t.start.is_some(), "the JSON start date is read");
+    assert_eq!(
+        timed(&t, WARSAW),
+        vec![
+            entry("20261120T084500Z", vec![Cause::Alert { index: 0 }]),
+            entry("20261120T090000Z", vec![Cause::Due]),
+        ]
+    );
+    let tz = WARSAW;
+    assert_eq!(
+        twydo_core::format::describe_alarm(&t.alarms[0], &t, tz),
+        "15 min before due"
+    );
+}

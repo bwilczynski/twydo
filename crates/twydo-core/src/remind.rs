@@ -75,14 +75,9 @@ pub fn timed(task: &Task, tz: Tz) -> Vec<Timed> {
             Trigger::Relative {
                 offset,
                 related_end,
-            } => {
-                let anchor = if *related_end || task.start.is_none() {
-                    task.due.as_ref()
-                } else {
-                    task.start.as_ref()
-                };
-                anchor.and_then(|a| instant(a, tz).checked_add_signed(*offset))
-            }
+            } => task
+                .alert_anchor(*related_end)
+                .and_then(|a| instant(a, tz).checked_add_signed(*offset)),
         };
         if let Some(at) = at {
             found.push((at, Cause::Alert { index: alarm.index }));

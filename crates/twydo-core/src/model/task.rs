@@ -86,6 +86,22 @@ pub struct Task {
 
 const METADATA_PROP: &str = "X-2DOAPP-METADATA";
 
+impl Task {
+    /// The value a relative alert counts from. `RELATED=END` means the due value. Otherwise
+    /// RFC 5545 counts from `DTSTART`: a task's own start, except for a task with 2Do JSON
+    /// metadata, whose `DTSTART` mirrors `DUE` while the real start lives only in the JSON
+    /// (alerts round A8: 2Do counts from the due time). Without a due value it falls back to
+    /// the start, as 2Do does.
+    pub fn alert_anchor(&self, related_end: bool) -> Option<&IcalDateTime> {
+        let json = self.meta.format == MetaFormat::Json && !self.meta.unreadable;
+        if related_end || self.start.is_none() || (json && self.due.is_some()) {
+            self.due.as_ref()
+        } else {
+            self.start.as_ref()
+        }
+    }
+}
+
 /// Read the task a calendar resource describes. Returns no task when it holds no VTODO.
 /// VEVENT/VJOURNAL components are ignored.
 pub fn tasks_from_calendar(cal: &Calendar, collection: &str, path: &Path) -> Vec<Task> {

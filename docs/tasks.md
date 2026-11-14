@@ -355,8 +355,11 @@ available.
 The daemon raises a desktop notification for:
 
 - **Each alert** of an open task, at the alert's time. A relative alert counts from the due
-  value when it is marked related to the end or the task has no start, otherwise from the start
-  value; a date-only value counts from local midnight. An alert with no such value has no time.
+  value, as on the phone: 2Do keeps a task's start date in its own metadata and its `DTSTART`
+  mirrors the due date. Only a task without 2Do metadata that has its own `DTSTART` counts an
+  alert not marked related to the end from that start, and a task with no due value counts from
+  its start. A date-only value counts from local midnight. An alert with no such value has no
+  time.
 - **Each due time.** An open task whose due value has a time notifies at that time, with or
   without an alert. Triggers of one task at the same instant make one notification, so the
   automatic at-due-time alert and the due time give one popup.
