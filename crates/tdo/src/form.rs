@@ -1,6 +1,7 @@
 //! The edit card (`i`, `r`, `Enter` on a leaf): one field per editable task property. Pure
 //! state; the app turns [`FormAction::Save`] into one [`Op`] (see [`EditForm::save`]),
 //! [`FormAction::PickList`] into the list picker and [`FormAction::EditNotes`] into `$EDITOR`.
+//! `Esc` on a card with changes asks before discarding them (see [`EditForm::discarding`]).
 
 use chrono::{NaiveDate, Weekday};
 use chrono_tz::Tz;
@@ -81,6 +82,9 @@ pub struct EditForm {
     pub item_of: Option<TaskKind>,
     /// Why the last save was refused.
     pub error: Option<String>,
+    /// `Esc` was pressed with changes: the card asks whether to discard them. `y` cancels,
+    /// `n` or `Esc` goes back to editing, every other key is ignored.
+    pub discarding: bool,
     /// A new task's parent UID.
     parent: Option<String>,
     /// The task's repeat as stored, to tell an unchanged rule typed differently from a change.
@@ -167,6 +171,7 @@ impl EditForm {
             insertion: None,
             item_of: None,
             error: None,
+            discarding: false,
             parent,
             stored_repeat,
             kept_rule: false,
@@ -205,6 +210,37 @@ impl EditForm {
         self.kept_rule && self.repeat == self.initial.repeat
     }
 
+    /// Whether `Esc` would lose anything: any field differs from when the card opened, or, on a
+    /// new task's card, the title (typed in the new row) is non-empty.
+    pub fn is_dirty(&self) -> bool {
+        if self.uid.is_none() && !self.title.trim().is_empty() {
+            return true;
+        }
+        let now = Values {
+            title: self.title.clone(),
+            list: self.list.clone(),
+            kind: self.kind,
+            due: self.due.clone(),
+            start: self.start.clone(),
+            repeat: self.repeat.clone(),
+            notes: self.notes.clone(),
+        };
+        now != self.initial
+    }
+
+    /// A key while the discard question is shown.
+    fn discard_key(&mut self, k: KeyEvent) -> FormAction {
+        // Only a bare or shifted letter answers: Alt-y must not discard.
+        let plain = (k.modifiers - KeyModifiers::SHIFT).is_empty();
+        match k.code {
+            KeyCode::Char('y' | 'Y') if plain => return FormAction::Cancel,
+            KeyCode::Char('n' | 'N') if plain => self.discarding = false,
+            KeyCode::Esc => self.discarding = false,
+            _ => {}
+        }
+        FormAction::None
+    }
+
     fn step(&mut self, delta: isize) {
         let fields = self.fields();
         let at = fields.iter().position(|f| *f == self.focus).unwrap_or(0) as isize;
@@ -230,8 +266,12 @@ impl EditForm {
     }
 
     pub fn key(&mut self, k: KeyEvent) -> FormAction {
+        if self.discarding {
+            return self.discard_key(k);
+        }
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         match (k.code, ctrl) {
+            (KeyCode::Esc, _) if self.is_dirty() => self.discarding = true,
             (KeyCode::Esc, _) => return FormAction::Cancel,
             (KeyCode::Char('s'), true) => return FormAction::Save,
             (KeyCode::Enter, _) if self.focus == Field::Notes => return FormAction::EditNotes,
@@ -446,6 +486,9 @@ impl EditForm {
     /// Insert pasted text into the focused text field as one line: line breaks become
     /// spaces, a trailing one is dropped. Notes take no paste (they are edited in `$EDITOR`).
     pub fn paste(&mut self, text: &str) {
+        if self.discarding {
+            return;
+        }
         if let Some(t) = self.text_mut() {
             t.push_str(&one_line(text));
         }
