@@ -677,18 +677,35 @@ fn sidebar_j_from_done_lands_on_first_list() {
 }
 
 #[test]
-#[allow(non_snake_case)]
-fn sidebar_focus_gg_G_and_page_keys_move_the_sidebar() {
+fn sidebar_movement_keys_open_the_view_under_the_cursor() {
     let mut a = app();
     a.handle_key(key('2'));
     a.cursor = 1;
     a.handle_key(key('h'));
+    let opened = |a: &App| {
+        assert_eq!(a.view, a.sidebar_items()[a.sidebar_cursor]);
+        assert_eq!(a.cursor, 0, "task cursor starts at the top");
+        assert_eq!(a.focus, Pane::Sidebar);
+    };
+    a.handle_key(key('j'));
+    assert_eq!(a.view, View::Scheduled);
+    opened(&a);
+    a.handle_key(key('k'));
+    assert_eq!(a.view, View::All);
+    opened(&a);
     let last = a.sidebar_items().len() - 1;
     a.handle_key(key('G'));
     assert_eq!(a.sidebar_cursor, last);
-    assert_eq!(a.cursor, 1, "task cursor untouched");
+    opened(&a);
     type_str(&mut a, "gg");
     assert_eq!(a.sidebar_cursor, 0);
+    opened(&a);
+    a.cursor = 1;
+    a.handle_key(key('k'));
+    assert_eq!(
+        a.cursor, 1,
+        "no move at the top: the open view keeps its cursor"
+    );
     a.page = 3;
     a.handle_key(ctrl('d'));
     assert_eq!(a.sidebar_cursor, 3);
@@ -698,8 +715,80 @@ fn sidebar_focus_gg_G_and_page_keys_move_the_sidebar() {
     assert_eq!(a.sidebar_cursor, last);
     a.handle_key(ctrl('u'));
     assert_eq!(a.sidebar_cursor, last - 3);
-    assert_eq!(a.cursor, 1, "task cursor untouched");
-    assert_eq!(a.view, View::All);
+    opened(&a);
+}
+
+#[test]
+fn reopening_the_open_view_keeps_its_search_and_cursor() {
+    let mut a = app();
+    a.handle_key(key('2'));
+    a.handle_key(key('/'));
+    type_str(&mut a, "pay");
+    a.handle_key(code(KeyCode::Enter));
+    a.cursor = 1;
+    let kept = |a: &App, how: &str| {
+        assert_eq!(a.view, View::All, "{how}");
+        assert_eq!(a.search.as_deref(), Some("pay"), "{how}");
+        assert_eq!(a.cursor, 1, "{how}");
+    };
+    a.handle_key(key('h'));
+    a.handle_key(key('l'));
+    kept(&a, "h then l");
+    assert_eq!(a.focus, Pane::Tasks);
+    a.handle_key(key('h'));
+    a.handle_key(code(KeyCode::Enter));
+    kept(&a, "h then Enter");
+    a.handle_key(key('2'));
+    kept(&a, "2 on All");
+    a.handle_key(key('3'));
+    assert_eq!(
+        (a.cursor, a.search.as_deref()),
+        (0, None),
+        "another view starts afresh"
+    );
+}
+
+#[test]
+fn sidebar_move_that_stays_put_keeps_a_view_missing_from_the_sidebar() {
+    let mut s = snapshot_of(report());
+    s.config.lists.entry("inbox".into()).or_default().hidden = true;
+    let mut a = App::new(s, now());
+    a.handle_key(key('0'));
+    a.handle_key(key('h'));
+    a.handle_key(key('k'));
+    assert_eq!(
+        a.view,
+        View::List("inbox".into()),
+        "k at the top opens nothing"
+    );
+    type_str(&mut a, "gg");
+    assert_eq!(
+        a.view,
+        View::List("inbox".into()),
+        "gg at the top opens nothing"
+    );
+    a.handle_key(key('j'));
+    assert_eq!(a.view, a.sidebar_items()[1], "j steps from the drawn entry");
+}
+
+#[test]
+fn reload_puts_the_sidebar_cursor_on_the_open_view() {
+    let mut a = app();
+    a.handle_key(key('h'));
+    while a.view != View::List("bills".into()) {
+        a.handle_key(key('j'));
+    }
+    let bills = a.sidebar_cursor;
+    a.sidebar_cursor = 0;
+    a.reload(snapshot_of(report()));
+    assert_eq!(a.sidebar_cursor, bills);
+
+    let mut r = report();
+    r.collections.retain(|c| c.id != "bills");
+    r.tasks.retain(|t| t.collection != "bills");
+    a.reload(snapshot_of(r));
+    assert_eq!(a.view, View::Today);
+    assert_eq!(a.sidebar_items()[a.sidebar_cursor], View::Today);
 }
 
 #[test]

@@ -494,11 +494,15 @@ impl App {
         {
             self.view = View::Today;
         }
-        // Keep the sidebar cursor on the same entry; fall back to the open view if it is gone.
-        match side.and_then(|v| self.sidebar_items().iter().position(|x| *x == v)) {
-            Some(p) => self.sidebar_cursor = p,
-            None => self.sync_sidebar(),
-        }
+        // The sidebar cursor follows the open view. A view missing from the sidebar keeps the
+        // cursor on the entry it was on, so the next move steps from where it is drawn.
+        let items = self.sidebar_items();
+        self.sidebar_cursor = [Some(self.view.clone()), side]
+            .into_iter()
+            .flatten()
+            .find_map(|v| items.iter().position(|x| *x == v))
+            .unwrap_or(0)
+            .min(items.len().saturating_sub(1));
         // Reopening a detached Done child can nest it beneath a collapsed parent.
         // Reveal its ancestors before restoring the cursor to the reopened task.
         if was_completed
@@ -613,28 +617,41 @@ impl App {
             .min(items.len().saturating_sub(1));
     }
 
+    /// Open `view` and put the sidebar cursor on it. Reopening the view already open keeps its
+    /// task cursor and search, whichever key asked for it.
     fn open(&mut self, view: View) {
-        self.view = view;
-        self.cursor = 0;
-        self.search = None;
+        self.show(view);
         self.sync_sidebar();
     }
 
-    /// Move the cursor of the focused list: the sidebar's, or the task rows'.
+    /// Switch to `view` without touching the sidebar cursor; a new view starts at the top with
+    /// no search.
+    fn show(&mut self, view: View) {
+        if view != self.view {
+            self.view = view;
+            self.cursor = 0;
+            self.search = None;
+        }
+    }
+
+    /// Move the cursor of the focused list: the sidebar's, or the task rows'. In the sidebar the
+    /// view under the cursor opens at once, keeping focus there. A move that does not shift the
+    /// cursor (at either end) opens nothing, so a view missing from the sidebar stays open.
     fn move_cursor(&mut self, delta: isize) {
-        let sidebar = self.focus == Pane::Sidebar;
-        let len = if sidebar {
-            self.sidebar_items().len()
-        } else {
-            self.visible_rows().len()
+        let step = |at: usize, len: usize| {
+            let max = len.saturating_sub(1) as isize;
+            (at as isize).saturating_add(delta).clamp(0, max) as usize
         };
-        let cursor = if sidebar {
-            &mut self.sidebar_cursor
-        } else {
-            &mut self.cursor
-        };
-        let max = len.saturating_sub(1) as isize;
-        *cursor = (*cursor as isize).saturating_add(delta).clamp(0, max) as usize;
+        if self.focus != Pane::Sidebar {
+            self.cursor = step(self.cursor, self.visible_rows().len());
+            return;
+        }
+        let items = self.sidebar_items();
+        let to = step(self.sidebar_cursor, items.len());
+        if to != self.sidebar_cursor {
+            self.sidebar_cursor = to;
+            self.show(items[to].clone());
+        }
     }
 
     /// [`App::handle_key`] with the clock brought up to `now` first, so a date key never
