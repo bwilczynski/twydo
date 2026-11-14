@@ -1,0 +1,52 @@
+claim = "2Do writes one custom relative alert per task in place of its automatic alert: changing the offset rewrites only TRIGGER, removing it or the due date drops the VALARM, and completion copies it unchanged."
+origin = "device"
+observed = "Phone-created A1-A4/A8 alerts at 15 min, 4 h, 1 day (timed and date-only) and with a start date; A1 changed to 30 min, A2 alert removed, A3 due removed; monthly A7 completed. Each task carries a single VALARM with a negative relative TRIGGER and no RELATED; X-2DOAPP-ISAUTO:1 stays when the default alert is edited in place; X-2DOAPP-RELDUETIME is 0 when an exact time was picked (A2)."
+tests = ["crates/twydo-core/tests/edit_alert.rs::set_alert_matches_phone_bytes_15m_4h_1d"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-14 alerts round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."phone-a-before"]
+path = "phone-a-before"
+collections = ["list1"]
+members = []
+action = "Empty Twydo test list before the phone creates alert tasks"
+device = "iphone"
+captured_at = "2026-11-14T19:59:12.716014+00:00"
+
+[states."phone-a-batch1"]
+path = "phone-a-batch1"
+collections = ["list1"]
+members = ["list1/42200c41e91e4e289db9aed8e481d356.ics", "list1/92c11511b21b49288ff0ce7ac11c0313.ics", "list1/981428f9f4604164ad5acffd30bf54d5.ics", "list1/ae49d9b7655647d5aa1788c1bff3ac8f.ics", "list1/b1e7bcf4b25c46f3b91c4aff8e812e63.ics"]
+action = "Phone batch 1: A1 15 min, A2 4 h, A3 1 day, A4 date-only 1 day, A8 start 11-18 + 15 min"
+device = "iphone"
+captured_at = "2026-11-14T20:08:02.103764+00:00"
+
+[states."phone-a-batch2"]
+path = "phone-a-batch2"
+collections = ["list1"]
+members = ["list1/42200c41e91e4e289db9aed8e481d356.ics", "list1/92c11511b21b49288ff0ce7ac11c0313.ics", "list1/981428f9f4604164ad5acffd30bf54d5.ics", "list1/ae49d9b7655647d5aa1788c1bff3ac8f.ics", "list1/b1e7bcf4b25c46f3b91c4aff8e812e63.ics"]
+action = "Phone batch 2: A1 alert to 30 min, A2 alert removed, A3 due removed; one task accidentally completed and reopened"
+device = "iphone"
+captured_at = "2026-11-14T20:15:50.022304+00:00"
+
+[states."phone-a-batch3-open"]
+path = "phone-a-batch3-open"
+collections = ["list1"]
+members = ["list1/7c316d0aae534f26a202befff6a94643.ics"]
+action = "Phone batch 3: monthly A7 due 2026-11-16 09:00 with a 15 min alert, open"
+device = "iphone"
+captured_at = "2026-11-14T20:19:58.867625+00:00"
+
+[states."phone-a-batch3"]
+path = "phone-a-batch3"
+collections = ["list1"]
+members = ["list1/7c316d0aae534f26a202befff6a94643.ics", "list1/fc5b2fa3ed7d4f15b265a1b64671c506.ics"]
+action = "Phone batch 3: A7 completed on the phone; completed copy and advanced original"
+device = "iphone"
+captured_at = "2026-11-14T20:20:39.037583+00:00"
