@@ -10,6 +10,7 @@ pub mod gate;
 pub mod ical;
 pub mod lists;
 pub mod model;
+pub mod remind;
 pub mod repeatinput;
 pub mod retired;
 pub mod store;

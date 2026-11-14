@@ -192,12 +192,12 @@ impl Snapshot {
         self.config.tz()
     }
 
-    fn prefs(&self, idx: usize) -> ListPrefs {
+    pub fn prefs(&self, idx: usize) -> ListPrefs {
         self.config.list_prefs(&self.tasks[idx].collection)
     }
 
     /// A checklist item: a child of a checklist.
-    fn is_item(&self, idx: usize) -> bool {
+    pub(crate) fn is_item(&self, idx: usize) -> bool {
         self.parent(idx)
             .is_some_and(|p| self.tasks[p].kind == TaskKind::Checklist)
     }
