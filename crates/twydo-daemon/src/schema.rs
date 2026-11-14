@@ -99,6 +99,7 @@ pub const METHODS: &[MethodSpec] = &[
         of::<SyncSetAutoParams>,
         of::<SyncSetAutoResult>,
     ),
+    m("notify.test", false, of::<Empty>, of::<Empty>),
     m("job.get", false, of::<JobGetParams>, of::<JobView>),
     m(
         "lists.create",

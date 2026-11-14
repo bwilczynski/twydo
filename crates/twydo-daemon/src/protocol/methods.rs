@@ -189,6 +189,10 @@ pub struct StatusView {
     /// or only found the vdir held by another process.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drain_error: Option<String>,
+    /// Why the reminder notifier cannot deliver (the sink failed; retried) or cannot save its
+    /// sent-state file. Names keys and reasons, never task titles. `None` when it is well.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notifier_error: Option<String>,
     /// Queue item files that do not parse (paths): they are not drained and not shown as
     /// pending; the user decides what to do with them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

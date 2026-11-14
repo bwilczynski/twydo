@@ -2884,6 +2884,13 @@
           "journal": {
             "$ref": "#/components/schemas/JournalView"
           },
+          "notifier_error": {
+            "description": "Why the reminder notifier cannot deliver (the sink failed; retried) or cannot save its\nsent-state file. Names keys and reasons, never task titles. `None` when it is well.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "pending_edits": {
             "format": "uint",
             "minimum": 0,
@@ -4309,6 +4316,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/SyncSetAutoResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "notify.test",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/Empty"
         }
       },
       "x-lifecycle": false

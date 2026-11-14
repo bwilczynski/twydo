@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod jobs;
 pub mod lane;
 pub mod lists;
+pub mod notifier;
 pub mod permissions;
 pub mod publish;
 pub mod replay;
@@ -81,8 +82,14 @@ pub struct DaemonOptions {
     pub schedule: bool,
     /// The interval of the periodic sync.
     pub periodic: Duration,
-    /// The scheduler's clock.
+    /// The scheduler's and the notifier's clock.
     pub clock: Arc<dyn schedule::Clock>,
+    /// The platform notification sink; `None` (the default) leaves the notifier idle unless
+    /// `[notifications] command` is set. Tests never set the platform sink.
+    pub notify: Option<Arc<dyn notifier::Sink>>,
+    /// The time limit of a configured notification command; tests shorten it.
+    #[doc(hidden)]
+    pub notify_timeout: Duration,
     /// How long a sync running at shutdown may go on before it is stopped. Shutdown waits
     /// for the running job however long it takes (see `stop_jobs`): a job that never ends is
     /// ended by the service manager's stop timeout.
@@ -122,6 +129,8 @@ impl DaemonOptions {
             schedule: true,
             periodic: Duration::from_secs(60),
             clock: Arc::new(schedule::SystemClock),
+            notify: None,
+            notify_timeout: notifier::sink::TIMEOUT,
             shutdown_grace: Duration::from_secs(10),
             stop_wait: STOP_WAIT,
             version_for_test: None,
@@ -194,6 +203,8 @@ pub struct Shared {
     status_refresh_cv: Condvar,
     /// The scheduler, once started (after ready); taken at teardown.
     scheduler: Mutex<Option<schedule::Scheduler>>,
+    /// The reminder notifier, once started (after ready); taken at teardown.
+    notifier: Mutex<Option<notifier::Notifier>>,
     /// The background drainer; see [`Shared::request_drain`].
     drainer: Mutex<Drainer>,
     drainer_cv: Condvar,
@@ -361,6 +372,7 @@ impl Daemon {
             status_refresh: Mutex::new(Refresher::default()),
             status_refresh_cv: Condvar::new(),
             scheduler: Mutex::new(None),
+            notifier: Mutex::new(None),
             drainer: Mutex::new(Drainer::default()),
             drainer_cv: Condvar::new(),
             ready: Mutex::new(false),
@@ -409,8 +421,11 @@ impl Daemon {
         {
             let for_thread = Arc::clone(&shared);
             let hook = opts.before_recovery.take();
-            let sched = opts.schedule.then_some((opts.clock, opts.periodic));
-            let h = std::thread::spawn(move || startup(&for_thread, hook, sched));
+            let sched = opts
+                .schedule
+                .then_some((Arc::clone(&opts.clock), opts.periodic));
+            let notify = (opts.clock, opts.notify.take(), opts.notify_timeout);
+            let h = std::thread::spawn(move || startup(&for_thread, hook, sched, notify));
             *shared.startup.lock().unwrap() = Some(h);
         }
         let accept = {
@@ -525,6 +540,11 @@ fn startup(
     shared: &Arc<Shared>,
     before_recovery: Option<Box<dyn FnOnce() + Send>>,
     sched: Option<(Arc<dyn schedule::Clock>, Duration)>,
+    notify: (
+        Arc<dyn schedule::Clock>,
+        Option<Arc<dyn notifier::Sink>>,
+        Duration,
+    ),
 ) {
     type Step<'a> = Box<dyn FnOnce(&Arc<Shared>) -> Result<(), String> + 'a>;
     // One entry per step; the stop flag is checked before each, so a stopping daemon never
@@ -684,6 +704,10 @@ fn startup(
     shared.set_ready();
     if shared.is_ready() {
         shared.runner.start(shared);
+        // Before the scheduler, so no sync can end before the notifier can hold for it.
+        // Always started: reminders do not depend on sync.
+        let (clock, sink, timeout) = notify;
+        shared.start_notifier(clock, sink, timeout);
         // After the runner: the scheduler posts the startup sync at once.
         if let Some((clock, periodic)) = sched {
             shared.start_scheduler(clock, periodic);
@@ -710,6 +734,8 @@ fn outside_change(shared: &Shared) {
         return;
     }
     shared.publisher.refresh_status();
+    // After the publish: the notifier plans on the snapshot it made.
+    shared.poke_notifier();
 }
 
 fn accept_loop(listener: UnixListener, wake_r: OwnedFd, shared: Arc<Shared>) {
@@ -822,6 +848,7 @@ fn stop_jobs(shared: &Shared) {
     use crate::protocol::jobs::JobState;
     // No more background syncs are posted.
     shared.stop_scheduler();
+    shared.stop_notifier();
     for view in shared.runner.close() {
         let state = JobState::Interrupted;
         if let Err(e) = shared.jobs.set_state(&view.job_id, state.clone()) {
@@ -954,6 +981,12 @@ impl DaemonHandle {
             reason,
             background: true,
         });
+    }
+
+    /// Wakes the notifier to plan again (tests move its clock first).
+    #[doc(hidden)]
+    pub fn poke_notifier(&self) {
+        self.shared.poke_notifier();
     }
 
     /// Wakes the scheduler to decide again (tests move its clock first).

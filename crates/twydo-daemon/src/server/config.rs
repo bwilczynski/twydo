@@ -110,6 +110,8 @@ fn apply(shared: &Shared) -> ConfigStatus {
         if let Err(e) = shared.publisher.reload(Cause::Config, Vec::new()) {
             eprintln!("tdo daemon: reload after a configuration change failed: {e}");
         }
+        // After the reload: the notifier plans on the snapshot it published.
+        shared.poke_notifier();
     }
     ConfigStatus {
         error: None,

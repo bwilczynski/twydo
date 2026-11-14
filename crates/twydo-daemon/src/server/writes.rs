@@ -110,6 +110,16 @@
 //! (let go), then the runner's `state` (to queue the sync), then `core.inner` again. The
 //! scheduler thread holds neither while it reads the journal or posts to the job runner.
 //!
+//! The notifier's poke ([`Shared::poke_notifier`], from [`Shared::poke_scheduler`], the
+//! configuration reload and the watcher's reload) and its sync notice
+//! ([`Shared::sync_finished_notifier`], from a sync's end, before the scheduler's poke) take
+//! the notifier slot and then the notifier's own mutex (`core.inner`), both held only to set a
+//! flag (the notice also counts the sync). The notifier thread holds neither, nor any
+//! other lock, while it plans, runs a notification command or takes the publisher (`config`,
+//! `current`, then `state` for the error and the status refresh, as any status caller does).
+//! Teardown takes the slot only to remove the notifier, then stops and joins it holding
+//! nothing, so a command in flight delays shutdown by its time limit at most.
+//!
 //! The configuration reload ([`super::config::changed`]) takes `config_seen` and holds it
 //! throughout; then the publisher: `reload` takes the vdir reader lock, then `reload_lock`.
 //!
