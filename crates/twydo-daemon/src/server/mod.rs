@@ -247,7 +247,7 @@ impl Shared {
         *self.stop.lock().unwrap()
     }
 
-    /// Enters the commit gate: hold the guard around a store call that can commit. `None`
+    /// Enters the commit gate: hold the guard around a writer call that can commit. `None`
     /// once teardown has closed it (the caller answers `unavailable` or skips its drain).
     pub fn commit_gate(&self) -> Option<RwLockReadGuard<'_, bool>> {
         let g = self.commits.read().unwrap_or_else(|e| e.into_inner());
@@ -885,7 +885,7 @@ fn teardown(shared: &Shared) {
     // Stops watching; a callback already running returns at once (the publisher is closed).
     shared.watcher.lock().unwrap().take();
     shared.config_watcher.lock().unwrap().take();
-    // A write in flight finishes its commit; none starts after this (its store call answers
+    // A write in flight finishes its commit; none starts after this (its writer call answers
     // `unavailable`, a drain skips). Before the lock is released, so a second daemon never
     // writes the vdir while a thread of this one still could.
     shared.close_commits();

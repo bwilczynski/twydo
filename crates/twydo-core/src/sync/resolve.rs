@@ -5,10 +5,11 @@
 //! other conflict the vdir already holds one version; keeping it closes the conflict once the
 //! file is checked to still hold it, and keeping the other writes it through
 //! [`Locked::restore`](crate::store::Locked::restore) (which the next sync propagates as an
-//! ordinary change), then closes the conflict. A file that no longer holds the version it held then is refused; keeping
-//! [`Keep::Current`] closes such a conflict and leaves the file as it is. Lock order:
-//! the vdir lock, then the conflicts lock (inside `mark_resolved`); `restore` takes and
-//! releases the exclusive vdir lock itself, before `mark_resolved`.
+//! ordinary change), then closes the conflict. A file that no longer holds the version it
+//! held then is refused; keeping [`Keep::Current`] closes such a conflict and leaves the file
+//! as it is. Lock order: the vdir lock, then the conflicts lock (inside `mark_resolved`);
+//! `resolve` takes the exclusive vdir lock through the writer where it writes, and `restore`
+//! runs under it, before `mark_resolved`.
 
 use std::fs;
 use std::io;
