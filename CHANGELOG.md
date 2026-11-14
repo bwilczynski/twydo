@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/bwilczynski/twydo/compare/v0.4.0...v0.4.1) - 2026-11-14
+
+### Added
+
+- *(tui)* edit a task's alert on the card with A
+- *(cli)* set and remove an alert with --alert
+- *(gate)* admit custom alert edits behind set-alert.task
+- *(core)* add a custom alert edit
+
+### Fixed
+
+- *(remind)* count 2do alerts from the due time
+
 ## [0.4.0](https://github.com/bwilczynski/twydo/compare/v0.3.3...v0.4.0) - 2026-11-14
 
 ### Added
