@@ -5,6 +5,7 @@ pub mod config;
 pub mod conflicts;
 pub mod daemon;
 pub mod export;
+pub mod notify;
 pub mod op;
 pub mod service;
 pub mod sync;

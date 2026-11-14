@@ -408,6 +408,42 @@ mod sync {
     }
 
     #[test]
+    fn status_prints_the_notifiers_error_text_as_is() {
+        let fx = Fx::new(Some("command = \"/nonexistent/vdirsyncer\""));
+        // A reminder an hour overdue and a command that cannot run: the delivery fails.
+        let due = (chrono::Utc::now() - chrono::Duration::hours(1)).format("%Y%m%dT%H%M%SZ");
+        fs::write(
+            fx.path("vdir/c1/u1.ics"),
+            format!(
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+                 UID:u1\r\nSUMMARY:Ping\r\nDUE:{due}\r\nBEGIN:VALARM\r\n\
+                 ACTION:DISPLAY\r\nTRIGGER;RELATED=END:PT0S\r\nEND:VALARM\r\n\
+                 END:VTODO\r\nEND:VCALENDAR\r\n"
+            ),
+        )
+        .unwrap();
+        let mut text = fs::read_to_string(fx.config_path()).unwrap();
+        text.push_str("\n[notifications]\ncommand = [\"/nonexistent/notify\"]\n");
+        fs::write(fx.config_path(), text).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let o = fx.tdo(&["status"]);
+            assert!(o.status.success(), "{}", stderr(&o));
+            let out = stdout(&o);
+            if let Some(line) = out
+                .lines()
+                .find(|l| l.starts_with("cannot deliver reminders"))
+            {
+                assert!(!line.contains("reminders not delivered"), "{line}");
+                assert!(!line.contains("Ping"), "{line}");
+                return;
+            }
+            assert!(Instant::now() < deadline, "no notifier error line: {out}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    #[test]
     fn clean_sync_exits_0_and_status_shows_it() {
         let fx = Fx::with_fake(|_| "echo 'Syncing twydo/c1' >&2".into());
         let o = fx.tdo(&["sync"]);

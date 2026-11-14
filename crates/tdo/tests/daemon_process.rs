@@ -818,3 +818,80 @@ fn upgrade_accepts_a_daemon_restarted_by_the_manager() {
         started.elapsed()
     );
 }
+
+/// An environment whose `[notifications] command` runs a script that appends its last two
+/// arguments (the title and the body) to `<root>/notified`.
+fn notifying_env() -> (Env, std::path::PathBuf) {
+    let env = TestEnv::with_config_tail(|root| {
+        let script = root.join("notify.sh");
+        write_script(
+            &script,
+            &format!(
+                "printf '%s\\n%s\\n' \"$1\" \"$2\" >> '{}'",
+                root.join("notified").display()
+            ),
+        );
+        format!(
+            "[notifications]\ncommand = [\"sh\", \"{}\"]\n",
+            script.display()
+        )
+    });
+    let out = env.root.path().join("notified");
+    (env, out)
+}
+
+#[test]
+fn notify_test_command_end_to_end() {
+    let (env, out) = notifying_env();
+    let _d = env.spawn(&[]);
+    env.connect(&env.socket());
+    let o = env.tdo_cmd().args(["notify", "test"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{o:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&o.stdout).trim(),
+        "notification sent"
+    );
+    assert_eq!(
+        fs::read_to_string(&out).unwrap(),
+        "Twydo\nNotifications work.\n"
+    );
+}
+
+#[test]
+fn a_due_trigger_is_delivered_end_to_end() {
+    let (env, out) = notifying_env();
+    let due = (chrono::Utc::now() - chrono::Duration::minutes(1))
+        .format("%Y%m%dT%H%M%SZ")
+        .to_string();
+    fs::write(
+        env.vdir().join("inbox/u1.ics"),
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//synthetic//EN\r\nBEGIN:VTODO\r\n\
+             UID:u1\r\nSUMMARY:Synthetic reminder\r\nDUE:{due}\r\nBEGIN:VALARM\r\n\
+             ACTION:DISPLAY\r\nTRIGGER;RELATED=END:PT0S\r\nEND:VALARM\r\n\
+             END:VTODO\r\nEND:VCALENDAR\r\n"
+        ),
+    )
+    .unwrap();
+    let _d = env.spawn(&[]);
+    env.connect(&env.socket());
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !fs::read_to_string(&out).is_ok_and(|s| s.contains("Synthetic reminder")) {
+        assert!(Instant::now() < deadline, "the reminder never arrived");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn notifier_off_by_environment() {
+    let env = TestEnv::new("");
+    let _d = env.spawn(&[]);
+    env.connect(&env.socket());
+    let o = env.tdo_cmd().args(["notify", "test"]).output().unwrap();
+    assert_eq!(o.status.code(), Some(1), "{o:?}");
+    assert!(
+        String::from_utf8_lossy(&o.stderr)
+            .contains("notifications are not available in this daemon"),
+        "{o:?}"
+    );
+}

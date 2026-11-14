@@ -15,6 +15,8 @@ pub struct ClientSync {
     pub refusals: Vec<RefusalView>,
     pub config: ConfigStatus,
     pub drain_error: Option<String>,
+    /// Why the notifier cannot deliver reminders, when it cannot.
+    pub notifier_error: Option<String>,
 }
 
 impl ClientSync {
@@ -29,6 +31,7 @@ impl ClientSync {
             refusals: status.refusals.clone(),
             config: status.config.clone(),
             drain_error: status.drain_error.clone(),
+            notifier_error: status.notifier_error.clone(),
         }
     }
 

@@ -17,6 +17,8 @@ export TZ=America/New_York
 demo_dir=$(mktemp -d)
 # The demo daemon listens on its own socket, never your own daemon's; stop it before cleaning up.
 export TWYDO_SOCKET="$demo_dir/tdo.sock"
+# Its fixture is dated today, so reminders would be due: never raise real notifications.
+export TWYDO_NOTIFIER=off
 cleanup() {
   # The daemon answers only a client with its own configuration.
   XDG_CONFIG_HOME="$demo_dir/config" XDG_STATE_HOME="$demo_dir/state" \
