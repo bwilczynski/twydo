@@ -12,8 +12,8 @@ use chrono::Utc;
 use serde_json::Value;
 use twydo_core::lists::{ListError, ListRequest, ListResult, ListService, ListState, backup};
 use twydo_core::retired;
-use twydo_core::store::Submitted;
 use twydo_core::store::journal::RequestRef;
+use twydo_core::store::{self, Ctx, Submitted};
 use twydo_core::sync::run::RunOptions;
 
 use super::Shared;
@@ -363,16 +363,19 @@ pub fn recover(
             // undoes it (as `u` after `:recover` does in the TUI). The job holds the lane long,
             // and session holders never wait for a long job.
             let mut s = super::sessions::lock(&session);
-            s.store.set_request(Some(RequestRef {
-                session: p.session,
-                request_id: p.request_id,
-            }));
             shared.test_point("recover");
             let snap = Arc::clone(&shared.publisher.current().1);
-            let r = s
-                .store
-                .recover_list(&snap.snap, &p.backup, &p.to, Utc::now());
-            s.store.set_request(None);
+            let ctx = Ctx {
+                now: Utc::now(),
+                request: Some(RequestRef {
+                    session: p.session,
+                    request_id: p.request_id,
+                }),
+                config: &shared.cfg,
+            };
+            let r = shared.writer.lock_waiting().and_then(|locked| {
+                store::recover_list(&locked, &snap.snap, &p.backup, &p.to, &ctx)
+            });
             match r {
                 Ok((_, false)) => Ok(JobResult::Recovered {
                     op_id: None,
@@ -380,6 +383,7 @@ pub fn recover(
                     message: "already recovered; backup retained".into(),
                 }),
                 Ok((op_id, true)) => {
+                    s.store.record_recovered(&op_id);
                     s.pushed("recovered list".into(), &Submitted::Applied(op_id.clone()));
                     Ok(JobResult::Recovered {
                         op_id: Some(op_id),

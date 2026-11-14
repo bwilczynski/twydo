@@ -4,8 +4,8 @@
 //! conflict hook applies it on the next sync and the runner then closes the conflict. For any
 //! other conflict the vdir already holds one version; keeping it closes the conflict once the
 //! file is checked to still hold it, and keeping the other writes it through
-//! [`Store::restore`] (which the next sync propagates as an ordinary change), then closes the
-//! conflict. A file that no longer holds the version it held then is refused; keeping
+//! [`Locked::restore`](crate::store::Locked::restore) (which the next sync propagates as an
+//! ordinary change), then closes the conflict. A file that no longer holds the version it held then is refused; keeping
 //! [`Keep::Current`] closes such a conflict and leaves the file as it is. Lock order:
 //! the vdir lock, then the conflicts lock (inside `mark_resolved`); `restore` takes and
 //! releases the exclusive vdir lock itself, before `mark_resolved`.
@@ -20,7 +20,7 @@ use crate::config::Config;
 use crate::conflicts::{Conflict, ConflictState, ConflictStore, ResolvedBy, Side};
 use crate::store::fsio::VdirLock;
 use crate::store::journal::RequestRef;
-use crate::store::{Store, WriteError, existing_vdir_state};
+use crate::store::{Ctx, WriteError, Writer, existing_vdir_state};
 
 /// Which version of a conflict to keep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,17 +101,19 @@ fn version(c: &Conflict, side: Side) -> Option<&str> {
 /// Keeps the `keep` version of conflict `id`; see the module docs.
 pub fn resolve(
     cfg: &Config,
+    writer: &Writer,
     id: &str,
     keep: Keep,
     now: DateTime<Utc>,
 ) -> Result<Resolution, ResolveError> {
-    resolve_with(cfg, id, keep, now, None)
+    resolve_with(cfg, writer, id, keep, now, None)
 }
 
 /// [`resolve`] for a client request: the conflict and, for a written version, the journal
 /// entry record `request`, so a resend finds its earlier result ([`ConflictStore::by_request`]).
 pub fn resolve_with(
     cfg: &Config,
+    writer: &Writer,
     id: &str,
     keep: Keep,
     now: DateTime<Utc>,
@@ -190,9 +192,18 @@ pub fn resolve_with(
     drop(shared);
     // The file holds `holds`, perhaps with other line endings: hand `restore` the bytes
     // actually on disk (it refuses if they change before it takes the lock).
-    let (mut writer, _) = Store::open(cfg)?;
-    writer.set_request(request.clone());
-    let op = writer.restore(&c.path, actual.as_deref(), kept, vec![c.uid.clone()], now)?;
+    let ctx = Ctx {
+        now,
+        request: request.clone(),
+        config: cfg,
+    };
+    let op = writer.lock_waiting()?.restore(
+        &c.path,
+        actual.as_deref(),
+        kept,
+        vec![c.uid.clone()],
+        &ctx,
+    )?;
     let r = Resolution::Written(op);
     store.mark_resolved_by(id, now, by(&r))?;
     Ok(r)

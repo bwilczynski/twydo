@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
-use twydo_core::store::{Store, bind_vdir_state};
+use twydo_core::store::{Store, WriteError, Writer, bind_vdir_state};
 use twydo_core::sync::running::{self, Reaped};
 
 use crate::paths::DaemonLock;
@@ -172,6 +172,8 @@ pub struct Shared {
     pub state_dir: PathBuf,
     /// The compatibility matrix the gate checks against.
     pub matrix: Matrix,
+    /// The one writer of the vdir, opened with `matrix`; it runs no recovery and holds no lock.
+    pub writer: Writer,
     /// The vdir lane token; its drain hook is [`writes::drain_queue`].
     pub lane: lane::Lane,
     pub sessions: sessions::Sessions,
@@ -317,6 +319,10 @@ impl Daemon {
         let publisher = publish::Publisher::new(cfg.clone(), state.clone(), Arc::clone(&bus));
         let sessions = sessions::Sessions::new(cfg.clone(), opts.matrix.clone(), opts.session_ttl)
             .with_test_point(opts.test_point.clone());
+        let writer = Writer::open(&cfg, opts.matrix.clone()).map_err(|e| match e {
+            WriteError::Io(e) => StartError::from(e),
+            e => StartError::from(io::Error::other(e.to_string())),
+        })?;
         let shared = Arc::new(Shared {
             cfg,
             bus,
@@ -343,6 +349,7 @@ impl Daemon {
             commits: RwLock::new(false),
             state_dir: state.clone(),
             matrix: opts.matrix.clone(),
+            writer,
             lane: lane::Lane::new(),
             sessions,
             requests: replay::RequestLog::new(),

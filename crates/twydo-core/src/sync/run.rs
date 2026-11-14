@@ -36,8 +36,7 @@ use crate::lists::helper::Watch;
 use crate::store::bind_vdir_state;
 use crate::store::fsio::{VdirLock, remove_durable, write_atomic};
 use crate::store::journal::{Journal, Stage, recover_locked};
-use crate::store::queue::drain_with_lock;
-use crate::store::{DrainOutcome, Drained};
+use crate::store::{Ctx, DrainOutcome, Drained, WriteError, Writer};
 
 /// How `run` was asked to run.
 #[derive(Debug, Clone, Default)]
@@ -155,13 +154,21 @@ fn skipped(s: Skip) -> RunReport {
 ///    left a collection in `Error`, is a transient failure and backs off.
 /// 7. Repeats from 3, at most twice, while `sync/requested` exists.
 pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunReport, SyncError> {
-    run_with(cfg, Matrix::embedded(), opts, now)
+    if cfg.sync.is_none() {
+        // Nothing to run: open (and create) no state.
+        return Ok(skipped(Skip::NotConfigured));
+    }
+    let writer = Writer::open(cfg, Matrix::embedded().clone()).map_err(|e| match e {
+        WriteError::Io(e) => e,
+        e => io::Error::other(e.to_string()),
+    })?;
+    run_with(cfg, &writer, opts, now)
 }
 
-/// [`run`], gating the queued edits the run drains with `matrix` (the daemon passes its own).
+/// [`run`], draining the queued edits through `writer` (the daemon passes its own).
 pub fn run_with(
     cfg: &Config,
-    matrix: &Matrix,
+    writer: &Writer,
     opts: &RunOptions,
     now: DateTime<Utc>,
 ) -> Result<RunReport, SyncError> {
@@ -219,7 +226,7 @@ pub fn run_with(
             opts.discover,
             &opts.hold_queue,
             cfg,
-            matrix,
+            writer,
             sync,
             &state,
             &vdirsyncer_config,
@@ -261,7 +268,7 @@ fn one_pass(
     discover_requested: bool,
     hold_queue: &AtomicBool,
     cfg: &Config,
-    matrix: &Matrix,
+    writer: &Writer,
     sync: &SyncConfig,
     state: &Path,
     vdirsyncer_config: &Path,
@@ -272,7 +279,7 @@ fn one_pass(
     report: &mut RunReport,
 ) -> Result<bool, SyncError> {
     // Step 3: recovery under the exclusive lock.
-    if !recover_and_park(cfg, matrix, state, now, hold_queue, report)? {
+    if !recover_and_park(cfg, writer, state, now, hold_queue, report)? {
         report.stopped = true;
         return Ok(false);
     }
@@ -504,7 +511,7 @@ fn one_pass(
         }
         // Edits queued while vdirsyncer ran are applied now, under the same lock; a rerun
         // sends them.
-        let drained = drain_into(cfg, matrix, &_excl, now, hold_queue, &mut report.warnings);
+        let drained = drain_into(cfg, writer, &_excl, now, hold_queue, &mut report.warnings);
         // Not after a stopped or failed pass: a rerun would stop or fail the same way, and the
         // batch waiter covers those edits.
         let failed =
@@ -769,7 +776,7 @@ fn transient(
 /// may have been waited for (another process held it) while the caller began shutting down.
 fn recover_and_park(
     cfg: &Config,
-    matrix: &Matrix,
+    writer: &Writer,
     state: &Path,
     now: DateTime<Utc>,
     hold_queue: &AtomicBool,
@@ -787,7 +794,7 @@ fn recover_and_park(
         // Nothing stuck: apply what was queued while no sync held the lock.
         out.drained.extend(drain_into(
             cfg,
-            matrix,
+            writer,
             &lock,
             now,
             hold_queue,
@@ -862,7 +869,7 @@ fn recover_and_park(
 /// never a failed run; the items stay queued.
 fn drain_into(
     cfg: &Config,
-    matrix: &Matrix,
+    writer: &Writer,
     held: &VdirLock,
     now: DateTime<Utc>,
     hold_queue: &AtomicBool,
@@ -871,7 +878,12 @@ fn drain_into(
     if hold_queue.load(Ordering::SeqCst) {
         return Vec::new();
     }
-    match drain_with_lock(cfg, matrix, held, now) {
+    let ctx = Ctx {
+        now,
+        request: None,
+        config: cfg,
+    };
+    match writer.with_lock(held).drain(&ctx) {
         Ok(d) => d,
         Err(e) => {
             warnings.push(format!("queued edits were not applied: {e}"));

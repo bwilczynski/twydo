@@ -197,7 +197,15 @@ fn run_resolve(
                 "the daemon is shutting down",
             ));
         };
-        resolve_with(&shared.cfg, &p.id, keep, Utc::now(), Some(request)).map_err(refusal)?
+        resolve_with(
+            &shared.cfg,
+            &shared.writer,
+            &p.id,
+            keep,
+            Utc::now(),
+            Some(request),
+        )
+        .map_err(refusal)?
     };
     let uids = conflict_uids(shared, &p.id)?;
     if let Err(e) = shared.publisher.reload(Cause::Op, uids) {

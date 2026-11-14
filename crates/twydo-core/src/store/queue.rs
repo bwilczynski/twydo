@@ -11,10 +11,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
+use super::existing_vdir_state;
+use super::fsio::{remove_durable, sync_dir, write_atomic};
 use super::journal::{Entry, FamilyGuard, Journal, RequestRef, Write};
-use super::{Ctx, Drained, WriteError, Writer, existing_vdir_state};
-use crate::compat::Matrix;
 use crate::config::Config;
 use crate::edit::Op;
 use crate::vdir::LoadReport;
@@ -141,23 +140,6 @@ pub fn refusal_message(r: &Refusal) -> String {
     } else {
         format!("Not saved: \"{}\": {}", r.item.label, r.reason)
     }
-}
-
-/// Drains the queue for a caller that holds the vdir lock (the sync runner), with the
-/// compatibility matrix `matrix`.
-pub fn drain_with_lock(
-    cfg: &Config,
-    matrix: &Matrix,
-    held: &VdirLock,
-    now: DateTime<Utc>,
-) -> Result<Vec<Drained>, WriteError> {
-    let writer = Writer::open(cfg, matrix.clone())?;
-    let ctx = Ctx {
-        now,
-        request: None,
-        config: cfg,
-    };
-    writer.with_lock(held).drain(&ctx)
 }
 
 /// Whether every file `item` was planned against still holds what it read: its writes'
