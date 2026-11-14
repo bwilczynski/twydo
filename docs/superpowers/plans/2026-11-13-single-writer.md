@@ -212,13 +212,13 @@ Rules of `undo`/`redo` (today's `undo_last`, `redo_last`, `revert_step`):
 **Interfaces:**
 - Produces:
   - `sync::run::run_with(cfg: &Config, writer: &Writer, opts: &RunOptions, now)` (replaces Task 1's matrix parameter); `run(cfg, opts, now)` stays as a convenience that opens a `Writer` with the embedded matrix. The runner's drains are `writer.with_lock(&held).drain(&Ctx { now, request: None, config: cfg })`. `queue::drain_with_lock` is removed.
-  - `sync::resolve::resolve(.., writer: &Writer, ..)` in place of `Store::open(cfg)`: it calls `writer.lock_waiting()?.restore(..)` where it called `writer.restore` and no longer runs journal recovery.
+  - `sync::resolve::resolve(.., writer: &Writer, ..)` in place of `Store::open(cfg)`: it calls `writer.lock_waiting()?.restore(..)` where it called `writer.restore`; recovery still runs under the lock inside `restore`.
   - `store::recover_list(locked: &Locked<'_>, active: &Snapshot, backup_id: &str, to: &str, ctx: &Ctx<'_>) -> Result<(String, bool), WriteError>` as a free function (today `Store::recover_list`, minus taking the lock).
   - `Shared.writer: Writer` in the daemon, opened in `Daemon::start` with `opts.matrix`; `Shared.matrix` stays for the gate reports.
 - The daemon's sessions still hold `Store` shells after this task; only the three core entry points above and their daemon call sites change. `lists.recover` takes `shared.writer.lock_waiting()` and records the result on the session as it does today (`s.pushed`).
 
-- [ ] **Step 1: Write the failing test** `resolve_does_not_run_journal_recovery` in `crates/twydo-core/tests/resolve.rs`: leave a `prepared` journal entry on disk for another task, resolve a conflict keeping the other side, assert the conflict is written and the prepared entry is still `Stage::Prepared`. (Today `Store::open` rolls it forward.)
-- [ ] **Step 2: Run** it. Expected: FAIL to compile (`resolve` has no writer parameter).
+- [ ] **Step 1: No new test.** (Amended: the planned `resolve_does_not_run_journal_recovery` was wrong; every write recovers under the lock and that must not change.) The existing resolve, sync-run and retired tests are the contract.
+- [ ] **Step 2: Change the signatures** and see the call sites fail to compile.
 - [ ] **Step 3: Implement** the four interface changes and update call sites. In core tests, change only the call expressions (e.g. `resolve(.., &writer, ..)`, `recover_list(&locked, ..)`), never assertions.
 - [ ] **Step 4: Run** `cargo test --workspace` and lint. Expected: green, including Task 1's test.
 - [ ] **Step 5: Commit** `refactor(core): hand the sync runner, conflict resolution and list recovery the writer`.

@@ -258,8 +258,8 @@ removed.
 
 `sync::resolve::resolve` takes `&Writer` in place of opening a store, and takes the vdir
 lock itself (`Writer::lock_waiting`) at the point where it writes, as it does today: it reads
-under the shared lock first. It stops running journal recovery as a side effect of
-`Store::open`. It is therefore one caller of the writer's lock outside `with_vdir`; the
+under the shared lock first. Journal recovery still runs under the lock before the write,
+as before every write. It is therefore one caller of the writer's lock outside `with_vdir`; the
 daemon's `conflicts.resolve` still holds the waiting lane and the commit gate around it.
 
 `Store::recover_list` (`store/retired.rs`) becomes a function over `&Locked` and the calling
