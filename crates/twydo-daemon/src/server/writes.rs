@@ -37,12 +37,12 @@
 //!
 //! `conflicts.resolve`, `journal.recover` and `journal.abandon` cannot be queued, so they take the
 //! lane with [`Lane::write_waiting`](super::lane::Lane::write_waiting), which waits for a running
-//! long job: the request log slot (not for `journal.recover`), then the lane, then the commit gate
-//! around the writer or core call, then the vdir lock (inside that call), then, with the gate let go
-//! and the lane still held, the publisher (`reload` takes the vdir reader lock and then
-//! `reload_lock`; then `state` and the bus). They take no session mutex: a long job's drain hook
-//! takes session mutexes while it holds the lane, so a session holder must never wait for a long
-//! job. After letting the lane go they may request a drain or a sync (below).
+//! long job: the request log slot (not for `journal.recover`), then the lane, then the commit
+//! gate around the writer or core call, then the vdir lock (inside that call), then, with the
+//! gate let go and the lane still held, the publisher (`reload` takes the vdir reader lock and
+//! then `reload_lock`; then `state` and the bus). They take no session mutex: a long job's
+//! drain hook takes session mutexes while it holds the lane, so a session holder must never
+//! wait for a long job. After letting the lane go they may request a drain or a sync (below).
 //!
 //! ## Long jobs (the job runner, [`super::jobs`])
 //!
@@ -106,8 +106,8 @@
 //! The scheduler's poke ([`Shared::poke_scheduler`], after a publish and a sync's end) takes
 //! the scheduler slot and then the scheduler's own mutex (`core.inner`), both held only to set
 //! a flag. [`Shared::sync_now`] (the scheduler's `sync_now`) takes the slot, then `core.inner`
-//! (let go), then the runner's `state` (to queue the sync), then `core.inner` again. The scheduler thread holds neither
-//! while it reads the journal or posts to the job runner.
+//! (let go), then the runner's `state` (to queue the sync), then `core.inner` again. The
+//! scheduler thread holds neither while it reads the journal or posts to the job runner.
 //!
 //! The configuration reload ([`super::config::changed`]) takes `config_seen` and holds it
 //! throughout; then the publisher: `reload` takes the vdir reader lock, then `reload_lock`.
@@ -123,7 +123,6 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-
 use std::time::Duration;
 
 use chrono::Utc;
@@ -1031,8 +1030,7 @@ pub fn drain_queue(shared: &Arc<Shared>) {
 
 /// The part of [`drain_queue`] that needs the vdir: run it under the lane (a long job's, or a
 /// write's), then call [`finish_drain`] with what it returns once the lane is let go, if the
-/// lane was taken as a write. A write holder waits for a session mutex nowhere else, and a
-/// session holder may wait for a write: pruning under a write lane would deadlock.
+/// lane was taken as a write. It takes no session mutex: a session holder may wait for a write.
 pub fn drain_passes(shared: &Arc<Shared>) -> Vec<Drained> {
     if shared.is_stopping() {
         return Vec::new();
@@ -1097,7 +1095,8 @@ pub fn drain_passes(shared: &Arc<Shared>) -> Vec<Drained> {
     drained
 }
 
-/// What follows a drain's passes: the result is published and each item gets its `op.finished`. Takes no lane.
+/// What follows a drain's passes: the result is published and each item gets its
+/// `op.finished`. Takes no lane.
 pub fn finish_drain(shared: &Arc<Shared>, drained: Vec<Drained>) {
     if drained.is_empty() {
         shared.request_status_refresh();

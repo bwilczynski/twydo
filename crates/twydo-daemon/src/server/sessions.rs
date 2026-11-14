@@ -63,7 +63,8 @@ impl Sessions {
         }
     }
 
-    /// Passes the daemon's test point to the table (`sessions_locked`, `without_recovery`).
+    /// Passes the daemon's test point to the table (`sessions_locked`, `without_recovery`: test
+    /// seams only).
     pub fn with_test_point(mut self, hook: Option<super::TestPoint>) -> Sessions {
         self.test_point = hook;
         self
@@ -99,8 +100,8 @@ impl Sessions {
                 return id.to_string();
             }
         }
-        // The point where the session's own I/O used to happen, kept outside the table lock so
-        // a slow open never holds up other connections.
+        // A test seam only: opening a session does no I/O now. It stays outside the table lock
+        // so a test that blocks here never holds up other connections.
         self.point("without_recovery");
         let id = format!("s-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
         self.table().insert(
