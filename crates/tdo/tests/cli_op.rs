@@ -56,6 +56,7 @@ impl Env {
             "set-start.task",
             "set-repeat.interval",
             "convert.task-project",
+            "set-alert.task",
         ] {
             matrix.push_str(&format!("[[contract]]\nid = {id:?}\niphone_baseline = \"pass\"\ntwydo_to_iphone = \"unverified\"\niphone_to_twydo = \"unverified\"\n"));
         }
@@ -1608,4 +1609,40 @@ fn abandon_with_no_answer_names_op_journal() {
         "{e}"
     );
     assert!(!e.contains("tdo op status"), "{e}");
+}
+
+#[test]
+fn edit_sets_and_removes_an_alert() {
+    let file_of = |env: &Env| env.vdir().join(format!("list1/{TASK_A}.ics"));
+    let env = Env::new("test");
+    let o = env.op(&[
+        "edit",
+        TASK_A,
+        "--due",
+        "2026-12-05T10:00",
+        "--alert",
+        "1h30m",
+    ]);
+    assert!(o.status.success(), "{}", err(&o));
+    let f = fs::read_to_string(file_of(&env)).unwrap();
+    assert!(f.contains("TRIGGER:-PT1H30M"), "{f}");
+    assert_eq!(f.matches("BEGIN:VALARM").count(), 1, "{f}");
+    let o = env.op(&["edit", TASK_A, "--no-alert"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let f = fs::read_to_string(file_of(&env)).unwrap();
+    assert!(!f.contains("BEGIN:VALARM"), "{f}");
+}
+
+#[test]
+fn edit_rejects_bad_alert() {
+    let env = Env::new("test");
+    let o = env.op(&["edit", TASK_A, "--alert", "15x"]);
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+    assert!(
+        err(&o).contains(twydo_core::alertinput::EXAMPLES),
+        "{}",
+        err(&o)
+    );
+    let o = env.op(&["edit", TASK_A, "--alert", "15m", "--no-alert"]);
+    assert_eq!(o.status.code(), Some(2), "{}", err(&o));
 }

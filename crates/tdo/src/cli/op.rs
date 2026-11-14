@@ -184,6 +184,12 @@ pub struct EditArgs {
     /// Remove the repeat rule
     #[arg(long)]
     no_repeat: bool,
+    /// Alert before the due time, e.g. "15m", "4h", "1d", "1h30m"
+    #[arg(long, value_name = "TEXT", conflicts_with = "no_alert")]
+    alert: Option<String>,
+    /// Remove the alert
+    #[arg(long)]
+    no_alert: bool,
     /// Change the task's type
     #[arg(long, value_enum)]
     kind: Option<KindArg>,
@@ -313,6 +319,12 @@ fn edit_changes(
         changes.push(Change::Repeat(Some(spec)));
     } else if a.no_repeat {
         changes.push(Change::Repeat(None));
+    }
+    if let Some(text) = &a.alert {
+        let offset = twydo_core::alertinput::parse(text).or_else(usage)?;
+        changes.push(Change::Alert(offset));
+    } else if a.no_alert {
+        changes.push(Change::Alert(None));
     }
     if changes.is_empty() {
         if let Some(k) = same_kind {

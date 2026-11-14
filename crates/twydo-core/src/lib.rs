@@ -1,5 +1,6 @@
 //! Twydo core library: data model, storage and views.
 
+pub mod alertinput;
 pub mod compat;
 pub mod config;
 pub mod conflicts;
