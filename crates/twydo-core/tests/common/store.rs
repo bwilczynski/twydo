@@ -87,6 +87,7 @@ impl Store {
         op: &Op,
         now: DateTime<Utc>,
     ) -> Result<String, WriteError> {
+        self.writer.check_fence(Fence::Now)?;
         let prepared = self.writer.plan(snap, op, now)?;
         let lock = self.writer.lock_waiting()?;
         let id = lock.commit(prepared, &self.ctx(now))?;
@@ -104,7 +105,7 @@ impl Store {
         tool: &str,
         now: DateTime<Utc>,
     ) -> Result<Submitted, WriteError> {
-        twydo_core::lists::operation::ensure_idle(self.writer.state_dir())?;
+        self.writer.check_fence(Fence::Now)?;
         let prepared = self.writer.plan(view, op, now)?;
         let ctx = self.ctx(now);
         let lock = if self.busy {

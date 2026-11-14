@@ -1028,6 +1028,47 @@ fn a_daemon_starts_over_an_unfinished_list_operation() {
     assert!(!fx.read("inbox/u1.ics").contains("Changed"));
 }
 
+/// With the lane free, a write into a fenced collection is refused by the fence itself, before
+/// the plan and before the drain: the item already queued in that list is neither refused by
+/// a drain this submit triggered nor lost.
+#[test]
+fn a_fenced_submit_is_refused_before_it_drains_or_gates() {
+    let fx = Fixture::new(&[("inbox", "u1", "One", None), ("inbox", "u2", "Two", None)]);
+    let mut cfg = fx.config();
+    cfg.sync = Some(twydo_core::config::SyncConfig::default());
+    fs::create_dir_all(fx.state().join("journal")).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg.clone(), |_| {});
+    let c = td.client();
+    // An edit queued while the collection was idle, then an operation left unfinished.
+    let queued = common::queue_op(
+        &cfg,
+        &fx.snapshot(),
+        &edit_title("u1", "Queued"),
+        "queued",
+        None,
+        chrono::Utc::now(),
+    );
+    // `prepare` refuses a list with queued edits, so the item is put back after it.
+    let queue = twydo_core::store::queue::Queue::open(&fx.state()).unwrap();
+    fs::remove_file(fx.state().join(format!("queue/{}.json", queued.id))).unwrap();
+    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
+    request.action = "preview-delete".into();
+    request.collection = Some("inbox".into());
+    let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
+    queue.push(&queued).unwrap();
+    let err = submit(&c, edit_title("u2", "Changed")).unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains(&format!("collection operation {} is unfinished", record.id)),
+        "{message}"
+    );
+    let items = queue.list().unwrap();
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].id, queued.id);
+    assert!(!queue.is_refused(&queued.id).unwrap());
+    assert!(!fx.read("inbox/u2.ics").contains("Changed"));
+}
+
 #[test]
 fn reconciling_the_operation_lets_recovery_and_writes_go_on() {
     use twydo_daemon::protocol::lists::{ListReconcileParams, PendingListOp};

@@ -143,8 +143,9 @@ impl Writer {
         })
     }
 
-    /// A lock the caller already holds (the sync runner's).
-    pub fn with_lock<'a>(&'a self, held: &'a VdirLock) -> Locked<'a> {
+    /// A lock the caller already holds (the sync runner's). `held` must be the exclusive lock
+    /// of this writer's state directory.
+    pub(crate) fn with_lock<'a>(&'a self, held: &'a VdirLock) -> Locked<'a> {
         Locked {
             writer: self,
             _held: Held::Borrowed(held),
@@ -174,14 +175,22 @@ impl Writer {
         Ok(item)
     }
 
-    /// Pushes a ready item; `pub` because the test wrapper outside this crate re-queues a
-    /// cancelled item with its original `created`, `origin` and `label`, which
-    /// [`Writer::enqueue`] would overwrite. The fence is checked only for [`Fence::Now`] (`Queue::push` does
-    /// not check it).
-    pub fn push(&self, item: &Item, fence: Fence) -> Result<(), WriteError> {
+    /// The collection fence for a write about to be queued or applied: refuses while a
+    /// collection operation is unfinished when `fence` is [`Fence::Now`]; [`Fence::AtDrain`]
+    /// leaves it to the drain. The one implementation `enqueue` and `push` share; a caller
+    /// calls it before [`Writer::plan`] so the fence is reported before the gate.
+    pub fn check_fence(&self, fence: Fence) -> Result<(), WriteError> {
         if fence == Fence::Now {
             crate::lists::operation::ensure_idle(&self.state)?;
         }
+        Ok(())
+    }
+
+    /// Pushes a ready item, keeping its `created`, `origin` and `label` (which
+    /// [`Writer::enqueue`] would overwrite); `History` re-queues a cancelled item with it. The
+    /// fence is checked by [`Writer::check_fence`] (`Queue::push` does not check it).
+    pub(super) fn push(&self, item: &Item, fence: Fence) -> Result<(), WriteError> {
+        self.check_fence(fence)?;
         Queue::open(&self.state)?.push(item)?;
         Ok(())
     }

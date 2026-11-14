@@ -169,6 +169,12 @@ fn fence(env: &Env) {
     std::fs::write(env.state.join("lists/active"), "unfinished-op").unwrap();
 }
 
+/// The collection fence's refusal: the I/O error `ensure_idle` returns when the record behind
+/// the marker cannot be read (`NotFound` here), not a gate, journal or lock error.
+fn is_fence(e: &twydo_core::store::WriteError) -> bool {
+    matches!(e, twydo_core::store::WriteError::Io(io) if io.kind() == std::io::ErrorKind::NotFound)
+}
+
 #[test]
 fn commit_refuses_while_a_collection_operation_is_unfinished() {
     let env = env();
@@ -176,7 +182,8 @@ fn commit_refuses_while_a_collection_operation_is_unfinished() {
     let prepared = writer.plan(&env.snap(), &title("Fenced"), now()).unwrap();
     fence(&env);
     let lock = writer.lock(Duration::ZERO).unwrap().expect("lock is free");
-    assert!(lock.commit(prepared, &ctx(&env)).is_err());
+    let err = lock.commit(prepared, &ctx(&env)).unwrap_err();
+    assert!(is_fence(&err), "{err}");
     drop(lock);
     assert!(env.journal().is_empty());
 }
@@ -192,11 +199,12 @@ fn enqueue_at_drain_skips_the_fence_that_enqueue_now_checks() {
         prepared: writer.plan(&env.snap(), op, now()).unwrap(),
     };
     fence(&env);
-    assert!(
-        writer
-            .enqueue(kind(&op), "t", "daemon", Fence::Now, &ctx)
-            .is_err()
-    );
+    let err = writer
+        .enqueue(kind(&op), "t", "daemon", Fence::Now, &ctx)
+        .unwrap_err();
+    assert!(is_fence(&err), "{err}");
+    assert!(writer.check_fence(Fence::Now).is_err_and(|e| is_fence(&e)));
+    writer.check_fence(Fence::AtDrain).unwrap();
     assert!(Queue::open(&env.state).unwrap().list().unwrap().is_empty());
     writer
         .enqueue(kind(&op), "t", "daemon", Fence::AtDrain, &ctx)
