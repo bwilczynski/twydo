@@ -60,7 +60,7 @@ pub struct DaemonOptions {
     /// queue a write while the drain hook still holds the lane.
     #[doc(hidden)]
     pub after_drain_passes: Option<TestHook>,
-    /// Runs inside the commit gate of every `op.submit`, before the store is called; tests
+    /// Runs inside the commit gate of every `op.submit`, before the writer is called; tests
     /// block here to hold a write in flight while the daemon is asked to stop.
     #[doc(hidden)]
     pub in_commit: Option<TestHook>,
@@ -254,7 +254,7 @@ impl Shared {
         (!*g).then_some(g)
     }
 
-    /// Closes the commit gate, waiting for the store calls inside it to return.
+    /// Closes the commit gate, waiting for the writer calls inside it to return.
     fn close_commits(&self) {
         *self.commits.write().unwrap_or_else(|e| e.into_inner()) = true;
     }
@@ -563,6 +563,8 @@ fn startup(
             Ok(())
         }),
         Box::new(move |shared| {
+            // Recovery runs outside the commit gate: the daemon is not ready yet, so no write is
+            // in flight, and the stop flag was checked before this step.
             // An unfinished list operation fences the vdir and refuses recovery. The daemon
             // starts anyway (so the operation can be reconciled through it); recovery runs
             // when the operation ends (`admin::retry_deferred_recovery`).
