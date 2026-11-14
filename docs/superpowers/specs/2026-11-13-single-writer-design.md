@@ -1,6 +1,6 @@
 # One writer for the vdir
 
-Date: 2026-11-13 · Status: open questions decided 2026-11-13; awaiting approval.
+Date: 2026-11-13 · Status: implemented 2026-11-14.
 
 ## Intent
 
@@ -54,7 +54,9 @@ The cost shows in the history. `store/mod.rs` is the most-changed source file si
 2026-11-05 (24 commits). `writes.rs` opens with a 110-line lock-order comment. Most review
 items deferred from daemon plans 1 and 2 are about this seam: the drain/undo lock order, a
 revert opened outside the lane and gate, a drain re-gating with a stale configuration, the
-fence flag deferring unrelated edits.
+fence flag deferring unrelated edits. (As built: `timezone` and `work_days` only take effect
+after a daemon restart, so the stale configuration was not an observable problem and no test
+covers it.)
 
 ## 2. Goals
 
@@ -155,7 +157,9 @@ Points that matter:
 - **`Fence` replaces `set_fence_at_drain`.** `enqueue` checks the collection fence for
   `Fence::Now` and leaves it to the drain for `Fence::AtDrain`. `commit` always checks it.
 - **The drain takes the live configuration** from `Ctx`, so a time-zone change is not
-  half-applied (deferred from daemon plan 2, task 9).
+  half-applied (deferred from daemon plan 2, task 9). As built, `timezone` and `work_days` only
+  take effect after a daemon restart, so a half-applied change was not observable and no test
+  covers it.
 - **`WriteError::Busy` leaves the commit path.** `lock` returning `None` is the "busy" of a
   write, and the caller queues. The variant stays for one case: an undo of a queued step
   that a drainer has claimed but not yet committed.
@@ -271,6 +275,11 @@ session's `History`.
 setters and `take_drained`; `submit`, `submit_with` and `settle_queued`; `Store::lock` and
 `try_lock_for`; `Step` in `store/mod.rs`; `Session.store`, `Titled` and the title stacks;
 `prune_refused` and `prune_refused_steps` (subject to §4.3); `queue::drain_with_lock`.
+
+As built, `submit` did not disappear: it moved into the daemon (`run_submit`) and into the
+test wrapper (`crates/twydo-core/tests/common/store.rs`). `History` keeps one no-wait lock
+probe after it queues an item (the second probe after a push that §1 describes is gone from
+the submit path only).
 
 ## 5. The one behavior change
 

@@ -112,7 +112,7 @@ The repository is a Cargo workspace with three crates.
 | `edit` | Each operation as a change to one file, the way the 2Do iPhone app makes it |
 | `gate` | Whether an operation may run, and the exact reason when not ("verified mode") |
 | `compat` | The compatibility matrix, `compat/matrix.toml`, built into the binary |
-| `store` | Applying operations: the vdir lock, the operation journal and crash recovery, atomic file writes, family operations on projects and checklists |
+| `store` | Applying operations: `plan` (the pure gate-and-plan step), `writer` (the one `Writer` per daemon: the vdir lock, the journal, the queue and atomic file writes), `history` (a session's undo and redo list), the operation journal and crash recovery, family operations on projects and checklists |
 | `sync` | The sync runner around vdirsyncer: output parsing, the conflict hook and store, reconciliation, status and backoff |
 | `config` | `config.toml` |
 
@@ -154,10 +154,14 @@ steps and answers:
 2. **Edit.** The `edit` functions produce the new file contents. Only the properties the
    operation is about change, plus `DTSTAMP`, `LAST-MODIFIED` and their counterparts in 2Do's
    metadata; every other line keeps its bytes.
-3. **Store.** `Store::submit` prepares the operation (gate and plan, against the view with queued
-   writes laid over it, see [The write queue](#the-write-queue)), then tries the exclusive vdir
-   lock for 250 ms. With the lock it drains the queue and commits; without it the prepared
-   operation is queued instead. Committing: under the lock, the store checks that every file it is about to
+3. **Writer.** The daemon plans the operation with `Writer::plan` (gate and plan, a pure
+   function of the snapshot the client planned against with queued writes laid over it, see
+   [The write queue](#the-write-queue)). It then takes the lane and the commit gate and tries the
+   exclusive vdir lock for 250 ms. With the lock it drains the queue and commits; if a long job
+   (a sync or a list job) holds the lane, or something outside the daemon holds the lock, the
+   planned operation is queued instead and a drain is requested. There is one `Writer` per daemon,
+   so every session, the sync runner and the drain share its journal, queue and write policy.
+   Committing: under the lock, the writer checks that every file it is about to
    write still holds the bytes the caller loaded (otherwise: "changed on disk; reload and try
    again"), records the operation in the journal, applies it, and marks it applied. Files the
    operation relies on but does not write are checked the same way: the parent of a new item,
@@ -171,12 +175,13 @@ every affected child in one journal entry, so it is applied completely or not at
 ## The write queue
 
 A write that cannot get the vdir lock within 250 ms (a sync holds it) is queued instead of
-refused, so `Store::submit` never reports "busy". The queue lives under `<vdir-state>/queue/`:
+refused, so a submit never reports "busy". The queue lives under `<vdir-state>/queue/`:
 
 - `<id>.json`: a queued item. It stores the op and the journal entry planned against the
   caller's view (`writes[].before` and holds are its base, `family` is the family guard), so a
-  queued create keeps the UID the view showed. After pushing, `submit` tries the lock once more
-  and drains at once if it got it. Ids sort in creation order (time, per-process sequence, pid).
+  queued create keeps the UID the view showed. After a submit queues, the daemon requests a
+  drain; an undo or redo that queues an item looks at the lock once without waiting and drains at
+  once if it is free. Ids sort in creation order (time, per-process sequence, pid).
 - `<id>.claim`: an item being applied. A drainer renames `<id>.json` to `<id>.claim` before it
   commits; undoing a queued edit removes `<id>.json` instead. Whichever filesystem call wins
   decides, and the loser backs off, so no lock is needed to cancel.
@@ -189,8 +194,9 @@ refused, so `Store::submit` never reports "busy". The queue lives under `<vdir-s
 
 Draining (oldest id first) happens in the daemon: after each write that gets the lock, in the
 sync runner (after recovery and after reconcile), when a sync or list job ends, and at startup
-([sync.md](sync.md#what-tdo-sync-does)). A client is told when its item was applied or
-refused. Each item has the gate re-checked on the current files and its
+([sync.md](sync.md#what-tdo-sync-does)). The sync runner drains through the daemon's `Writer`, so
+it applies the daemon's write policy (matrix and mode). A client is told when its item was applied
+or refused. Each item has the gate re-checked on the current files and its
 base compared strictly, whole file by whole file; a mismatch refuses the item. A stuck journal
 stops the drain and the items stay queued. An I/O failure also stops the drain without
 recording a refusal: a prepared journal entry may still recover. A later drain finishes
@@ -213,18 +219,17 @@ An unfinished record blocks task recovery, new task writes, queue insertion/drai
 ordinary sync until the collection service reconciles it. Existing unrelated queued
 work stays pending. A coordination lock serializes marker publication with queue
 insertion, so a queued write cannot slip behind the collection preflight.
-If a TUI starts while that fence prevents opening its task store, the next task write
-retries initialization after reconciliation clears it. An already healthy writer keeps
-its session undo history.
+While that fence is up, task writes are refused or queued under it; once reconciliation clears
+it, the next write goes through the same `Writer`. Sessions keep their undo history throughout.
 
 The bundled collection helper takes the same exclusive run lock and a shared vdir lock itself.
-Those locks survive the TUI's exit while the helper is still running. It validates the
+Those locks outlive the request that started the helper while it is still running. It validates the
 bound operation and held bytes before its remote phase, and persists the receipt before
 releasing the locks. Readers remain responsive during network requests; Rust local
 finalization takes the exclusive vdir lock. The list card exposes explicit service actions
 without enabling unverified writes in verified mode.
-The helper also enforces its own operation deadline, so it releases its locks even if its
-monitoring TUI has exited. Timeout retains an uncertain/prepared operation for reconciliation;
+The helper also enforces its own operation deadline, so it releases its locks even if the
+daemon job monitoring it has ended. Timeout retains an uncertain/prepared operation for reconciliation;
 it never assumes that killing a request undoes a server mutation.
 
 The create/edit service records the exact remote URL before a mutation and a digest of
@@ -413,7 +418,8 @@ applied writes are skipped, applying an entry twice has the same effect as apply
 
 ### Recovery
 
-Recovery runs in the daemon at startup, before every sync, and before every write, and nowhere else:
+Recovery runs in the daemon at startup, before every sync, and under the vdir lock before every
+write (a commit, a drain or a revert), and nowhere else:
 
 - with no journal directory, it does nothing and creates nothing;
 - otherwise, under the exclusive lock, every `prepared` entry is rolled forward and marked
@@ -426,14 +432,17 @@ Recovery runs in the daemon at startup, before every sync, and before every writ
 
 Recovery is idempotent: a second run finds nothing to apply and changes nothing.
 
-At the start of one of those commands, recovery does not wait for a running sync: when a sync
-holds the vdir lock, it is skipped, so the command runs at once. Nothing is lost by that. The sync recovered before
-vdirsyncer started, and the next write recovers under the lock before it changes anything.
+At startup and before a sync, recovery does not wait for a running sync: when a sync holds the
+vdir lock, it is skipped, so the command runs at once. Nothing is lost by that. The sync recovered
+before vdirsyncer started, and the next write recovers under the lock before it changes anything.
 
 ### Undo, redo and retention
 
 `u` and `Ctrl-r` in the TUI (and `tdo op undo <id>`) write a new journal entry that reverses an
-earlier one, under the same "file must still hold the expected bytes" rule: an undo after a
+earlier one. The undo and redo list belongs to one session (`store::history`) and is never
+persisted; it takes the vdir lock only when a step needs it, and a step still in the queue is
+withdrawn without the lock. A revert is held to the same "file must still hold the expected
+bytes" rule as a write: an undo after a
 sync brought in someone else's change to the same task is refused rather than overwriting it.
 If undo or redo would recreate a UID already present under another filename, it refuses
 before preparing a journal entry, so unrelated writes can continue.
