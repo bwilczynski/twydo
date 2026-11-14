@@ -284,6 +284,7 @@ const HELP: &[(&str, &str, bool)] = &[
         false,
     ),
     ("r", "card on the Repeat field", false),
+    ("A", "card on the Alert field", false),
     ("a", "add items to a project or checklist", false),
     (
         "ct  cp  cc",

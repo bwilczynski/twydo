@@ -1011,6 +1011,28 @@ fn r_opens_repeat_on_a_plain_task() {
     );
 }
 
+#[test]
+fn capital_a_opens_card_on_alert() {
+    let mut a = app();
+    select(&mut a, "Call the dentist");
+    a.handle_key(key('A'));
+    let f = a.form.as_ref().expect("the card opens");
+    assert_eq!(f.focus, Field::Alert);
+    assert_eq!(a.mode, Mode::Insert);
+
+    let mut a = app();
+    a.handle_key(key('2'));
+    select(&mut a, "Packing list");
+    a.handle_key(code(KeyCode::Enter));
+    select(&mut a, "Passport");
+    a.handle_key(key('A'));
+    assert!(a.form.is_none());
+    assert_eq!(
+        a.message.as_deref(),
+        Some("alert: checklist items have no alerts")
+    );
+}
+
 /// Open the card on the selected task and type `s` into the Repeat field.
 fn card_with_repeat(a: &mut App, s: &str) {
     a.handle_key(key('r'));

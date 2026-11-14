@@ -907,6 +907,7 @@ impl App {
             'i' => self.open_form(Field::Title),
             'J' | 'K' => return self.reorder_item(c == 'J'),
             'r' => self.open_form(Field::Repeat),
+            'A' => self.open_form(Field::Alert),
             'm' => self.open_picker(),
             _ => {}
         }
@@ -1052,7 +1053,10 @@ impl App {
         let Some(i) = self.selected() else { return };
         let mut form = self.card_for(i);
         if !form.fields().contains(&focus) {
-            self.message = Some("repeat: checklist items have no dates or repeats".into());
+            self.message = Some(match focus {
+                Field::Alert => "alert: checklist items have no alerts".into(),
+                _ => "repeat: checklist items have no dates or repeats".into(),
+            });
             return;
         }
         form.focus = focus;

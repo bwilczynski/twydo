@@ -6,10 +6,11 @@
 use chrono::{NaiveDate, Weekday};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use twydo_core::alertinput;
 use twydo_core::dateinput::{self, input_text};
 use twydo_core::edit::{Change, Due, NewTask, Op, Placement};
 use twydo_core::model::repeat::parse_rrule;
-use twydo_core::model::{Task, TaskKind};
+use twydo_core::model::{AlertOffset, CustomAlert, Task, TaskKind};
 use twydo_core::repeatinput::{self, EXAMPLES, RepeatSpec};
 
 /// The card's fields, in Tab order.
@@ -21,8 +22,12 @@ pub enum Field {
     Due,
     Start,
     Repeat,
+    Alert,
     Notes,
 }
+
+/// Why typing into Alert does nothing on a task whose alerts Twydo can't write back.
+pub const ALERT_READ_ONLY: &str = "this task has alerts Twydo can't edit";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormAction {
@@ -58,6 +63,7 @@ struct Values {
     due: String,
     start: String,
     repeat: String,
+    alert: String,
     notes: String,
 }
 
@@ -76,6 +82,8 @@ pub struct EditForm {
     pub start: String,
     /// Typed repeat rule (`repeatinput` syntax); empty for none.
     pub repeat: String,
+    /// Typed alert offset (`alertinput` syntax); empty for none.
+    pub alert: String,
     pub notes: String,
     /// The kind of the parent this task is an item of, which decides the fields: a checklist
     /// item has only Title and Notes, and no item has List.
@@ -95,6 +103,8 @@ pub struct EditForm {
     /// The type the task's file declares (an untyped parent shows as a project but is a
     /// task): choosing it writes nothing.
     declared: TaskKind,
+    /// The task's alert as stored; `Unsupported` makes the Alert field read-only.
+    stored_alert: CustomAlert,
     initial: Values,
 }
 
@@ -122,12 +132,18 @@ impl EditForm {
             due: date(&task.due),
             start: date(&task.start),
             repeat: text.unwrap_or_default(),
+            alert: match task.custom_alert {
+                CustomAlert::One(o) => alertinput::format(o),
+                CustomAlert::AtDue => alertinput::AT_DUE.to_string(),
+                CustomAlert::None | CustomAlert::Unsupported => String::new(),
+            },
             notes: task.description.clone().unwrap_or_default(),
         };
         let mut f = EditForm::with(Some(task.uid.clone()), None, values, stored_repeat);
         f.item_of = item_of;
         f.kept_rule = kept_rule;
         f.declared = twydo_core::views::declared_kind(task);
+        f.stored_alert = task.custom_alert;
         f
     }
 
@@ -145,6 +161,7 @@ impl EditForm {
             },
             start: String::new(),
             repeat: String::new(),
+            alert: String::new(),
             notes: String::new(),
         };
         let mut f = EditForm::with(None, target.parent, values, None);
@@ -167,6 +184,7 @@ impl EditForm {
             due: v.due.clone(),
             start: v.start.clone(),
             repeat: v.repeat.clone(),
+            alert: v.alert.clone(),
             notes: v.notes.clone(),
             insertion: None,
             item_of: None,
@@ -176,13 +194,24 @@ impl EditForm {
             stored_repeat,
             kept_rule: false,
             declared: v.kind,
+            stored_alert: CustomAlert::None,
             initial: v,
         }
     }
 
     /// The fields in display and Tab order. A checklist item has no dates or repeat of its
-    /// own (2Do 01 §1); an item lives in its parent's list, so it has no List.
+    /// own (2Do 01 §1); an item lives in its parent's list, so it has no List. A new task
+    /// has no Alert: alerts are set on an existing task.
     pub fn fields(&self) -> Vec<Field> {
+        let mut fields = self.layout();
+        // A checklist's own alert was never captured on the phone.
+        if self.uid.is_none() || self.declared == TaskKind::Checklist {
+            fields.retain(|f| *f != Field::Alert);
+        }
+        fields
+    }
+
+    fn layout(&self) -> Vec<Field> {
         match self.item_of {
             Some(TaskKind::Checklist) => vec![Field::Title, Field::Notes],
             Some(_) => vec![
@@ -191,6 +220,7 @@ impl EditForm {
                 Field::Due,
                 Field::Start,
                 Field::Repeat,
+                Field::Alert,
                 Field::Notes,
             ],
             None => vec![
@@ -200,6 +230,7 @@ impl EditForm {
                 Field::Due,
                 Field::Start,
                 Field::Repeat,
+                Field::Alert,
                 Field::Notes,
             ],
         }
@@ -223,6 +254,7 @@ impl EditForm {
             due: self.due.clone(),
             start: self.start.clone(),
             repeat: self.repeat.clone(),
+            alert: self.alert.clone(),
             notes: self.notes.clone(),
         };
         now != self.initial
@@ -254,6 +286,8 @@ impl EditForm {
             Field::Due => Some(&mut self.due),
             Field::Start => Some(&mut self.start),
             Field::Repeat => Some(&mut self.repeat),
+            Field::Alert if self.stored_alert == CustomAlert::Unsupported => None,
+            Field::Alert => Some(&mut self.alert),
             Field::List | Field::Type | Field::Notes => None,
         }
     }
@@ -285,6 +319,9 @@ impl EditForm {
             (KeyCode::Char('h') | KeyCode::Left, false) if self.focus == Field::Type => {
                 self.cycle_kind(-1)
             }
+            _ if self.focus == Field::Alert && self.stored_alert == CustomAlert::Unsupported => {
+                self.error = Some(ALERT_READ_ONLY.into());
+            }
             _ => {
                 if let Some(t) = self.text_mut() {
                     edit_line(t, k);
@@ -309,6 +346,7 @@ impl EditForm {
             Field::Due => &self.due,
             Field::Start => &self.start,
             Field::Repeat => return self.repeat_preview(today, work_days),
+            Field::Alert => return self.alert_preview(),
             _ => return None,
         };
         Some(match dateinput::parse(text, today) {
@@ -341,6 +379,44 @@ impl EditForm {
             }
             Err(e) => e,
         })
+    }
+
+    fn alert_preview(&self) -> Option<String> {
+        if self.stored_alert == CustomAlert::Unsupported {
+            return Some(format!("→ {ALERT_READ_ONLY}"));
+        }
+        let removes = matches!(self.stored_alert, CustomAlert::One(_) | CustomAlert::AtDue);
+        if self.alert.trim().is_empty() && !removes {
+            return (self.focus == Field::Alert).then(|| alertinput::EXAMPLES.to_string());
+        }
+        if alertinput::is_at_due(&self.alert) && self.stored_alert == CustomAlert::AtDue {
+            return Some("→ at the due time (2Do's automatic alert)".into());
+        }
+        Some(match alertinput::parse(&self.alert) {
+            Ok(None) if removes => "→ none (removes the alert)".into(),
+            Ok(None) => "→ none".into(),
+            Ok(Some(o)) => format!("→ {} before due", describe_offset(o)),
+            Err(e) => e,
+        })
+    }
+
+    /// The alert to write, if the field changed it: `Some(None)` removes it.
+    fn alert_change(&self) -> Result<Option<Option<AlertOffset>>, String> {
+        if self.alert == self.initial.alert || self.stored_alert == CustomAlert::Unsupported {
+            return Ok(None);
+        }
+        if alertinput::is_at_due(&self.alert) && self.stored_alert == CustomAlert::AtDue {
+            return Ok(None);
+        }
+        let parsed = alertinput::parse(&self.alert).map_err(|e| format!("alert: {e}"))?;
+        if parsed.is_none() && self.stored_alert == CustomAlert::AtDue {
+            return Ok(Some(None));
+        }
+        let stored = match self.stored_alert {
+            CustomAlert::One(o) => Some(o),
+            _ => None,
+        };
+        Ok((parsed != stored).then_some(parsed))
     }
 
     /// The repeat to write, if the field changed it: `Some(None)` removes the rule.
@@ -409,6 +485,9 @@ impl EditForm {
         }
         if let Some(r) = repeat {
             out.push(Change::Repeat(r));
+        }
+        if let Some(a) = self.alert_change()? {
+            out.push(Change::Alert(a));
         }
         if self.notes != i.notes {
             out.push(Change::Description(
@@ -536,4 +615,21 @@ pub(crate) fn one_line(text: &str) -> String {
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
     line.trim_end().to_string()
+}
+
+/// `15 min`, `1 h 30 min`, `4 h`, `1 d`: the offset as the Details pane words it.
+fn describe_offset(o: AlertOffset) -> String {
+    let m = o.minutes();
+    let (d, h, min) = (m / 1440, m % 1440 / 60, m % 60);
+    let mut parts = Vec::new();
+    if d > 0 {
+        parts.push(format!("{d} d"));
+    }
+    if h > 0 {
+        parts.push(format!("{h} h"));
+    }
+    if min > 0 {
+        parts.push(format!("{min} min"));
+    }
+    parts.join(" ")
 }

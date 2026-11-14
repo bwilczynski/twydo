@@ -265,6 +265,7 @@ fn open_fills_fields() {
             Field::Due,
             Field::Start,
             Field::Repeat,
+            Field::Alert,
             Field::Notes
         ]
     );
@@ -276,7 +277,7 @@ fn open_fills_fields() {
 fn tab_cycles_through_every_field() {
     let mut f = form("Buy stamps");
     let mut seen = vec![f.focus];
-    for _ in 0..7 {
+    for _ in 0..8 {
         f.key(code(KeyCode::Tab));
         seen.push(f.focus);
     }
@@ -289,6 +290,7 @@ fn tab_cycles_through_every_field() {
             Field::Due,
             Field::Start,
             Field::Repeat,
+            Field::Alert,
             Field::Notes,
             Field::Title
         ]
@@ -296,7 +298,7 @@ fn tab_cycles_through_every_field() {
     f.key(code(KeyCode::BackTab));
     assert_eq!(f.focus, Field::Notes);
     f.key(code(KeyCode::Up));
-    assert_eq!(f.focus, Field::Repeat);
+    assert_eq!(f.focus, Field::Alert);
     f.key(code(KeyCode::Down));
     assert_eq!(f.focus, Field::Notes);
 }
@@ -430,6 +432,7 @@ fn checklist_item_has_title_and_notes_only() {
             Field::Due,
             Field::Start,
             Field::Repeat,
+            Field::Alert,
             Field::Notes
         ],
         "a project item: no List"
@@ -757,4 +760,168 @@ fn discard_answer_accepts_shift_but_not_alt() {
     assert!(!f.discarding, "Shift-N keeps editing");
     f.key(esc());
     assert_eq!(f.key(shift('Y')), FormAction::Cancel);
+}
+
+/// A task from the alerts round (`fixtures/set-alert/phone-encodings`).
+fn alert_task(state: &str, uid: &str) -> Task {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/set-alert/phone-encodings")
+        .join(state)
+        .join(format!("list1/{uid}.ics"));
+    let cal = twydo_core::ical::parse(&std::fs::read(&path).unwrap()).unwrap();
+    twydo_core::model::tasks_from_calendar(&cal, "list1", &path)
+        .pop()
+        .unwrap()
+}
+const A1: &str = "ae49d9b7655647d5aa1788c1bff3ac8f";
+const A2: &str = "981428f9f4604164ad5acffd30bf54d5";
+
+fn type_into(f: &mut EditForm, s: &str) {
+    for c in s.chars() {
+        f.key(key(c));
+    }
+}
+
+fn clear(f: &mut EditForm) {
+    for _ in 0..20 {
+        f.key(code(KeyCode::Backspace));
+    }
+}
+
+fn alert(n: u32) -> Change {
+    Change::Alert(twydo_core::model::AlertOffset::new(n))
+}
+
+#[test]
+fn unchanged_alert_writes_nothing() {
+    let f = EditForm::open(&alert_task("phone-a-batch1", A1), None, NY);
+    assert_eq!(f.alert, "15m");
+    assert!(f.fields().contains(&Field::Alert));
+    assert_eq!(changes(&f), Ok(vec![]));
+    assert!(!f.is_dirty());
+    // The same offset typed differently is no change either.
+    let mut f = f;
+    f.focus = Field::Alert;
+    clear(&mut f);
+    type_into(&mut f, "15min before");
+    assert_eq!(changes(&f), Ok(vec![]));
+}
+
+#[test]
+fn alert_field_sets_and_clears() {
+    let mut f = EditForm::open(&alert_task("phone-a-batch2", A2), None, NY);
+    assert_eq!(f.alert, "");
+    f.focus = Field::Alert;
+    type_into(&mut f, "4h");
+    assert_eq!(changes(&f), Ok(vec![alert(240)]));
+    assert!(f.is_dirty());
+    let mut f = EditForm::open(&alert_task("phone-a-batch1", A1), None, NY);
+    f.focus = Field::Alert;
+    clear(&mut f);
+    type_into(&mut f, "none");
+    assert_eq!(changes(&f), Ok(vec![Change::Alert(None)]));
+    clear(&mut f);
+    assert_eq!(changes(&f), Ok(vec![Change::Alert(None)]));
+    type_into(&mut f, "15x");
+    assert!(changes(&f).unwrap_err().starts_with("alert: "));
+}
+
+#[test]
+fn alert_follows_a_due_change_in_one_save() {
+    let mut f = EditForm::open(&alert_task("phone-a-batch2", A2), None, NY);
+    f.focus = Field::Due;
+    clear(&mut f);
+    type_into(&mut f, "2026-11-21 9am");
+    f.focus = Field::Alert;
+    type_into(&mut f, "1d");
+    let c = changes(&f).unwrap();
+    assert!(
+        matches!(c.as_slice(), [Change::Due(Some(_)), Change::Alert(Some(_))]),
+        "{c:?}"
+    );
+}
+
+#[test]
+fn alert_hidden_for_checklist_items_and_new_tasks() {
+    assert!(!form("Passport").fields().contains(&Field::Alert));
+    let target = NewTarget {
+        collection: "list1".into(),
+        parent: None,
+        parent_kind: None,
+        due_today: false,
+    };
+    assert!(
+        !EditForm::new_task(target, "x".into(), NY)
+            .fields()
+            .contains(&Field::Alert)
+    );
+}
+
+#[test]
+fn unsupported_alert_is_read_only() {
+    let mut t = alert_task("phone-a-batch1", A1);
+    t.custom_alert = twydo_core::model::CustomAlert::Unsupported;
+    let mut f = EditForm::open(&t, None, NY);
+    f.focus = Field::Alert;
+    type_into(&mut f, "4h");
+    assert_eq!(f.alert, "");
+    assert_eq!(
+        f.error.as_deref(),
+        Some("this task has alerts Twydo can't edit")
+    );
+    assert_eq!(changes(&f), Ok(vec![]));
+}
+
+#[test]
+fn alert_preview() {
+    let mut f = EditForm::open(&alert_task("phone-a-batch1", A1), None, NY);
+    assert_eq!(
+        f.preview(Field::Alert, today(), &WD).as_deref(),
+        Some("→ 15 min before due")
+    );
+    f.focus = Field::Alert;
+    clear(&mut f);
+    assert_eq!(
+        f.preview(Field::Alert, today(), &WD).as_deref(),
+        Some("→ none (removes the alert)")
+    );
+    let mut f = EditForm::open(&alert_task("phone-a-batch2", A2), None, NY);
+    f.focus = Field::Alert;
+    assert_eq!(
+        f.preview(Field::Alert, today(), &WD).as_deref(),
+        Some(twydo_core::alertinput::EXAMPLES)
+    );
+}
+
+/// Review finding 2: 2Do's automatic alert shows as `at due` and `none` removes it.
+#[test]
+fn automatic_alert_shows_as_at_due_and_can_be_removed() {
+    let mut t = alert_task("phone-a-batch1", A1);
+    t.custom_alert = twydo_core::model::CustomAlert::AtDue;
+    let mut f = EditForm::open(&t, None, NY);
+    assert_eq!(f.alert, "at due");
+    assert_eq!(changes(&f), Ok(vec![]));
+    assert_eq!(
+        f.preview(Field::Alert, today(), &WD).as_deref(),
+        Some("→ at the due time (2Do's automatic alert)")
+    );
+    f.focus = Field::Alert;
+    clear(&mut f);
+    type_into(&mut f, "due");
+    assert_eq!(changes(&f), Ok(vec![]), "the same alert typed differently");
+    clear(&mut f);
+    assert_eq!(changes(&f), Ok(vec![Change::Alert(None)]));
+    type_into(&mut f, "15 min");
+    assert_eq!(changes(&f), Ok(vec![alert(15)]));
+    // `at due` can't add the automatic alert to a task without one.
+    let mut f = EditForm::open(&alert_task("phone-a-batch2", A2), None, NY);
+    f.focus = Field::Alert;
+    type_into(&mut f, "at due");
+    assert!(changes(&f).unwrap_err().contains("automatic alert"));
+}
+
+/// Review finding 4: a checklist's card has no Alert field.
+#[test]
+fn checklist_card_has_no_alert() {
+    assert!(!form("Packing list").fields().contains(&Field::Alert));
 }

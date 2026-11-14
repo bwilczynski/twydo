@@ -144,17 +144,18 @@ fn lines(app: &App, e: &EditForm, w: usize) -> Vec<Line<'static>> {
         (Field::Due, "Due", &e.due),
         (Field::Start, "Start", &e.start),
         (Field::Repeat, "Repeat", &e.repeat),
+        (Field::Alert, "Alert", &e.alert),
     ] {
         if !fields.contains(&f) {
             continue;
         }
-        let placeholder = if f == Field::Repeat && !e.keeps_rule() {
+        let placeholder = if (f == Field::Repeat && !e.keeps_rule()) || f == Field::Alert {
             "none"
         } else {
             "—"
         };
-        // An empty date says nothing beside it; Repeat's preview also hints and keeps.
-        let preview = if f == Field::Repeat || !text.is_empty() {
+        // An empty date says nothing beside it; Repeat's and Alert's previews also hint.
+        let preview = if matches!(f, Field::Repeat | Field::Alert) || !text.is_empty() {
             e.preview(f, today, work_days)
         } else {
             None

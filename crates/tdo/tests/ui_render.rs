@@ -954,7 +954,7 @@ fn card_renders_in_place_below_row() {
     assert!(!t.contains(" Edit task "), "no overlay:\n{t}");
     let (_, title) = find_in_tasks(&buf, &format!("{first}▏"));
     let mut ys = vec![title];
-    for label in ["Due", "Start", "Repeat", "Notes", "Ctrl-s save"] {
+    for label in ["Due", "Start", "Repeat", "Alert", "Notes", "Ctrl-s save"] {
         ys.push(find_in_tasks(&buf, label).1);
     }
     let (_, below) = find_in_tasks(&buf, &second);
