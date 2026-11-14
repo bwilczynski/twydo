@@ -118,6 +118,13 @@ impl Lane {
     }
 }
 
+/// Proof that the caller holds the lane: only a guard of this lane implements it, so
+/// `writes::with_vdir` cannot be called without one.
+pub(super) trait LaneHeld {}
+
+impl LaneHeld for WriteGuard<'_> {}
+impl LaneHeld for LongGuard<'_> {}
+
 /// The lane held for one write (plan, commit, publish).
 pub struct WriteGuard<'a> {
     lane: &'a Lane,

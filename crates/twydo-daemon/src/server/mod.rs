@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
-use twydo_core::store::{Store, WriteError, Writer, bind_vdir_state};
+use twydo_core::store::{WriteError, Writer, bind_vdir_state};
 use twydo_core::sync::running::{self, Reaped};
 
 use crate::paths::DaemonLock;
@@ -162,7 +162,7 @@ pub struct Shared {
     /// Armed by [`DaemonOptions::status_panic_once`]; the first refresher run takes it.
     status_panic_once: AtomicBool,
     test_point: Option<TestPoint>,
-    /// The commit gate: `true` once closed. Every store call that can commit (submit, undo,
+    /// The commit gate: `true` once closed. Every writer call that can commit (submit, undo,
     /// redo, drain) runs under its read side ([`Shared::commit_gate`]); teardown takes the
     /// write side and closes it before the daemon lock is released, so a write in flight
     /// finishes first and none commits after (daemon spec §7.5). See the lock order in
@@ -317,8 +317,8 @@ impl Daemon {
         let (wake_r, wake_w) = wake_pipe()?;
         let bus = bus::EventBus::new();
         let publisher = publish::Publisher::new(cfg.clone(), state.clone(), Arc::clone(&bus));
-        let sessions = sessions::Sessions::new(cfg.clone(), opts.matrix.clone(), opts.session_ttl)
-            .with_test_point(opts.test_point.clone());
+        let sessions =
+            sessions::Sessions::new(opts.session_ttl).with_test_point(opts.test_point.clone());
         let writer = Writer::open(&cfg, opts.matrix.clone()).map_err(|e| match e {
             WriteError::Io(e) => StartError::from(e),
             e => StartError::from(io::Error::other(e.to_string())),
@@ -409,9 +409,8 @@ impl Daemon {
         {
             let for_thread = Arc::clone(&shared);
             let hook = opts.before_recovery.take();
-            let matrix = opts.matrix;
             let sched = opts.schedule.then_some((opts.clock, opts.periodic));
-            let h = std::thread::spawn(move || startup(&for_thread, matrix, hook, sched));
+            let h = std::thread::spawn(move || startup(&for_thread, hook, sched));
             *shared.startup.lock().unwrap() = Some(h);
         }
         let accept = {
@@ -524,7 +523,6 @@ fn wake_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
 /// the watcher (Task 9). Ready is set last.
 fn startup(
     shared: &Arc<Shared>,
-    matrix: Matrix,
     before_recovery: Option<Box<dyn FnOnce() + Send>>,
     sched: Option<(Arc<dyn schedule::Clock>, Duration)>,
 ) {
@@ -576,9 +574,16 @@ fn startup(
                 )));
                 return Ok(());
             }
-            // The recovery store is dropped; only the stuck ids are kept, for the status.
-            let (_store, report) =
-                Store::open_with(&shared.cfg, matrix).map_err(|e| e.to_string())?;
+            // Only the stuck ids are kept, for the status. A busy vdir defers recovery: the
+            // first write recovers under the lock anyway.
+            let report = match shared
+                .writer
+                .lock(Duration::ZERO)
+                .map_err(|e| e.to_string())?
+            {
+                Some(locked) => locked.recover().map_err(|e| e.to_string())?,
+                None => Default::default(),
+            };
             shared
                 .publisher
                 .set_stuck(report.stuck.into_iter().map(|(id, _)| id).collect());

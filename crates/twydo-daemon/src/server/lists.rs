@@ -4,7 +4,7 @@
 //! job holding the vdir lane and calls the [`ListService`] method for that action, then
 //! publishes the vdir with cause `list`.
 //! Edits saved meanwhile are queued and drained when the job ends; the collection fence is
-//! checked there ([`twydo_core::store::Store::set_fence_at_drain`]).
+//! checked there ([`twydo_core::store::Fence::AtDrain`]).
 
 use std::sync::Arc;
 
@@ -359,7 +359,7 @@ pub fn recover(
             .get(&p.session)
             .ok_or_else(|| NotStarted::Unrecorded(unknown_session()))?;
         Ok(Box::new(move |shared: &Arc<Shared>| {
-            // The recovery goes on the calling session's store and undo stack, so its `op.undo`
+            // The recovery goes on the calling session's undo history, so its `op.undo`
             // undoes it (as `u` after `:recover` does in the TUI). The job holds the lane long,
             // and session holders never wait for a long job.
             let mut s = super::sessions::lock(&session);
@@ -383,8 +383,8 @@ pub fn recover(
                     message: "already recovered; backup retained".into(),
                 }),
                 Ok((op_id, true)) => {
-                    s.store.record_recovered(&op_id);
-                    s.pushed("recovered list".into(), &Submitted::Applied(op_id.clone()));
+                    s.history
+                        .record("recovered list".into(), &Submitted::Applied(op_id.clone()));
                     Ok(JobResult::Recovered {
                         op_id: Some(op_id),
                         applied: true,

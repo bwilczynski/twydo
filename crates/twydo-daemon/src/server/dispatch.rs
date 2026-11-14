@@ -204,9 +204,7 @@ fn hello(shared: &Arc<Shared>, conn: &ConnState, p: HelloParams) -> Result<Value
     }
     // Opens (or resumes) the session attached to this connection; a second hello on the same
     // connection lets go of the first.
-    let session = shared.sessions.open(p.session.as_deref()).map_err(|e| {
-        RpcError::refused(ErrorKind::Internal, format!("cannot open a session: {e}"))
-    })?;
+    let session = shared.sessions.open(p.session.as_deref());
     if let Some(old) = conn.session.lock().unwrap().replace(session.clone()) {
         shared.sessions.detach(&old);
     }
