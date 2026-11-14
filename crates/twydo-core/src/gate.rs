@@ -54,7 +54,7 @@ const START_OFFSETS: &str =
 
 /// Reuse admission facts across many operations on the same immutable snapshot.
 /// The borrow prevents edits while facts are reused; a reloaded/edited snapshot
-/// gets a fresh checker. Store commit/replay guards still check live files.
+/// gets a fresh checker. The writer's commit and replay guards still check live files.
 pub struct Checker<'a> {
     snap: &'a Snapshot,
     matrix: &'a Matrix,
@@ -890,7 +890,7 @@ pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
 /// A dedicated item-delete verdict authorizes only removal of the selected
 /// resource. All family members must have unambiguous identities and form one
 /// recognized, same-list, flat family. Their schedules/statuses are held byte for
-/// byte by the store; field-edit and recurrence-execution verdicts do not apply.
+/// byte by the writer; field-edit and recurrence-execution verdicts do not apply.
 fn check_item_delete(
     snap: &Snapshot,
     m: &Matrix,

@@ -1,4 +1,4 @@
-//! Request records on journal entries and queue items and `set_vdir_busy`. Synthetic fixture content.
+//! Request records on journal entries and queue items. Synthetic fixture content.
 
 mod common;
 

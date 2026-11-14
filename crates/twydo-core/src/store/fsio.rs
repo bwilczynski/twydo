@@ -67,7 +67,7 @@ pub fn remove_durable(path: &Path) -> io::Result<()> {
 
 /// An advisory lock on `<state>/vdir.lock`, released on drop.
 ///
-/// Writers (the store's apply, undo and redo, and journal recovery) take it
+/// Writers (the writer's commit, drain and revert, and journal recovery) take it
 /// exclusively for a whole operation (prepare, apply, mark applied). Readers
 /// that load the vdir (`tdo tui` and its reloads, `export-json`, `check`) take
 /// it shared with [`VdirLock::reader`] while they load, so they never observe a

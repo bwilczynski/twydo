@@ -13,7 +13,7 @@
 //! - Changing a checklist's date removes its items' own `DUE` and mirrored `DTSTART`
 //!   (`create/family-roundtrip/initial-phone-edit/list1` c1–c3): items take their date from the checklist.
 //!
-//! Each function edits one resource; the store applies them to a whole family.
+//! Each function edits one resource; the writer applies them to a whole family.
 
 use chrono::{DateTime, Utc};
 
