@@ -20,6 +20,8 @@ pub(super) const MIN_WIDTH: u16 = 40;
 const OVERLAY_WIDTH: u16 = 72;
 const LABEL: usize = 8;
 const HINTS: &str = " Ctrl-s save · Tab next · Esc cancel ";
+/// The footer while `Esc` asks whether to discard the card's changes.
+const DISCARD: &str = " Discard changes? y discard · n/Esc keep editing ";
 
 fn kind_name(k: TaskKind) -> &'static str {
     match k {
@@ -197,19 +199,24 @@ pub(super) fn height(app: &App, e: &EditForm, width: u16) -> u16 {
     lines(app, e, text_width(width)).len() as u16 + 2
 }
 
-fn block() -> Block<'static> {
+fn block(e: &EditForm) -> Block<'static> {
+    let footer = if e.discarding {
+        Span::styled(DISCARD, theme::accent())
+    } else {
+        Span::styled(HINTS, dim())
+    };
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(theme::accent())
         .padding(Padding::horizontal(1))
-        .title_bottom(Span::styled(HINTS, dim()))
+        .title_bottom(footer)
 }
 
 /// The card in place, at `rect` (from [`height`]).
 pub(super) fn render(f: &mut Frame, rect: Rect, app: &App, e: &EditForm) {
     f.render_widget(Clear, rect);
     f.render_widget(
-        Paragraph::new(lines(app, e, text_width(rect.width))).block(block()),
+        Paragraph::new(lines(app, e, text_width(rect.width))).block(block(e)),
         rect,
     );
 }
@@ -225,5 +232,5 @@ pub(super) fn render_overlay(f: &mut Frame, area: Rect, app: &App, e: &EditForm)
         " New task "
     };
     f.render_widget(Clear, rect);
-    f.render_widget(Paragraph::new(lines).block(block().title(title)), rect);
+    f.render_widget(Paragraph::new(lines).block(block(e).title(title)), rect);
 }

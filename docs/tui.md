@@ -289,7 +289,10 @@ so.
 
 - `Tab` / `Shift-Tab` (or `↓` / `↑`) move between fields; `Enter` saves (on List and Notes it
   opens the picker or the editor), `Ctrl-s` saves from any field.
-- `Esc` cancels: nothing is written, whatever you changed (the list too).
+- `Esc` cancels and writes nothing. An unchanged card closes at once. If you changed anything
+  (the list too), or a new task has a title, the footer asks
+  `Discard changes? y discard · n/Esc keep editing`: `y` closes the card, `n` or `Esc` goes back
+  to it with everything you typed.
 - `Ctrl-u` clears a field, `Ctrl-w` deletes a word. Pasted text goes into the focused field as
   one line.
 - Only the fields you changed are written, as one save: the changes and the move are written
