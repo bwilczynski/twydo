@@ -982,6 +982,22 @@ fn card_falls_back_to_overlay_under_60_cols() {
 }
 
 #[test]
+fn card_footer_asks_to_discard() {
+    let mut a = app();
+    a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    a.handle_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+    a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    for w in [120, 59] {
+        let t = text(&render(&mut a, w, 30));
+        assert!(
+            t.contains("Discard changes? y discard · n/Esc keep editing"),
+            "{w}:\n{t}"
+        );
+        assert!(!t.contains("Ctrl-s save"), "{w}:\n{t}");
+    }
+}
+
+#[test]
 fn status_shows_insert_mode() {
     let mut a = app();
     a.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
