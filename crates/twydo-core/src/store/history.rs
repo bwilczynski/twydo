@@ -121,6 +121,8 @@ impl History {
     }
 
     /// Forgets the applied step naming `entry`: it was reverted by name, not by [`History::undo`].
+    /// For a caller that reverts an entry by id outside the history (`Writer::revert`); today
+    /// only the test wrapper.
     pub fn forget_applied(&mut self, entry: &str) {
         self.done
             .retain(|s| !matches!(&s.state, StepState::Applied(id) if id == entry));
