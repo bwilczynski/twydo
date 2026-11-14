@@ -40,9 +40,10 @@
 //! long job: the request log slot (not for `journal.recover`), then the lane, then the commit
 //! gate around the writer or core call, then the vdir lock (inside that call), then, with the
 //! gate let go and the lane still held, the publisher (`reload` takes the vdir reader lock and
-//! then `reload_lock`; then `state` and the bus). They take no session mutex: a long job's
-//! drain hook takes session mutexes while it holds the lane, so a session holder must never
-//! wait for a long job. After letting the lane go they may request a drain or a sync (below).
+//! then `reload_lock`; then `state` and the bus). They take no session mutex:
+//! `lists.recover` takes a session mutex while it holds the long lane (the drain hook no
+//! longer takes session mutexes), so a session holder must never wait for a long job. After
+//! letting the lane go they may request a drain or a sync (below).
 //!
 //! ## Long jobs (the job runner, [`super::jobs`])
 //!
@@ -118,7 +119,9 @@
 //! job's helper included, may write until it ends, so the daemon lock stays held until then
 //! (a job that never ends is ended by the service manager's stop timeout). Teardown then takes
 //! the commit gate's write side holding none of the above, so it waits only for writer calls
-//! already inside the gate (each bounded by its lock try), and it closes the gate
+//! already inside the gate (each bounded by its lock try, except `journal.abandon` and
+//! `conflicts.resolve`, which wait for the vdir lock without limit inside the gate), and it
+//! closes the gate
 //! before the daemon lock is released.
 
 use std::path::Path;
@@ -575,6 +578,9 @@ fn run_submit(
         if let Some(hook) = &shared.in_commit {
             hook();
         }
+        // The fence comes before the gate, as it always did: an unfinished collection operation
+        // is reported before the plan's refusal. Under a list job it waits for the drain.
+        writer.check_fence(fence_for(long))?;
         // A long job holds the vdir: plan and queue at once, without trying the lock.
         let prepared = writer.plan(&view.snap, &p.op, ctx.now)?;
         if long.is_none()
