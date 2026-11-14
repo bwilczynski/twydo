@@ -35,6 +35,7 @@ use queue::{Item, Kind, Prepared};
 
 pub use history::{Access, History, Step, StepState};
 pub use journal::RecoveryReport;
+pub use retired::recover_list;
 pub use writer::{Ctx, Fence, Locked, Writer};
 
 /// How long [`Store::submit`] tries the vdir lock before it queues the write.

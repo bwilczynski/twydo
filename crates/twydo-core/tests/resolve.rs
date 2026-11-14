@@ -5,10 +5,11 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 
+use twydo_core::compat::Matrix;
 use twydo_core::config::Config;
 use twydo_core::conflicts::{ConflictKind, ConflictState, ConflictStore, NewConflict, Side};
-use twydo_core::store::bind_vdir_state;
 use twydo_core::store::journal::RequestRef;
+use twydo_core::store::{Writer, bind_vdir_state};
 use twydo_core::sync::resolve::{Keep, Resolution, ResolveError, resolve, resolve_with};
 
 fn now() -> DateTime<Utc> {
@@ -35,6 +36,10 @@ impl Fx {
             cfg,
             store,
         }
+    }
+
+    fn writer(&self) -> Writer {
+        Writer::open(&self.cfg, Matrix::embedded().clone()).unwrap()
     }
 
     fn file(&self) -> PathBuf {
@@ -68,7 +73,7 @@ fn crlf_only_difference_still_counts_as_holding() {
     // The hook wrote the remote version back with LF line endings.
     fs::write(fx.file(), "A\nB\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("local\r\n"), Some(remote));
-    let r = resolve(&fx.cfg, &id, Keep::Local, now()).unwrap();
+    let r = resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()).unwrap();
     assert!(matches!(r, Resolution::Written(_)), "{r:?}");
     assert_eq!(fs::read_to_string(fx.file()).unwrap(), "local\r\n");
     assert_eq!(
@@ -83,7 +88,7 @@ fn keeping_what_the_vdir_holds_is_in_place_even_with_lf() {
     fs::write(fx.file(), "A\nB\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("A\r\nB\r\n"));
     assert_eq!(
-        resolve(&fx.cfg, &id, Keep::Remote, now()).unwrap(),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()).unwrap(),
         Resolution::AlreadyInPlace
     );
     assert_eq!(fs::read_to_string(fx.file()).unwrap(), "A\nB\n");
@@ -95,7 +100,7 @@ fn a_real_difference_is_refused() {
     fs::write(fx.file(), "changed since\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("r\r\n"));
     assert!(matches!(
-        resolve(&fx.cfg, &id, Keep::Local, now()),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()),
         Err(ResolveError::Changed { .. })
     ));
     assert_eq!(fs::read_to_string(fx.file()).unwrap(), "changed since\n");
@@ -112,7 +117,7 @@ fn retry_after_write_without_resolution_is_idempotent() {
     fs::write(fx.file(), "l\r\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("r\r\n"));
     assert_eq!(
-        resolve(&fx.cfg, &id, Keep::Local, now()).unwrap(),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()).unwrap(),
         Resolution::AlreadyInPlace
     );
     assert_eq!(
@@ -127,11 +132,11 @@ fn held_conflict_records_the_choice_and_can_change() {
     fs::write(fx.file(), "l\r\n").unwrap();
     let id = fx.record(true, Side::Local, Some("l\r\n"), Some("r\r\n"));
     assert_eq!(
-        resolve(&fx.cfg, &id, Keep::Remote, now()).unwrap(),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()).unwrap(),
         Resolution::Recorded
     );
     assert_eq!(
-        resolve(&fx.cfg, &id, Keep::Local, now()).unwrap(),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()).unwrap(),
         Resolution::Recorded
     );
     let c = fx.store.get(&id).unwrap().unwrap();
@@ -147,14 +152,14 @@ fn held_conflict_records_the_choice_and_can_change() {
 fn unknown_and_finished_conflicts_are_refused() {
     let fx = Fx::new();
     assert!(matches!(
-        resolve(&fx.cfg, "nope", Keep::Local, now()),
+        resolve(&fx.cfg, &fx.writer(), "nope", Keep::Local, now()),
         Err(ResolveError::NotFound(_))
     ));
     let id = fx.record(false, Side::Local, Some("l\r\n"), Some("r\r\n"));
     fs::write(fx.file(), "l\r\n").unwrap();
-    resolve(&fx.cfg, &id, Keep::Local, now()).unwrap();
+    resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()).unwrap();
     assert!(matches!(
-        resolve(&fx.cfg, &id, Keep::Remote, now()),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()),
         Err(ResolveError::NotUnresolved(_))
     ));
 }
@@ -166,13 +171,13 @@ fn keeping_what_the_vdir_held_after_it_changed_is_refused() {
     // was deleted (or changed again) on the server and that synced.
     let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("r\r\n"));
     assert!(matches!(
-        resolve(&fx.cfg, &id, Keep::Remote, now()),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()),
         Err(ResolveError::Changed { .. })
     ));
     assert!(!fx.file().exists(), "nothing written");
     fs::write(fx.file(), "third\r\n").unwrap();
     assert!(matches!(
-        resolve(&fx.cfg, &id, Keep::Remote, now()),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()),
         Err(ResolveError::Changed { .. })
     ));
     assert_eq!(fs::read_to_string(fx.file()).unwrap(), "third\r\n");
@@ -187,10 +192,10 @@ fn keep_current_closes_a_conflict_whose_file_changed() {
     let fx = Fx::new();
     fs::write(fx.file(), "third\r\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("l\r\n"), Some("r\r\n"));
-    assert!(resolve(&fx.cfg, &id, Keep::Local, now()).is_err());
-    assert!(resolve(&fx.cfg, &id, Keep::Remote, now()).is_err());
+    assert!(resolve(&fx.cfg, &fx.writer(), &id, Keep::Local, now()).is_err());
+    assert!(resolve(&fx.cfg, &fx.writer(), &id, Keep::Remote, now()).is_err());
     assert_eq!(
-        resolve(&fx.cfg, &id, Keep::Current, now()).unwrap(),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Current, now()).unwrap(),
         Resolution::KeptCurrent
     );
     assert_eq!(fs::read_to_string(fx.file()).unwrap(), "third\r\n");
@@ -209,7 +214,7 @@ fn keep_current_is_refused_for_a_held_conflict() {
     fs::write(fx.file(), "l\r\n").unwrap();
     let id = fx.record(true, Side::Local, Some("l\r\n"), Some("r\r\n"));
     assert!(matches!(
-        resolve(&fx.cfg, &id, Keep::Current, now()),
+        resolve(&fx.cfg, &fx.writer(), &id, Keep::Current, now()),
         Err(ResolveError::Held(_))
     ));
     assert_eq!(
@@ -239,7 +244,7 @@ fn resolution_records_its_request() {
         fs::write(fx.file(), "R\n").unwrap();
         let id = fx.record(held, Side::Remote, Some("L\n"), Some("R\n"));
         let rid = format!("r{n}");
-        let got = resolve_with(&fx.cfg, &id, keep, now(), Some(req(&rid))).unwrap();
+        let got = resolve_with(&fx.cfg, &fx.writer(), &id, keep, now(), Some(req(&rid))).unwrap();
         let (c, by) = fx
             .store
             .by_request(&rid)
@@ -270,8 +275,24 @@ fn every_request_that_chose_keeps_its_record() {
     let fx = Fx::new();
     fs::write(fx.file(), "L\n").unwrap();
     let id = fx.record(true, Side::Local, Some("L\n"), Some("R\n"));
-    resolve_with(&fx.cfg, &id, Keep::Local, now(), Some(req("a"))).unwrap();
-    resolve_with(&fx.cfg, &id, Keep::Remote, now(), Some(req("b"))).unwrap();
+    resolve_with(
+        &fx.cfg,
+        &fx.writer(),
+        &id,
+        Keep::Local,
+        now(),
+        Some(req("a")),
+    )
+    .unwrap();
+    resolve_with(
+        &fx.cfg,
+        &fx.writer(),
+        &id,
+        Keep::Remote,
+        now(),
+        Some(req("b")),
+    )
+    .unwrap();
     // A store opened afresh, as after a restart.
     let state = bind_vdir_state(&fx.cfg.state_dir(), &fx.cfg.vdir).unwrap();
     let store = ConflictStore::open(&state).unwrap();
@@ -293,9 +314,15 @@ fn written_resolution_names_its_request_in_the_journal() {
     let fx = Fx::new();
     fs::write(fx.file(), "R\n").unwrap();
     let id = fx.record(false, Side::Remote, Some("L\n"), Some("R\n"));
-    let Resolution::Written(op) =
-        resolve_with(&fx.cfg, &id, Keep::Local, now(), Some(req("r9"))).unwrap()
-    else {
+    let Resolution::Written(op) = resolve_with(
+        &fx.cfg,
+        &fx.writer(),
+        &id,
+        Keep::Local,
+        now(),
+        Some(req("r9")),
+    )
+    .unwrap() else {
         panic!("written")
     };
     let state = bind_vdir_state(&fx.cfg.state_dir(), &fx.cfg.vdir).unwrap();

@@ -88,7 +88,7 @@ pub fn run_sync(
         reason,
     });
     shared.test_point("sync");
-    let ran = run_with(&shared.cfg, &shared.matrix, &opts, Utc::now());
+    let ran = run_with(&shared.cfg, &shared.writer, &opts, Utc::now());
     let result = match ran {
         Ok(mut report) => {
             let mut m = messages(&shared.cfg, &report);

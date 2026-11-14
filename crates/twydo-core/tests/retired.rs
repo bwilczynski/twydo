@@ -207,7 +207,10 @@ fn archived_conflicts_cannot_recreate_the_retired_collection() {
         )
         .unwrap();
     let b = retired::forget(&cfg, &retired::preview(&cfg, "old").unwrap(), now()).unwrap();
-    assert!(resolve(&cfg, &c.id, Keep::Remote, now()).is_err());
+    let writer =
+        twydo_core::store::Writer::open(&cfg, twydo_core::compat::Matrix::embedded().clone())
+            .unwrap();
+    assert!(resolve(&cfg, &writer, &c.id, Keep::Remote, now()).is_err());
     assert!(twydo_core::sync::summary(&cfg).unwrap().is_none()); // sync disabled
     assert_eq!(
         fs::read_to_string(
