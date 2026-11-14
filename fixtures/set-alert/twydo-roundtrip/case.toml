@@ -1,0 +1,36 @@
+claim = "2Do on the iPhone reads Twydo-written alerts at the right offset, shows exactly one alert, and keeps a Twydo-written alert when it rewrites the task."
+origin = "device"
+observed = "Twydo set 15m, 4h, 1d on timed B1-B3 and 1d on date-only B4; the phone showed one alert each at 09:45 and 06:00 on 21 Nov and 10:00 and 00:00 on 20 Nov. Twydo then changed B1 to 1h30m (-PT1H30M) and removed B2's alert; the phone showed 08:30 and no alert. A phone title edit of B1 kept TRIGGER:-PT1H30M and rewrote the VALARM DESCRIPTION to the new title."
+tests = ["crates/twydo-core/tests/edit_alert.rs::twydo_written_alerts_survive_the_phone", "crates/twydo-core/tests/gate_alert.rs::undo_set_alert_restores_bytes"]
+
+[provenance]
+source_revision = "5419b8ea0df5eec6af02f476880a11439243e22c"
+source_path = "private staging of the 2026-11-14 alerts round, phase B (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); Twydo daemon built from the source revision"
+server_version = "unknown"
+
+[states."twydo-set"]
+path = "twydo-set"
+collections = ["list1"]
+members = ["list1/53fdd1717e9a490984d1201f95833190.ics", "list1/648ceefa3583492d91097556efe3c4dc.ics", "list1/b3e55a188f7f4aca9aac91090b7941b0.ics", "list1/e89cbcaa7ced47959d5b7865376b3a5e.ics"]
+action = "Twydo created B1-B4 (timed 2026-11-21 10:00; B4 date-only) and set 15m, 4h, 1d, 1d"
+device = "twydo"
+captured_at = "2026-11-14T20:50:56.360873+00:00"
+
+[states."twydo-changed"]
+path = "twydo-changed"
+collections = ["list1"]
+members = ["list1/53fdd1717e9a490984d1201f95833190.ics", "list1/648ceefa3583492d91097556efe3c4dc.ics", "list1/b3e55a188f7f4aca9aac91090b7941b0.ics", "list1/e89cbcaa7ced47959d5b7865376b3a5e.ics"]
+action = "Phone showed one alert each at 09:45/21, 06:00/21, 10:00/20, 00:00/20; then Twydo changed B1 to 1h30m and removed B2 alert"
+device = "twydo"
+captured_at = "2026-11-14T20:56:25.762381+00:00"
+
+[states."phone-checked"]
+path = "phone-checked"
+collections = ["list1"]
+members = ["list1/53fdd1717e9a490984d1201f95833190.ics", "list1/648ceefa3583492d91097556efe3c4dc.ics", "list1/b3e55a188f7f4aca9aac91090b7941b0.ics", "list1/e89cbcaa7ced47959d5b7865376b3a5e.ics"]
+action = "Phone showed B1 at 08:30 on 21 Nov and no alert on B2; renamed B1 to B1 alert edited on the phone"
+device = "iphone"
+captured_at = "2026-11-14T20:57:56.158293+00:00"

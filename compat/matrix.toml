@@ -46,8 +46,9 @@ evidence = ["complete/standalone-lifecycle", "reopen/undo"]
 [[contract]]
 id = "set-alert.task"
 iphone_baseline = "pass"
-evidence = ["set-alert/phone-encodings"]
-notes = "Twydo-written alerts await the phase B phone check."
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["set-alert/phone-encodings", "set-alert/twydo-roundtrip"]
 
 [[contract]]
 id = "set-repeat.interval"

@@ -268,6 +268,25 @@ fn offsets_use_the_units_2do_writes() {
     assert!(AlertOffset::new(0).is_none());
 }
 
+/// Phase B: the alerts Twydo wrote, after the phone displayed them and rewrote B1.
+#[test]
+fn twydo_written_alerts_survive_the_phone() {
+    const ROUND: &str = "set-alert/twydo-roundtrip";
+    let read = |state: &str, uid: &str| {
+        classify(&parse(&common::fixture(ROUND, &format!("{state}/list1"), uid)).unwrap())
+    };
+    const B1: &str = "b3e55a188f7f4aca9aac91090b7941b0";
+    const B2: &str = "648ceefa3583492d91097556efe3c4dc";
+    const B4: &str = "53fdd1717e9a490984d1201f95833190";
+    let one = |n| CustomAlert::One(AlertOffset::new(n).unwrap());
+    assert_eq!(read("twydo-set", B1), one(15));
+    assert_eq!(read("twydo-set", B4), one(1440));
+    assert_eq!(read("twydo-changed", B1), one(90));
+    assert_eq!(read("twydo-changed", B2), CustomAlert::None);
+    assert_eq!(read("phone-checked", B1), one(90));
+    assert_eq!(read("phone-checked", B2), CustomAlert::None);
+}
+
 /// Review finding I1: a removed alert stays removed when the due time moves; only a task that
 /// gains a due time gets 2Do's automatic alert.
 #[test]

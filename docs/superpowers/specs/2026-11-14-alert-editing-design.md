@@ -224,3 +224,14 @@ and the trigger counts from it, so the alert is 15 min before the due time. Remo
     custom alert too.
 - **Admitted shapes.** Timed and date-only dues, with or without a start date, repeating or not.
 - **Q6** is open until phase B.
+
+### Phase B
+
+Twydo (this branch, candidate matrix) set 15m, 4h and 1d on timed tasks and 1d on a date-only task;
+the phone showed exactly one alert each at the expected times. Twydo then changed one to 1h30m
+(`-PT1H30M`) and removed another; the phone showed 08:30 and no alert, without restoring the
+automatic one. A phone title edit kept the Twydo-written trigger. **Q6 passes**:
+`fixtures/set-alert/twydo-roundtrip`, and `set-alert.task` is verified.
+
+Side observation, out of scope: on a title edit 2Do rewrites the VALARM `DESCRIPTION` to the new
+title; Twydo's title edits leave it unchanged (Ruling R14 stands, now known to differ).
