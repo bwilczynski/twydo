@@ -29,14 +29,13 @@ use super::reconcile::reconcile;
 use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
 use super::vdirsyncer::{self, LOCAL_STORAGE, PAIR};
-use crate::compat::Matrix;
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::lists::helper::Watch;
 use crate::store::bind_vdir_state;
 use crate::store::fsio::{VdirLock, remove_durable, write_atomic};
 use crate::store::journal::{Journal, Stage, recover_locked};
-use crate::store::{Ctx, DrainOutcome, Drained, WriteError, Writer};
+use crate::store::{Ctx, DrainOutcome, Drained, Writer};
 
 /// How `run` was asked to run.
 #[derive(Debug, Clone, Default)]
@@ -79,7 +78,7 @@ pub enum Skip {
 pub struct RunReport {
     pub skipped: Option<Skip>,
     pub collections: BTreeMap<String, CollState>,
-    /// First line of a transient failure (see [`run`]).
+    /// First line of a transient failure (see [`run_with`]).
     pub transient: Option<String>,
     pub new_conflicts: Vec<String>,
     pub confirmed: Vec<String>,
@@ -136,7 +135,8 @@ fn skipped(s: Skip) -> RunReport {
     }
 }
 
-/// Runs a sync for `cfg`:
+/// Runs a sync for `cfg`, draining the queued edits through `writer` (the daemon passes its
+/// own):
 ///
 /// 1. Takes the run lock (background: without waiting; when busy, asks the holder for a
 ///    rerun through `sync/requested` and returns [`Skip::Busy`]).
@@ -153,19 +153,6 @@ fn skipped(s: Skip) -> RunReport {
 ///    run, timed out, exited non-zero without explanation, printed unattributed errors, or
 ///    left a collection in `Error`, is a transient failure and backs off.
 /// 7. Repeats from 3, at most twice, while `sync/requested` exists.
-pub fn run(cfg: &Config, opts: &RunOptions, now: DateTime<Utc>) -> Result<RunReport, SyncError> {
-    if cfg.sync.is_none() {
-        // Nothing to run: open (and create) no state.
-        return Ok(skipped(Skip::NotConfigured));
-    }
-    let writer = Writer::open(cfg, Matrix::embedded().clone()).map_err(|e| match e {
-        WriteError::Io(e) => e,
-        e => io::Error::other(e.to_string()),
-    })?;
-    run_with(cfg, &writer, opts, now)
-}
-
-/// [`run`], draining the queued edits through `writer` (the daemon passes its own).
 pub fn run_with(
     cfg: &Config,
     writer: &Writer,
@@ -729,7 +716,7 @@ fn merge_forced(first: &mut SyncOutput, second: SyncOutput, forced: &[String]) {
     first.unattributed.extend(second.unattributed);
 }
 
-/// The transient failure of a run, if any (see [`run`], step 6).
+/// The transient failure of a run, if any (see [`run_with`], step 6).
 fn transient(
     sync: &SyncConfig,
     ran: &Ran,

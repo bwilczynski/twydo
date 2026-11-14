@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use common::store::Store;
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{Change, NewTask, Op};
@@ -15,7 +16,7 @@ use twydo_core::model::Status;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::journal::{Entry, FORMAT, Journal, Stage, Write};
 use twydo_core::store::queue::{self, Queue};
-use twydo_core::store::{DrainOutcome, Store, Submitted, WriteError};
+use twydo_core::store::{DrainOutcome, Submitted, WriteError};
 use twydo_core::views::Snapshot;
 
 use common::Env;
@@ -222,28 +223,6 @@ fn drain_commits_in_id_order() {
     );
 }
 
-#[test]
-fn lost_wakeup_is_drained_by_the_recheck() {
-    let env = env();
-    let mut store = env.store(matrix());
-    let mut held = Some(VdirLock::exclusive(&env.state).unwrap());
-    let got = store
-        .submit_with(
-            &env.snap(),
-            &title(A, "renamed"),
-            "rename",
-            "op",
-            now(),
-            &mut || {
-                held.take();
-            },
-        )
-        .unwrap();
-    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
-    assert!(read(&env, A).contains("SUMMARY:renamed"));
-    assert!(queue(&env).is_empty().unwrap());
-}
-
 /// Queues one edit of `A` while a sync holds the lock, then lets the sync end.
 fn queued_edit(env: &Env, store: &mut Store, op: Op) -> String {
     let sync = VdirLock::exclusive(&env.state).unwrap();
@@ -447,26 +426,26 @@ fn stuck_journal_stops_the_drain() {
 }
 
 #[test]
-fn submit_with_stuck_older_item_stays_queued() {
+fn redo_with_a_stuck_older_item_stays_queued() {
     let env = env();
     let mut older = env.store(matrix());
     let mut store = env.store(matrix());
     let older_id = queued_edit(&env, &mut older, title(A, "older"));
     make_stuck(&env);
     let before = read(&env, B);
-    let mut held = Some(VdirLock::exclusive(&env.state).unwrap());
+    let held = VdirLock::exclusive(&env.state).unwrap();
     let got = store
-        .submit_with(
-            &env.snap(),
-            &title(B, "ours"),
-            "ours",
-            "op",
-            later(),
-            &mut || {
-                held.take();
-            },
-        )
+        .submit(&env.snap(), &title(B, "ours"), "ours", "op", later())
         .unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    assert!(matches!(
+        store.undo_last(later()).unwrap(),
+        Submitted::Cancelled
+    ));
+    drop(held);
+    // The redo pushes the item and looks at the free lock once: the older item hits the
+    // stuck journal, so the drain stops and ours stays queued behind it.
+    let got = store.redo_last(later()).unwrap();
     let Submitted::Queued(item) = got else {
         panic!("{got:?}");
     };
@@ -481,24 +460,22 @@ fn submit_with_stuck_older_item_stays_queued() {
 }
 
 #[test]
-fn submit_whose_own_item_hits_stuck_stays_queued() {
+fn redo_whose_own_item_hits_stuck_stays_queued() {
     let env = env();
     let mut store = env.store(matrix());
     make_stuck(&env);
     let before = read(&env, A);
-    let mut held = Some(VdirLock::exclusive(&env.state).unwrap());
+    let held = VdirLock::exclusive(&env.state).unwrap();
     let got = store
-        .submit_with(
-            &env.snap(),
-            &title(A, "ours"),
-            "ours",
-            "op",
-            now(),
-            &mut || {
-                held.take();
-            },
-        )
+        .submit(&env.snap(), &title(A, "ours"), "ours", "op", now())
         .unwrap();
+    assert!(matches!(got, Submitted::Queued(_)), "{got:?}");
+    assert!(matches!(
+        store.undo_last(now()).unwrap(),
+        Submitted::Cancelled
+    ));
+    drop(held);
+    let got = store.redo_last(now()).unwrap();
     let Submitted::Queued(item) = got else {
         panic!("{got:?}");
     };

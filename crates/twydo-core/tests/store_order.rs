@@ -3,14 +3,15 @@ mod common;
 
 use chrono::{TimeZone, Utc};
 use common::Env;
+use common::store::Store;
 use std::fs;
 use twydo_core::compat::{ContractId, Matrix, Verdict};
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{NewTask, Op, Placement};
 use twydo_core::model::TaskKind;
+use twydo_core::store::Submitted;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::queue;
-use twydo_core::store::{Store, Submitted};
 use twydo_core::views::{Snapshot, compare_items};
 
 fn now() -> chrono::DateTime<Utc> {

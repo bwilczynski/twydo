@@ -210,6 +210,6 @@ fn opening_a_store_recovers_before_the_journal_exists() {
     // A state directory with no journal is skipped by recovery, even with a fence that would
     // make `recover_locked` fail.
     fence(&env);
-    let (_store, report) = twydo_core::store::Store::open_with(&env.cfg, matrix()).unwrap();
+    let (_store, report) = common::store::Store::open_with(&env.cfg, matrix()).unwrap();
     assert!(report.stuck.is_empty() && report.resumed.is_empty());
 }

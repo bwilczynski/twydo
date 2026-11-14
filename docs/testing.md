@@ -59,6 +59,8 @@ The November 2026 cleanup keeps these contracts while removing repeated executio
 | Separate panicking sync-job scenario | Daemon `a_panic_in_a_sync_job_fails_it_and_clears_the_sync_state`, including failed sync event and subsequent runner health |
 | Three phase-0 fixture subset roundtrip scans | Core `ical_write::unedited_calendar_is_byte_equal`, recursively covering the whole corpus with the original subset-size guards |
 | Gate deletion disk/undo assertions already exercised in store tests | Matching core `store_family` capability deletion tests; gate admission assertions and the distinct empty-weekly-project execution case remain |
+| Core `store_queue::lost_wakeup_is_drained_by_the_recheck` (the second lock probe after a push, via `submit_with`) | Daemon `an_edit_saved_while_an_outside_process_holds_the_vdir_lock_is_queued_then_applied` and `an_edit_queued_while_the_drain_runs_is_drained_after_the_job`; the history's single probe stays covered by core `history` `redo_of_a_cancelled_step_with_the_lock_free_applies_it_and_reports_the_drain` |
+| Core `store_requests::take_drained_returns_items_a_submit_drained` and `a_store_collects_nothing_drained_unless_asked` (drained-item collection in the per-session store) | Daemon `queue` and `sync` suites for drained items and their `op.finished`; core `history` `redo_of_a_cancelled_step_with_the_lock_free_applies_it_and_reports_the_drain` for the drain sink |
 
 The remaining TUI writer cases are representative workflows: a complete/undo/redo roundtrip,
 refused stale form, recovery job waiting, chained item creation, repeat card, new checklist

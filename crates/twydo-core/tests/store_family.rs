@@ -9,13 +9,14 @@ use std::fs;
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use common::store::Store;
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
 use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::ical::{Component, parse};
 use twydo_core::model::TaskKind;
+use twydo_core::store::WriteError;
 use twydo_core::store::journal::{Journal, Stage};
-use twydo_core::store::{Store, WriteError};
 
 use common::{Env, Line, fixture, is_stamp, lines, sorted, stamp, with_completed_now};
 
@@ -1488,6 +1489,7 @@ mod item_order {
 // Native phone round trips; see the capture log's regression-test map.
 mod recurrence_phone_captures {
     use crate::common::recurrence::*;
+    use crate::common::store::Store;
     use crate::common::{Env, completed, dtstamp, fixture, todo};
     use std::collections::BTreeMap;
     use std::fs;
@@ -1497,7 +1499,6 @@ mod recurrence_phone_captures {
     use twydo_core::edit::{Change, Op};
     use twydo_core::ical::{parse, serialize};
     use twydo_core::model::meta_edit::MetaJson;
-    use twydo_core::store::Store;
     use twydo_core::store::journal::{Journal, Stage};
 
     #[test]

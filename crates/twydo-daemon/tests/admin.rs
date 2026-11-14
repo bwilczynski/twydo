@@ -235,27 +235,34 @@ fn resending_an_earlier_choice_after_a_newer_one_does_not_rerun_it() {
 /// entry its request wrote, answers `written` with its id and closes the conflict.
 #[test]
 fn resend_after_a_crash_between_restore_and_the_record_answers_written() {
-    use twydo_core::store::Store;
     use twydo_core::store::journal::RequestRef;
+    use twydo_core::store::{Ctx, Writer};
     let fx = fx();
     let id = seed(&fx, false);
     let remote = todo_ics("u1", "Remote title", None);
     let local = todo_ics("u1", "Local title", None);
-    let (mut store, _) = Store::open(&fx.config()).unwrap();
-    store.set_request(Some(RequestRef {
-        session: "s".into(),
-        request_id: "r-crash".into(),
-    }));
-    let op = store
+    let cfg = fx.config();
+    let writer = Writer::open(&cfg, twydo_core::compat::Matrix::embedded().clone()).unwrap();
+    let ctx = Ctx {
+        now: Utc::now(),
+        request: Some(RequestRef {
+            session: "s".into(),
+            request_id: "r-crash".into(),
+        }),
+        config: &cfg,
+    };
+    let op = writer
+        .lock_waiting()
+        .unwrap()
         .restore(
             "c1/u1.ics",
             Some(&remote),
             Some(&local),
             vec!["u1".into()],
-            Utc::now(),
+            &ctx,
         )
         .unwrap();
-    drop(store);
+    drop(writer);
     assert_eq!(list(&TestDaemon::start(&fx).client()).conflicts.len(), 1);
     let td = TestDaemon::start(&fx);
     let c = td.client();

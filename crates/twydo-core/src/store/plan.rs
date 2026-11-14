@@ -1,6 +1,6 @@
 //! The pure planner: the gate and the plan of one operation on a loaded snapshot, with no
-//! I/O. [`plan`] produces the [`Prepared`] entry; [`Store`](super::Store) adds only what reads
-//! the state directory (the collection fence) and what belongs to the store (the request).
+//! I/O. [`plan`] produces the [`Prepared`] entry; the [`Writer`](super::Writer) adds what reads
+//! the state directory (the collection fence) and the request.
 
 use std::io;
 use std::path::{Component, Path};

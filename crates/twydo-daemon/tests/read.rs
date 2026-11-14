@@ -3,12 +3,11 @@
 mod common;
 
 use chrono::{TimeZone, Utc};
-use common::{Fixture, TestDaemon, empty};
-use twydo_core::compat::Matrix;
+use common::{Fixture, TestDaemon, empty, queue_op};
 use twydo_core::edit::{Change, Op};
+use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
 use twydo_core::store::queue::{Queue, refusal_message};
-use twydo_core::store::{Store, Submitted, bind_vdir_state};
 use twydo_core::sync::status::SyncStatus;
 use twydo_daemon::protocol::methods::StatusView;
 use twydo_daemon::protocol::wire::WireSnapshot;
@@ -25,19 +24,12 @@ fn queue_edit(fx: &Fixture, uid: &str, text: &str) -> twydo_core::store::queue::
     let cfg = fx.config();
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let _lock = VdirLock::exclusive(&state).unwrap();
-    let (mut store, _) = Store::open_with(&cfg, Matrix::embedded().clone()).unwrap();
     let op = Op::Edit {
         uid: uid.into(),
         changes: vec![Change::Summary(text.into())],
     };
     let now = Utc.with_ymd_and_hms(2026, 11, 9, 12, 0, 0).unwrap();
-    match store
-        .submit(&fx.snapshot(), &op, "edit", "tui", now)
-        .unwrap()
-    {
-        Submitted::Queued(item) => item,
-        _ => panic!("expected the edit to be queued"),
-    }
+    queue_op(&cfg, &fx.snapshot(), &op, "edit", None, now)
 }
 
 /// An outside sync's shared hold on the vdir: the daemon's startup drain finds it busy and

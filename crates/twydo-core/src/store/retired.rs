@@ -1,37 +1,6 @@
 //! Restoring an archived local snapshot using the existing gated move planners.
 use super::*;
 
-impl Store {
-    /// [`recover_list`] under the vdir lock, recorded on this store's undo history when it
-    /// wrote.
-    pub fn recover_list(
-        &mut self,
-        active: &Snapshot,
-        backup_id: &str,
-        to: &str,
-        now: DateTime<Utc>,
-    ) -> Result<(String, bool), WriteError> {
-        let lock = lock_for(&self.writer, self.lock_wait)?;
-        let ctx = Ctx {
-            now,
-            request: self.request.clone(),
-            config: &self.cfg,
-        };
-        let (id, written) = recover_list(&lock, active, backup_id, to, &ctx)?;
-        if written {
-            self.record_recovered(&id);
-        }
-        Ok((id, written))
-    }
-
-    /// Puts the applied recovery entry `id` on this store's undo history, for a caller that ran
-    /// [`recover_list`] itself.
-    pub fn record_recovered(&mut self, id: &str) {
-        self.history
-            .record(String::new(), &super::Submitted::Applied(id.to_string()));
-    }
-}
-
 /// Recover a whole local snapshot into an existing list. The archive retains the
 /// exact operation, so retrying a confirmed recovery reuses its identities.
 /// Returns (operation id, whether this call wrote).

@@ -516,3 +516,32 @@ pub mod project {
         fx
     }
 }
+
+/// Queues `op` as an earlier owner of the vdir did while an outside holder kept its lock:
+/// plans it on `snap` with the embedded matrix and pushes it, applying nothing.
+pub fn queue_op(
+    cfg: &Config,
+    snap: &Snapshot,
+    op: &Op,
+    label: &str,
+    request: Option<twydo_core::store::journal::RequestRef>,
+    now: DateTime<Utc>,
+) -> twydo_core::store::queue::Item {
+    use twydo_core::store::queue::Kind;
+    use twydo_core::store::{Ctx, Fence, Writer};
+    let writer = Writer::open(cfg, twydo_core::compat::Matrix::embedded().clone()).unwrap();
+    let mut prepared = writer.plan(snap, op, now).unwrap();
+    prepared.entry.request = request.clone();
+    let ctx = Ctx {
+        now,
+        request,
+        config: cfg,
+    };
+    let kind = Kind::Op {
+        op: op.clone(),
+        prepared,
+    };
+    writer
+        .enqueue(kind, label, "daemon", Fence::Now, &ctx)
+        .unwrap()
+}

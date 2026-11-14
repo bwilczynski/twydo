@@ -1,5 +1,6 @@
 //! Crash-safe storage: atomic file writes, the vdir lock, the operation journal with
-//! recovery (see `docs/architecture.md`), and the [`Store`] that applies operations through them.
+//! recovery (see `docs/architecture.md`), the [`Writer`] that applies operations through them
+//! and the per-session [`History`].
 //!
 //! An operation runs only when the gate allows it and every file it touches still holds
 //! the bytes the caller loaded. It is recorded in the journal before the vdir is touched,
@@ -19,27 +20,19 @@ pub mod writer;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use chrono::{DateTime, Utc};
-
-use crate::compat::Matrix;
-use crate::config::Config;
 use crate::edit::{EditError, Op};
 use crate::gate::Blocked;
 use crate::ical;
 use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
-use journal::{Entry, FORMAT, RequestRef, Stage, new_op_id, try_recover};
-use queue::{Item, Kind, Prepared};
+use journal::{Entry, FORMAT, Stage, new_op_id};
+use queue::Item;
 
 pub use history::{Access, History, Step, StepState};
 pub use journal::RecoveryReport;
 pub use retired::recover_list;
 pub use writer::{Ctx, Fence, Locked, Writer};
-
-/// How long [`Store::submit`] tries the vdir lock before it queues the write.
-const TRY_LOCK: Duration = Duration::from_millis(250);
 
 #[derive(thiserror::Error, Debug)]
 pub enum WriteError {
@@ -55,7 +48,8 @@ pub enum WriteError {
     NothingToUndo,
     #[error("nothing to redo")]
     NothingToRedo,
-    /// The vdir lock is held (a sync is running) and the store was told not to wait.
+    /// The vdir lock is held (a sync is running) and the call was told not to wait, or a
+    /// drainer is mid-commit while an undo looks for its entry.
     #[error("a sync is running; try again in a moment")]
     Busy,
     #[error(transparent)]
@@ -160,29 +154,7 @@ pub fn existing_vdir_state(state_dir: &Path, vdir: &Path) -> io::Result<Option<P
     Ok(Some(dir))
 }
 
-/// Writes operations to the vdir through the [`Writer`], with a session undo/redo stack.
-#[derive(Debug)]
-pub struct Store {
-    cfg: Config,
-    writer: Writer,
-    /// The steps applied, queued or undone this session.
-    history: History,
-    /// Refuse with [`WriteError::Busy`] instead of waiting for the vdir lock.
-    lock_wait: Option<Duration>,
-    /// Stamped on every entry and queue item this store creates.
-    request: Option<RequestRef>,
-    /// Plan and queue at once, never trying the vdir lock (a sync is known to be running).
-    vdir_busy: bool,
-    /// Leave the collection fence to the drain: a list job runs, so an edit is queued even
-    /// while its operation is active ([`Store::set_fence_at_drain`]).
-    fence_at_drain: bool,
-    /// Items this store's drains dealt with, until [`Store::take_drained`]; collected only
-    /// while [`Store::set_collect_drained`] is on.
-    drained: Vec<Drained>,
-    collect_drained: bool,
-}
-
-/// What [`Store::submit`] did with a write.
+/// What a write became: applied now, queued, or withdrawn.
 #[derive(Debug)]
 // Items carry whole tasks; one is built per write, never in bulk.
 #[allow(clippy::large_enum_variant)]
@@ -239,18 +211,6 @@ pub fn parent_json_uid(snap: &Snapshot, parent: &str) -> Option<String> {
     meta.get_str("uid").map(str::to_string)
 }
 
-/// A [`Ctx`] for a call at `now`, built from the store's own fields so a held [`Locked`]
-/// (which borrows only the writer) does not block the store's other fields.
-macro_rules! ctx {
-    ($s:expr, $now:expr) => {
-        Ctx {
-            now: $now,
-            request: $s.request.clone(),
-            config: &$s.cfg,
-        }
-    };
-}
-
 /// What became of `item` among the `steps` a drain dealt with: committed, refused (the error
 /// behind it) or still queued.
 pub(crate) fn drained_outcome(steps: Vec<DrainStep>, item: Item) -> Result<Submitted, WriteError> {
@@ -269,351 +229,4 @@ pub(crate) fn drained_outcome(steps: Vec<DrainStep>, item: Item) -> Result<Submi
         };
     }
     Ok(Submitted::Queued(item))
-}
-
-/// The vdir lock as the store waits for it: blocking when `wait` is `None`, else retried
-/// for up to `wait` and [`WriteError::Busy`] if it stays held.
-fn lock_for(writer: &Writer, wait: Option<Duration>) -> Result<Locked<'_>, WriteError> {
-    match wait {
-        None => writer.lock_waiting(),
-        Some(wait) => writer.lock(wait)?.ok_or(WriteError::Busy),
-    }
-}
-
-/// Keeps `items` in `sink` while collection is on.
-fn keep(sink: &mut Vec<Drained>, on: bool, items: &[Drained]) {
-    if on {
-        sink.extend(items.iter().cloned());
-    }
-}
-
-impl Store {
-    /// [`Store::open_with`] the embedded compatibility matrix.
-    pub fn open(cfg: &Config) -> Result<(Store, RecoveryReport), WriteError> {
-        Store::open_with(cfg, Matrix::embedded().clone())
-    }
-
-    /// Runs recovery, then opens the journal. While any entry is stuck, writes return
-    /// [`WriteError::Stuck`] until it is [abandoned](Store::abandon).
-    pub fn open_with(cfg: &Config, matrix: Matrix) -> Result<(Store, RecoveryReport), WriteError> {
-        // Recovery takes the lock itself; the store holds none between operations (R2). A sync
-        // holding the vdir defers it to the first write, which recovers under the lock anyway.
-        // It runs before the writer opens the journal: opening creates `journal/`, and a
-        // state directory without one is skipped by recovery.
-        let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
-        let report = try_recover(&cfg.vdir, &state)?.unwrap_or_default();
-        let writer = Writer::open(cfg, matrix)?;
-        Ok((Store::shell(cfg, writer), report))
-    }
-
-    /// A store that skips recovery (the caller holds the vdir lock, or recovers itself), with
-    /// `matrix`.
-    pub fn without_recovery(cfg: &Config, matrix: Matrix) -> Result<Store, WriteError> {
-        Ok(Store::shell(cfg, Writer::open(cfg, matrix)?))
-    }
-
-    fn shell(cfg: &Config, writer: Writer) -> Store {
-        Store {
-            cfg: cfg.clone(),
-            writer,
-            history: History::new(),
-            lock_wait: None,
-            request: None,
-            vdir_busy: false,
-            fence_at_drain: false,
-            drained: Vec::new(),
-            collect_drained: false,
-        }
-    }
-
-    /// Every entry or queue item this store creates until the next call carries `r`.
-    pub fn set_request(&mut self, r: Option<RequestRef>) {
-        self.request = r;
-    }
-
-    /// While `busy`, `submit`, `undo`, `undo_last` and `redo_last` never try the vdir lock:
-    /// they gate, plan and queue at once.
-    pub fn set_vdir_busy(&mut self, busy: bool) {
-        self.vdir_busy = busy;
-    }
-
-    /// While on, planning a write skips the collection fence
-    /// ([`crate::lists::operation::ensure_idle`]) and the drain checks it instead: for the
-    /// daemon while a list job holds the vdir, so an edit saved during the job is queued and
-    /// refused at drain only if the job leaves its operation unfinished. Use with
-    /// [`Store::set_vdir_busy`], so nothing commits before the drain.
-    pub fn set_fence_at_drain(&mut self, on: bool) {
-        self.fence_at_drain = on;
-    }
-
-    /// Collect the items this store's drains deal with, for [`Store::take_drained`]. Off by
-    /// default: a long-lived store that never takes them (the TUI's) keeps nothing.
-    pub fn set_collect_drained(&mut self, on: bool) {
-        self.collect_drained = on;
-        if !on {
-            self.drained.clear();
-        }
-    }
-
-    /// The items this store's drains dealt with since the last call, oldest first (only
-    /// while [`Store::set_collect_drained`] is on; empty otherwise).
-    pub fn take_drained(&mut self) -> Vec<Drained> {
-        std::mem::take(&mut self.drained)
-    }
-
-    /// How long a write waits for the vdir lock. `None` (the default) blocks until it is free
-    /// (the CLI). `Some(d)` retries every 25 ms for up to `d`, then returns
-    /// [`WriteError::Busy`] (`Some(ZERO)`: no wait). For the TUI, which must not freeze for
-    /// the length of a sync.
-    pub fn set_lock_wait(&mut self, wait: Option<Duration>) {
-        self.lock_wait = wait;
-    }
-
-    /// The per-vdir state directory holding this store's journal and lock.
-    pub fn state_dir(&self) -> &Path {
-        self.writer.state_dir()
-    }
-
-    fn fence(&self) -> Fence {
-        if self.fence_at_drain {
-            Fence::AtDrain
-        } else {
-            Fence::Now
-        }
-    }
-
-    /// Apply `op` to the tasks loaded in `snap`. Refused unless the gate allows it and every
-    /// file it touches still holds the loaded bytes (a new file must not exist yet).
-    /// Returns the journal entry id.
-    pub fn apply(
-        &mut self,
-        snap: &Snapshot,
-        op: &Op,
-        now: DateTime<Utc>,
-    ) -> Result<String, WriteError> {
-        let prepared = self.prepare(snap, op, now)?;
-        let lock = lock_for(&self.writer, self.lock_wait)?;
-        let id = self.commit(&lock, prepared, now)?;
-        self.history
-            .record(String::new(), &Submitted::Applied(id.clone()));
-        Ok(id)
-    }
-
-    /// The fence check, the gate and the plan: the journal entry `op` produces on the files
-    /// loaded in `snap`, with the holds and family it must find unchanged when it is committed.
-    pub(crate) fn prepare(
-        &self,
-        snap: &Snapshot,
-        op: &Op,
-        now: DateTime<Utc>,
-    ) -> Result<Prepared, WriteError> {
-        if !self.fence_at_drain {
-            crate::lists::operation::ensure_idle(self.writer.state_dir())?;
-        }
-        let mut prepared = self.writer.plan(snap, op, now)?;
-        prepared.entry.request = self.request.clone();
-        Ok(prepared)
-    }
-
-    /// Commits a prepared entry under `lock`. The collection fence was checked when it was
-    /// prepared (or is left to the drain, [`Store::set_fence_at_drain`]).
-    fn commit(
-        &self,
-        lock: &Locked<'_>,
-        mut p: Prepared,
-        now: DateTime<Utc>,
-    ) -> Result<String, WriteError> {
-        let ctx = ctx!(self, now);
-        if self.fence_at_drain {
-            p.entry.request = ctx.request.clone();
-            lock.commit_inner(p, None, now)
-        } else {
-            lock.commit(p, &ctx)
-        }
-    }
-
-    /// The one write path of the TUI and `tdo op`: applies `op` when the vdir lock is free
-    /// and queues it when a sync holds it (spec §6.1). `label` names it in messages and
-    /// `tool` (`"tui"` or `"op"`) says who queued it. Never returns [`WriteError::Busy`].
-    pub fn submit(
-        &mut self,
-        view: &Snapshot,
-        op: &Op,
-        label: &str,
-        tool: &str,
-        now: DateTime<Utc>,
-    ) -> Result<Submitted, WriteError> {
-        self.submit_with(view, op, label, tool, now, &mut || {})
-    }
-
-    /// [`Store::submit`], calling `after_push` once the item is queued and before the lock is
-    /// tried again: a test hook for the lost-wakeup window.
-    #[doc(hidden)]
-    pub fn submit_with(
-        &mut self,
-        view: &Snapshot,
-        op: &Op,
-        label: &str,
-        tool: &str,
-        now: DateTime<Utc>,
-        after_push: &mut dyn FnMut(),
-    ) -> Result<Submitted, WriteError> {
-        let prepared = self.prepare(view, op, now)?;
-        if !self.vdir_busy
-            && let Some(lock) = self.writer.lock(TRY_LOCK)?
-        {
-            let drained = lock.drain(&ctx!(self, now))?;
-            keep(&mut self.drained, self.collect_drained, &drained);
-            let id = self.commit(&lock, prepared, now)?;
-            let submitted = Submitted::Applied(id);
-            self.history.record(String::new(), &submitted);
-            return Ok(submitted);
-        }
-        let item = self.writer.enqueue(
-            Kind::Op {
-                op: op.clone(),
-                prepared,
-            },
-            label,
-            tool,
-            self.fence(),
-            &ctx!(self, now),
-        )?;
-        let submitted = self.settle_pushed(item, now, after_push)?;
-        self.history.record(String::new(), &submitted);
-        Ok(submitted)
-    }
-
-    /// For an `item` already pushed: tries the lock once and drains if it is free, so an item
-    /// queued just as a sync released the lock is not stranded. Reports what became of `item`;
-    /// the undo and redo stacks are the caller's business.
-    fn settle_pushed(
-        &mut self,
-        item: Item,
-        now: DateTime<Utc>,
-        after_push: &mut dyn FnMut(),
-    ) -> Result<Submitted, WriteError> {
-        after_push();
-        // The holder may have released the lock after our try and before the push, and its
-        // drain would not have seen the item: look once more.
-        if self.vdir_busy {
-            return Ok(Submitted::Queued(item));
-        }
-        let Some(lock) = self.writer.lock(Duration::ZERO)? else {
-            return Ok(Submitted::Queued(item));
-        };
-        // Anything but a refusal of our own item (stuck journal, I/O) leaves it queued for the
-        // next drain: the caller is told it is pending, never "not saved" and applied later.
-        let Ok(steps) = lock.drain_steps(&ctx!(self, now)) else {
-            return Ok(Submitted::Queued(item));
-        };
-        if self.collect_drained {
-            self.drained.extend(steps.iter().map(|s| s.drained.clone()));
-        }
-        drained_outcome(steps, item)
-    }
-
-    /// Commits the queued items, oldest first, once the lock is free. [`WriteError::Busy`]
-    /// if a sync still holds it. For the TUI when it learns a sync ended.
-    pub fn drain(&mut self, now: DateTime<Utc>) -> Result<Vec<Drained>, WriteError> {
-        let lock = self.writer.lock(TRY_LOCK)?.ok_or(WriteError::Busy)?;
-        let drained = lock.drain(&ctx!(self, now))?;
-        keep(&mut self.drained, self.collect_drained, &drained);
-        Ok(drained)
-    }
-
-    /// Writes one file through the journal (kind "resolve") without the gate: it restores a
-    /// version that 2Do or Twydo already wrote. `path` is vdir-relative (`<collection>/<file>`).
-    /// Refused with [`WriteError::Stale`] unless the file holds `expect` (`None`: must not
-    /// exist). `content` `None` deletes the file. Returns the journal entry id.
-    pub fn restore(
-        &mut self,
-        path: &str,
-        expect: Option<&str>,
-        content: Option<&str>,
-        uids: Vec<String>,
-        now: DateTime<Utc>,
-    ) -> Result<String, WriteError> {
-        writer::check_plain_path(path)?;
-        let lock = lock_for(&self.writer, self.lock_wait)?;
-        lock.restore(path, expect, content, uids, &ctx!(self, now))
-    }
-
-    /// Revert entry `id` with a new entry (writes swapped and reversed, `inverse_of` = `id`).
-    /// Every file must still hold what `id` wrote. Applied now when the lock is free, queued
-    /// while a sync holds it.
-    pub fn undo(&mut self, id: &str, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        let done = self.revert_or_queue(id, "op", "undo", now)?;
-        self.history.forget_applied(id);
-        Ok(done)
-    }
-
-    /// Undo the last step applied, queued or redone this session. Waits at most [`TRY_LOCK`]
-    /// for the lock, never for a sync: a held lock queues the revert.
-    pub fn undo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        self.step_history(true, now)
-    }
-
-    /// Redo the last undo of this session by reverting it.
-    pub fn redo_last(&mut self, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        self.step_history(false, now)
-    }
-
-    /// [`History::undo`] (`undo`) or [`History::redo`], locking lazily for at most [`TRY_LOCK`]
-    /// unless a sync is known to be running.
-    fn step_history(&mut self, undo: bool, now: DateTime<Utc>) -> Result<Submitted, WriteError> {
-        let ctx = ctx!(self, now);
-        let fence = self.fence();
-        let access = if self.vdir_busy {
-            Access::Queue(&self.writer, fence)
-        } else {
-            Access::Try {
-                writer: &self.writer,
-                wait: TRY_LOCK,
-                fence,
-            }
-        };
-        let mut scratch = Vec::new();
-        let sink = if self.collect_drained {
-            &mut self.drained
-        } else {
-            &mut scratch
-        };
-        let moved = if undo {
-            self.history.undo(access, "tui", &ctx, sink)
-        } else {
-            self.history.redo(access, "tui", &ctx, sink)
-        };
-        moved.map(|(done, _)| done)
-    }
-
-    /// Reverts entry `id` now if the lock is free within [`TRY_LOCK`], else queues the revert.
-    /// Its checks run when it commits.
-    fn revert_or_queue(
-        &mut self,
-        id: &str,
-        tool: &str,
-        label: &str,
-        now: DateTime<Utc>,
-    ) -> Result<Submitted, WriteError> {
-        if !self.vdir_busy
-            && let Some(lock) = self.writer.lock(TRY_LOCK)?
-        {
-            let drained = lock.drain(&ctx!(self, now))?;
-            keep(&mut self.drained, self.collect_drained, &drained);
-            return Ok(Submitted::Applied(lock.revert(id, &ctx!(self, now))?));
-        }
-        let kind = self.writer.revert_item(id)?;
-        let item = self
-            .writer
-            .enqueue(kind, label, tool, self.fence(), &ctx!(self, now))?;
-        self.settle_pushed(item, now, &mut || {})
-    }
-
-    /// Mark the unfinished entry `id` Abandoned so writes can continue. Its files are left
-    /// as they are; the entry stays in the journal for manual recovery. Returns `false` when
-    /// the entry was already `Abandoned` (nothing changed), `true` when this call abandoned it.
-    pub fn abandon(&mut self, id: &str) -> Result<bool, WriteError> {
-        lock_for(&self.writer, self.lock_wait)?.abandon(id)
-    }
 }

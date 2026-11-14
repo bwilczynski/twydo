@@ -1,5 +1,4 @@
-//! Request records on journal entries and queue items, `set_vdir_busy` and `take_drained`:
-//! the hooks the daemon needs from the store. Synthetic fixture content.
+//! Request records on journal entries and queue items and `set_vdir_busy`. Synthetic fixture content.
 
 mod common;
 
@@ -19,7 +18,6 @@ use twydo_core::store::{DrainOutcome, Submitted};
 use common::Env;
 
 const A: &str = "0a04f22aeb294b719633c978fe1975e5";
-const E: &str = "44123b09407c4ea1adae8f2ecdb64d49";
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 4, 15, 0, 0).unwrap()
@@ -235,27 +233,6 @@ fn vdir_busy_queues_undo_of_an_applied_step() {
 }
 
 #[test]
-fn take_drained_returns_items_a_submit_drained() {
-    let env = env();
-    let mut store = env.store(matrix());
-    store.set_collect_drained(true);
-    let lock = VdirLock::exclusive(&env.state).unwrap();
-    store
-        .submit(&env.snap(), &title(A, "one"), "one", "op", now())
-        .unwrap();
-    drop(lock);
-    assert!(store.take_drained().is_empty());
-    let got = store
-        .submit(&env.snap(), &title(E, "two"), "two", "op", later())
-        .unwrap();
-    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
-    let drained = store.take_drained();
-    assert_eq!(drained.len(), 1);
-    assert!(matches!(drained[0].outcome, DrainOutcome::Applied(_)));
-    assert!(store.take_drained().is_empty());
-}
-
-#[test]
 fn entries_without_a_request_still_read() {
     let env = env();
     let mut store = env.store(matrix());
@@ -321,22 +298,6 @@ fn redo_after_a_cancelled_step_carries_the_redo_request() {
         journal(&env).get(id).unwrap().unwrap().request,
         Some(req("r3"))
     );
-}
-
-#[test]
-fn a_store_collects_nothing_drained_unless_asked() {
-    let env = env();
-    let mut store = env.store(matrix());
-    let lock = VdirLock::exclusive(&env.state).unwrap();
-    store
-        .submit(&env.snap(), &title(A, "one"), "one", "op", now())
-        .unwrap();
-    drop(lock);
-    let got = store
-        .submit(&env.snap(), &title(E, "two"), "two", "op", later())
-        .unwrap();
-    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
-    assert!(store.take_drained().is_empty());
 }
 
 #[test]
