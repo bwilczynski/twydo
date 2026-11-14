@@ -162,6 +162,28 @@ impl Default for DaemonPrefs {
     }
 }
 
+/// `[notifications]` table: desktop reminders raised by the daemon.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct Notifications {
+    /// Raise reminders at all.
+    pub enabled: bool,
+    /// How far back a reminder that was missed (daemon down, machine asleep) still fires.
+    pub catch_up_hours: u32,
+    /// Command to run instead of the desktop notification; must not be empty when set.
+    pub command: Option<Vec<String>>,
+}
+
+impl Default for Notifications {
+    fn default() -> Self {
+        Notifications {
+            enabled: true,
+            catch_up_hours: 24,
+            command: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -197,6 +219,10 @@ pub struct Config {
     /// travels as `WireSnapshot.unit_warning`.
     #[serde(default, skip_serializing)]
     pub daemon: DaemonPrefs,
+    /// Never on the wire, for the same reason as `daemon`. The daemon reads it from its live
+    /// configuration.
+    #[serde(default, skip_serializing)]
+    pub notifications: Notifications,
 }
 
 fn default_week_start() -> Weekday {
@@ -304,6 +330,7 @@ impl Config {
             state_dir: None,
             sync: None,
             daemon: DaemonPrefs::default(),
+            notifications: Notifications::default(),
         }
     }
 
@@ -356,6 +383,23 @@ impl Config {
                     });
                 }
             }
+        }
+        if cfg.notifications.catch_up_hours == 0 {
+            return Err(ConfigError::Invalid {
+                path: path.to_path_buf(),
+                message: "[notifications] catch_up_hours must be at least 1".to_string(),
+            });
+        }
+        if cfg
+            .notifications
+            .command
+            .as_ref()
+            .is_some_and(|c| c.is_empty())
+        {
+            return Err(ConfigError::Invalid {
+                path: path.to_path_buf(),
+                message: "[notifications] command must not be empty".to_string(),
+            });
         }
         Ok(cfg)
     }

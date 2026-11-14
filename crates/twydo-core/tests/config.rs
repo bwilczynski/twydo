@@ -316,3 +316,46 @@ fn unset_list_python_is_absent_on_the_wire() {
     let v = serde_json::to_value(c.sync.as_ref().unwrap()).unwrap();
     assert_eq!(v["list_python"], "/usr/bin/python");
 }
+
+#[test]
+fn notifications_default() {
+    let n = parse("vdir = \"/x\"").unwrap().notifications;
+    assert!(n.enabled);
+    assert_eq!(n.catch_up_hours, 24);
+    assert_eq!(n.command, None);
+}
+
+#[test]
+fn notifications_table_parses() {
+    let c = parse(
+        "vdir = \"/x\"\n[notifications]\nenabled = false\ncatch_up_hours = 6\ncommand = [\"x\", \"--y\"]\n",
+    )
+    .unwrap();
+    assert!(!c.notifications.enabled);
+    assert_eq!(c.notifications.catch_up_hours, 6);
+    assert_eq!(
+        c.notifications.command,
+        Some(vec!["x".to_string(), "--y".to_string()])
+    );
+}
+
+#[test]
+fn notifications_rejects_bad_values() {
+    for (body, key) in [
+        ("catch_up_hours = 0\n", "catch_up_hours"),
+        ("command = []\n", "command"),
+        ("foo = 1\n", "foo"),
+    ] {
+        let e = parse(&format!("vdir = \"/x\"\n[notifications]\n{body}"))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(key), "{e}");
+    }
+}
+
+#[test]
+fn notifications_not_serialized() {
+    let c = parse("vdir = \"/x\"\n[notifications]\nenabled = false\n").unwrap();
+    let v = serde_json::to_value(&c).unwrap();
+    assert!(v.get("notifications").is_none());
+}

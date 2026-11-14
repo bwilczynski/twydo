@@ -137,6 +137,7 @@ fn config(lists: &[(&str, ListPrefs)]) -> Config {
         state_dir: None,
         sync: None,
         daemon: Default::default(),
+        notifications: Default::default(),
     }
 }
 

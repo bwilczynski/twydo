@@ -364,6 +364,15 @@
             "default": "09:00",
             "type": "string"
           },
+          "notifications": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Notifications"
+              }
+            ],
+            "description": "Never on the wire, for the same reason as `daemon`. The daemon reads it from its live\nconfiguration.",
+            "writeOnly": true
+          },
           "state_dir": {
             "default": null,
             "type": [
@@ -2093,6 +2102,36 @@
           "summary",
           "kind"
         ],
+        "type": "object"
+      },
+      "Notifications": {
+        "additionalProperties": false,
+        "description": "`[notifications]` table: desktop reminders raised by the daemon.",
+        "properties": {
+          "catch_up_hours": {
+            "default": 24,
+            "description": "How far back a reminder that was missed (daemon down, machine asleep) still fires.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "command": {
+            "default": null,
+            "description": "Command to run instead of the desktop notification; must not be empty when set.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "default": true,
+            "description": "Raise reminders at all.",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "Op": {
