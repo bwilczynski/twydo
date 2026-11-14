@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/bwilczynski/twydo/compare/v0.3.3...v0.4.0) - 2026-11-14
+
+### Added
+
+- *(cli)* add tdo notify test and select the platform sink
+- *(core)* plan reminder deliveries and the morning digest
+- *(core)* add the notifications configuration table
+- *(daemon)* deliver reminders from a notifier thread
+
 ## [0.3.3](https://github.com/bwilczynski/twydo/compare/v0.3.2...v0.3.3) - 2026-11-14
 
 ### Added
