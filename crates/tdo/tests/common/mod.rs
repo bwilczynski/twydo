@@ -42,7 +42,9 @@ pub fn tdo_bin(socket: &Path, xdg_config: &Path, xdg_state: &Path) -> Command {
     c.env_remove("TWYDO_SOCKET")
         .env("TWYDO_SOCKET", socket)
         .env("XDG_CONFIG_HOME", xdg_config)
-        .env("XDG_STATE_HOME", xdg_state);
+        .env("XDG_STATE_HOME", xdg_state)
+        // No test sends a real desktop notification: the platform sink stays off.
+        .env("TWYDO_NOTIFIER", "off");
     c
 }
 
@@ -505,6 +507,7 @@ pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
         refusals: Vec::new(),
         config: ConfigStatus::default(),
         drain_error: None,
+        notifier_error: None,
     }
 }
 

@@ -16,6 +16,7 @@ use twydo_core::compat::Matrix;
 use twydo_daemon::client::{Client, ClientError};
 use twydo_daemon::protocol::methods::{DaemonInfo, ShutdownParams};
 use twydo_daemon::protocol::rpc::ErrorKind;
+use twydo_daemon::server::notifier::PlatformSink;
 use twydo_daemon::server::{Daemon, DaemonOptions, StartError};
 use twydo_daemon::{EXIT_ALREADY_RUNNING, paths};
 
@@ -258,6 +259,10 @@ pub fn run(
     let mut opts = DaemonOptions::new(socket.clone());
     opts.matrix = matrix;
     opts.crash_after_commit = crash_after_commit;
+    // The platform notification sink, unless the environment switches it off (tests do).
+    if std::env::var("TWYDO_NOTIFIER").as_deref() != Ok("off") {
+        opts.notify = Some(Arc::new(PlatformSink));
+    }
     let shown = cfg.vdir.display().to_string();
 
     let stop = Arc::new(AtomicBool::new(false));

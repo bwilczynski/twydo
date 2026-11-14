@@ -22,6 +22,12 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+enum NotifyCommand {
+    /// Send a test notification through the daemon, even when reminders are off
+    Test,
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// Open the terminal UI (default)
     Tui,
@@ -54,6 +60,11 @@ enum Command {
         /// Find lists created on another device (local folders only), then sync
         #[arg(long, conflicts_with_all = ["switch", "background"])]
         discover: bool,
+    },
+    /// Check desktop reminders
+    Notify {
+        #[command(subcommand)]
+        command: NotifyCommand,
     },
     /// Show sync status: last success, pending changes, conflicts, failures
     Status,
@@ -172,6 +183,13 @@ fn main() {
                 &force_delete,
                 discover,
             ))
+        }
+        Command::Notify {
+            command: NotifyCommand::Test,
+        } => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::notify::test(&target))
         }
         Command::Status => {
             let target =

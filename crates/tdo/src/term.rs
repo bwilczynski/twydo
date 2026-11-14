@@ -390,6 +390,9 @@ fn notes_of(status: &ClientSync) -> Vec<String> {
     if let Some(e) = &status.drain_error {
         notes.push(format!("queued edits not saved: {e}"));
     }
+    if let Some(e) = &status.notifier_error {
+        notes.push(e.clone());
+    }
     notes
 }
 
@@ -483,7 +486,23 @@ mod tests {
             refusals: Vec::new(),
             config: ConfigStatus::default(),
             drain_error: None,
+            notifier_error: None,
         }
+    }
+
+    #[test]
+    fn the_notes_name_a_failed_reminder_delivery() {
+        let mut s = status();
+        assert!(notes_of(&s).is_empty());
+        s.drain_error = Some("disk full".into());
+        s.notifier_error = Some("cannot deliver reminders: no bus".into());
+        assert_eq!(
+            notes_of(&s),
+            [
+                "queued edits not saved: disk full",
+                "cannot deliver reminders: no bus"
+            ]
+        );
     }
 
     #[test]

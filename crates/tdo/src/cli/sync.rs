@@ -19,11 +19,11 @@ use super::conflicts::kind_words;
 use super::{EXIT_ERROR, op};
 use crate::client::{self, CLI_TIMEOUT, Target};
 
-const CLIENT: &str = "tdo-sync";
+pub(super) const CLIENT: &str = "tdo-sync";
 /// How often the wait for a sync asks `job.get` when no event arrives.
 const JOB_POLL: Duration = Duration::from_secs(5);
 /// How long a call waits for a daemon that is still starting.
-const STARTUP_WAIT: Duration = Duration::from_secs(30);
+pub(super) const STARTUP_WAIT: Duration = Duration::from_secs(30);
 /// How long the wait for a sync keeps trying to reach a daemon that went away.
 const RECONNECT_FOR: Duration = Duration::from_secs(60);
 
@@ -331,6 +331,9 @@ pub fn status(target: &Target) -> i32 {
         eprintln!("warning: {w}");
     }
     warn_stuck_journal(&client);
+    if let Some(e) = &st.notifier_error {
+        println!("{e}");
+    }
     let Some(sync) = &st.sync else {
         return error(&NOT_CONFIGURED);
     };

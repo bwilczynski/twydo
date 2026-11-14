@@ -179,6 +179,7 @@ impl Pair {
             .env("TWYDO_SOCKET", self.sock_dir.path().join("tdo.sock"))
             .env("XDG_RUNTIME_DIR", self.sock_dir.path().join("run"))
             .env("HOME", self.root())
+            .env("TWYDO_NOTIFIER", "off")
             .env_remove(HOOK_LOG_ENV)
             .stdin(Stdio::null());
     }
