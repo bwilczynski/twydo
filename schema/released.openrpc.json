@@ -63,6 +63,12 @@
         ],
         "type": "object"
       },
+      "AlertOffset": {
+        "description": "Whole minutes before the due value, at least one.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
       "BackupPreviewParams": {
         "description": "Params of `lists.backup_preview`.",
         "properties": {
@@ -226,6 +232,26 @@
             },
             "required": [
               "Repeat"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "Set, change or (`None`) remove the task's custom alert, in minutes before the due\nvalue. Needs a due date; tasks with alerts Twydo can't edit are refused.",
+            "properties": {
+              "Alert": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AlertOffset"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "Alert"
             ],
             "type": "object"
           },
@@ -626,6 +652,39 @@
           "rev"
         ],
         "type": "object"
+      },
+      "CustomAlert": {
+        "description": "What Twydo can edit of a task's alerts.",
+        "oneOf": [
+          {
+            "const": "none",
+            "description": "No alert.",
+            "type": "string"
+          },
+          {
+            "const": "at-due",
+            "description": "Only 2Do's automatic at-due-time alert: shown as `at due`, removable, not re-added.",
+            "type": "string"
+          },
+          {
+            "additionalProperties": false,
+            "description": "One 2Do alert before the due value.",
+            "properties": {
+              "one": {
+                "$ref": "#/components/schemas/AlertOffset"
+              }
+            },
+            "required": [
+              "one"
+            ],
+            "type": "object"
+          },
+          {
+            "const": "unsupported",
+            "description": "Absolute, after-due, end-related, several or non-2Do alerts: kept, never edited.",
+            "type": "string"
+          }
+        ]
       },
       "DaemonInfo": {
         "properties": {
@@ -3776,6 +3835,15 @@
                 "type": "null"
               }
             ]
+          },
+          "custom_alert": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomAlert"
+              }
+            ],
+            "default": "none",
+            "description": "The single alert Twydo can edit ([`super::alert`])."
           },
           "description": {
             "type": [
