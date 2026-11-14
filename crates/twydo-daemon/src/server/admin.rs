@@ -14,7 +14,6 @@ use chrono::Utc;
 use serde_json::Value;
 use twydo_core::conflicts::{ConflictStore, ResolvedBy};
 use twydo_core::retired;
-use twydo_core::store::Store;
 use twydo_core::store::existing_vdir_state;
 use twydo_core::store::journal::{Journal, RequestRef, try_recover};
 use twydo_core::sync::resolve::{Keep, Resolution, ResolveError, resolve_with};
@@ -23,7 +22,7 @@ use twydo_core::sync::switch;
 use super::Shared;
 use super::dispatch::ConnState;
 use super::replay::Begin;
-use super::writes::{refusal_of, require_request_id};
+use super::writes::{refusal_of, require_request_id, with_vdir};
 use crate::protocol::admin::{
     AbandonResult, ConflictDetail, ConflictList, ConflictView, ConflictsResolveParams,
     ConflictsShowParams, InputField, InputParseParams, InputParsed, JournalAbandonParams,
@@ -257,30 +256,17 @@ pub fn journal_list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
 /// resumed and keeps the stuck ids for the status.
 pub fn journal_recover(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     let lane = shared.lane.write_waiting();
-    let report = {
-        let Some(_gate) = shared.commit_gate() else {
-            return Err(RpcError::refused(
+    // Not a blocking lock: a reload or an outside `tdo` may hold it briefly, and a vdir held
+    // for good must not keep the commit gate (and so teardown) waiting.
+    let report = with_vdir(shared, &lane, |writer| {
+        match writer.lock(RECOVER_WAIT).map_err(internal)? {
+            Some(locked) => locked.recover().map_err(internal),
+            None => Err(RpcError::refused(
                 ErrorKind::Unavailable,
-                "the daemon is shutting down",
-            ));
-        };
-        // Not `Store::open_with`: it reports a busy vdir as an empty report, which would
-        // wipe the stuck list. A reload or an outside `tdo` may hold the lock briefly.
-        let state = shared.state_dir.as_path();
-        let deadline = std::time::Instant::now() + RECOVER_WAIT;
-        loop {
-            match try_recover(&shared.cfg.vdir, state).map_err(internal)? {
-                Some(report) => break report,
-                None if std::time::Instant::now() >= deadline => {
-                    return Err(RpcError::refused(
-                        ErrorKind::Unavailable,
-                        "the vdir is busy; try again",
-                    ));
-                }
-                None => std::thread::sleep(std::time::Duration::from_millis(25)),
-            }
+                "the vdir is busy; try again",
+            )),
         }
-    };
+    })??;
     shared
         .publisher
         .set_stuck(report.stuck.iter().map(|(id, _)| id.clone()).collect());
@@ -312,17 +298,12 @@ pub fn journal_abandon(shared: &Arc<Shared>, p: JournalAbandonParams) -> Result<
 
 fn run_abandon(shared: &Arc<Shared>, p: &JournalAbandonParams) -> Result<AbandonResult, RpcError> {
     let lane = shared.lane.write_waiting();
-    let abandoned = {
-        let Some(_gate) = shared.commit_gate() else {
-            return Err(RpcError::refused(
-                ErrorKind::Unavailable,
-                "the daemon is shutting down",
-            ));
-        };
-        let mut store = Store::without_recovery(&shared.cfg, shared.matrix.clone())
-            .map_err(|e| refusal_of(e, shared))?;
-        store.abandon(&p.op_id).map_err(|e| refusal_of(e, shared))?
-    };
+    let abandoned = with_vdir(shared, &lane, |writer| {
+        writer
+            .lock_waiting()
+            .and_then(|locked| locked.abandon(&p.op_id))
+            .map_err(|e| refusal_of(e, shared))
+    })??;
     shared.publisher.unstick(&p.op_id);
     shared.publisher.refresh_status();
     drop(lane);

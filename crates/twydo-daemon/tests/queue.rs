@@ -151,6 +151,24 @@ fn queued_row_is_pending_while_the_vdir_lock_is_held() {
 }
 
 #[test]
+fn an_edit_saved_while_an_outside_process_holds_the_vdir_lock_is_queued_then_applied() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let lock = VdirLock::exclusive(&state_dir(&fx)).unwrap();
+    let t = Instant::now();
+    let r = submit(&c, edit_title("u1", "Renamed")).unwrap();
+    assert_eq!(r.outcome, WriteOutcome::Queued);
+    assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+    drop(lock);
+    // No further request: the daemon drains the item once the lock is free.
+    let (_, state) = op_finished(&c, &r.op_id);
+    assert!(matches!(state, OpState::Applied { .. }), "{state:?}");
+    assert!(fx.read("inbox/u1.ics").contains("SUMMARY:Renamed"));
+}
+
+#[test]
 fn overlay_is_not_blocked_by_a_waiting_watcher_reload() {
     let fx = fx();
     let td = TestDaemon::start(&fx);
