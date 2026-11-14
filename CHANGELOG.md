@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3](https://github.com/bwilczynski/twydo/compare/v0.3.2...v0.3.3) - 2026-11-14
+
+### Fixed
+
+- *(tui)* open the sidebar entry under the cursor on j/k
+- *(daemon)* check the collection fence before planning a write
+- *(daemon)* gate edits drained during a sync with the daemon's matrix
+- *(daemon)* publish drained changes when the write that drained them fails
+
 ## [0.3.2](https://github.com/bwilczynski/twydo/compare/v0.3.1...v0.3.2) - 2026-11-13
 
 ### Added
