@@ -160,3 +160,67 @@ evidence), `docs/reference/evidence.md` (operation table row; record the round a
 
 Exact type and module names, the parser's location (beside the date/repeat parsers), card layout
 details, the precise refusal wording, and the detailed device checklist, all within the above.
+
+## Capture results
+
+Phase A ran on 2026-11-14 on the production account's synthetic "Twydo test" list (user direction:
+the same setup as earlier rounds), 2Do 3.8 on the iPhone. Evidence:
+`fixtures/set-alert/phone-encodings` (states `phone-a-before`, `phone-a-batch1`, `phone-a-batch2`,
+`phone-a-batch3-open`, `phone-a-batch3`).
+
+**Q1 encoding.** Every alert 2Do wrote is a single VALARM of this shape (A1, 15 min):
+
+```
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:AUDIO
+DESCRIPTION:A1 alert
+X-2DOAPP-SOUND;SHARE-SCOPE=GLOBAL:Basso
+X-2DOAPP-ISAUTO;SHARE-SCOPE=GLOBAL:1
+X-2DOAPP-RELDUETIME;SHARE-SCOPE=GLOBAL:1
+END:VALARM
+```
+
+`TRIGGER` is a negative duration with no `RELATED` (`-PT15M`, `-PT4H`, `-P1D`). Nothing outside the
+VALARM changes except `DTSTAMP`/`LAST-MODIFIED`; `<2Do Meta>` is untouched.
+`X-2DOAPP-ISAUTO:1` stays when the user edits the default alert in place (A1, A2, A7, A8) and is
+absent on an alert added as new (A3; A4 had no default alert). So `ISAUTO:1` marks an alert that
+started as the default, not one at the due time. `X-2DOAPP-RELDUETIME` was `0` only on A2, where the
+user had to pick an exact time (06:00) because 2Do has no 4 h preset; the presets gave `1`.
+
+**Q2.** A custom alert takes the automatic alert's place; a task never had both.
+
+**Q3.** A date-only task (A4) takes `-P1D` with no time-of-day option; the phone shows the exact
+time. Twydo counts it from local midnight of the due day, which agrees.
+
+**Q4.** Changing the offset rewrites only `TRIGGER` (A1 `-PT15M` → `-PT30M`). Removing the alert
+deletes the VALARM, and 2Do does not restore the automatic one (A2 has no VALARM).
+
+**Q5.** Completing monthly A7 kept the open task's VALARM unchanged with its due moved to
+2026-12-16 09:00, and the completed copy carries the same VALARM.
+
+**Q7.** With a start date (A8: `StartDate` 2026-11-18 in the JSON), `DTSTART` still mirrors `DUE`
+and the trigger counts from it, so the alert is 15 min before the due time. Removing the due date
+(A3) drops the VALARM together with `DUE`, `DTSTART` and `duetime`.
+
+### Rules for the build
+
+- **Write.** Setting an alert on a task that has a VALARM rewrites that VALARM's `TRIGGER` only
+  (2Do's in-place edit, as for A1/A7). On a task with no VALARM, Twydo adds the A3 shape: `TRIGGER`,
+  `ACTION:AUDIO`, `DESCRIPTION:<summary>`, `X-2DOAPP-SOUND;SHARE-SCOPE=GLOBAL:Basso`,
+  `X-2DOAPP-RELDUETIME;SHARE-SCOPE=GLOBAL:1`, without `ISAUTO`. Removing deletes the VALARM.
+- **Recognize.** The automatic alert is `ISAUTO:1` with a zero offset. A custom alert is a single
+  2Do-shaped VALARM (`ACTION:AUDIO`, `X-2DOAPP-SOUND`) with a negative relative trigger and no
+  `RELATED=END`, whatever its `ISAUTO`/`RELDUETIME`. Anything else is unsupported.
+- **Existing code that the capture shows wrong** (fixed on this branch):
+  - `edit::is_auto_alarm` and the gate's `captured_automatic_alarm` read `ISAUTO:1` alone, so a
+    due-time removal would delete an edited default alert such as A1's 30 min. They must also
+    require a zero offset.
+  - The notifier and `format::describe_alarm` count a relative alert from the JSON start date when
+    the task has one; 2Do counts it from `DTSTART`, which mirrors `DUE`. For a task with 2Do JSON
+    metadata, a relative alert counts from the due value. Without this, A8's reminder fires on
+    17 Nov at 23:45 instead of 20 Nov at 09:45.
+  - Removing the due date keeps a custom alert today; 2Do drops it. `Change::Due(None)` drops a
+    custom alert too.
+- **Admitted shapes.** Timed and date-only dues, with or without a start date, repeating or not.
+- **Q6** is open until phase B.

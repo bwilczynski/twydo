@@ -6,7 +6,7 @@ import tomllib
 OPERATIONS = frozenset((
     "create", "edit-title", "edit-notes", "set-due", "set-start", "set-repeat",
     "convert", "complete", "reopen", "move", "delete", "reorder", "insert",
-    "reparent", "list-create", "list-metadata", "list-delete",
+    "reparent", "list-create", "list-metadata", "list-delete", "set-alert",
 ))
 ORIGINS = {"device", "synthetic", "protocol"}
 CASE_FIELDS = {"claim", "origin", "observed", "tests", "provenance", "environment", "states", "supports"}
