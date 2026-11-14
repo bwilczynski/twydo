@@ -450,6 +450,8 @@ mod verified_recurrence_tui {
             before
         );
         a.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        a.handle_key(key('y')); // discard the refused edit
+        assert!(a.form.is_none());
         let r = card_repeat(&mut a, "none");
         run(&e, &mut a, &w, r);
         let t = &a.snapshot.tasks[a.snapshot.find(FC).unwrap()];

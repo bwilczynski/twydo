@@ -651,3 +651,110 @@ fn untyped_parent_set_to_task_is_no_change() {
     f.key(key('l'));
     assert_eq!(changes(&f), Ok(vec![Change::Kind(TaskKind::Checklist)]));
 }
+
+fn esc() -> KeyEvent {
+    code(KeyCode::Esc)
+}
+
+#[test]
+fn clean_card_cancels_on_esc() {
+    let mut f = form("Pay water bill");
+    assert_eq!(f.key(esc()), FormAction::Cancel);
+    assert!(!f.discarding);
+}
+
+#[test]
+fn edited_back_card_is_clean() {
+    let mut f = form("Pay water bill");
+    type_str(&mut f, "x");
+    f.key(code(KeyCode::Backspace));
+    assert!(!f.is_dirty());
+    assert_eq!(f.key(esc()), FormAction::Cancel);
+}
+
+#[test]
+fn dirty_card_asks_before_discarding() {
+    let mut f = form("Pay water bill");
+    type_str(&mut f, "!");
+    assert!(f.is_dirty());
+    assert_eq!(f.key(esc()), FormAction::None);
+    assert!(f.discarding);
+    assert_eq!(f.key(key('y')), FormAction::Cancel);
+}
+
+#[test]
+fn keep_editing_keeps_fields() {
+    let mut f = form("Pay water bill");
+    type_str(&mut f, "!");
+    for answer in [key('n'), esc()] {
+        assert_eq!(f.key(esc()), FormAction::None);
+        assert!(f.discarding);
+        assert_eq!(f.key(answer), FormAction::None);
+        assert!(!f.discarding);
+        assert!(f.title.ends_with('!'), "{}", f.title);
+        assert_eq!(f.focus, Field::Title);
+    }
+}
+
+#[test]
+fn discard_question_ignores_other_keys_and_paste() {
+    let mut f = form("Pay water bill");
+    type_str(&mut f, "!");
+    f.key(esc());
+    let title = f.title.clone();
+    assert_eq!(f.key(key('z')), FormAction::None);
+    assert_eq!(f.key(ctrl('s')), FormAction::None);
+    f.paste("abc");
+    assert!(f.discarding);
+    assert_eq!(f.title, title);
+}
+
+#[test]
+fn picked_list_makes_card_dirty() {
+    let mut f = form("Pay water bill");
+    f.set_list("other".into());
+    assert!(f.is_dirty());
+}
+
+#[test]
+fn new_task_card_dirty_while_titled() {
+    let target = || NewTarget {
+        collection: "personal".into(),
+        parent: None,
+        parent_kind: None,
+        due_today: false,
+    };
+    assert!(EditForm::new_task(target(), "Socks".into(), NY).is_dirty());
+    assert!(!EditForm::new_task(target(), String::new(), NY).is_dirty());
+}
+
+#[test]
+fn untitled_new_task_card_with_fields_is_dirty() {
+    let target = NewTarget {
+        collection: "personal".into(),
+        parent: None,
+        parent_kind: None,
+        due_today: true,
+    };
+    let mut f = EditForm::new_task(target, String::new(), NY);
+    assert!(!f.is_dirty(), "defaults such as Due today are not changes");
+    f.set_notes("x".into());
+    assert!(f.is_dirty());
+    assert_eq!(f.key(esc()), FormAction::None);
+    assert!(f.discarding);
+}
+
+#[test]
+fn discard_answer_accepts_shift_but_not_alt() {
+    let mut f = form("Pay water bill");
+    type_str(&mut f, "!");
+    f.key(esc());
+    let alt = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT);
+    let shift = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT);
+    assert_eq!(f.key(alt('y')), FormAction::None);
+    assert!(f.discarding, "Alt-y is not an answer");
+    assert_eq!(f.key(shift('N')), FormAction::None);
+    assert!(!f.discarding, "Shift-N keeps editing");
+    f.key(esc());
+    assert_eq!(f.key(shift('Y')), FormAction::Cancel);
+}

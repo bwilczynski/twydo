@@ -1034,6 +1034,11 @@ fn esc_in_card_writes_nothing() {
     a.handle_key(code(KeyCode::Tab));
     a.handle_key(ctrl('u')); // Due cleared
     assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(
+        a.form.as_ref().unwrap().discarding,
+        "asks before discarding"
+    );
+    assert_eq!(a.handle_key(key('y')), Outcome::Continue);
     assert!(a.form.is_none() && a.picker.is_none());
     assert_eq!(a.mode, Mode::Normal);
     assert!(a.message.is_none());
@@ -1209,9 +1214,26 @@ fn esc_cancels_without_write() {
     a.handle_key(key('i'));
     a.handle_key(key('!'));
     assert_eq!(a.handle_key(code(KeyCode::Esc)), Outcome::Continue);
+    assert!(
+        a.form.as_ref().unwrap().discarding,
+        "asks before discarding"
+    );
+    assert_eq!(a.handle_key(key('y')), Outcome::Continue);
     assert!(a.form.is_none());
     assert_eq!(a.mode, Mode::Normal);
     assert!(a.message.is_none());
+}
+
+#[test]
+fn esc_keeps_dirty_card_on_n() {
+    let mut a = app();
+    a.handle_key(key('i'));
+    a.handle_key(key('!'));
+    a.handle_key(code(KeyCode::Esc));
+    assert_eq!(a.handle_key(key('n')), Outcome::Continue);
+    let f = a.form.as_ref().expect("card stays open");
+    assert!(!f.discarding && f.title.ends_with('!'));
+    assert_eq!(a.mode, Mode::Insert);
 }
 
 #[test]
