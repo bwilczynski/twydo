@@ -168,6 +168,52 @@ fn an_edit_saved_while_an_outside_process_holds_the_vdir_lock_is_queued_then_app
     assert!(fx.read("inbox/u1.ics").contains("SUMMARY:Renamed"));
 }
 
+/// A write that drains a queued item and then fails itself still publishes what the drain
+/// applied before that item's `op.finished`.
+#[test]
+fn a_failed_write_publishes_what_it_drained_before_op_finished() {
+    let fx = fx();
+    let td = TestDaemon::start(&fx);
+    let c = td.client();
+    let _: serde_json::Value = c.call("events.subscribe", empty()).unwrap();
+    let based = common::based(&c);
+    let queued = common::queue_op(
+        &fx.config(),
+        &fx.snapshot(),
+        &edit_title("u1", "Queued"),
+        "queued",
+        None,
+        chrono::Utc::now(),
+    );
+    // Planned against the snapshot from before the queued edit: the drain applies that edit,
+    // then this commit finds the task changed.
+    let err =
+        common::submit_at(&c, based, &c.next_request_id(), edit_title("u1", "Late")).unwrap_err();
+    assert!(fx.read("inbox/u1.ics").contains("SUMMARY:Queued"), "{err}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut published = false;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match c.notifications().recv_timeout(left) {
+            Ok(Notification::Event(ev)) => match ev.event {
+                Event::DataChanged { .. } => published = true,
+                Event::OpFinished { op_id, state, .. } if op_id == queued.id => {
+                    assert!(matches!(state, OpState::Applied { .. }), "{state:?}");
+                    break;
+                }
+                _ => {}
+            },
+            Ok(_) => {}
+            Err(e) => panic!("no op.finished for the drained item: {e}"),
+        }
+    }
+    assert!(
+        published,
+        "op.finished came before the drained change was published"
+    );
+    assert_eq!(task(&snapshot(&c), "u1").task.summary, "Queued");
+}
+
 #[test]
 fn overlay_is_not_blocked_by_a_waiting_watcher_reload() {
     let fx = fx();

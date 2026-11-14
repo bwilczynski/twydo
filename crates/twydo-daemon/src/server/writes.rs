@@ -419,6 +419,18 @@ fn finish_drained(shared: &Shared, drained: Vec<Drained>) {
     }
 }
 
+/// Ends a write that failed after it drained queued items on its way: what the drain applied is
+/// on disk, so it is published before each item's `op.finished`, as after any other drain.
+fn finish_drained_after_failure(shared: &Shared, drained: Vec<Drained>) {
+    if drained
+        .iter()
+        .any(|d| matches!(d.outcome, DrainOutcome::Applied(_)))
+    {
+        publish_applied(shared, None, &drained);
+    }
+    finish_drained(shared, drained);
+}
+
 /// Publishes what a commit changed (`entry`, if any, and any entries drained before it) and
 /// refreshes the status. Returns the revision after the reload. Never fails: the commit is
 /// done, so a failed reload only delays the publish until the next one.
@@ -599,7 +611,7 @@ fn run_submit(
     let submitted = match outcome {
         Ok(x) => x,
         Err(e) => {
-            finish_drained(shared, drained);
+            finish_drained_after_failure(shared, drained);
             return Err(refusal(e, &view.snap, &shared.publisher.current().1.snap));
         }
     };
@@ -715,7 +727,7 @@ fn run_undo(
     let (submitted, moved) = match r {
         Ok(x) => x,
         Err(e) => {
-            finish_drained(shared, drained);
+            finish_drained_after_failure(shared, drained);
             let cur = shared.publisher.current().1;
             return Err(refusal(e, &cur.snap, &cur.snap));
         }
@@ -816,7 +828,7 @@ fn run_revert(shared: &Arc<Shared>, p: &JournalRevertParams) -> Result<WriteResu
     let submitted = match outcome {
         Ok(x) => x,
         Err(e) => {
-            finish_drained(shared, drained);
+            finish_drained_after_failure(shared, drained);
             return Err(refusal_of(e, shared));
         }
     };
