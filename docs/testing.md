@@ -27,6 +27,8 @@ do not repeat the lower layer's entire fixture matrix through every client.
 | `twydo-core/tests/gate` | Whether a specific operation is admitted, and why |
 | `twydo-core/tests/plan`, `writer`, `history`, `store*`, `journal`, `queue`, `lists_*` | Atomic application, stale dependencies, durable queue, inverse operations and crash recovery |
 | `twydo-core/tests/describe` | Pure operation message wording and affected-child counts |
+| `twydo-core/tests/remind*` | Reminder eligibility, trigger instants, the planner, the morning digest and notification text (pure; no clock or sink) |
+| `twydo-daemon/tests/notifier` | The notifier thread with a fake clock and a recording sink: delivery, retry, restart, catch-up, clock moves, reload, configured command |
 | `twydo-daemon/tests` | Sessions, request replay, revisions, events, jobs, scheduling, RPC reports and service ownership of the core |
 | `tdo/tests/app_keys`, `form`, `ui_render` | Emitted requests, input retention, selection, key handling and rendered output |
 | `tdo/tests/write_adapter`, `link`, `tui` | Client request parameters, daemon answers, reconnects and TUI event ordering |

@@ -76,6 +76,20 @@ reconnects when it is back and says `daemon restarted`.
   (`tdo daemon install`) it asks the service manager (`systemctl --user start`, or `launchctl
   bootstrap` and `kickstart`), and falls back to a detached start if that fails. Without a unit
   it starts a detached daemon. See [install.md](install.md#start-it-at-login).
+- **Reminders.** A notifier thread raises the desktop reminders ([tasks.md](tasks.md#desktop-reminders)).
+  The pure planner `remind::plan` in `twydo-core` takes the published snapshot (queued edits
+  laid over the files), the keys already sent and the time, and returns the deliveries that are
+  due and the next instant to wake at; it reads no clock, file or process. The thread, in
+  `twydo-daemon/src/server/notifier/`, waits at most 5 seconds (so it notices a wake from sleep),
+  is woken by a published snapshot or a configuration change, runs the sink (`notify-send`,
+  `terminal-notifier`, `osascript` or the configured command, one process each, no shell, 10
+  second limit) and then records the key. The record is `notifier.json` in the vdir's state
+  directory, rewritten atomically after each success. After a start or a wake it holds all
+  deliveries until a sync has finished (the end of every sync notifies it) or two minutes have
+  passed, when a sync will come. A failure is retried per reminder after 5 seconds, doubling to 5
+  minutes, and is reported as `status.notifier_error`; a panic in a pass is reported and retried
+  the same way. The thread never writes a
+  task file, and neither it nor the status names a task title.
 - **Outside changes.** The daemon's file watcher notices files changed behind its back (a
   vdirsyncer run, a hand edit), so a change shows up after a short delay.
 - **Upgrades.** A client that is newer than the running daemon asks it to stop once it is

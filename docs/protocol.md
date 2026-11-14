@@ -75,6 +75,12 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   `conflicts.list` and `conflicts.show {id}` return conflicts and the detail of one (fields and
   file paths of the local, remote and current copies). `status.get` also carries the journal
   entries still unfinished.
+- `notify.test` (no parameters) sends one fixed notification through the sink the daemon uses
+  (the configured `[notifications] command`, else the platform command), even when reminders are
+  disabled, and records nothing. It returns `{}`, or an `invalid` refusal whose message is the
+  reason (the daemon has no sink, the command failed or timed out). `status.get` carries
+  `notifier_error` while a reminder cannot be delivered or its record cannot be saved: a text
+  to show as is, never naming a task, and absent when all is well.
 - Syncs and list operations are jobs: they answer at once with a `job_id` and end with a
   `job.finished` event; `job.get` returns the outcome later. There is no `job.progress` yet.
   `sync.stop` asks the running sync to stop; its result then reports the outcome `stopped`.

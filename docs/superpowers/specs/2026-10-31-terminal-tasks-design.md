@@ -96,7 +96,8 @@ be used occasionally against the same data.
   Serialize runner invocations and coordinate them with local edits, undo, and recovery.
   Show last successful sync, pending changes, conflicts, and failures; retry transient failures
   with backoff. A sync failure must not disable reminders from the local data.
-- **Notifications:** a separate small command (`tdo notify`) run every minute by a **systemd user
+- **Notifications:** *(amended by the [notifier design](2026-11-14-notifier-design.md): a thread
+  in the daemon, not a timer.)* A separate small command (`tdo notify`) run every minute by a **systemd user
   timer** (Linux) or a **launchd agent** (macOS). It reads the vdir and calls `notify-send` (Linux,
   shows in Omarchy's mako) or `osascript` (macOS). It records what it has sent in a small state file
   to deduplicate successful deliveries across ordinary restarts. Crash recovery favours a possible
@@ -271,6 +272,9 @@ documented, inspectable auxiliary formats and do not become an alternative task 
   a shared representation. V1 does not delete entire collections; individual task deletion supports undo.
 
 ### Notification delivery contract
+
+*(Amended by the [notifier design](2026-11-14-notifier-design.md): identity is the task UID and
+the trigger's instant, and catch-up is one rule.)*
 
 - Identity is `(task UID, occurrence identity, trigger identity)`, not UID alone. Derive a stable
   occurrence anchor from verified fields so later occurrences of the same UID can notify.

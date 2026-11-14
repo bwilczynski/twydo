@@ -34,8 +34,9 @@ use its Unix socket. Tests must isolate both `XDG_CONFIG_HOME` and `TWYDO_SOCKET
 an isolated test daemon with `tdo daemon stop`. A custom write-policy matrix is supplied to
 `tdo daemon --matrix`; per-report overrides do not alter the daemon's write policy.
 
-Next: write-queue plan 3 (rebasing inside the daemon, re-planning with `store::plan`), then
-Plan 2 (notifier).
+The notifier (Plan 2, [design](docs/superpowers/specs/2026-11-14-notifier-design.md)) is
+implemented: a daemon thread over the pure planner `remind::plan`. Next: write-queue plan 3
+(rebasing inside the daemon, re-planning with `store::plan`).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.
 
