@@ -272,6 +272,22 @@ fn removed_sync_keys_are_named_errors() {
 }
 
 #[test]
+fn a_leftover_list_python_fails_with_the_init_hint() {
+    let e = parse(&sync_toml("list_python = \"python3\"\n")).unwrap_err();
+    assert!(
+        matches!(e, twydo_core::config::ConfigError::Invalid { .. }),
+        "{e:?}"
+    );
+    let text = e.to_string();
+    assert!(
+        text.ends_with(
+            "[sync] list_python is no longer supported: the list helper is gone and nothing replaces it; run `tdo config init`"
+        ),
+        "{text}"
+    );
+}
+
+#[test]
 fn missing_connection_keys_are_named_errors() {
     let msg = |toml: &str| parse(toml).unwrap_err().to_string();
     let required = |key: &str| format!("[sync] {key} is required; run `tdo config init`");
