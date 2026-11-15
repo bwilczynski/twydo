@@ -1,0 +1,15 @@
+[package]
+name = "twydo-testdav"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Fake CalDAV server and fake vdirsyncer for Twydo tests"
+publish = false
+
+[dependencies]
+serde_json = "1.0.154"
+
+[dev-dependencies]
+tempfile = "3.27.0"
