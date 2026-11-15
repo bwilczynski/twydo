@@ -2016,6 +2016,7 @@ dependencies = [
  "toml_edit",
  "twydo-core",
  "twydo-daemon",
+ "twydo-testdav",
  "unicode-width",
 ]
 

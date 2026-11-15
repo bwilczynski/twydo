@@ -281,9 +281,9 @@ fn custom_color_is_validated_and_a_refused_save_retains_input() {
     let form = app.list_form.as_ref().unwrap();
     assert_eq!(form.name, "Synthetic new");
     assert_eq!(form.color, "#Ab12Cd");
-    // List creation is verified now; this save is refused later, by the collection
-    // helper, because the fixture has no usable helper or vdirsyncer pair. The reason
-    // depends on the machine's Python, so only the refusal itself is asserted.
+    // List creation is verified now; this save is refused later, by the list operation,
+    // because the fixture has no usable CalDAV server or vdirsyncer pair. Only the refusal
+    // itself is asserted, not its wording.
     assert!(form.error.as_ref().is_some_and(|e| !e.is_empty()));
 }
 
@@ -323,8 +323,7 @@ fn external_archive_reload_preserves_card_input_and_moves_out_of_archived_view()
 #[test]
 fn manager_recovers_pending_create_even_before_a_local_list_exists() {
     let (_d, cfg, _path, mut app) = setup();
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "create".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "create").unwrap();
     request.collection = Some("pending-id".into());
     request.name = Some("Pending synthetic".into());
     request.color = Some("#3289D2".into());
@@ -591,8 +590,7 @@ fn unrelated_export_or_list_completion_cannot_unlock_a_busy_card() {
 #[test]
 fn a_list_save_through_the_daemon_reports_its_pending_operation() {
     let (_d, cfg, path, mut app) = setup();
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "create".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "create").unwrap();
     request.collection = Some("pending-id".into());
     request.name = Some("Pending synthetic".into());
     request.color = Some("#3289D2".into());

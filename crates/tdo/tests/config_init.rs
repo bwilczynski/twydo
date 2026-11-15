@@ -22,14 +22,13 @@ impl Env {
         self.dir.path().join("config/twydo/config.toml")
     }
 
-    /// A directory of fake `vdirsyncer`, `tdo` and `python3` executables, so the check that
+    /// A directory of fake `vdirsyncer` and `tdo` executables, so the check that
     /// `init` ends with does not depend on what the host has installed.
     fn fake_bin(&self) -> std::path::PathBuf {
         let bin = self.dir.path().join("fakebin");
         fs::create_dir_all(&bin).unwrap();
         for (name, body) in [
             ("vdirsyncer", "echo 'vdirsyncer, version 0.21.0'"),
-            ("python3", "echo 0.21.0"),
             ("tdo", ""),
         ] {
             let p = bin.join(name);

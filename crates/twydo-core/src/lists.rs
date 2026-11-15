@@ -7,7 +7,6 @@ pub mod call;
 pub mod dav;
 #[doc(hidden)]
 pub mod engine;
-pub mod helper;
 pub mod operation;
 pub mod prefs;
 mod remote;

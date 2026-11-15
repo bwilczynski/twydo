@@ -8,9 +8,9 @@ use crate::compat::{ContractId, Matrix};
 use crate::config::WriteMode;
 use crate::store::bind_vdir_state;
 
-use super::helper::{self, HelperRequest};
 use super::operation::{self, ListOperation, Phase};
 use super::{ListError, ListService, ListState, plain_id};
+use super::{call::RemoteRequest, engine};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListRequest {
@@ -177,15 +177,14 @@ impl ListService {
                     Some(json!({"name":raw_name, "color":expected.color.map(color_hex)}));
             }
         }
-        let mut helper = HelperRequest::probe(&self.config)?;
-        helper.action = action;
-        helper.collection = collection;
-        helper.name = new_name;
-        helper.color = new_color;
-        helper.expected = expected_json;
-        let record = operation::prepare(&self.config, helper, Utc::now())?;
+        let mut remote = RemoteRequest::new(&self.config, &action)?;
+        remote.collection = collection;
+        remote.name = new_name;
+        remote.color = new_color;
+        remote.expected = expected_json;
+        let record = operation::prepare(&self.config, remote, Utc::now())?;
         let id = record.id.clone();
-        if let Err(error) = helper::invoke(&self.config, &record.request) {
+        if let Err(error) = engine::invoke(&self.config, &record.request) {
             if operation::cancel_unstarted(&self.config, &id).is_ok() {
                 return Err(error);
             }
@@ -211,7 +210,7 @@ impl ListService {
             operation::finalize_metadata(&self.config, &mut record)?;
             let mut request = operation::recovery_request(&self.config, &record.request)?;
             request.mode = "refresh".into();
-            helper::invoke(&self.config, &request).map_err(|e| {
+            engine::invoke(&self.config, &request).map_err(|e| {
                 ListError::Refused(format!("list operation {id} needs reconciliation: {e}"))
             })?;
             record = operation::read(&state, id)?;
@@ -286,7 +285,7 @@ impl ListService {
         let mut request = operation::recovery_request(&self.config, &record.request)?;
         request.mode = "reconcile".into();
         request.keep_server = keep_server;
-        helper::invoke(&self.config, &request).map_err(|e| {
+        engine::invoke(&self.config, &request).map_err(|e| {
             ListError::Refused(format!("list operation {id} remains unresolved: {e}"))
         })?;
         self.finalize_remote(id)

@@ -751,25 +751,30 @@ mod during_a_job {
         assert_eq!(fx.read("c1/u1.ics"), task);
     }
 
-    /// Codex review (was task 6's give-up): a list job cannot be stopped, and its helper
-    /// writes the server and the vdir. Shutdown keeps the vdir until the job ends, however
-    /// long past the grace and the stop wait, then completes.
+    /// Codex review (was task 6's give-up): a list job cannot be stopped, and it writes the
+    /// server and the vdir. Shutdown keeps the vdir until the job ends, however long past the
+    /// grace and the stop wait, then completes.
     #[test]
     fn shutdown_waits_for_a_long_list_job() {
         let fx = fx();
-        let helper_dir = fx.state().parent().unwrap().join("helper");
-        std::fs::create_dir_all(&helper_dir).unwrap();
-        let done = helper_dir.join("done");
+        let server_dir = fx.state().parent().unwrap().join("dav");
+        std::fs::create_dir_all(&server_dir).unwrap();
+        let server = twydo_testdav::FakeDav::start(&server_dir);
+        twydo_testdav::add_collection(&server_dir, "c1", "One", "#3289d2");
+        twydo_testdav::flag(&server_dir, "hang_after_create_once");
+        twydo_testdav::flag_value(&server_dir, "hang_seconds", "1.5");
         let mut cfg = fx.with_sync("exit 0");
-        cfg.sync.as_mut().unwrap().list_python = Some(
-            fake_vdirsyncer(
-                &helper_dir,
-                &format!("sleep 1.5\ntouch '{}'", done.display()),
-            )
-            .to_str()
-            .unwrap()
-            .to_string(),
-        );
+        cfg.writes.mode = twydo_core::config::WriteMode::Test;
+        {
+            let sync = cfg.sync.as_mut().unwrap();
+            sync.url = server.url();
+            sync.username = "alice".into();
+            sync.password_command = vec!["printf".into(), "secret".into()];
+            sync.command = twydo_testdav::fake_vdirsyncer(&server_dir)
+                .to_str()
+                .unwrap()
+                .to_string();
+        }
         let td = TestDaemon::start_cfg(&fx, cfg, |o| {
             o.shutdown_grace = Duration::from_millis(100);
             o.stop_wait = Duration::from_millis(100);
@@ -777,8 +782,13 @@ mod during_a_job {
         let c = td.client();
         let id = c
             .call::<_, JobStarted>(
-                "lists.preview_delete",
-                json!({"request_id": c.next_request_id(), "id": "c1"}),
+                "lists.create",
+                json!({
+                    "request_id": c.next_request_id(),
+                    "id": "c9",
+                    "name": "Synthetic nine",
+                    "color": "#379417",
+                }),
             )
             .unwrap()
             .job_id;
@@ -804,10 +814,14 @@ mod during_a_job {
                 "the vdir was let go while the job could still write"
             );
             assert!(stopped_within(&td, BOUND), "the daemon never stopped");
-            assert!(done.exists(), "shutdown returned before the list job ended");
+            assert!(
+                !fx.state().join("lists/active").exists(),
+                "shutdown returned before the list job ended"
+            );
         });
         assert!(!td.socket().exists());
         assert!(!vdir_owned(&fx));
+        assert!(twydo_testdav::collections(&server_dir).contains_key("c9"));
     }
 
     /// Final review: the sync `lists.forget` runs (under a list job's lane) is stopped at
