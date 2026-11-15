@@ -592,8 +592,13 @@ impl Control for RunControl<'_> {
         let _ = self.running.borrow_mut().set_child(None);
     }
 
-    fn stop_requested(&self) -> bool {
-        stop_pending(self.running, self.state)
+    fn stop_requested(&self) -> Result<bool, SyncError> {
+        let since = self.running.borrow().rec.started;
+        Ok(stop_requested(self.state, since)?)
+    }
+
+    fn stopped(&self) {
+        self.running.borrow_mut().stopped = true;
     }
 }
 
