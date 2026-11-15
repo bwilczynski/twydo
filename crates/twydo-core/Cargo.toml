@@ -20,6 +20,9 @@ thiserror = "2.0.21"
 toml = "1.1.8"
 toml_edit = "0.25"
 uuid = { version = "1.29.0", features = ["v4"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+roxmltree = "0.21"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+twydo-testdav = { path = "../twydo-testdav" }

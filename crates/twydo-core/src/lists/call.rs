@@ -1,0 +1,76 @@
+//! Refusals of the CalDAV list calls: a stable code, never server output or addresses.
+
+use std::fmt;
+
+/// A refused or failed call. `sent` is false only when no write request was issued.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub code: &'static str,
+    pub missing: Vec<String>,
+    pub sent: bool,
+}
+
+impl Refused {
+    pub fn new(code: &'static str) -> Self {
+        Refused {
+            code,
+            missing: Vec::new(),
+            sent: true,
+        }
+    }
+
+    /// A refusal raised before the write it guards was sent.
+    pub fn unsent(code: &'static str) -> Self {
+        Refused {
+            sent: false,
+            ..Refused::new(code)
+        }
+    }
+
+    /// The same refusal, marked as raised before any write was sent.
+    pub fn not_sent(mut self) -> Self {
+        self.sent = false;
+        self
+    }
+}
+
+impl fmt::Display for Refused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(wording(self.code))
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// The wording of a refusal code. Unknown codes get the generic failure text.
+pub fn wording(code: &str) -> &'static str {
+    match code {
+        "mapping" => "collection helper could not validate this pair and exact list identity",
+        "dav" => "collection helper could not verify the CalDAV response",
+        "inventory" => {
+            "cannot back up the complete remote list: inventory, strong resource ETags or resource reads could not be verified"
+        }
+        "operation" => {
+            "collection helper refused stale or mismatched operation state; reconcile it"
+        }
+        "stale" => "list changed on the server; sync and review your changes before saving",
+        "config" => {
+            "cannot load the collection pair from the generated vdirsyncer config; run tdo config check"
+        }
+        "credentials" => "collection credential fetch failed; check [sync].password_command",
+        "exists" => "list identity already exists on the server",
+        "choice" => {
+            "server values differ from the requested save; review them or explicitly keep server values"
+        }
+        "discovery" => {
+            "collection discovery found missing lists; resolve them before retrying (no unrelated list was created)"
+        }
+        "timeout" => {
+            "collection helper timed out; reconcile its recorded operation before retrying"
+        }
+        "changed" => "the list changed on the server since the preview; preview the deletion again",
+        "present" => "the list still exists on the server",
+        "partial" => "the deletion was only partly applied",
+        _ => "collection helper failed; inspect its operation before retrying",
+    }
+}
