@@ -438,6 +438,7 @@ fn error_text_never_contains_the_url() {
         "changed",
         "present",
         "partial",
+        "connect",
         "mapping",
         "credentials",
         "operation",
@@ -466,4 +467,21 @@ fn a_failed_probe_before_create_is_not_sent() {
     assert!(!refused.sent);
     assert!(!calls(root(&s)).iter().any(|c| c == "MKCALENDAR"));
     assert!(!collections(root(&s)).contains_key("fresh"));
+}
+
+#[test]
+fn a_refused_connection_is_a_connect_failure_that_sent_nothing() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let base = format!("http://127.0.0.1:{port}/dav/alice/");
+    let config = sync(base.clone(), &["printf", "secret"]);
+    let dav = connect(&config, Instant::now() + Duration::from_secs(20)).unwrap();
+    let list = dav.collection(&format!("{base}work/"), "work").unwrap();
+    let refused = list.read_properties().unwrap_err();
+    assert_eq!(refused.code, "connect");
+    assert!(!refused.sent);
+    assert!(!refused.to_string().contains("127.0.0.1"));
 }

@@ -55,6 +55,9 @@ pub fn wording(code: &str) -> &'static str {
     match code {
         "mapping" => "list operation could not validate this pair and exact list identity",
         "dav" => "list operation could not verify the CalDAV response",
+        "connect" => {
+            "could not connect to the CalDAV server; check [sync].url, the network and [sync].ca_file"
+        }
         "inventory" => {
             "cannot back up the complete remote list: inventory, strong resource ETags or resource reads could not be verified"
         }

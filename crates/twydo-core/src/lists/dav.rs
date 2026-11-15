@@ -446,10 +446,50 @@ fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
     Ok(text.to_string())
 }
 
+/// Whether an I/O error carries a rustls error that can only arise while the certificate is
+/// checked or the handshake is negotiated, so before the first request byte leaves. ureq wraps
+/// the errors of the handshake as `InvalidData`. Other rustls errors (a malformed record, an
+/// alert) can also arrive after the request was sent and stay a plain `dav` failure.
+fn handshake_rejected(error: &std::io::Error) -> bool {
+    error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<rustls::Error>())
+        .is_some_and(|inner| {
+            matches!(
+                inner,
+                rustls::Error::InvalidCertificate(_)
+                    | rustls::Error::NoCertificatesPresented
+                    | rustls::Error::PeerIncompatible(_)
+            )
+        })
+}
+
+/// The refusal for a failed request. Only what happens before the server accepts any request
+/// bytes is a connection failure: DNS, a refused connection and a rejected certificate or
+/// handshake. Those sent nothing.
+fn transport(error: ureq::Error) -> Refused {
+    use std::io::ErrorKind;
+    match error {
+        ureq::Error::Timeout(_) => Refused::new("timeout"),
+        ureq::Error::Io(e) if e.kind() == ErrorKind::TimedOut => Refused::new("timeout"),
+        ureq::Error::HostNotFound
+        | ureq::Error::ConnectionFailed
+        | ureq::Error::Tls(_)
+        | ureq::Error::Pem(_)
+        | ureq::Error::Rustls(_) => Refused::unsent("connect"),
+        ureq::Error::Io(e)
+            if e.kind() == ErrorKind::ConnectionRefused || handshake_rejected(&e) =>
+        {
+            Refused::unsent("connect")
+        }
+        _ => dav(),
+    }
+}
+
 fn agent(sync: &SyncConfig) -> Result<Agent, Refused> {
     let roots = match &sync.ca_file {
         Some(path) => {
-            let pem = std::fs::read(path).map_err(|_| dav())?;
+            let pem = std::fs::read(path).map_err(|_| Refused::unsent("connect"))?;
             let certificates: Vec<Certificate<'static>> = parse_pem(&pem)
                 .filter_map(|item| match item {
                     Ok(PemItem::Certificate(certificate)) => Some(Ok(certificate)),
@@ -457,9 +497,9 @@ fn agent(sync: &SyncConfig) -> Result<Agent, Refused> {
                     Err(_) => Some(Err(())),
                 })
                 .collect::<Result<_, _>>()
-                .map_err(|_| dav())?;
+                .map_err(|_| Refused::unsent("connect"))?;
             if certificates.is_empty() {
-                return Err(dav());
+                return Err(Refused::unsent("connect"));
             }
             RootCerts::Specific(certificates.into_iter().collect::<Vec<_>>().into())
         }
@@ -525,10 +565,7 @@ impl Dav {
             .configure_request(request)
             .timeout_global(Some(left.min(MAX_REQUEST)))
             .build();
-        let response = self.agent.run(request).map_err(|error| match error {
-            ureq::Error::Timeout(_) => Refused::new("timeout"),
-            _ => dav(),
-        })?;
+        let response = self.agent.run(request).map_err(transport)?;
         let status = response.status().as_u16();
         if (300..400).contains(&status) {
             return Err(dav());
