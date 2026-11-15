@@ -20,9 +20,17 @@ thiserror = "2.0.21"
 toml = "1.1.8"
 toml_edit = "0.25"
 uuid = { version = "1.29.0", features = ["v4"] }
-ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier"] }
+# The public `rustls` feature is `rustls-no-provider` + `_ring` + bundled webpki roots. The
+# roots are left out: Twydo uses the system trust store or `[sync].ca_file`. `_ring` is
+# internal to ureq, so a ureq update that renames it fails the build and this line must then
+# be revisited.
+ureq = { version = "~3.5", default-features = false, features = ["rustls-no-provider", "_ring", "platform-verifier"] }
 roxmltree = "0.21"
+# Only to recognise handshake errors in ureq's I/O errors; the copy ureq already uses.
+rustls = { version = "0.23", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
 twydo-testdav = { path = "../twydo-testdav" }
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
