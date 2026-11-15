@@ -795,7 +795,8 @@ impl Collection<'_> {
     }
 
     pub fn create(&self, name: &str, color: &str) -> Result<Properties, Refused> {
-        if !self.absent()? {
+        // Every failure up to the MKCALENDAR request, the probe included, is not sent.
+        if !self.absent().map_err(Refused::not_sent)? {
             return Err(Refused::unsent("exists"));
         }
         let body = format!(
@@ -830,9 +831,10 @@ impl Collection<'_> {
         expected: &Properties,
     ) -> Result<Properties, Refused> {
         if changes.name.is_none() && changes.color.is_none() {
-            return Err(Refused::new("protocol"));
+            return Err(Refused::unsent("protocol"));
         }
-        let before = self.read_properties()?;
+        // Every failure up to the PROPPATCH request, the read included, is not sent.
+        let before = self.read_properties().map_err(Refused::not_sent)?;
         let differs = |color: bool, now: &Option<String>, then: &Option<String>| {
             !same_metadata(color, now.as_deref(), then.as_deref())
         };

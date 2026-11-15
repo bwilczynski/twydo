@@ -463,3 +463,26 @@ fn an_unrelated_server_list_with_an_odd_id_does_not_block_an_edit() {
     assert_eq!(result["name"], "Renamed");
     assert_eq!(record(&e).phase, Phase::RemoteConfirmed);
 }
+
+#[test]
+fn a_create_whose_probe_fails_records_no_remote_write_and_can_be_cancelled() {
+    let e = env();
+    flag(root(&e), "fail_propfind_once");
+    let request = request(&e, "create", "fresh");
+    prepare(&e, &request, "prepared", json!({}));
+    let refused = run(&e.cfg, &request).unwrap_err();
+    assert!(!refused.sent);
+    assert_eq!(count(&e, "MKCALENDAR"), 0);
+    let saved = record(&e);
+    assert_eq!(saved.phase, Phase::Uncertain);
+    assert!(saved.remote_target.is_some());
+    assert_eq!(
+        saved
+            .receipt
+            .as_ref()
+            .and_then(|r| r.get("no_remote_write")),
+        Some(&json!(true))
+    );
+    operation::cancel_unstarted(&e.cfg, ID).unwrap();
+    assert_eq!(record(&e).phase, Phase::Complete);
+}

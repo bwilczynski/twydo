@@ -455,6 +455,12 @@ impl Server {
         let root = self.root.clone();
         let mut state = read_state(&root);
         let exists = state["collections"].get(id).is_some();
+        if request.method == "PROPFIND"
+            && depth == "0"
+            && flag_take(&root, "fail_propfind_once").is_some()
+        {
+            return reply(500, "");
+        }
         match request.method.as_str() {
             "MKCALENDAR" => {
                 if exists {

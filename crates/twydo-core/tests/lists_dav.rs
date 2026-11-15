@@ -455,3 +455,15 @@ fn error_text_never_contains_the_url() {
     let shown = Refused::new("dav").to_string();
     assert!(!shown.contains("127.0.0.1"));
 }
+
+#[test]
+fn a_failed_probe_before_create_is_not_sent() {
+    let s = setup();
+    flag(root(&s), "fail_propfind_once");
+    let dav = client(&s);
+    let list = dav.collection(&url(&s, "fresh"), "fresh").unwrap();
+    let refused = list.create("Fresh", "#aabbcc").unwrap_err();
+    assert!(!refused.sent);
+    assert!(!calls(root(&s)).iter().any(|c| c == "MKCALENDAR"));
+    assert!(!collections(root(&s)).contains_key("fresh"));
+}
