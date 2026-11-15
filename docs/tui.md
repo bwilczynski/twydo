@@ -410,7 +410,12 @@ The status line says why, and nothing is written:
   misreads (last day, last weekday, Nth weekend day). Twydo never writes them; pick another repeat.
 - **`… changed on disk; reload and try again`**: a sync changed the task after you started. The
   view reloads; an open card switches to the synced version, so you see the new data before
-  saving again.
+  saving again. The fields you changed keep what you typed (the message says `with your
+  changes`), so `Esc` still asks before discarding them and saving again writes only those
+  fields. If the sync changed one of them too, the message names it (`saving replaces its
+  title`): saving puts your value over the synced one. Typing the synced version has no field
+  for (the task became a checklist item, say, or its alert can no longer be edited) is lost,
+  and the message names it (`your due could not be kept`).
 - **Not saved: "…" changed on another device.** You saved while a sync was running, so the
   edit was queued and shown at once (below). When the sync ended, the task had changed on
   another device, so the edit was not written. The line is shown once, whichever of the TUI or

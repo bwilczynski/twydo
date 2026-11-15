@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{NaiveDate, NaiveTime, Weekday};
 use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tdo::form::{EditForm, Field, FormAction, NO_CHANGES, NewTarget};
+use tdo::form::{EditForm, Field, FormAction, NO_CHANGES, NewTarget, Rebased};
 use twydo_core::edit::{Change, Due, NewTask, Op};
 use twydo_core::model::{Task, TaskKind};
 use twydo_core::repeatinput::{self, EXAMPLES};
@@ -924,4 +924,89 @@ fn automatic_alert_shows_as_at_due_and_can_be_removed() {
 #[test]
 fn checklist_card_has_no_alert() {
     assert!(!form("Packing list").fields().contains(&Field::Alert));
+}
+
+/// The card after a refused save on a task that changed meanwhile: the saved version with
+/// the typing on top (issue #110).
+#[test]
+fn rebase_keeps_the_typing_over_the_saved_version() {
+    let t = task("Pay water bill");
+    let mut f = EditForm::open(&t, item_of(&t), NY);
+    focus(&mut f, Field::Start);
+    f.key(ctrl('u'));
+    type_str(&mut f, "3d");
+    let mut saved = t.clone();
+    saved.summary = "Renamed elsewhere".into();
+    let (r, rebased) = f.rebase(EditForm::open(&saved, item_of(&t), NY));
+    assert_eq!(r.title, "Renamed elsewhere");
+    assert_eq!(r.start, "3d");
+    assert_eq!(rebased, Rebased::default());
+    assert!(r.is_dirty(), "Esc must still ask");
+    // Only the typed field is written.
+    let ch = changes(&r).unwrap();
+    assert_eq!(ch.len(), 1, "{ch:?}");
+    assert!(matches!(ch[0], Change::Start(_)), "{ch:?}");
+}
+
+#[test]
+fn rebase_names_a_typed_field_the_saved_version_changed_too() {
+    let t = task("Pay water bill");
+    let mut f = EditForm::open(&t, item_of(&t), NY);
+    f.key(ctrl('u'));
+    type_str(&mut f, "Mine");
+    let mut saved = t.clone();
+    saved.summary = "Theirs".into();
+    let (r, rebased) = f.rebase(EditForm::open(&saved, item_of(&t), NY));
+    assert_eq!(r.title, "Mine");
+    assert_eq!(rebased.overlap, vec![Field::Title]);
+    // Typed the same as the saved value: nothing to warn about, nothing left to save.
+    let mut same = t.clone();
+    same.summary = "Mine".into();
+    let (r, rebased) = f.rebase(EditForm::open(&same, item_of(&t), NY));
+    assert_eq!(rebased, Rebased::default());
+    assert!(!r.is_dirty());
+}
+
+#[test]
+fn rebase_of_an_untouched_card_is_the_saved_version() {
+    let t = task("Pay water bill");
+    let f = EditForm::open(&t, item_of(&t), NY);
+    let mut saved = t.clone();
+    saved.summary = "Theirs".into();
+    let onto = EditForm::open(&saved, item_of(&t), NY);
+    let (r, rebased) = f.rebase(onto.clone());
+    assert_eq!(r, onto);
+    assert_eq!(rebased, Rebased::default());
+}
+
+/// The task became a checklist item meanwhile: its card has no Due, so the typed due is lost
+/// and reported, and the card is clean.
+#[test]
+fn rebase_reports_typing_the_saved_card_has_no_field_for() {
+    let t = task("Pay water bill");
+    let mut f = EditForm::open(&t, item_of(&t), NY);
+    focus(&mut f, Field::Due);
+    f.key(ctrl('u'));
+    type_str(&mut f, "fri");
+    let onto = EditForm::open(&t, Some(TaskKind::Checklist), NY);
+    let (r, rebased) = f.rebase(onto);
+    assert_eq!(rebased.dropped, vec![Field::Due]);
+    assert!(rebased.overlap.is_empty());
+    assert!(!r.is_dirty());
+}
+
+#[test]
+fn rebase_reports_a_typed_alert_the_saved_version_makes_read_only() {
+    use twydo_core::model::CustomAlert;
+    let mut t = task("Pay water bill");
+    t.custom_alert = CustomAlert::None;
+    let mut f = EditForm::open(&t, item_of(&t), NY);
+    focus(&mut f, Field::Alert);
+    type_str(&mut f, "1h");
+    assert_eq!(f.alert, "1h");
+    let mut saved = t.clone();
+    saved.custom_alert = CustomAlert::Unsupported;
+    let (r, rebased) = f.rebase(EditForm::open(&saved, item_of(&t), NY));
+    assert_eq!(rebased.dropped, vec![Field::Alert]);
+    assert!(!r.is_dirty());
 }
