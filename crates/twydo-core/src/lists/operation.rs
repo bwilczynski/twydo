@@ -44,6 +44,10 @@ pub struct ListOperation {
     pub remote_target: Option<String>,
     #[serde(default)]
     pub connection_digest: Option<String>,
+    /// SHA-256 of the CalDAV connection the operation started on (see the engine). A record
+    /// without it, written before the engine, is not checked.
+    #[serde(default)]
+    pub connection: Option<String>,
     #[serde(default)]
     pub local_base: Option<BTreeMap<String, Vec<u8>>>,
     #[serde(default)]
@@ -413,6 +417,7 @@ pub fn prepare(
         receipt: None,
         remote_target: None,
         connection_digest: None,
+        connection: None,
         local_base: None,
         local_after: None,
         retired: None,

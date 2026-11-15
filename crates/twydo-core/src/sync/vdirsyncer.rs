@@ -44,8 +44,7 @@ pub(crate) trait Control {
 }
 
 /// For callers with no running record and no stop requests.
-// Used by list operations outside a sync run (a later task).
-#[allow(dead_code)]
+// Used by list operations outside a sync run.
 pub(crate) struct Uncontrolled;
 
 impl Control for Uncontrolled {}

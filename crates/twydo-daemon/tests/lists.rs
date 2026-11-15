@@ -948,6 +948,7 @@ fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
         receipt: observed.map(|o| json!({"observed": o})),
         remote_target: None,
         connection_digest: None,
+        connection: None,
         local_base: None,
         local_after: None,
         retired: None,
