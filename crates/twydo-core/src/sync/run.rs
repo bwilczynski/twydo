@@ -29,7 +29,6 @@ use super::status::{CollState, SyncStatus, backoff, coll_states};
 use super::vdirsyncer::{self, Control, LOCAL_STORAGE, Outcome, PAIR, Ran, Vdirsyncer};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
-use crate::lists::helper::Watch;
 use crate::store::bind_vdir_state;
 use crate::store::fsio::{VdirLock, remove_durable, write_atomic};
 use crate::store::journal::{Journal, Stage, recover_locked};
@@ -309,24 +308,21 @@ fn one_pass(
     let rediscover = state.join("sync/rediscover");
     let discover_marker = state.join("sync/discover");
     // Once per run: the first pass, before the gate's plain discovery and the sync.
-    let mut helper_discovered = false;
+    let mut discovered_here = false;
     if first_pass
         && (discover_requested || discover_marker.exists() || rediscover.exists())
         && !stop_pending(&guard, state)
     {
-        let watch = DiscoverWatch {
-            running: &guard,
-            state,
-        };
         let mut timed_out = false;
-        match discover_watched(cfg, state, &watch) {
+        match discover_watched(cfg, &vds, &control) {
             Ok(found) => {
                 report.adopted.extend(found.adopted);
                 status.discovery_error = None;
-                helper_discovered = true;
+                discovered_here = true;
             }
             // The stop is the run's outcome (the sync below stops too); nothing is learned.
-            Err(DiscoverError::Stopped) => {}
+            // Discovery's own stop checks only query, so record the stop here.
+            Err(DiscoverError::Stopped) => guard.borrow_mut().stopped = true,
             Err(e) => {
                 timed_out = matches!(e, DiscoverError::TimedOut(_));
                 let name = match &e {
@@ -335,14 +331,14 @@ fn one_pass(
                 };
                 let message = e.describe(name.as_deref());
                 report.discovery_error = Some(message.clone());
-                // A helper that cannot run at all is only worth a stored problem when the
+                // vdirsyncer that cannot start is only worth a stored problem when the
                 // user asked for the discovery.
                 if discover_requested || !matches!(e, DiscoverError::Unavailable(_)) {
                     status.discovery_error = Some(message);
                 }
             }
         }
-        // An attempt that ran is spent, failed or not: a broken helper is not retried on
+        // An attempt that ran is spent, failed or not: a broken discovery is not retried on
         // every sync. A stopped or timed out one (which left nothing learned) is retried.
         if timed_out && fs::read(&discover_marker).ok().as_deref() != Some(TIMED_OUT_MARK) {
             // The first timeout is retried once: the marker remembers it. A discovery that
@@ -354,9 +350,9 @@ fn one_pass(
             remove_durable(&discover_marker)?;
         }
     }
-    // The helper did what the plain discovery does (refresh the cache), without creating
+    // Discovery already ran the plain discovery (refresh the cache), without creating
     // anything on the server: the gate is satisfied.
-    if helper_discovered {
+    if discovered_here {
         remove_durable(&rediscover)?;
     }
     let mut discovery_reports = BTreeMap::new();
@@ -551,28 +547,6 @@ fn stop_pending(guard: &RefCell<RunningGuard>, state: &Path) -> bool {
         guard.borrow_mut().stopped = true;
     }
     stop
-}
-
-/// Lets the discovery helper be recorded in `running.json` and stopped like a sync child.
-struct DiscoverWatch<'a> {
-    running: &'a RefCell<RunningGuard>,
-    state: &'a Path,
-}
-
-impl Watch for DiscoverWatch<'_> {
-    fn started(&self, pgid: u32) {
-        // Best effort, as for a sync child: without the record it cannot be stopped from
-        // elsewhere, but it runs.
-        let _ = self.running.borrow_mut().set_child(Some(pgid));
-    }
-
-    fn finished(&self) {
-        let _ = self.running.borrow_mut().set_child(None);
-    }
-
-    fn stop_requested(&self) -> bool {
-        stop_pending(self.running, self.state)
-    }
 }
 
 /// Records a vdirsyncer child in `running.json` and stops it on request.

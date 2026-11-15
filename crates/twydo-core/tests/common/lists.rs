@@ -42,6 +42,29 @@ pub fn offline() -> (tempfile::TempDir, Config) {
     (d, cfg)
 }
 
+/// A config against a fake CalDAV server and the fake vdirsyncer, both under one temporary
+/// directory. The server guard must outlive the use of the config.
+#[cfg(unix)]
+pub fn offline_dav() -> (tempfile::TempDir, twydo_testdav::FakeDav, Config) {
+    let d = tempfile::tempdir().unwrap();
+    let server = twydo_testdav::FakeDav::start(d.path());
+    let mut cfg = Config::with_vdir(d.path().join("vdir"));
+    fs::create_dir(&cfg.vdir).unwrap();
+    cfg.state_dir = Some(d.path().join("state"));
+    cfg.writes.mode = twydo_core::config::WriteMode::Test;
+    cfg.sync = Some(SyncConfig {
+        url: server.url(),
+        username: "alice".into(),
+        password_command: vec!["printf".into(), "secret".into()],
+        command: twydo_testdav::fake_vdirsyncer(d.path())
+            .to_string_lossy()
+            .into_owned(),
+        timeout_secs: 30,
+        ..Default::default()
+    });
+    (d, server, cfg)
+}
+
 #[cfg(unix)]
 pub fn flag(root: &std::path::Path, name: &str) {
     let path = root.join("server.json");

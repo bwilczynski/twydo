@@ -2257,6 +2257,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "twydo-core",
+ "twydo-testdav",
  "uuid",
 ]
 

@@ -41,6 +41,16 @@ password.fetch = ["command", "pass", "show", "twydo/caldav"]
 }
 
 #[test]
+fn rendered_config_never_lets_vdirsyncer_create_remote_lists() {
+    let mut s = sync();
+    s.ca_file = Some(PathBuf::from("/ca.pem"));
+    for remote in [None, Some(Path::new("/srv"))] {
+        let got = render(Path::new("/v"), &s, Path::new("/s"), remote);
+        assert!(!got.contains("implicit"), "{got}");
+    }
+}
+
+#[test]
 fn render_with_ca_file_adds_verify() {
     let mut s = sync();
     s.ca_file = Some(PathBuf::from("/ca.pem"));

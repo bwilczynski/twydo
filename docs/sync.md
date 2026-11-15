@@ -244,7 +244,7 @@ Discovery runs at these points only:
 
 - once after the daemon starts: it leaves a `sync/discover` marker, and the first sync that
   gets past the skip checks (timer, batch, manual or the startup sync itself) discovers and then
-  removes the marker, whether the discovery succeeded or failed, so a broken helper is not
+  removes the marker, whether the discovery succeeded or failed, so a broken discovery is not
   retried on every sync. A discovery that was stopped learned nothing and keeps the marker; one that timed out
   is retried once more (the marker remembers it), so a hanging discovery does not cost a full
   timeout on every sync. A startup sync skipped by backoff, or while automatic sync is off,
@@ -260,8 +260,10 @@ Discovery only creates local folders. A collection that exists on the server and
 is adopted: the same run syncs and metasyncs it, so it arrives with its tasks, name and color,
 and the sync note says `found new list "<name>"`. A collection missing on the server is never
 created there, because a local folder without a server counterpart usually means the list was
-deleted on the phone. Discovery runs through Twydo's bundled helper, not the plain
-`vdirsyncer discover` command, which cannot tell the two cases apart.
+deleted on the phone. Twydo lists the server's lists itself, creates the missing local
+folders, and only then runs the plain `vdirsyncer discover` command to refresh its cache; that
+command alone cannot tell the two cases apart, and Twydo's generated configuration never lets
+it create a list on the server.
 
 A local list whose server collection is gone (deleted on the phone, not yet forgotten) stops
 discovery, as vdirsyncer does, so no new list is adopted in that run. The report names the
@@ -270,18 +272,17 @@ list and its collection id and gives the `:forget-list <id>` command; see
 reports one deleted list at a time, because each deletion must be confirmed separately; after
 you forget one, the next discovery reports the next.
 
-The discovery helper runs under the sync run: it is recorded in `sync/running.json`, holds the
-shared vdir lock (inherited from the run, so it outlives even a killed daemon) for as long as
-it runs, and is killed with its process group when the sync is stopped (`tdo sync stop`, a write
+The `vdirsyncer discover` run of a discovery sits under the sync run: it is recorded in
+`sync/running.json`, holds the shared vdir lock (inherited from the run, so it outlives even a
+killed daemon) for as long as it runs, and is killed with its process group when the sync is stopped (`tdo sync stop`, a write
 that stops it, or the daemon shutting down after its grace period) or times out. If discovery
-fails, the folders it had already created are removed again (only while empty), by the helper
-itself or, when it was killed before it could (stopped, timed out, a signal), by the sync run, so no list is half adopted.
+fails, is stopped or times out, the folders it had already created are removed again (only
+while empty), so no list is half adopted.
 
-A failed discovery (server unreachable, a pair layout the helper refuses, a stale list,
+A failed discovery (server unreachable, a server list whose id is not a plain name, a stale list,
 timeout) keeps the previous cached collection set. With `tdo sync --discover` it counts as a
 problem: the ordinary sync still runs, but the exit code is 1. At daemon startup it is only
-a warning on the startup sync. A helper that cannot run at all (the helper's interpreter,
-[`[sync].list_python`](config.md#sync) or vdirsyncer's own, does not start, or vdirsyncer is not importable from it) is likewise only a
+a warning on the startup sync. A vdirsyncer that cannot be started at all is likewise only a
 warning, and is not saved, when the discovery was not requested (the startup marker and the
 `:forget-list` recovery); `tdo sync --discover` reports and saves it. Any other failure is saved in
 `sync/status.json` (`discovery_error`) and shown as `discovery error:` in `tdo status` and in
@@ -310,7 +311,7 @@ When it fails or cannot run (a warning), the ordinary `vdirsyncer discover <pair
 executable/configuration, timeout, and lock protection. It never automatically answers yes
 to creation prompts. This refreshes the cached collection set before sync and metasync.
 A discovery failure keeps the backup and discovery request, reports the failure, and blocks
-ordinary sync until discovery succeeds. Lists the helper adopted already have local folders,
+ordinary sync until discovery succeeds. Lists that discovery adopted already have local folders,
 so a new phone list no longer makes this discovery fail. If several lists were removed remotely, forgetting
 one can leave discovery blocked on another. The last Not Found reports for remaining local
 lists stay available in `:errors` and the `:forget-list` chooser; remote missing-collection

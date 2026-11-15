@@ -628,53 +628,61 @@ fn status_reports_running_until_sync_finished() {
 
 // ---- list discovery ----
 
-/// The fixture's config with the fake vdirsyncer `body` and the list helper routed to the
-/// offline backend of twydo-core over this fixture's vdir. `discover` is the backend's
-/// `discover` store. Returns the config and the helper directory.
-fn with_helper(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config, PathBuf) {
-    use std::os::unix::fs::PermissionsExt;
-    let mut cfg = fx.with_sync(body);
-    let keep = fx.vdir().parent().unwrap().join("helper");
-    std::fs::create_dir_all(&keep).unwrap();
-    let backend = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../twydo-core/tests/common/list_backend.py"
-    );
-    let wrapper = keep.join("python");
-    std::fs::write(
-        &wrapper,
-        format!(
-            "#!/usr/bin/env python3\nimport os, runpy\nos.environ['TWYDO_TEST_LIST_CONNECTION']={:?}\nrunpy.run_path({backend:?},run_name='__main__')\n",
-            keep.join("connection.json").to_str().unwrap()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let connection = keep.join("connection.json");
-    std::fs::write(
-        &connection,
-        serde_json::json!({"vdir": fx.vdir()}).to_string(),
-    )
-    .unwrap();
-    std::fs::write(
-        keep.join("server.json"),
-        serde_json::json!({"calls":[],"collections":{},"flags":{},"discover":discover}).to_string(),
-    )
-    .unwrap();
-    let sync = cfg.sync.as_mut().unwrap();
-    sync.list_python = Some(wrapper.to_str().unwrap().into());
-    (cfg, keep)
+/// The fake server of one test, with the directory it keeps its state in.
+struct Dav {
+    root: PathBuf,
+    _server: twydo_testdav::FakeDav,
 }
 
-fn discoveries(keep: &std::path::Path) -> usize {
-    let store: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(keep.join("server.json")).unwrap()).unwrap();
-    store["calls"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|c| c.as_str() == Some("DISCOVER"))
-        .count()
+/// The fixture's config with the fake vdirsyncer `body` and `[sync]` pointed at a fake CalDAV
+/// server. `discover` says which lists exist only on the server (`remote_only`) and which
+/// only locally (`local_only`; their folders are created); the fixture's own lists exist on
+/// both sides. Returns the config and the server.
+fn with_dav(fx: &Fixture, body: &str, discover: serde_json::Value) -> (Config, Dav) {
+    let mut cfg = fx.with_sync(body);
+    let root = fx.vdir().parent().unwrap().join("dav");
+    std::fs::create_dir_all(&root).unwrap();
+    let server = twydo_testdav::FakeDav::start(&root);
+    for entry in std::fs::read_dir(fx.vdir()).unwrap().flatten() {
+        let id = entry.file_name().to_string_lossy().into_owned();
+        twydo_testdav::add_collection(&root, &id, "Synthetic", "#112233");
+    }
+    for id in discover["remote_only"].as_array().unwrap() {
+        twydo_testdav::add_collection(&root, id.as_str().unwrap(), "Synthetic", "#112233");
+    }
+    for id in discover["local_only"].as_array().unwrap() {
+        std::fs::create_dir_all(fx.vdir().join(id.as_str().unwrap())).unwrap();
+    }
+    let sync = cfg.sync.as_mut().unwrap();
+    sync.url = server.url();
+    sync.username = "alice".into();
+    // Every attempt to list the server runs the password command once.
+    sync.password_command = vec![
+        "sh".into(),
+        "-c".into(),
+        format!(
+            "echo x >> '{}'; printf secret",
+            root.join("attempts").display()
+        ),
+    ];
+    // The connection changed: regenerate the config so no run sees it as new.
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    twydo_core::sync::vdirsyncer::ensure(&cfg, cfg.sync.as_ref().unwrap(), &state).unwrap();
+    let _ = std::fs::remove_file(state.join("sync/rediscover"));
+    (
+        cfg,
+        Dav {
+            root,
+            _server: server,
+        },
+    )
+}
+
+/// Discovery attempts: runs that listed the server.
+fn discoveries(dav: &Dav) -> usize {
+    std::fs::read_to_string(dav.root.join("attempts"))
+        .map(|t| t.lines().count())
+        .unwrap_or(0)
 }
 
 const OK_SYNC: &str = "[ \"$1\" = sync ] && echo 'Syncing twydo/c1' >&2\nexit 0";
@@ -693,7 +701,7 @@ fn finished(c: &Client, reason: SyncReason) -> SyncResult {
 #[test]
 fn startup_sync_discovers_new_lists() {
     let fx = fx();
-    let (cfg, _keep) = with_helper(
+    let (cfg, _keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
@@ -718,7 +726,7 @@ fn startup_sync_discovers_new_lists() {
 #[test]
 fn startup_discovery_failure_is_a_warning() {
     let fx = fx();
-    let (cfg, _keep) = with_helper(
+    let (cfg, _keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":[],"local_only":["stale"]}),
@@ -737,7 +745,7 @@ fn startup_discovery_failure_is_a_warning() {
 #[test]
 fn periodic_sync_does_not_discover() {
     let fx = fx();
-    let (cfg, keep) = with_helper(
+    let (cfg, keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
@@ -763,7 +771,7 @@ fn discover_marker(cfg: &Config) -> PathBuf {
 #[test]
 fn startup_leaves_a_discovery_marker_that_the_first_sync_consumes() {
     let fx = fx();
-    let (cfg, keep) = with_helper(
+    let (cfg, keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
@@ -786,7 +794,7 @@ fn startup_leaves_a_discovery_marker_that_the_first_sync_consumes() {
 #[test]
 fn startup_discovery_survives_a_startup_sync_skipped_by_backoff() {
     let fx = fx();
-    let (cfg, keep) = with_helper(
+    let (cfg, keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":["phone-list"],"local_only":[]}),
@@ -822,7 +830,7 @@ fn startup_discovery_survives_a_startup_sync_skipped_by_backoff() {
 #[test]
 fn sync_run_with_discover_fails_on_missing_remote() {
     let fx = fx();
-    let (cfg, _keep) = with_helper(
+    let (cfg, _keep) = with_dav(
         &fx,
         OK_SYNC,
         serde_json::json!({"remote_only":[],"local_only":["stale"]}),
