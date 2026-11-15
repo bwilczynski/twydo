@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/bwilczynski/twydo/compare/v0.4.1...v0.4.2) - 2026-11-15
+
+### Fixed
+
+- *(tui)* keep the card's typing over a task that changed meanwhile
+- *(store)* skip a queued undo step with no entry and no claim
+
 ## [0.4.1](https://github.com/bwilczynski/twydo/compare/v0.4.0...v0.4.1) - 2026-11-14
 
 ### Added
