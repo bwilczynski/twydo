@@ -17,8 +17,14 @@ const Q_SYNC: &str = "Sync with a CalDAV server?";
 const Q_URL: &str = "Server URL";
 const Q_USER: &str = "Username";
 const Q_PASS: &str = "Password command (prints only the password, e.g. pass show twydo/caldav)";
-/// Keys the generated vdirsyncer config replaced.
-const REMOVED: [&str; 4] = ["pair", "local_storage", "vdirsyncer_config", "after_edit"];
+/// Keys Twydo no longer reads (see `REMOVED_SYNC_KEYS` in twydo-core).
+const REMOVED: [&str; 5] = [
+    "pair",
+    "local_storage",
+    "vdirsyncer_config",
+    "after_edit",
+    "list_python",
+];
 
 #[derive(Args, Debug, Default)]
 pub struct InitArgs {
@@ -415,7 +421,7 @@ mod tests {
     fn old_production_shape_is_cleaned() {
         let e = Env::new();
         e.existing(
-            "# my config\nvdir = \"~/v\"\nafter_edit = true\n\n[writes]\nmode = \"on\"\n\n[lists.x]\nname = \"X\"\n\n[sync]\npair = \"p\"\nlocal_storage = \"l\"\nvdirsyncer_config = \"/c\"\nafter_edit = true\ncommand = \"vdirsyncer\"\nmetasync = false\n",
+            "# my config\nvdir = \"~/v\"\nafter_edit = true\n\n[writes]\nmode = \"on\"\n\n[lists.x]\nname = \"X\"\n\n[sync]\npair = \"p\"\nlocal_storage = \"l\"\nvdirsyncer_config = \"/c\"\nafter_edit = true\nlist_python = \"python3\"\ncommand = \"vdirsyncer\"\nmetasync = false\n",
         );
         let mut p = Script::say(&["", "y", "https://dav.example.test/a/", "alice", "true"]);
         e.init(&mut p).unwrap();
@@ -430,7 +436,13 @@ mod tests {
         ] {
             assert!(t.contains(keep), "{keep}\n{t}");
         }
-        for gone in ["pair", "local_storage", "vdirsyncer_config", "after_edit"] {
+        for gone in [
+            "pair",
+            "local_storage",
+            "vdirsyncer_config",
+            "after_edit",
+            "list_python",
+        ] {
             assert!(!t.contains(gone), "{gone}\n{t}");
         }
     }

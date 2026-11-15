@@ -421,8 +421,18 @@ impl Config {
     }
 }
 
-/// Keys Twydo no longer reads: it generates the vdirsyncer config itself.
-const REMOVED_SYNC_KEYS: [&str; 4] = ["pair", "local_storage", "vdirsyncer_config", "after_edit"];
+/// Keys Twydo no longer reads, each with why it is gone.
+const REMOVED_SYNC_KEYS: [(&str, &str); 5] = [
+    ("pair", VDIRSYNCER_REASON),
+    ("local_storage", VDIRSYNCER_REASON),
+    ("vdirsyncer_config", VDIRSYNCER_REASON),
+    ("after_edit", VDIRSYNCER_REASON),
+    (
+        "list_python",
+        "the list helper is gone and nothing replaces it",
+    ),
+];
+const VDIRSYNCER_REASON: &str = "Twydo generates the vdirsyncer config";
 
 /// Checked on the raw table so this message wins over serde's "unknown field".
 fn check_removed_sync_keys(path: &Path, text: &str) -> Result<(), ConfigError> {
@@ -432,12 +442,12 @@ fn check_removed_sync_keys(path: &Path, text: &str) -> Result<(), ConfigError> {
     let Some(sync) = table.get("sync").and_then(|v| v.as_table()) else {
         return Ok(());
     };
-    for key in REMOVED_SYNC_KEYS {
+    for (key, reason) in REMOVED_SYNC_KEYS {
         if sync.contains_key(key) {
             return Err(ConfigError::Invalid {
                 path: path.to_path_buf(),
                 message: format!(
-                    "[sync] {key} is no longer supported: Twydo generates the vdirsyncer config; run `tdo config init`"
+                    "[sync] {key} is no longer supported: {reason}; run `tdo config init`"
                 ),
             });
         }

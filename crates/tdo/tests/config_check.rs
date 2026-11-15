@@ -96,6 +96,23 @@ fn sync_off_passes() {
 }
 
 #[test]
+fn leftover_list_python_fails_config_step_and_no_list_helper_step() {
+    let e = Env::new();
+    e.config("[sync]\nlist_python = \"python3\"\n");
+    let o = e.run();
+    let out = text(&o);
+    assert_eq!(o.status.code(), Some(1), "{out}");
+    line(&out, "✗ config");
+    assert!(out.contains("list_python"), "{out}");
+    assert!(out.contains("hint: run tdo config init"), "{out}");
+    assert!(
+        !out.lines()
+            .any(|l| l[l.char_indices().nth(2).map_or(0, |c| c.0)..].starts_with("list helper")),
+        "{out}"
+    );
+}
+
+#[test]
 fn removed_key_fails_config_step() {
     let e = Env::new();
     e.config("[sync]\npair = \"x\"\n");
