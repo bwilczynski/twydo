@@ -8,6 +8,8 @@
 //! - `collections.txt`: the collection ids, one per line, for the shell script.
 //! - `flags/<name>`: presence means set, the content is the value. `_once` flags are deleted
 //!   when used.
+//! - `slow_write` (a flag with the seconds as its value): a PROPPATCH sleeps that long, after
+//!   it is logged and before it is applied.
 //! - `calls.log`: one line per authenticated request method, plus `DISCOVER`, `SYNC` and
 //!   `METASYNC` from the script.
 
@@ -84,6 +86,15 @@ fn log_call(root: &Path, name: &str) {
 pub fn add_collection(root: &Path, id: &str, name: &str, color: &str) {
     let mut state = read_state(root);
     state["collections"][id] = json!({"name": name, "color": color, "resources": {}});
+    write_state(root, &state);
+}
+
+/// Removes a collection, as if it had been deleted from the server by another device.
+pub fn remove_collection(root: &Path, id: &str) {
+    let mut state = read_state(root);
+    if let Some(all) = state["collections"].as_object_mut() {
+        all.remove(id);
+    }
     write_state(root, &state);
 }
 
@@ -480,6 +491,9 @@ impl Server {
                 reply(204, "")
             }
             "PROPPATCH" => {
+                if let Some(seconds) = flag_get(&root, "slow_write") {
+                    self.sleep(seconds.parse().unwrap_or(1.0));
+                }
                 let fail = flag_get(&root, "fail_status").is_some();
                 let ignore = flag_get(&root, "ignore_write").is_some();
                 let mut echoed = String::new();

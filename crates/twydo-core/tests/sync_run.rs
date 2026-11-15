@@ -2722,7 +2722,7 @@ fn stop_request_interrupts_a_hanging_discovery_promptly() {
     let cfg = fx.cfg.clone();
     let started = Instant::now();
     let runner = std::thread::spawn(move || run(&cfg, &discover_opts(), now()).unwrap());
-    // Wait until the helper child is recorded as the running process.
+    // Wait until the discovery child is recorded as the running process.
     let recorded = |state: &Path| {
         fs::read(state.join("sync/running.json"))
             .ok()
@@ -2731,7 +2731,7 @@ fn stop_request_interrupts_a_hanging_discovery_promptly() {
     };
     let deadline = Instant::now() + Duration::from_secs(20);
     while !recorded(&state) {
-        assert!(Instant::now() < deadline, "helper child never recorded");
+        assert!(Instant::now() < deadline, "discovery child never recorded");
         std::thread::sleep(Duration::from_millis(20));
     }
     twydo_core::sync::running::request_stop(&fx.cfg).unwrap();
@@ -2816,7 +2816,7 @@ fn wait_for_recorded_child(state: &Path) {
     };
     let deadline = Instant::now() + Duration::from_secs(20);
     while !recorded(state) {
-        assert!(Instant::now() < deadline, "helper child never recorded");
+        assert!(Instant::now() < deadline, "discovery child never recorded");
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -2836,7 +2836,7 @@ fn stopped_discovery_removes_the_empty_folders_it_adopted_and_keeps_the_marker()
     let (fx, marker) = hung_adoption_fixture();
     let cfg = fx.cfg.clone();
     let runner = std::thread::spawn(move || run(&cfg, &manual(), now()).unwrap());
-    // The folder exists once the helper is hanging after the adoption.
+    // The folder exists once the fake vdirsyncer is hanging after the adoption.
     let deadline = Instant::now() + Duration::from_secs(20);
     while !fx.cfg.vdir.join("new-list").is_dir() {
         assert!(Instant::now() < deadline, "folder never adopted");

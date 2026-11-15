@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use twydo_core::config::Config;
 use twydo_core::store::existing_vdir_state;
-use twydo_core::sync::{list_python, vdirsyncer};
+use twydo_core::sync::vdirsyncer;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const PASSWORD_TIMEOUT: Duration = Duration::from_secs(60);
@@ -57,13 +57,12 @@ impl Report {
     }
 }
 
-const NAMES: [&str; 9] = [
+const NAMES: [&str; 8] = [
     "config",
     "vdir",
     "sync",
     "vdirsyncer",
     "tdo on PATH",
-    "list helper",
     "password",
     "generated config",
     "ca file",
@@ -161,36 +160,6 @@ pub fn run(path: &Path) -> Report {
             "tdo on PATH",
             "no executable named tdo on PATH",
             "the conflict hook runs `tdo` by name: put it on the PATH the daemon and vdirsyncer run with",
-        ),
-    }
-
-    // list helper
-    let step = "list helper";
-    let python = list_python::resolve(sync);
-    let interpreter = match python.source {
-        list_python::Source::Configured => python.program.clone(),
-        _ => python.to_string(),
-    };
-    // `-I` as the helper runs it: a user site or PYTHONPATH must not make the check pass.
-    match probe(
-        &python.program,
-        &[
-            "-I",
-            "-c",
-            "import vdirsyncer; print(vdirsyncer.__version__)",
-        ],
-        |out| out.lines().next().map(|l| l.trim().to_string()),
-    ) {
-        Ok(v) if v.starts_with("0.21.") => b.pass(step, format!("{interpreter} vdirsyncer {v}")),
-        Ok(v) => b.fail(
-            step,
-            format!("unsupported vdirsyncer version {v} (need 0.21.x)"),
-            "install vdirsyncer 0.21.x for the interpreter or set [sync].list_python",
-        ),
-        Err(e) => b.fail(
-            step,
-            e,
-            "install vdirsyncer 0.21.x for the interpreter or set [sync].list_python",
         ),
     }
 

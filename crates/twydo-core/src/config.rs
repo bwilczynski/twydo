@@ -112,13 +112,6 @@ pub struct SyncConfig {
     pub ca_file: Option<PathBuf>,
     /// vdirsyncer executable.
     pub command: String,
-    /// Python interpreter containing the supported vdirsyncer collection adapter. Unset means
-    /// vdirsyncer's own interpreter (from the shebang of `command`), else `python3`.
-    // Absent rather than null on the wire: released clients read it as a string and fill in
-    // their old default, `python3`, which may not be what the daemon runs. Clients never use it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[schemars(with = "String")]
-    pub list_python: Option<String>,
     pub metasync: bool,
     /// Unsynced edits that make a sync due.
     pub batch_size: u32,
@@ -137,7 +130,6 @@ impl Default for SyncConfig {
             password_command: Vec::new(),
             ca_file: None,
             command: "vdirsyncer".into(),
-            list_python: None,
             metasync: true,
             batch_size: 5,
             max_wait_secs: 60,

@@ -489,8 +489,7 @@ fn daemon_lookup_matches_file_lookup() {
     assert_eq!(tasks(daemon.retired_preview(id).unwrap()).len(), 1);
 
     // An unfinished list save, seen the same by both. The daemon runs on, so it appears now.
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "create".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "create").unwrap();
     request.collection = Some("pending-id".into());
     request.name = Some("Pending synthetic".into());
     request.color = Some("#3289D2".into());

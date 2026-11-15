@@ -415,7 +415,7 @@ mod tests {
     fn old_production_shape_is_cleaned() {
         let e = Env::new();
         e.existing(
-            "# my config\nvdir = \"~/v\"\nafter_edit = true\n\n[writes]\nmode = \"on\"\n\n[lists.x]\nname = \"X\"\n\n[sync]\npair = \"p\"\nlocal_storage = \"l\"\nvdirsyncer_config = \"/c\"\nafter_edit = true\ncommand = \"vdirsyncer\"\nlist_python = \"python3\"\n",
+            "# my config\nvdir = \"~/v\"\nafter_edit = true\n\n[writes]\nmode = \"on\"\n\n[lists.x]\nname = \"X\"\n\n[sync]\npair = \"p\"\nlocal_storage = \"l\"\nvdirsyncer_config = \"/c\"\nafter_edit = true\ncommand = \"vdirsyncer\"\nmetasync = false\n",
         );
         let mut p = Script::say(&["", "y", "https://dav.example.test/a/", "alice", "true"]);
         e.init(&mut p).unwrap();
@@ -426,7 +426,7 @@ mod tests {
             "[writes]",
             "[lists.x]",
             "command = \"vdirsyncer\"",
-            "list_python = \"python3\"",
+            "metasync = false",
         ] {
             assert!(t.contains(keep), "{keep}\n{t}");
         }

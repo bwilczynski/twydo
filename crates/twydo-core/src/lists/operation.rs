@@ -14,7 +14,7 @@ use crate::store::fsio::{VdirLock, remove_durable, sync_dir, write_atomic};
 use crate::store::journal::{Journal, new_op_id, recover_locked};
 use crate::store::queue::Queue;
 
-use super::{ListError, helper::HelperRequest, invalid, plain_id};
+use super::{ListError, call::RemoteRequest, invalid, plain_id};
 use crate::config::Config;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub struct ListOperation {
     pub created: DateTime<Utc>,
     pub vdir: PathBuf,
     pub phase: Phase,
-    pub request: HelperRequest,
+    pub request: RemoteRequest,
     /// Exact bytes of the held local collection; `None` means it did not exist.
     pub holds: Option<BTreeMap<String, Vec<u8>>>,
     #[serde(default)]
@@ -302,46 +302,29 @@ pub fn save(state: &Path, operation: &ListOperation) -> io::Result<()> {
     )
 }
 
-/// A recovered record's request, pointed at the generated vdirsyncer config as it is now.
+/// A recovered record's request, after the generated vdirsyncer config is ensured.
 ///
-/// The stored `config` may name a pre-upgrade file or nothing, and the settings may have
-/// changed since. Runs [`crate::sync::vdirsyncer::ensure`] under the sync run lock, as
-/// [`prepare`] does; the lock is released before the helper runs, like `prepare`'s callers.
-/// The caller must not hold the run lock.
+/// The settings may have changed since the record was written. Runs
+/// [`crate::sync::vdirsyncer::ensure`] under the sync run lock, as [`prepare`] does; the lock
+/// is released before the engine runs, like `prepare`'s callers. The caller must not hold the
+/// run lock.
 pub(super) fn recovery_request(
     cfg: &Config,
-    stored: &HelperRequest,
-) -> Result<HelperRequest, ListError> {
+    stored: &RemoteRequest,
+) -> Result<RemoteRequest, ListError> {
     let state = bind_vdir_state(&cfg.state_dir(), &cfg.vdir)?;
-    let generated = std::path::absolute(crate::sync::vdirsyncer::config_path(&state))?;
-    if stored.config.as_deref() != Some(generated.as_path()) {
-        // Written before Twydo generated the config. The helper would refuse it with a
-        // message that sends the user back to reconcile, and no command resolves it.
-        return Err(ListError::Refused(format!(
-            "list operation {} was started before Twydo generated the vdirsyncer config (upgrade to 0.3) and cannot be resumed; check on the server whether the change happened and make it there if needed",
-            stored
-                .operation
-                .as_deref()
-                .and_then(Path::file_stem)
-                .and_then(|n| n.to_str())
-                .unwrap_or("(unknown)")
-        )));
-    }
     private_dir(&state.join("sync"))?;
     let _run = crate::sync::run::run_lock(&state.join("sync"), false)?;
     let sync = cfg.sync.as_ref().ok_or_else(|| {
         ListError::Refused("list management needs a configured CalDAV sync pair".into())
     })?;
-    let mut request = stored.clone();
-    request.config = Some(std::path::absolute(crate::sync::vdirsyncer::ensure(
-        cfg, sync, &state,
-    )?)?);
-    Ok(request)
+    crate::sync::vdirsyncer::ensure(cfg, sync, &state)?;
+    Ok(stored.clone())
 }
 
 pub fn prepare(
     cfg: &Config,
-    mut request: HelperRequest,
+    mut request: RemoteRequest,
     now: DateTime<Utc>,
 ) -> Result<ListOperation, ListError> {
     let collection = request
@@ -358,9 +341,7 @@ pub fn prepare(
     let sync = cfg.sync.as_ref().ok_or_else(|| {
         ListError::Refused("list management needs a configured CalDAV sync pair".into())
     })?;
-    request.config = Some(std::path::absolute(crate::sync::vdirsyncer::ensure(
-        cfg, sync, &state,
-    )?)?);
+    crate::sync::vdirsyncer::ensure(cfg, sync, &state)?;
     let _vdir = VdirLock::exclusive(&state)?;
     ensure_idle(&state)?;
     let journal = Journal::open(&state)?;

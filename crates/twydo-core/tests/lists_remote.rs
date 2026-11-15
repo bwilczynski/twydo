@@ -1,10 +1,12 @@
 mod common;
 
 #[cfg(unix)]
-use common::lists::{flag, offline};
+use common::lists::{count, offline};
 use std::fs;
 use twydo_core::config::{Config, SyncConfig};
 use twydo_core::lists::{ListRequest, ListService};
+#[cfg(unix)]
+use twydo_testdav::flag;
 
 /// The embedded matrix with the user's best-effort acceptance removed.
 fn without_acceptance() -> twydo_core::compat::Matrix {
@@ -32,7 +34,7 @@ fn shipping_gate_admits_verified_create_and_refuses_unverified_edit_before_prepa
     let mut service = ListService::open_with(&cfg, None, without_acceptance()).unwrap();
     let expected = service.state("synthetic").unwrap();
     // Creation passed both device directions; it fails later here only because this
-    // fixture has no usable helper or vdirsyncer pair.
+    // fixture has no usable CalDAV server or vdirsyncer pair.
     let create = service
         .execute(ListRequest::Create {
             id: "new-id".into(),
@@ -67,7 +69,7 @@ fn shipping_gate_admits_verified_create_and_refuses_unverified_edit_before_prepa
 fn shipping_metadata_gate_requires_server_protection_even_in_test_mode() {
     use twydo_core::config::WriteMode;
     for mode in [WriteMode::Test, WriteMode::Verified] {
-        let (d, mut cfg) = offline();
+        let (d, _server, mut cfg) = offline();
         ListService::open(&cfg, None)
             .unwrap()
             .execute(create())
@@ -112,7 +114,7 @@ fn metadata_interoperability_cannot_bypass_missing_or_failed_atomicity() {
             Some(Verdict::Fail),
             Some(Verdict::Unsupported),
         ] {
-            let (d, mut cfg) = offline();
+            let (d, _server, mut cfg) = offline();
             ListService::open(&cfg, None)
                 .unwrap()
                 .execute(create())
@@ -188,8 +190,8 @@ fn create() -> ListRequest {
 
 #[cfg(unix)]
 #[test]
-fn actual_service_and_bundled_helper_create_edit_and_confirm_local_discovery() {
-    let (_d, cfg) = offline();
+fn actual_service_creates_edits_and_confirms_local_discovery() {
+    let (_d, _server, cfg) = offline();
     let mut service = ListService::open(&cfg, None).unwrap();
     service.execute(create()).unwrap();
     assert_eq!(service.state("new-id").unwrap().name, "Synthetic list");
@@ -215,7 +217,7 @@ fn actual_service_and_bundled_helper_create_edit_and_confirm_local_discovery() {
 #[cfg(unix)]
 #[test]
 fn embedded_matrix_renames_and_recolors_in_verified_mode() {
-    let (d, mut cfg) = offline();
+    let (d, _server, mut cfg) = offline();
     cfg.writes.mode = twydo_core::config::WriteMode::Verified;
     let mut service = ListService::open(&cfg, None).unwrap();
     service.execute(create()).unwrap();
@@ -236,23 +238,13 @@ fn embedded_matrix_renames_and_recolors_in_verified_mode() {
         fs::read_to_string(cfg.vdir.join("new-id/held.ics")).unwrap(),
         "held task bytes"
     );
-    let server: serde_json::Value =
-        serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
-    let count = |name: &str| {
-        server["calls"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|v| **v == name)
-            .count()
-    };
-    assert_eq!(count("PROPPATCH"), 1);
+    assert_eq!(count(d.path(), "PROPPATCH"), 1);
 }
 
 #[cfg(unix)]
 #[test]
 fn failed_local_discovery_reconciles_without_recreating_a_remote_list() {
-    let (d, cfg) = offline();
+    let (d, _server, cfg) = offline();
     flag(d.path(), "fail_refresh_once");
     let mut service = ListService::open(&cfg, None).unwrap();
     assert!(service.execute(create()).is_err());
@@ -260,23 +252,13 @@ fn failed_local_discovery_reconciles_without_recreating_a_remote_list() {
     let id = fs::read_to_string(state.join("lists/active")).unwrap();
     service.reconcile(id.trim()).unwrap();
     assert!(!state.join("lists/active").exists());
-    let server: serde_json::Value =
-        serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
-    assert_eq!(
-        server["calls"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|v| **v == "MKCALENDAR")
-            .count(),
-        1
-    );
+    assert_eq!(count(d.path(), "MKCALENDAR"), 1);
 }
 
 #[cfg(unix)]
 #[test]
 fn failed_edit_can_adopt_server_values_without_reissuing_the_edit() {
-    let (d, cfg) = offline();
+    let (d, _server, cfg) = offline();
     let mut service = ListService::open(&cfg, None).unwrap();
     service.execute(create()).unwrap();
     flag(d.path(), "ignore_write");
@@ -296,24 +278,14 @@ fn failed_edit_can_adopt_server_values_without_reissuing_the_edit() {
     assert!(service.reconcile(id.trim()).is_err());
     service.keep_server(id.trim()).unwrap();
     assert_eq!(service.state("new-id").unwrap().name, "Synthetic list");
-    let server: serde_json::Value =
-        serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
-    assert_eq!(
-        server["calls"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|v| **v == "PROPPATCH")
-            .count(),
-        1
-    );
+    assert_eq!(count(d.path(), "PROPPATCH"), 1);
     assert!(!state.join("lists/active").exists());
 }
 
 #[cfg(unix)]
 #[test]
 fn timeout_after_remote_creation_is_reconciled_without_another_create() {
-    let (d, mut cfg) = offline();
+    let (d, _server, mut cfg) = offline();
     cfg.sync.as_mut().unwrap().timeout_secs = 1;
     flag(d.path(), "hang_after_create_once");
     let mut service = ListService::open(&cfg, None).unwrap();
@@ -327,17 +299,7 @@ fn timeout_after_remote_creation_is_reconciled_without_another_create() {
             | twydo_core::lists::operation::Phase::Uncertain
     ));
     service.reconcile(id.trim()).unwrap();
-    let server: serde_json::Value =
-        serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
-    assert_eq!(
-        server["calls"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|v| **v == "MKCALENDAR")
-            .count(),
-        1
-    );
+    assert_eq!(count(d.path(), "MKCALENDAR"), 1);
     assert!(!state.join("lists/active").exists());
 }
 
@@ -350,7 +312,7 @@ fn interrupted_metadata_temps_reconcile_without_recreating_the_collection() {
         ("displayname", "Synt"),
         ("color", "#3289D2"),
     ] {
-        let (d, cfg) = offline();
+        let (d, _server, cfg) = offline();
         flag(d.path(), "fail_refresh_once");
         let mut service = ListService::open(&cfg, None).unwrap();
         assert!(service.execute(create()).is_err());
@@ -365,7 +327,7 @@ fn interrupted_metadata_temps_reconcile_without_recreating_the_collection() {
             fs::remove_file(dir.join("color")).unwrap();
         }
         // A similar filename alone is insufficient; invalid scratch bytes must
-        // still be refused by the real helper before it reads the remote target.
+        // still be refused by the engine before it reads the remote target.
         let temp = dir.join(format!(".{key}.tdo-tmp"));
         fs::write(&temp, "unrelated bytes").unwrap();
         let server_before = fs::read(d.path().join("server.json")).unwrap();
@@ -381,131 +343,57 @@ fn interrupted_metadata_temps_reconcile_without_recreating_the_collection() {
         assert_eq!(service.state("new-id").unwrap().name, "Synthetic list");
         assert_eq!(service.state("new-id").unwrap().color, Some((50, 137, 210)));
         assert!(!dir.join(format!(".{key}.tdo-tmp")).exists());
-        let server: serde_json::Value =
-            serde_json::from_slice(&fs::read(d.path().join("server.json")).unwrap()).unwrap();
-        assert_eq!(
-            server["calls"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter(|v| **v == "MKCALENDAR")
-                .count(),
-            1
-        );
+        assert_eq!(count(d.path(), "MKCALENDAR"), 1);
     }
-}
-
-#[cfg(unix)]
-#[test]
-fn helper_has_its_own_deadline_when_its_monitoring_parent_exits() {
-    use std::process::Command;
-    use std::time::{Duration, Instant};
-    use twydo_core::lists::{helper::HelperRequest, operation};
-    let (d, mut cfg) = offline();
-    cfg.sync.as_mut().unwrap().timeout_secs = 1;
-    flag(d.path(), "hang_after_create_once");
-    let server_path = d.path().join("server.json");
-    let mut server: serde_json::Value =
-        serde_json::from_slice(&fs::read(&server_path).unwrap()).unwrap();
-    server["flags"]["hang_seconds"] = 3.into();
-    fs::write(&server_path, server.to_string()).unwrap();
-    let mut request = HelperRequest::probe(&cfg).unwrap();
-    request.action = "create".into();
-    request.collection = Some("new-id".into());
-    request.name = Some("Synthetic list".into());
-    request.color = Some("#3289D2".into());
-    let record = operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
-    let arguments = serde_json::to_string(&vec![
-        cfg.sync.as_ref().unwrap().list_python.clone().unwrap(),
-        "-I".into(),
-        "-c".into(),
-        include_str!("../src/lists/helper.py").into(),
-    ])
-    .unwrap();
-    let payload = serde_json::to_string(&serde_json::to_string(&record.request).unwrap()).unwrap();
-    let launcher = format!(
-        "import subprocess\np=subprocess.Popen({arguments},stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)\np.stdin.write({payload}.encode())\np.stdin.close()\n"
-    );
-    assert!(
-        Command::new("python3")
-            .args(["-I", "-c", &launcher])
-            .status()
-            .unwrap()
-            .success()
-    );
-    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
-    let deadline = Instant::now() + Duration::from_millis(2200);
-    let mut stopped_on_time = false;
-    while Instant::now() < deadline {
-        let current = operation::read(&state, &record.id).unwrap();
-        if current.phase == operation::Phase::Uncertain
-            && twydo_core::store::fsio::VdirLock::try_exclusive(&state)
-                .unwrap()
-                .is_some()
-        {
-            stopped_on_time = true;
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    // A broken deadline still gets finite cleanup from the synthetic transport's 3s hang.
-    let cleanup = Instant::now() + Duration::from_secs(3);
-    while twydo_core::store::fsio::VdirLock::try_exclusive(&state)
-        .unwrap()
-        .is_none()
-        && Instant::now() < cleanup
-    {
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(
-        stopped_on_time,
-        "orphan helper did not enforce its own configured deadline"
-    );
 }
 
 #[cfg(unix)]
 #[test]
 fn reconciliation_refuses_changed_connection_before_reading_the_old_target() {
-    let (d, cfg) = offline();
+    let (d, _server, cfg) = offline();
     flag(d.path(), "fail_refresh_once");
     let mut service = ListService::open(&cfg, None).unwrap();
     assert!(service.execute(create()).is_err());
     let before = fs::read(d.path().join("server.json")).unwrap();
-    let path = d.path().join("connection.json");
-    let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    config["remote_url"] = "https://example.com/another-account/".into();
-    fs::write(path, config.to_string()).unwrap();
+    let calls = twydo_testdav::calls(d.path());
+    let mut changed = cfg.clone();
+    changed
+        .sync
+        .as_mut()
+        .unwrap()
+        .url
+        .push_str("another-account/");
+    let mut service = ListService::open(&changed, None).unwrap();
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let id = fs::read_to_string(state.join("lists/active")).unwrap();
     assert!(service.reconcile(id.trim()).is_err());
     assert_eq!(fs::read(d.path().join("server.json")).unwrap(), before);
+    assert_eq!(twydo_testdav::calls(d.path()), calls);
     assert!(state.join("lists/active").exists());
 }
 
 #[cfg(unix)]
 #[test]
 fn changed_saved_write_policy_refuses_a_worker_using_old_test_mode() {
-    let (d, cfg) = offline();
+    let (d, _server, cfg) = offline();
     let path = d.path().join("config.toml");
-    let sync = cfg.sync.as_ref().unwrap();
-    fs::write(&path, format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"verified\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\nlist_python = {:?}\n", cfg.vdir.to_str().unwrap(), cfg.state_dir().to_str().unwrap(),sync.list_python.as_deref().unwrap())).unwrap();
+    fs::write(&path, format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"verified\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\n", cfg.vdir.to_str().unwrap(), cfg.state_dir().to_str().unwrap())).unwrap();
     let mut service = ListService::open(&cfg, Some(&path)).unwrap();
     assert!(service.execute(create()).is_err());
-    assert!(!d.path().join("server.json").exists());
+    assert!(twydo_testdav::calls(d.path()).is_empty());
 }
 
 #[cfg(unix)]
 #[test]
 fn changed_saved_state_binding_refuses_create_preview_and_reconciliation() {
     for action in ["create", "preview", "reconcile"] {
-        let (d, cfg) = offline();
+        let (d, _server, cfg) = offline();
         ListService::open(&cfg, None)
             .unwrap()
             .execute(create())
             .unwrap();
         let operation = if action == "reconcile" {
-            let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-            request.action = "edit".into();
+            let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "edit").unwrap();
             request.collection = Some("new-id".into());
             request.name = Some("After".into());
             request.expected = Some(serde_json::json!({"name":"Synthetic list","color":"#379417"}));
@@ -518,8 +406,7 @@ fn changed_saved_state_binding_refuses_create_preview_and_reconciliation() {
             None
         };
         let path = d.path().join("config.toml");
-        let sync = cfg.sync.as_ref().unwrap();
-        fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\nlist_python = {:?}\n",cfg.vdir.to_str().unwrap(),d.path().join("other-state").to_str().unwrap(),sync.list_python.as_deref().unwrap())).unwrap();
+        fs::write(&path,format!("vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\nurl = \"https://dav.example.test/alice/\"\nusername = \"alice\"\npassword_command = [\"true\"]\n",cfg.vdir.to_str().unwrap(),d.path().join("other-state").to_str().unwrap())).unwrap();
         let before = fs::read(d.path().join("server.json")).unwrap();
         let mut service = ListService::open(&cfg, Some(&path)).unwrap();
         let message = match action {
@@ -556,7 +443,7 @@ fn changed_saved_state_binding_refuses_create_preview_and_reconciliation() {
 #[cfg(unix)]
 #[test]
 fn explicit_collection_save_respects_but_does_not_depend_on_automatic_sync_switch() {
-    let (_d, cfg) = offline();
+    let (_d, _server, cfg) = offline();
     twydo_core::sync::switch::set(&cfg, true).unwrap();
     ListService::open(&cfg, None)
         .unwrap()
@@ -634,7 +521,7 @@ fn missing_pair_never_prepares_a_remote_change() {
 fn refusal_names_the_failing_direction() {
     use twydo_core::compat::Verdict;
     use twydo_core::config::WriteMode;
-    let (_d, mut cfg) = offline();
+    let (_d, _server, mut cfg) = offline();
     ListService::open(&cfg, None)
         .unwrap()
         .execute(create())

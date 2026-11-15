@@ -6,7 +6,7 @@ mod common;
 use std::fs;
 use std::path::Path;
 
-use common::lists::offline_dav;
+use common::lists::offline;
 use twydo_core::sync::discover::{DiscoverError, discover};
 use twydo_testdav::{add_collection, calls, collections, flag};
 
@@ -31,7 +31,7 @@ fn state(cfg: &twydo_core::config::Config) -> std::path::PathBuf {
 
 #[test]
 fn discover_adopts_a_remote_only_list() {
-    let (d, _server, cfg) = offline_dav();
+    let (d, _server, cfg) = offline();
     script(d.path(), &cfg, &["phone-list"], &[]);
     let found = discover(&cfg, &state(&cfg)).unwrap();
     assert_eq!(found.adopted, ["phone-list"]);
@@ -41,7 +41,7 @@ fn discover_adopts_a_remote_only_list() {
 
 #[test]
 fn discover_never_creates_a_remote_list() {
-    let (d, _server, cfg) = offline_dav();
+    let (d, _server, cfg) = offline();
     script(d.path(), &cfg, &[], &["stale"]);
     match discover(&cfg, &state(&cfg)) {
         Err(DiscoverError::Missing { id }) => assert_eq!(id, "stale"),
@@ -53,7 +53,7 @@ fn discover_never_creates_a_remote_list() {
 
 #[test]
 fn discover_maps_other_refusals() {
-    let (d, _server, cfg) = offline_dav();
+    let (d, _server, cfg) = offline();
     flag(d.path(), "fail_refresh_once");
     match discover(&cfg, &state(&cfg)) {
         Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),
@@ -63,7 +63,7 @@ fn discover_maps_other_refusals() {
 
 #[test]
 fn a_failed_vdirsyncer_discover_removes_adopted_folders() {
-    let (d, _server, cfg) = offline_dav();
+    let (d, _server, cfg) = offline();
     script(d.path(), &cfg, &["phone-list", "tablet-list"], &["kept"]);
     add_collection(d.path(), "kept", "kept", "#112233");
     flag(d.path(), "fail_refresh_once");
@@ -79,7 +79,7 @@ fn a_failed_vdirsyncer_discover_removes_adopted_folders() {
 
 #[test]
 fn a_non_plain_server_id_fails_and_creates_nothing() {
-    let (d, _server, cfg) = offline_dav();
+    let (d, _server, cfg) = offline();
     script(d.path(), &cfg, &["good-list", "bad%2Fid"], &[]);
     match discover(&cfg, &state(&cfg)) {
         Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),

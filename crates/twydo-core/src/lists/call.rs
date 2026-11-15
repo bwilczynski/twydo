@@ -53,14 +53,12 @@ impl std::error::Error for Refused {}
 /// The wording of a refusal code. Unknown codes get the generic failure text.
 pub fn wording(code: &str) -> &'static str {
     match code {
-        "mapping" => "collection helper could not validate this pair and exact list identity",
-        "dav" => "collection helper could not verify the CalDAV response",
+        "mapping" => "list operation could not validate this pair and exact list identity",
+        "dav" => "list operation could not verify the CalDAV response",
         "inventory" => {
             "cannot back up the complete remote list: inventory, strong resource ETags or resource reads could not be verified"
         }
-        "operation" => {
-            "collection helper refused stale or mismatched operation state; reconcile it"
-        }
+        "operation" => "list operation refused stale or mismatched operation state; reconcile it",
         "stale" => "list changed on the server; sync and review your changes before saving",
         "config" => {
             "cannot load the collection pair from the generated vdirsyncer config; run tdo config check"
@@ -73,13 +71,11 @@ pub fn wording(code: &str) -> &'static str {
         "discovery" => {
             "collection discovery found missing lists; resolve them before retrying (no unrelated list was created)"
         }
-        "timeout" => {
-            "collection helper timed out; reconcile its recorded operation before retrying"
-        }
+        "timeout" => "list operation timed out; reconcile its recorded operation before retrying",
         "changed" => "the list changed on the server since the preview; preview the deletion again",
         "present" => "the list still exists on the server",
         "partial" => "the deletion was only partly applied",
-        _ => "collection helper failed; inspect its operation before retrying",
+        _ => "list operation failed; inspect its operation before retrying",
     }
 }
 
@@ -91,7 +87,7 @@ fn default_timeout() -> u64 {
     300
 }
 
-/// What a list operation asks of the engine: the helper's request without the vdirsyncer
+/// What a list operation asks of the engine: the list request without the vdirsyncer
 /// pair, its local storage and its config file. Operation records written by the current
 /// version deserialize into it (unknown fields are ignored).
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -511,10 +511,11 @@ pub fn client_sync(s: &twydo_core::sync::SyncSummary) -> tdo::app::ClientSync {
     }
 }
 
-/// A daemon with lists `c1` and `c2` that a synthetic server also holds (the core tests'
-/// offline list backend), and the way to reach it.
+/// A daemon with lists `c1` and `c2` that a fake CalDAV server also holds (`twydo-testdav`),
+/// and the way to reach it.
 pub struct ListEnv {
     pub root: tempfile::TempDir,
+    pub _server: twydo_testdav::FakeDav,
     pub _sockets: tempfile::TempDir,
     pub daemon: DaemonHandle,
     pub socket: PathBuf,
@@ -527,7 +528,7 @@ pub fn list_env() -> ListEnv {
     let root = tempfile::tempdir().unwrap();
     let sockets = short_socket_dir();
     let vdir = root.path().join("vdir");
-    let mut collections = serde_json::Map::new();
+    let server = twydo_testdav::FakeDav::start(root.path());
     for (id, name) in [("c1", "Synthetic one"), ("c2", "Synthetic two")] {
         fs::create_dir_all(vdir.join(id)).unwrap();
         fs::write(
@@ -537,52 +538,26 @@ pub fn list_env() -> ListEnv {
         .unwrap();
         fs::write(vdir.join(id).join("displayname"), name).unwrap();
         fs::write(vdir.join(id).join("color"), COLOR).unwrap();
-        collections.insert(id.into(), serde_json::json!({"name": name, "color": COLOR}));
+        twydo_testdav::add_collection(root.path(), id, name, COLOR);
+        twydo_testdav::add_resource(
+            root.path(),
+            id,
+            "remote.ics",
+            "\"v0\"",
+            "synthetic resource",
+        );
+        twydo_testdav::add_resource(root.path(), id, "unknown.bin", "\"v1\"", "opaque resource");
     }
-    fs::write(
-        root.path().join("server.json"),
-        serde_json::json!({"calls": [], "flags": {}, "collections": collections}).to_string(),
-    )
-    .unwrap();
-    let connection = root.path().join("connection.json");
-    fs::write(&connection, serde_json::json!({"vdir": vdir}).to_string()).unwrap();
-    let vdirsyncer = root.path().join("fake-vdirsyncer");
-    write_script(&vdirsyncer, "exit 0");
-    let backend = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../twydo-core/tests/common/list_backend.py")
-        .canonicalize()
-        .unwrap();
-    let helper = root.path().join("list-python");
-    fs::write(
-        &helper,
-        format!(
-            "#!/usr/bin/env python3\nimport os,runpy,sys\n\
-             if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
-             os.environ['TWYDO_TEST_LIST_CONNECTION']={connection:?}\n\
-             runpy.run_path({backend:?}, run_name='__main__')\n"
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-    // A script written while another test thread forks can briefly be busy: probe it.
-    let end = Instant::now() + Duration::from_secs(5);
-    while std::process::Command::new(&helper)
-        .arg("__probe")
-        .status()
-        .map(|s| !s.success())
-        .unwrap_or(true)
-    {
-        assert!(Instant::now() < end, "the list helper never ran");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    let vdirsyncer = twydo_testdav::fake_vdirsyncer(root.path());
     let config = root.path().join("config.toml");
     fs::write(
         &config,
         format!(
             "vdir = {vdir:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             {SYNC_KEYS}command = {vdirsyncer:?}\n\
-             list_python = {helper:?}\nmetasync = false\n",
+             url = {:?}\nusername = \"alice\"\npassword_command = [\"printf\", \"secret\"]\n\
+             command = {vdirsyncer:?}\nmetasync = false\n",
             root.path().join("state"),
+            server.url(),
         ),
     )
     .unwrap();
@@ -609,6 +584,7 @@ pub fn list_env() -> ListEnv {
     assert!(daemon.wait_ready(Duration::from_secs(10)));
     ListEnv {
         root,
+        _server: server,
         _sockets: sockets,
         daemon,
         socket,

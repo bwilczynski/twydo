@@ -7,8 +7,8 @@
 //! deletion the local copy is retired through [`crate::retired`] and the backup is kept.
 use super::{
     ListError, ListResult, ListService,
-    helper::{self, HelperRequest},
-    invalid,
+    call::{RemoteRequest, wording},
+    engine, invalid,
     operation::{self, ListOperation, Phase},
     plain_id,
     remote::capability,
@@ -221,12 +221,11 @@ impl ListService {
     pub fn preview_delete(&mut self, id: &str) -> Result<DeletePreview, ListError> {
         self.validate_binding()?;
         let state = self.state(id)?;
-        let mut request = HelperRequest::probe(&self.config)?;
-        request.action = "preview-delete".into();
+        let mut request = RemoteRequest::new(&self.config, "preview-delete")?;
         request.collection = Some(id.into());
         let record = operation::prepare(&self.config, request, Utc::now())?;
         let result = (|| {
-            helper::invoke(&self.config, &record.request)?;
+            engine::invoke(&self.config, &record.request)?;
             let bound = bind_vdir_state(&self.config.state_dir(), &self.config.vdir)?;
             let _run = crate::sync::run::run_lock(&bound.join("sync"), false)?;
             let _vdir = VdirLock::exclusive(&bound)?;
@@ -319,8 +318,7 @@ impl ListService {
         if operation::snapshot(&self.config.vdir.join(collection))?.as_ref() != Some(&saved.local) {
             return Err(ListError::Refused(CHANGED.into()));
         }
-        let mut request = HelperRequest::probe(&self.config)?;
-        request.action = "delete".into();
+        let mut request = RemoteRequest::new(&self.config, "delete")?;
         request.collection = Some(collection.into());
         request.backup = Some(saved.id.clone());
         let record = operation::prepare(&self.config, request, Utc::now())?;
@@ -333,20 +331,17 @@ impl ListService {
         let unresolved = |e: ListError| {
             ListError::Refused(format!("list operation {id} needs reconciliation: {e}"))
         };
-        let outcome = helper::exchange(&self.config, &record.request).and_then(|reply| {
-            if reply.ok {
-                Ok(())
-            } else if reply.code == "changed" {
-                Err(ListError::Refused(CHANGED.into()))
-            } else {
-                Err(ListError::Refused(helper::refusal(
-                    &self.config,
-                    &reply.code,
-                )))
-            }
-        });
+        let outcome = engine::run(&self.config, &record.request)
+            .map(|_| ())
+            .map_err(|refused| {
+                if refused.code == "changed" {
+                    ListError::Refused(CHANGED.into())
+                } else {
+                    ListError::Refused(wording(refused.code).into())
+                }
+            });
         if let Err(error) = outcome {
-            // The helper proves a refusal before any DELETE; anything else may have reached
+            // The engine proves a refusal before any DELETE; anything else may have reached
             // the server and stays fenced.
             return match operation::cancel_unstarted(&self.config, &id) {
                 Ok(()) => Err(error),
@@ -372,13 +367,11 @@ impl ListService {
         }
         let mut request = operation::recovery_request(&self.config, &record.request)?;
         request.mode = "reconcile".into();
-        let reply = helper::exchange(&self.config, &request).map_err(|e| {
-            ListError::Refused(format!("list operation {id} remains unresolved: {e}"))
-        })?;
-        if reply.ok {
-            return self.complete_delete(id);
-        }
-        let message = match reply.code.as_str() {
+        let refused = match engine::run(&self.config, &request) {
+            Ok(_) => return self.complete_delete(id),
+            Err(refused) => refused,
+        };
+        let message = match refused.code {
             "present" => {
                 "the list still exists on the server; delete it again if you still want to"
             }
@@ -398,7 +391,7 @@ impl ListService {
             code => {
                 return Err(ListError::Refused(format!(
                     "list operation {id} remains unresolved: {}",
-                    helper::refusal(&self.config, code)
+                    wording(code)
                 )));
             }
         };

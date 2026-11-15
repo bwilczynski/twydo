@@ -1,15 +1,16 @@
 //! List actions as jobs: create, update, archive, delete, export, a resent request, and edits
-//! saved during a list job (queued, fenced at drain). The list adapter is the core tests'
-//! offline helper backend (`twydo-core/tests/common/list_backend.py`): the bundled helper
-//! against a synthetic in-memory server. Synthetic fixtures; no network, no real vdirsyncer.
+//! saved during a list job (queued, fenced at drain). The list calls run in the daemon against
+//! the fake CalDAV server of `twydo-testdav`, with its fake vdirsyncer. Synthetic fixtures;
+//! no network, no real vdirsyncer.
 
 mod common;
 
+use std::cell::Cell;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use common::{Fixture, TestDaemon, edit_title, empty, fake_vdirsyncer, submit, wait_event};
+use common::{Fixture, TestDaemon, edit_title, empty, submit, wait_event};
 use serde_json::{Value, json};
 use twydo_core::compat::{Matrix, Verdict};
 use twydo_core::config::Config;
@@ -35,6 +36,10 @@ struct Env {
     fx: Fixture,
     td: TestDaemon,
     c: Client,
+    /// The fake CalDAV server; stops when dropped.
+    _server: twydo_testdav::FakeDav,
+    /// How many PROPPATCH requests [`Env::wait_write_started`] has already seen.
+    writes_seen: Cell<usize>,
 }
 
 impl Env {
@@ -45,69 +50,34 @@ impl Env {
     /// Sets a flag of the synthetic server (`ignore_write`: it answers a write without
     /// applying it).
     fn flag(&self, name: &str) {
-        let path = self.root().join("server.json");
-        let mut server: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        server["flags"][name] = true.into();
-        fs::write(path, server.to_string()).unwrap();
+        twydo_testdav::flag(&self.root(), name);
     }
 
-    /// From now on the helper writes `started` and sleeps 1 s before it runs.
+    /// From now on the server holds every list write for 1 s before it applies it.
     fn slow(&self) {
-        let _ = fs::remove_file(self.root().join("started"));
-        fs::write(self.root().join("slow"), "").unwrap();
+        twydo_testdav::flag_value(&self.root(), "slow_write", "1");
     }
 
-    /// Waits until a slow helper has started (the job holds the lane, its operation is on).
-    fn wait_helper_started(&self) {
+    /// Waits until the server has received a list write that [`Env::slow`] holds (the job
+    /// holds the lane, its operation is on).
+    fn wait_write_started(&self) {
         let deadline = Instant::now() + BOUND;
-        while !self.root().join("started").exists() {
-            assert!(Instant::now() < deadline, "the helper never started");
+        loop {
+            let seen = twydo_testdav::calls(&self.root())
+                .iter()
+                .filter(|call| *call == "PROPPATCH")
+                .count();
+            if seen > self.writes_seen.get() {
+                self.writes_seen.set(seen);
+                return;
+            }
+            assert!(Instant::now() < deadline, "the list write never started");
             std::thread::sleep(Duration::from_millis(10));
         }
     }
 }
 
 const COLOR: &str = "#3289d2";
-
-/// The helper wrapper: runs the offline backend, first writing `started` and sleeping 1 s
-/// while `slow` exists. Answers `__probe` at once (see [`fake_vdirsyncer`]).
-fn helper(root: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    let backend = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../twydo-core/tests/common/list_backend.py")
-        .canonicalize()
-        .unwrap();
-    let path = root.join("list-python");
-    fs::write(
-        &path,
-        format!(
-            "#!/usr/bin/env python3\nimport os,runpy,sys,time\n\
-             os.environ['TWYDO_TEST_LIST_CONNECTION']={connection:?}\n\
-             if sys.argv[1:] == ['__probe']: sys.exit(0)\n\
-             if os.path.exists({slow:?}):\n open({started:?}, 'w').close()\n time.sleep(1)\n\
-             runpy.run_path({backend:?}, run_name='__main__')\n",
-            slow = root.join("slow"),
-            started = root.join("started"),
-            connection = root.join("connection.json"),
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-    // A script written while another test thread forks can briefly be busy (ETXTBSY).
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
-        match std::process::Command::new(&path).arg("__probe").status() {
-            Ok(st) => {
-                assert!(st.success(), "probe of {} failed", path.display());
-                return path;
-            }
-            Err(e) if e.raw_os_error() == Some(26) && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(e) => panic!("cannot run {}: {e}", path.display()),
-        }
-    }
-}
 
 /// The embedded matrix with list metadata edits admitted, as the core's prototype tests load
 /// it (only against the offline server).
@@ -133,32 +103,27 @@ fn env_with(f: impl FnOnce(&mut Config)) -> Env {
 fn env_opts(f: impl FnOnce(&mut Config), o: impl FnOnce(&mut DaemonOptions)) -> Env {
     let fx = Fixture::new(&[("c1", "u1", "One", None), ("c2", "u2", "Two", None)]);
     let root = fx.vdir().parent().unwrap().to_path_buf();
-    let mut collections = serde_json::Map::new();
+    let server = twydo_testdav::FakeDav::start(&root);
     for (id, name) in [("c1", "Synthetic one"), ("c2", "Synthetic two")] {
         fx.write(&format!("{id}/displayname"), name);
         fx.write(&format!("{id}/color"), COLOR);
-        collections.insert(id.into(), json!({"name": name, "color": COLOR}));
+        twydo_testdav::add_collection(&root, id, name, COLOR);
+        twydo_testdav::add_resource(&root, id, "remote.ics", "\"v0\"", "synthetic resource");
+        twydo_testdav::add_resource(&root, id, "unknown.bin", "\"v1\"", "opaque resource");
     }
-    fs::write(
-        root.join("server.json"),
-        json!({"calls": [], "flags": {}, "collections": collections}).to_string(),
-    )
-    .unwrap();
-    let connection = root.join("connection.json");
-    fs::write(&connection, json!({"vdir": fx.vdir()}).to_string()).unwrap();
-    let vdirsyncer = fake_vdirsyncer(&root, "exit 0");
+    let vdirsyncer = twydo_testdav::fake_vdirsyncer(&root);
     let path = fx.instance().config;
     fs::write(
         &path,
         format!(
             "vdir = {:?}\nstate_dir = {:?}\n[writes]\nmode = \"test\"\n[sync]\n\
-             url = \"https://dav.example.test/alice/\"\nusername = \"alice\"\n\
-             password_command = [\"true\"]\ncommand = {:?}\n\
-             list_python = {:?}\nmetasync = false\n",
+             url = {:?}\nusername = \"alice\"\n\
+             password_command = [\"printf\", \"secret\"]\ncommand = {:?}\n\
+             metasync = false\n",
             fx.vdir(),
             fx.config().state_dir(),
+            server.url(),
             vdirsyncer,
-            helper(&root),
         ),
     )
     .unwrap();
@@ -170,7 +135,13 @@ fn env_opts(f: impl FnOnce(&mut Config), o: impl FnOnce(&mut DaemonOptions)) -> 
     });
     let c = td.client();
     let _: Value = c.call("events.subscribe", empty()).unwrap();
-    Env { fx, td, c }
+    Env {
+        fx,
+        td,
+        c,
+        _server: server,
+        writes_seen: Cell::new(0),
+    }
 }
 
 fn env() -> Env {
@@ -419,7 +390,7 @@ fn edit_during_a_list_job_is_queued_and_fenced_at_drain() {
     // The job finishes its operation: the edit applies after it.
     e.slow();
     let job = update("c1", "Renamed one", "Synthetic one");
-    e.wait_helper_started();
+    e.wait_write_started();
     let r = submit(&e.c, edit_title("u1", "Edited one")).unwrap();
     assert_eq!(r.outcome, WriteOutcome::Queued, "{r:?}");
     let (state, events) = until_finished(&e.c, &job);
@@ -435,7 +406,7 @@ fn edit_during_a_list_job_is_queued_and_fenced_at_drain() {
     e.flag("ignore_write");
     e.slow();
     let job = update("c2", "Renamed two", "Synthetic two");
-    e.wait_helper_started();
+    e.wait_write_started();
     let r = submit(&e.c, edit_title("u2", "Edited two")).unwrap();
     assert_eq!(r.outcome, WriteOutcome::Queued, "{r:?}");
     let (state, events) = until_finished(&e.c, &job);
@@ -474,7 +445,7 @@ fn undo_during_a_list_job_is_queued() {
             expected: state("c1", "Synthetic one", false),
         },
     );
-    e.wait_helper_started();
+    e.wait_write_started();
     let u = common::undo(&e.c).unwrap();
     assert_eq!(u.outcome, WriteOutcome::Queued, "{u:?}");
     let (state, events) = until_finished(&e.c, &job);
@@ -535,11 +506,7 @@ fn resent_list_job_returns_the_same_job() {
     saved(finished(&e.c, &first));
     // After the job ended too: no second create (which would refuse the existing list).
     assert_eq!(call(&e.c, "lists.create", params), first);
-    let server: Value =
-        serde_json::from_slice(&fs::read(e.root().join("server.json")).unwrap()).unwrap();
-    let creates = server["calls"]
-        .as_array()
-        .unwrap()
+    let creates = twydo_testdav::calls(&e.root())
         .iter()
         .filter(|v| *v == "MKCALENDAR")
         .count();
@@ -572,6 +539,8 @@ fn forget(e: &Env) -> (JobState, Vec<Event>) {
             ListPreviewForgetParams { name: "c1".into() },
         )
         .unwrap();
+    // The list is gone from the server, so the sync that follows does not discover it again.
+    twydo_testdav::remove_collection(&e.root(), "c1");
     let job = call(
         &e.c,
         "lists.forget",
@@ -684,6 +653,7 @@ fn forget_sends_sync_finished_before_job_finished() {
             ListPreviewForgetParams { name: "c1".into() },
         )
         .unwrap();
+    twydo_testdav::remove_collection(&e.root(), "c1");
     let job = call(
         &e.c,
         "lists.forget",
@@ -763,7 +733,15 @@ fn recover_into_a_list_applies_once() {
 fn recover_waits_behind_a_sync_instead_of_failing() {
     let e = env();
     let (backup, _, _) = forgot(forget(&e).0);
-    fake_vdirsyncer(&e.root(), "sleep 1");
+    // From now on the configured vdirsyncer takes a second and does nothing.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let script = e.root().join("vdirsyncer");
+        let tmp = e.root().join("vdirsyncer.slow");
+        fs::write(&tmp, "#!/bin/sh\nsleep 1\n").unwrap();
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::rename(&tmp, &script).unwrap();
+    }
     let sync: JobStarted =
         e.c.call(
             "sync.run",
@@ -914,18 +892,14 @@ fn recover_resent_under_a_new_session_runs() {
 /// Writes an unfinished list operation record and marks it active, as an interrupted save
 /// leaves it.
 fn seed_pending(fx: &Fixture, observed: Option<Value>) -> String {
-    use twydo_core::lists::helper::HelperRequest;
+    use twydo_core::lists::call::RemoteRequest;
     use twydo_core::lists::operation::{ListOperation, Phase};
     let cfg = fx.config();
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let id = "op-synthetic-1".to_string();
-    let request = HelperRequest {
-        version: 1,
+    let request = RemoteRequest {
         action: "update".into(),
-        pair: "twydo".into(),
-        local_storage: "twydo_local".into(),
         vdir: fx.vdir(),
-        config: None,
         collection: Some("inbox".into()),
         operation: None,
         backup: None,
@@ -999,8 +973,7 @@ fn fenced_fixture() -> (Fixture, Config, String) {
     let mut cfg = fx.config();
     cfg.sync = Some(twydo_core::config::SyncConfig::default());
     fs::create_dir_all(fx.state().join("journal")).unwrap();
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "preview-delete".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "preview-delete").unwrap();
     request.collection = Some("inbox".into());
     let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
     (fx, cfg, record.id)
@@ -1039,8 +1012,7 @@ fn a_daemon_starts_over_an_unfinished_list_operation_without_a_journal() {
     let mut cfg = fx.config();
     cfg.sync = Some(twydo_core::config::SyncConfig::default());
     assert!(!fx.state().join("journal").exists());
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "preview-delete".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "preview-delete").unwrap();
     request.collection = Some("inbox".into());
     let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
     let td = TestDaemon::start_cfg(&fx, cfg, |_| {});
@@ -1084,8 +1056,7 @@ fn a_fenced_submit_is_refused_before_it_drains_or_gates() {
     // `prepare` refuses a list with queued edits, so the item is put back after it.
     let queue = twydo_core::store::queue::Queue::open(&fx.state()).unwrap();
     fs::remove_file(fx.state().join(format!("queue/{}.json", queued.id))).unwrap();
-    let mut request = twydo_core::lists::helper::HelperRequest::probe(&cfg).unwrap();
-    request.action = "preview-delete".into();
+    let mut request = twydo_core::lists::call::RemoteRequest::new(&cfg, "preview-delete").unwrap();
     request.collection = Some("inbox".into());
     let record = twydo_core::lists::operation::prepare(&cfg, request, chrono::Utc::now()).unwrap();
     queue.push(&queued).unwrap();
@@ -1125,7 +1096,7 @@ fn reconciling_the_operation_lets_recovery_and_writes_go_on() {
             keep_server: false,
         },
     );
-    // The preview needs no server: the job may report the helper's refusal, the fence is gone.
+    // The preview needs no server: the job may report the engine's refusal, the fence is gone.
     let _ = finished(&c, &job);
     let pending: Option<PendingListOp> = c.call("lists.pending", empty()).unwrap();
     assert_eq!(pending, None);

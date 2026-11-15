@@ -23,3 +23,6 @@ libc = "0.2"
 unicode-width = "0.2.3"
 shell-words = "1"
 toml_edit = "0.25"
+
+[dev-dependencies]
+twydo-testdav = { path = "../twydo-testdav" }
