@@ -13,7 +13,9 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
 
 - **The vdir** is the source of truth on your machine: a folder with one subfolder per list
   and one `.ics` file per task, kept in step with the CalDAV server by
-  [vdirsyncer](https://vdirsyncer.pimutils.org/). Twydo never talks CalDAV itself.
+  [vdirsyncer](https://vdirsyncer.pimutils.org/). Task data moves only through vdirsyncer; the
+  daemon talks CalDAV itself only for list operations (create, rename, recolour, delete,
+  discovery).
 - **The daemon** (`tdo daemon`) owns the vdir: it reads it, writes changes back as files, runs
   vdirsyncer with recovery before and conflict handling after ([sync.md](sync.md)), and
   decides when to sync. See [The daemon](#the-daemon).
@@ -28,7 +30,7 @@ is an alternative active task database. Recovery backups deliberately retain tas
 
 Explicit list retirement also keeps inspectable backups under `retired/<id>/`. It publishes
 the complete original files and journal/conflict evidence durably before removing the local
-collection, then requests ordinary vdirsyncer rediscovery. An incomplete retirement resumes
+collection, then requests rediscovery. An incomplete retirement resumes
 under the exclusive vdir lock before journal recovery. Journal entries entirely in that
 collection are abandoned locally, with originals kept in the backup; entries spanning lists
 retain their surviving writes without claiming archived writes synced. Archived conflicts
@@ -237,26 +239,31 @@ insertion, so a queued write cannot slip behind the collection preflight.
 While that fence is up, task writes are refused or queued under it; once reconciliation clears
 it, the next write goes through the same `Writer`. Sessions keep their undo history throughout.
 
-The bundled collection helper takes the same exclusive run lock and a shared vdir lock itself.
-Those locks outlive the request that started the helper while it is still running. It validates the
-bound operation and held bytes before its remote phase, and persists the receipt before
-releasing the locks. Readers remain responsive during network requests; Rust local
-finalization takes the exclusive vdir lock. The list card exposes explicit service actions
-without enabling unverified writes in verified mode.
-The helper also enforces its own operation deadline, so it releases its locks even if the
-daemon job monitoring it has ended. Timeout retains an uncertain/prepared operation for reconciliation;
-it never assumes that killing a request undoes a server mutation.
+List operations run inside the daemon process (`lists/engine.rs`), which makes the CalDAV
+requests itself (`lists/dav.rs`): basic auth with the `[sync]` username and password command,
+the configured `ca_file` or the system trust store, no redirects, and only the configured
+server. The daemon takes the exclusive sync run lock and a shared vdir lock itself and holds
+both for the whole operation. It validates the bound operation and held bytes before its remote
+phase, and persists the receipt before releasing the locks. Readers remain responsive during
+network requests; local finalization takes the exclusive vdir lock. The list card exposes
+explicit service actions without enabling unverified writes in verified mode.
+A stop request or the operation deadline (`[sync].timeout_secs`) takes effect between server
+requests. Timeout retains an uncertain/prepared operation for reconciliation; it never assumes
+that abandoning a request undoes a server mutation. Because no child process holds the locks,
+a killed daemon releases them with its death and leaves the record at `remote-started`;
+reconciliation treats that as an uncertain outcome.
 
 The create/edit service records the exact remote URL before a mutation and a digest of
 its unexpanded connection configuration. Reconciliation uses that saved URL and rejects
 changed account/storage configuration before fetching credentials. A successful remote
-request is followed by a persisted local metadata before/after plan and then vdirsyncer's
-own discovery-cache refresh, with missing-collection creation disabled. An interrupted
+request is followed by a persisted local metadata before/after plan and then a refresh of
+vdirsyncer's discovery cache (`vdirsyncer discover` without terminal input, so it cannot create
+a collection). An interrupted
 local metadata write can resume only from its recorded before/after values; held task
 bytes cannot be replaced. Recovery also recognizes `.displayname.tdo-tmp` and
 `.color.tdo-tmp` left before an atomic rename, only when the saved plan proves the file
 was absent before the operation and contains a prefix of the intended replacement.
-The helper validates these bytes without modifying them; local finalization removes
+Validation reads these bytes without modifying them; local finalization removes
 them under the exclusive vdir lock before retrying. Pre-existing scratch files,
 unrelated files and changed task bytes remain protected.
 Reconciliation does not repeat MKCALENDAR or PROPPATCH. If the
@@ -270,7 +277,7 @@ known unsafe write.
 Offline protocol/reconciliation tests use a synthetic matrix override; the application
 and proposed device round cannot load that override.
 
-Deletion previews are read-only collection operations. Under the same fence, the helper
+Deletion previews are read-only collection operations. Under the same fence, the daemon
 captures all returned Depth-1 resources with strong ETags, conditional GETs, SHA-256
 hashes and a second matching inventory/property read. Rust publishes a private version-1
 backup under `lists/backups/<id>/backup.json` with raw local files and relevant state before
@@ -282,7 +289,7 @@ vdir. There is no collection restore path.
 `ListService::delete_list` is best-effort: nothing on the server enforces the previewed
 state at DELETE time. It requires the `list-delete` capability, a valid backup naming the
 previewed list and unchanged local bytes, then prepares a `delete` operation (refused for
-pending or queued task edits and unresolved conflicts). The helper revalidates the server
+pending or queued task edits and unresolved conflicts). The daemon revalidates the server
 against the backup's remote inventory and sends one unconditional DELETE; only 200, 202,
 204 or 404 count as deleted. Any refusal or failure while revalidating, including a changed
 inventory, happens before the DELETE is sent, so it releases the fence. After a confirmed

@@ -256,17 +256,18 @@ Discovery runs at these points only:
 Ordinary syncs (timer, after edits, plain `tdo sync` and `:sync`) do not discover and make no
 extra server request, so a new phone list appears after the next daemon start or `:discover`.
 
-Discovery only creates local folders. A collection that exists on the server and not locally
-is adopted: the same run syncs and metasyncs it, so it arrives with its tasks, name and color,
-and the sync note says `found new list "<name>"`. A collection missing on the server is never
-created there, because a local folder without a server counterpart usually means the list was
-deleted on the phone. Twydo lists the server's lists itself, creates the missing local
-folders, and only then runs the plain `vdirsyncer discover` command to refresh its cache; that
-command alone cannot tell the two cases apart, and Twydo's generated configuration never lets
-it create a list on the server.
+Discovery only creates local folders. Twydo lists the server's calendar home itself, with the
+same account, trust and no redirects as every list operation, and never creates a list on the
+server. A collection that exists on the server and not locally is adopted: Twydo creates an empty
+local folder for it, and the same run syncs and metasyncs it, so it arrives with its tasks, name
+and color; the sync note says `found new list "<name>"`. A collection missing on the server is
+never created there, because a local folder without a server counterpart usually means the list
+was deleted on the phone. Once the folders exist, Twydo runs the plain `vdirsyncer discover`
+command to refresh its cache. It runs with no terminal input (its stdin is empty), so it cannot
+answer a creation prompt: nothing can be created on the server.
 
 A local list whose server collection is gone (deleted on the phone, not yet forgotten) stops
-discovery, as vdirsyncer does, so no new list is adopted in that run. The report names the
+discovery before it creates anything, so no new list is adopted in that run. The report names the
 list and its collection id and gives the `:forget-list <id>` command; see
 [Deleted lists and recovery](#deleted-lists-and-recovery). Ordinary sync continues. Discovery
 reports one deleted list at a time, because each deletion must be confirmed separately; after
@@ -278,9 +279,10 @@ killed daemon) for as long as it runs, and is killed with its process group when
 stopped (`tdo sync stop`, a write
 that stops it, or the daemon shutting down after its grace period) or times out. If discovery
 fails, is stopped or times out, the folders it had already created are removed again (only
-while empty), so no list is half adopted.
+while empty), so no list is half adopted. A stop or the deadline (`timeout_secs`) takes effect
+between server requests, and before `vdirsyncer discover` starts.
 
-A failed discovery (server unreachable, a server list whose id is not a plain name, a stale list,
+A failed discovery (server unreachable, refused or unreadable by Twydo's own listing, a server list whose id is not a plain name, a stale list,
 timeout) keeps the previous cached collection set. With `tdo sync --discover` it counts as a
 problem: the ordinary sync still runs, but the exit code is 1. At daemon startup it is only
 a warning on the startup sync. A vdirsyncer that cannot be started at all is likewise only a
@@ -305,7 +307,7 @@ unsynced journal evidence, and both versions of recorded conflicts outside the s
 before removing the local folder. Cancelling or a changed confirmation snapshot writes
 nothing. Other lists' pending work remains active; archived work is not marked synced.
 
-The next sync first runs the local-only discovery described in
+The next sync first runs the discovery described in
 [New lists from other devices](#new-lists-from-other-devices). When it succeeds it has refreshed
 the cached collection set itself, so the request is cleared and the plain command is skipped.
 When it fails or cannot run (a warning), the ordinary `vdirsyncer discover <pair>` runs, with the configured

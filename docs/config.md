@@ -73,8 +73,9 @@ The periodic sync interval (60 seconds) is fixed; there is no key for it.
 
 Optional. A missing `[sync]` table turns sync off. A `[sync]` table must set `url`, `username`
 and `password_command`: an empty table is an error naming the missing key. Twydo writes the
-vdirsyncer config from these keys and runs the configured vdirsyncer command; it has no network
-code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md).
+vdirsyncer config from these keys and runs the configured vdirsyncer command for syncing. The
+daemon itself sends the CalDAV requests of list operations (create, rename, recolour, delete,
+discovery) with the same `url`, `username`, `password_command` and `ca_file`. Setup, behaviour and conflict handling are in [sync.md](sync.md).
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -83,7 +84,6 @@ code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md
 | `password_command` | array of strings | required | Command whose output (trailing newlines removed) is the password, so it must print only the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
 | `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
-| `list_python` | string | vdirsyncer's interpreter (from its shebang), else `python3` | Python interpreter for the bundled collection helper, with vdirsyncer 0.21.x installed. When unset, `command` is looked up on the daemon's PATH, symlinks are followed, and an absolute `#!…/python`, `python3` or `python3.N` first line is used, as is the interpreter pip's `#!/bin/sh` launcher (`'''exec' …`) runs for paths too long for a shebang; `#!/usr/bin/env …`, a binary or another wrapper falls back to `python3` on PATH. Set it when `command` is a wrapper or its shebang goes through `env`. An explicit `list_python = "python3"`, the old default, turns this detection off: delete the line to use it. The helper uses the generated vdirsyncer config. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
 | `max_wait_secs` | integer | `60` | A sync is due this many seconds after the oldest unsynced edit. Must be at least 1. |
@@ -91,16 +91,18 @@ code of its own. Setup, behaviour and conflict handling are in [sync.md](sync.md
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
 | `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |
 
-`pair`, `local_storage`, `vdirsyncer_config` and `after_edit` are removed: Twydo generates the
-vdirsyncer config itself, so a config that still sets one fails to load with an error naming the
-key. `tdo config init` rewrites the file without them. Edits sync in batches (`batch_size`,
+`pair`, `local_storage`, `vdirsyncer_config`, `after_edit` and `list_python` are removed: Twydo
+generates the vdirsyncer config itself and has no Python helper, so a config that still sets one
+fails to load with an error naming the key (for `list_python`: the list helper is gone and nothing
+replaces it). `tdo config init` rewrites the file without them. Edits sync in batches (`batch_size`,
 `max_wait_secs`); `tdo sync off` keeps syncs manual.
 
-The collection adapter works on the generated config: a filesystem/CalDAV pair whose local
-storage is the bound vdir and whose `status_path` is outside it. Its `url` is always literal.
-The password is passed on to vdirsyncer unchanged. `ca_file` is the only TLS setting: other
-settings of an old hand-written vdirsyncer config (such as `verify_fingerprint`, `auth` or extra
-timeouts) are not carried over.
+The generated vdirsyncer config is a filesystem/CalDAV pair whose local storage is the bound
+vdir and whose `status_path` is outside it. Its `url` is always literal. The password is passed
+on to vdirsyncer unchanged, and Twydo's own list requests use the same output. `ca_file` is the
+only TLS setting (without it the system trust store applies): other settings of an old
+hand-written vdirsyncer config (such as `verify_fingerprint`, `auth` or extra timeouts) are not
+carried over. Redirects are not followed.
 
 Upgrade `tdo` on every machine before you stow or share the new `config.toml`: an older `tdo` or
 daemon rejects `url` and `username` the moment the file is linked.
@@ -116,8 +118,8 @@ shows its default in brackets and Enter takes it; on a re-run the defaults are t
 in the file. A flag answers its question without asking.
 
 - It edits the file in place: comments, key order and other tables stay. It removes `pair`,
-  `local_storage`, `vdirsyncer_config` and `after_edit`, and, when you decline sync, the `[sync]`
-  table. Paths under your home directory are written as `~/...`, so the file works on every
+  `local_storage`, `vdirsyncer_config`, `after_edit` and `list_python`, and, when you decline
+  sync, the `[sync]` table. Paths under your home directory are written as `~/...`, so the file works on every
   machine you share it with.
 - A `config.toml` that is a symlink (stow) stays one: the file it points to is replaced
   atomically.
@@ -143,12 +145,11 @@ any step fails, else 0.
 | `sync` | `[sync]` is present; without it this is `sync off` and the steps below are skipped |
 | `vdirsyncer` | `[sync].command --version` reports 0.21.x |
 | `tdo on PATH` | an executable named `tdo` is on the PATH (the conflict hook runs `tdo` by name, so the daemon and vdirsyncer need it on their PATH); skipped when sync is off |
-| `list helper` | the helper's interpreter imports vdirsyncer 0.21.x in isolated mode (`-I`, as the helper runs it, so a user site or `PYTHONPATH` does not count); the detail names where the interpreter came from (`vdirsyncer's interpreter` or `default` when `[sync].list_python` is unset). Resolved on the PATH `tdo config check` runs with, which may differ from the daemon's |
 | `password` | `password_command` exits 0 and prints a single non-empty line (vdirsyncer uses the whole output, trailing newlines removed). The output is never shown; on failure the exit status and the last line of its stderr are. It runs with your environment and terminal input (so `pass`/`gpg` can ask for a passphrase) and is killed after 60 seconds |
 | `generated config` | shows where the vdirsyncer config is (or `written on first sync` before the vdir is bound); fails when the state directory is not writable |
 | `ca file` | `ca_file`, when set, is a readable file |
 
-The two version probes are killed after 10 seconds.
+The version probe is killed after 10 seconds.
 
 ## `[lists.<id>]`
 
