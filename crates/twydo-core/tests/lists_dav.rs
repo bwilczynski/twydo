@@ -485,3 +485,17 @@ fn a_refused_connection_is_a_connect_failure_that_sent_nothing() {
     assert!(!refused.sent);
     assert!(!refused.to_string().contains("127.0.0.1"));
 }
+
+/// The principal names a calendar home on another origin: it is refused with `mapping`, and
+/// the other server, which would have seen the Authorization header, is never contacted.
+#[test]
+fn a_calendar_home_on_another_origin_is_refused_without_contacting_it() {
+    let s = setup();
+    let other_root = tempfile::tempdir().unwrap();
+    let other = FakeDav::start(other_root.path());
+    flag_value(root(&s), "foreign_home", &other.url());
+    let dav = client(&s);
+    let refused = dav.list_home().unwrap_err();
+    assert_eq!(refused.code, "mapping");
+    assert!(calls(other_root.path()).is_empty());
+}
