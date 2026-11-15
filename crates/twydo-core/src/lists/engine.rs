@@ -37,7 +37,7 @@ fn local(_: io::Error) -> Refused {
     operation_refused()
 }
 
-/// The helper's `plain_id`.
+/// Whether `id` is a plain collection identity that is safe in a request path.
 fn plain(id: &str) -> bool {
     plain_id(id) && id.len() <= 255 && !id.chars().any(|c| "/\\%?#:\0\r\n".contains(c))
 }
@@ -46,7 +46,7 @@ fn present(path: &Option<PathBuf>) -> bool {
     path.as_ref().is_some_and(|p| !p.as_os_str().is_empty())
 }
 
-/// The helper's `validate_request` for the actions the engine runs.
+/// Checks that a request is well formed for its action and mode.
 fn validate(r: &RemoteRequest) -> Result<(), Refused> {
     let action = r.action.as_str();
     let mode = r.mode.as_str();
@@ -377,8 +377,8 @@ fn save(cx: &Cx, record: &ListOperation) -> Result<(), Refused> {
     operation::save(state, record).map_err(local)
 }
 
-/// The helper's `dispatch`. Failures before the first request that could write are marked
-/// as not sent.
+/// Runs the action of one request against the server. Failures before the first request that
+/// could write are marked as not sent.
 fn dispatch(cx: &Cx, mut record: Option<&mut ListOperation>) -> Result<Value, Refused> {
     let request = cx.request;
     let (mode, action, id) = (request.mode.as_str(), request.action.as_str(), cx.id());
@@ -524,7 +524,8 @@ fn record_failure(cx: &Cx, record: &mut ListOperation, refused: &Refused) {
     let _ = save(cx, record);
 }
 
-/// Runs one list operation: the helper's `main`, `operation_guard` and `dispatch`.
+/// Runs one list operation: checks the request and the operation record, takes
+/// the locks and performs the server calls.
 pub fn run(cfg: &Config, request: &RemoteRequest) -> Result<Value, Refused> {
     validate(request)?;
     // A directory standing in for the server is not a CalDAV remote.

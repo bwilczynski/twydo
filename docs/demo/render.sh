@@ -11,6 +11,7 @@ cd "$(dirname "$0")/../.."
 
 command -v ffmpeg >/dev/null || { echo "render.sh: vhs needs ffmpeg on PATH" >&2; exit 1; }
 cargo build --release --quiet
+cargo build --release --quiet -p twydo-testdav --example serve
 
 # The demo runs in New York time; generate its dates for today there too.
 export TZ=America/New_York
@@ -19,7 +20,9 @@ demo_dir=$(mktemp -d)
 export TWYDO_SOCKET="$demo_dir/tdo.sock"
 # Its fixture is dated today, so reminders would be due: never raise real notifications.
 export TWYDO_NOTIFIER=off
+dav_pid=
 cleanup() {
+  [[ -n "$dav_pid" ]] && kill "$dav_pid" 2>/dev/null || true
   # The daemon answers only a client with its own configuration.
   XDG_CONFIG_HOME="$demo_dir/config" XDG_STATE_HOME="$demo_dir/state" \
     target/release/tdo daemon stop >/dev/null 2>&1 || true
@@ -28,6 +31,13 @@ cleanup() {
 trap cleanup EXIT
 python3 tools/demo_vdir.py "$demo_dir/vdir" --today "$(date +%F)"
 mkdir -p "$demo_dir/config/twydo"
+# A fake CalDAV server on localhost that holds the demo's lists: the daemon's startup list
+# discovery asks it and finds nothing to adopt, so the demo never reaches for a real server.
+target/release/examples/serve "$demo_dir/dav" $(cd "$demo_dir/vdir" && ls -d -- */ | tr -d /) \
+  > "$demo_dir/dav.url" &
+dav_pid=$!
+for _ in $(seq 50); do [[ -s "$demo_dir/dav.url" ]] && break; sleep 0.1; done
+[[ -s "$demo_dir/dav.url" ]] || { echo "render.sh: the fake CalDAV server did not start" >&2; exit 1; }
 # A stand-in for vdirsyncer: there is no server, so a sync waits briefly and succeeds. The
 # demo shows the TUI's sync states, not a real exchange.
 cat > "$demo_dir/vdirsyncer" <<SH
@@ -49,13 +59,11 @@ timezone = "America/New_York"
 unit_warning = false
 
 [sync]
-url = "https://dav.example.test/demo/"
-username = "demo"
-password_command = ["echo", "demo"]
+url = "$(cat "$demo_dir/dav.url")"
+username = "alice"
+password_command = ["echo", "secret"]
 command = "$demo_dir/vdirsyncer"
 metasync = false
-# No list helper: discovery cannot start, so it never reaches for the placeholder server.
-list_python = "$demo_dir/no-list-helper"
 batch_size = 1000
 max_wait_secs = 3600
 TOML

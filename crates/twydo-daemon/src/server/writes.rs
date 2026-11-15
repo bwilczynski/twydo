@@ -126,7 +126,7 @@
 //! Teardown first waits for the job runner to finish its current work item (`stop_jobs`),
 //! holding none of the above and taking only the stop gate (above) to ask a running sync to
 //! stop, at every poll once the grace is over. It has no give-up path: a long job, a list
-//! job's helper included, may write until it ends, so the daemon lock stays held until then
+//! job included, may write until it ends, so the daemon lock stays held until then
 //! (a job that never ends is ended by the service manager's stop timeout). Teardown then takes
 //! the commit gate's write side holding none of the above, so it waits only for writer calls
 //! already inside the gate (each bounded by its lock try, except `journal.abandon` and
