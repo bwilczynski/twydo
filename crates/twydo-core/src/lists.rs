@@ -5,6 +5,8 @@ pub mod backup;
 pub mod call;
 #[doc(hidden)]
 pub mod dav;
+#[doc(hidden)]
+pub mod engine;
 pub mod helper;
 pub mod operation;
 pub mod prefs;

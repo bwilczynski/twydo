@@ -1,6 +1,14 @@
 //! Refusals of the CalDAV list calls: a stable code, never server output or addresses.
 
 use std::fmt;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::config::Config;
+
+use super::ListError;
 
 /// A refused or failed call. `sent` is false only when no write request was issued.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,5 +80,65 @@ pub fn wording(code: &str) -> &'static str {
         "present" => "the list still exists on the server",
         "partial" => "the deletion was only partly applied",
         _ => "collection helper failed; inspect its operation before retrying",
+    }
+}
+
+fn execute_mode() -> String {
+    "execute".into()
+}
+
+fn default_timeout() -> u64 {
+    300
+}
+
+/// What a list operation asks of the engine: the helper's request without the vdirsyncer
+/// pair, its local storage and its config file. Operation records written by the current
+/// version deserialize into it (unknown fields are ignored).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteRequest {
+    pub action: String,
+    pub vdir: PathBuf,
+    pub collection: Option<String>,
+    #[serde(default)]
+    pub operation: Option<PathBuf>,
+    #[serde(default)]
+    pub state: Option<PathBuf>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub expected: Option<Value>,
+    /// A `delete` request names the preview backup its server state is revalidated against.
+    #[serde(default)]
+    pub backup: Option<String>,
+    #[serde(default = "execute_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub keep_server: bool,
+    #[serde(default = "default_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl RemoteRequest {
+    /// A request for `action` with nothing else set, for the configured sync pair.
+    pub fn new(cfg: &Config, action: &str) -> Result<Self, ListError> {
+        let sync = cfg.sync.as_ref().ok_or_else(|| {
+            ListError::Refused("list management needs a configured CalDAV sync pair".into())
+        })?;
+        Ok(Self {
+            action: action.into(),
+            vdir: std::path::absolute(&cfg.vdir)?,
+            collection: None,
+            operation: None,
+            state: None,
+            name: None,
+            color: None,
+            expected: None,
+            backup: None,
+            mode: execute_mode(),
+            keep_server: false,
+            timeout_secs: sync.timeout_secs.max(1),
+        })
     }
 }
