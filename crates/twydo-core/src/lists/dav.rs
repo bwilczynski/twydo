@@ -106,7 +106,8 @@ fn normalise(path: &str) -> String {
 fn join(base: &str, href: &str) -> String {
     let b = split(base);
     let h = split(href);
-    let (scheme, netloc, path) = if !h.scheme.is_empty() || !h.netloc.is_empty() {
+    let own_netloc = !h.scheme.is_empty() || !h.netloc.is_empty();
+    let (scheme, netloc, path) = if own_netloc {
         let scheme = if h.scheme.is_empty() {
             b.scheme.clone()
         } else {
@@ -131,7 +132,10 @@ fn join(base: &str, href: &str) -> String {
     } else {
         format!("#{}", h.fragment)
     };
-    format!("{scheme}://{netloc}{}{query}{fragment}", normalise(&path))
+    // Python's urljoin returns an absolute reference untouched, dot segments included, so
+    // `validate_target` still sees them.
+    let path = if own_netloc { path } else { normalise(&path) };
+    format!("{scheme}://{netloc}{path}{query}{fragment}")
 }
 
 fn unquote(text: &str) -> String {
@@ -384,8 +388,14 @@ pub struct Dav {
     deadline: Instant,
 }
 
-/// Runs `password_command`; its stderr is discarded and stdin is null.
+/// The most password output accepted; more is refused rather than truncated.
+const MAX_PASSWORD: usize = 64 * 1024;
+
+/// Runs `password_command` in its own process group; its stderr is discarded and stdin is
+/// null. The group is killed on a timeout and once the command has exited, so a forked
+/// process that keeps the pipe open cannot outlive the deadline.
 fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
+    use std::os::unix::process::CommandExt;
     let credentials = || Refused::new("credentials");
     let (program, args) = argv.split_first().ok_or_else(credentials)?;
     let mut child = Command::new(program)
@@ -393,44 +403,47 @@ fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .process_group(0)
         .spawn()
         .map_err(|_| credentials())?;
+    let group = child.id();
     let mut stdout = child.stdout.take().ok_or_else(credentials)?;
-    let reader = std::thread::spawn(move || {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut out = Vec::new();
-        let _ = (&mut stdout).take(1 << 20).read_to_end(&mut out);
-        out
+        let _ = (&mut stdout)
+            .take(MAX_PASSWORD as u64 + 1)
+            .read_to_end(&mut out);
+        let _ = sender.send(out);
     });
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
             _ => {
+                crate::sync::running::kill_group(group);
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = reader.join();
                 return Err(Refused::new("timeout"));
             }
         }
     };
-    let out = reader.join().map_err(|_| credentials())?;
-    if !status.success() {
+    // Whatever the command left behind must not keep the pipe open.
+    crate::sync::running::kill_group(group);
+    let wait = deadline.saturating_duration_since(Instant::now());
+    let out = receiver
+        .recv_timeout(wait)
+        .map_err(|_| Refused::new("timeout"))?;
+    if !status.success() || out.len() > MAX_PASSWORD {
         return Err(credentials());
     }
-    let mut text = String::from_utf8(out).map_err(|_| credentials())?;
-    loop {
-        if text.ends_with("\r\n") {
-            text.truncate(text.len() - 2);
-        } else if text.ends_with('\n') {
-            text.truncate(text.len() - 1);
-        } else {
-            break;
-        }
-    }
+    // vdirsyncer's command fetch strips newlines from both ends.
+    let text = String::from_utf8(out).map_err(|_| credentials())?;
+    let text = text.trim_matches('\n');
     if text.is_empty() {
         return Err(credentials());
     }
-    Ok(text)
+    Ok(text.to_string())
 }
 
 fn agent(sync: &SyncConfig) -> Result<Agent, Refused> {
@@ -1063,4 +1076,30 @@ fn partly_removed(backup: &Captured, captured: &Captured) -> bool {
     let wanted = identities(&backup.resources);
     let now = identities(&captured.resources);
     now.len() < wanted.len() && now.is_subset(&wanted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_absolute_href_keeps_its_dot_segments_for_the_target_check() {
+        let base = "https://dav.example.org/dav/alice/";
+        let joined = join(base, "https://dav.example.org/dav/alice/../work/");
+        assert_eq!(joined, "https://dav.example.org/dav/alice/../work/");
+        assert_eq!(
+            validate_target(base, &joined, "work").unwrap_err().code,
+            "mapping"
+        );
+        let network = join(base, "//dav.example.org/dav/alice/../work/");
+        assert_eq!(
+            validate_target(base, &network, "work").unwrap_err().code,
+            "mapping"
+        );
+        // Relative references are still resolved.
+        assert_eq!(
+            join(base, "../bob/work/"),
+            "https://dav.example.org/dav/bob/work/"
+        );
+    }
 }
