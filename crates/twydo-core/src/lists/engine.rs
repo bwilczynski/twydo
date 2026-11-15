@@ -272,7 +272,9 @@ impl Cx<'_> {
 
 /// The collection's URL among the lists the server reports.
 fn select(dav: &dav::Dav, id: &str) -> Result<String, Refused> {
-    let mut found = dav.list_home()?.into_iter().filter(|l| l.id == id);
+    // Only the list asked for is judged: an unrelated list with an odd id is not this
+    // operation's business.
+    let mut found = dav.list_home_raw()?.into_iter().filter(|l| l.id == id);
     match (found.next(), found.next()) {
         (Some(only), None) => Ok(only.url),
         _ => Err(Refused::new("mapping")),
