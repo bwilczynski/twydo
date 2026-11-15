@@ -325,6 +325,46 @@ fn a_failing_password_command_is_a_credentials_refusal() {
 }
 
 #[test]
+fn a_password_command_that_leaves_a_child_running_still_times_out() {
+    let s = setup();
+    let config = sync(s.server.url(), &["sh", "-c", "sleep 30 & sleep 30"]);
+    let started = Instant::now();
+    let refused = connect(&config, started + Duration::from_secs(1))
+        .err()
+        .expect("refused");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(
+        ["credentials", "timeout"].contains(&refused.code),
+        "{}",
+        refused.code
+    );
+    // A command that exits but leaves a writer behind does not hang either.
+    let config = sync(s.server.url(), &["sh", "-c", "sleep 30 & printf secret"]);
+    let started = Instant::now();
+    let dav = connect(&config, started + Duration::from_secs(10)).expect("connect");
+    assert!(started.elapsed() < Duration::from_secs(5));
+    drop(dav);
+}
+
+#[test]
+fn a_trailing_newline_is_stripped_and_oversized_output_is_refused() {
+    let s = setup();
+    add_collection(root(&s), "work", "Work", "#112233");
+    let config = sync(s.server.url(), &["printf", "secret\n"]);
+    let dav = connect(&config, Instant::now() + Duration::from_secs(60)).unwrap();
+    let list = dav.collection(&url(&s, "work"), "work").unwrap();
+    assert!(list.read_properties().is_ok());
+    let config = sync(
+        s.server.url(),
+        &["sh", "-c", "head -c 70000 /dev/zero | tr '\\0' x"],
+    );
+    let refused = connect(&config, Instant::now() + Duration::from_secs(10))
+        .err()
+        .expect("refused");
+    assert_eq!(refused.code, "credentials");
+}
+
+#[test]
 fn a_wrong_password_is_a_dav_refusal() {
     let s = setup();
     add_collection(root(&s), "work", "Work", "#112233");
