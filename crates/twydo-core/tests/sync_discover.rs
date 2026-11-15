@@ -88,3 +88,27 @@ fn a_non_plain_server_id_fails_and_creates_nothing() {
     assert_eq!(fs::read_dir(&cfg.vdir).unwrap().count(), 0);
     assert!(!calls(d.path()).iter().any(|c| c == "DISCOVER"));
 }
+
+#[test]
+fn vdirsyncer_discover_gets_a_non_terminal_stdin_at_end_of_file() {
+    let (d, _server, cfg) = offline();
+    script(d.path(), &cfg, &["phone-list"], &[]);
+    let found = discover(&cfg, &state(&cfg)).unwrap();
+    assert_eq!(found.adopted, ["phone-list"]);
+    let seen = fs::read_to_string(d.path().join("discover.stdin")).unwrap();
+    assert_eq!(seen.trim(), "tty=no eof=yes");
+}
+
+#[test]
+fn a_discover_that_exits_zero_with_an_error_line_removes_adopted_folders() {
+    let (d, _server, cfg) = offline();
+    script(d.path(), &cfg, &["phone-list", "tablet-list"], &[]);
+    flag(d.path(), "error_line_exit_zero");
+    match discover(&cfg, &state(&cfg)) {
+        Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(!cfg.vdir.join("phone-list").exists());
+    assert!(!cfg.vdir.join("tablet-list").exists());
+    assert!(calls(d.path()).iter().any(|c| c == "DISCOVER"));
+}

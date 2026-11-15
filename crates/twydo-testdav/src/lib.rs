@@ -156,10 +156,32 @@ case "$1" in
   metasync) echo METASYNC >> "$ROOT/calls.log" ;;
 esac
 [ "$1" = discover ] || exit 0
+# Record whether stdin is a terminal and whether a read from it ends at once. The read is
+# bounded, so a stdin that never ends cannot hang the script.
+tty=no
+[ -t 0 ] && tty=yes
+( dd bs=1 count=1 2>/dev/null | wc -c > "$ROOT/discover.read" ) <&0 &
+reader=$!
+tries=0
+while kill -0 "$reader" 2>/dev/null && [ "$tries" -lt 30 ]; do
+  sleep 0.1
+  tries=$((tries + 1))
+done
+eof=no
+if kill -0 "$reader" 2>/dev/null; then
+  kill "$reader" 2>/dev/null
+elif [ "$(tr -d ' \n' < "$ROOT/discover.read")" = 0 ]; then
+  eof=yes
+fi
+echo "tty=$tty eof=$eof" > "$ROOT/discover.stdin"
 if [ -f "$ROOT/flags/fail_refresh_once" ]; then
   rm -f "$ROOT/flags/fail_refresh_once"
   echo "error: synthetic interrupted discovery" >&2
   exit 1
+fi
+if [ -f "$ROOT/flags/error_line_exit_zero" ]; then
+  echo "error: synthetic logged failure" >&2
+  exit 0
 fi
 [ -f "$ROOT/flags/discover_sleep" ] && sleep "$(cat "$ROOT/flags/discover_sleep")"
 [ -f "$ROOT/flags/hang_after_adopt" ] && sleep "$(cat "$ROOT/flags/hang_after_adopt")"
@@ -399,7 +421,10 @@ impl Server {
                 "<d:response><d:href>{PRINCIPAL}</d:href>{}</d:response>",
                 propstat(
                     "200 OK",
-                    &format!("<c:calendar-home-set><d:href>{HOME}</d:href></c:calendar-home-set>")
+                    &format!(
+                        "<c:calendar-home-set><d:href>{}</d:href></c:calendar-home-set>",
+                        escape(&flag_get(&self.root, "foreign_home").unwrap_or(HOME.to_string()))
+                    )
                 )
             )),
             ["dav", "alice", id] => self.collection(request, id, depth),

@@ -296,11 +296,7 @@ fn timeout_after_remote_creation_is_reconciled_without_another_create() {
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let id = fs::read_to_string(state.join("lists/active")).unwrap();
     let record = twydo_core::lists::operation::read(&state, id.trim()).unwrap();
-    assert!(matches!(
-        record.phase,
-        twydo_core::lists::operation::Phase::RemoteStarted
-            | twydo_core::lists::operation::Phase::Uncertain
-    ));
+    assert_eq!(record.phase, twydo_core::lists::operation::Phase::Uncertain);
     service.reconcile(id.trim()).unwrap();
     assert_eq!(count(d.path(), "MKCALENDAR"), 1);
     assert!(!state.join("lists/active").exists());
