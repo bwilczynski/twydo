@@ -1,4 +1,4 @@
-//! CalDAV calls for list operations: a Rust port of the bundled helper's server calls.
+//! CalDAV calls for list operations: the requests a list operation sends to the server.
 //!
 //! Every request stays on the configured origin, follows no redirect and treats a 3xx as a
 //! failure. Refusal codes carry no server output, addresses or credentials.
@@ -158,7 +158,7 @@ fn unquote(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The helper's `plain_id`.
+/// Whether `id` is a plain collection identity that is safe in a request path.
 fn plain(id: &str) -> bool {
     super::plain_id(id) && id.len() <= 255 && !id.chars().any(|c| "/\\%?#:\0\r\n".contains(c))
 }
@@ -342,7 +342,7 @@ pub struct Resource {
     pub sha256: String,
 }
 
-/// A list's raw properties and every resource, in the shape of the helper's `remote.json`.
+/// A list's raw properties and every resource, as a backup stores them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Captured {
     pub format: u32,

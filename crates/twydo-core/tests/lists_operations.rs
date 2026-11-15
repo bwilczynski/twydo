@@ -100,6 +100,65 @@ fn unreadable_queue_prevents_preparing_a_collection_operation() {
     assert!(!state.join("lists/active").exists());
 }
 
+/// While a list operation talks to the server it owns the sync run lock and a shared vdir
+/// lock: no sync and no task writer can interleave, local readers stay responsive, and both
+/// locks are released when the operation ends.
+#[cfg(unix)]
+#[test]
+fn a_list_operation_holds_the_run_lock_and_a_shared_vdir_lock_until_it_ends() {
+    use common::lists::{count, locks, offline};
+    use twydo_core::lists::{ListRequest, ListService};
+    let (d, _server, cfg) = offline();
+    let mut service = ListService::open(&cfg, None).unwrap();
+    service
+        .execute(ListRequest::Create {
+            id: "new-id".into(),
+            name: "Synthetic list".into(),
+            color: (50, 137, 210),
+        })
+        .unwrap();
+    let idle = locks(&cfg);
+    assert!(!idle.run_held && !idle.vdir_exclusive_refused && idle.shared_allowed);
+    // The server holds the next write for a second, with the operation running.
+    twydo_testdav::flag_value(d.path(), "slow_write", "1");
+    let expected = service.state("new-id").unwrap();
+    let during = std::thread::scope(|scope| {
+        let edit = scope.spawn(|| {
+            service
+                .execute(ListRequest::Edit {
+                    id: "new-id".into(),
+                    name: "Renamed".into(),
+                    color: expected.color,
+                    expected: expected.clone(),
+                })
+                .unwrap()
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while count(d.path(), "PROPPATCH") == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the write never started"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let during = locks(&cfg);
+        edit.join().unwrap();
+        during
+    });
+    assert!(during.run_held, "the run lock was not held");
+    assert!(
+        during.vdir_exclusive_refused,
+        "an exclusive vdir lock was granted during the operation"
+    );
+    assert!(
+        during.shared_allowed,
+        "readers must remain responsive during the remote-only phase"
+    );
+    let after = locks(&cfg);
+    assert!(!after.run_held && !after.vdir_exclusive_refused && after.shared_allowed);
+    assert_eq!(service.state("new-id").unwrap().name, "Renamed");
+}
+
 /// The fence moved from `Queue::push` to the drain (daemon plan 2): an edit queued while a
 /// list operation runs is written to the queue, and a drain during the operation refuses an
 /// item of the fenced list with the fence's message; unrelated queued work waits.

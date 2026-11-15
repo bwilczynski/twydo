@@ -290,6 +290,9 @@ fn timeout_after_remote_creation_is_reconciled_without_another_create() {
     flag(d.path(), "hang_after_create_once");
     let mut service = ListService::open(&cfg, None).unwrap();
     assert!(service.execute(create()).is_err());
+    // The timed-out operation let go of both locks.
+    let held = common::lists::locks(&cfg);
+    assert!(!held.run_held && !held.vdir_exclusive_refused && held.shared_allowed);
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
     let id = fs::read_to_string(state.join("lists/active")).unwrap();
     let record = twydo_core::lists::operation::read(&state, id.trim()).unwrap();

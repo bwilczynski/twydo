@@ -38,3 +38,39 @@ pub fn count(root: &std::path::Path, method: &str) -> usize {
         .filter(|call| *call == method)
         .count()
 }
+
+/// What other processes see of the locks a list operation holds: whether the sync run lock is
+/// taken, whether an exclusive vdir lock is refused, and whether a shared one is allowed.
+#[cfg(unix)]
+pub struct Locks {
+    pub run_held: bool,
+    pub vdir_exclusive_refused: bool,
+    pub shared_allowed: bool,
+}
+
+#[cfg(unix)]
+pub fn locks(cfg: &Config) -> Locks {
+    let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
+    let open = |name: &str| {
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(state.join(name))
+            .unwrap()
+    };
+    let run = open("sync/run.lock");
+    let run_held = matches!(run.try_lock(), Err(std::fs::TryLockError::WouldBlock));
+    drop(run);
+    let vdir_exclusive_refused = twydo_core::store::fsio::VdirLock::try_exclusive(&state)
+        .unwrap()
+        .is_none();
+    let reader = open("vdir.lock");
+    let shared_allowed = reader.try_lock_shared().is_ok();
+    Locks {
+        run_held,
+        vdir_exclusive_refused,
+        shared_allowed,
+    }
+}
