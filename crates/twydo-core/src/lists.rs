@@ -1,6 +1,10 @@
 //! Collection management. Archive preferences are local configuration, not CalDAV metadata.
 
 pub mod backup;
+#[doc(hidden)]
+pub mod call;
+#[doc(hidden)]
+pub mod dav;
 pub mod helper;
 pub mod operation;
 pub mod prefs;
