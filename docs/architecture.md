@@ -247,11 +247,14 @@ both for the whole operation. It validates the bound operation and held bytes be
 phase, and persists the receipt before releasing the locks. Readers remain responsive during
 network requests; local finalization takes the exclusive vdir lock. The list card exposes
 explicit service actions without enabling unverified writes in verified mode.
-A stop request or the operation deadline (`[sync].timeout_secs`) takes effect between server
-requests. Timeout retains an uncertain/prepared operation for reconciliation; it never assumes
+A list operation is not interrupted by a stop request: the operation deadline
+(`[sync].timeout_secs`) ends it, checked before each server request and bounding each one.
+Timeout retains an uncertain/prepared operation for reconciliation; it never assumes
 that abandoning a request undoes a server mutation. Because no child process holds the locks,
-a killed daemon releases them with its death and leaves the record at `remote-started`;
-reconciliation treats that as an uncertain outcome.
+a killed daemon releases them with its death and leaves the record at `remote-started`. Once the
+operation has recorded the server address (saved just before the first possible write),
+reconciliation treats that as an uncertain outcome; before that, nothing was sent and the
+operation is cleared as not sent.
 
 The create/edit service records the exact remote URL before a mutation and a digest of
 its unexpanded connection configuration. Reconciliation uses that saved URL and rejects

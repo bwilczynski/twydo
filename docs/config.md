@@ -82,12 +82,12 @@ discovery) with the same `url`, `username`, `password_command` and `ca_file`. Se
 | `url` | string | required | CalDAV server URL (the collection home your server gives the account). |
 | `username` | string | required | CalDAV username. |
 | `password_command` | array of strings | required | Command whose output (trailing newlines removed) is the password, so it must print only the password, for example `["pass", "show", "twydo/caldav"]`. There is no key for a literal password. An empty array counts as missing. |
-| `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. |
+| `ca_file` | path | none | PEM file with the CA that signed the server's certificate, for a server whose certificate is not otherwise trusted. A leading `~` expands to `$HOME`. List operations trust only the certificates in this file. A self-signed server certificate works when it is an ordinary (end-entity) certificate whose subjectAltName names the server; one flagged as a CA, which `openssl req -x509` makes by default, is refused for list operations, so use the CA certificate that signed the server's certificate instead. |
 | `command` | string | `"vdirsyncer"` | vdirsyncer executable. |
 | `metasync` | bool | `true` | Run `vdirsyncer metasync` after each sync. |
 | `batch_size` | integer | `5` | A sync is due once this many local edits are unsynced and edits have paused for 3 seconds. Must be at least 1. |
 | `max_wait_secs` | integer | `60` | A sync is due this many seconds after the oldest unsynced edit. Must be at least 1. |
-| `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. |
+| `timeout_secs` | integer | `300` | vdirsyncer is killed after this many seconds. The same limit bounds each list operation and Twydo's own server listing during discovery, so a discovery can take up to about twice this (the listing, then `vdirsyncer discover`). |
 | `max_backoff_secs` | integer | `1800` | Upper bound for the wait between retries after failures. |
 | `retention_days` | integer | `30` | How long resolved (or superseded) conflicts and synced journal entries are kept; each sync prunes older ones. Undo of a synced entry works until it is pruned. |
 

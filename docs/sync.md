@@ -279,8 +279,9 @@ killed daemon) for as long as it runs, and is killed with its process group when
 stopped (`tdo sync stop`, a write
 that stops it, or the daemon shutting down after its grace period) or times out. If discovery
 fails, is stopped or times out, the folders it had already created are removed again (only
-while empty), so no list is half adopted. A stop or the deadline (`timeout_secs`) takes effect
-between server requests, and before `vdirsyncer discover` starts.
+while empty), so no list is half adopted. A stop is checked before Twydo lists the server, again
+before `vdirsyncer discover` starts, and while it runs; the listing itself ends at the deadline
+(`timeout_secs`) at the latest.
 
 A failed discovery (server unreachable, refused or unreadable by Twydo's own listing, a server list whose id is not a plain name, a stale list,
 timeout) keeps the previous cached collection set. With `tdo sync --discover` it counts as a
