@@ -2663,6 +2663,55 @@ fn failed_discovery_rolls_back_the_folders_it_created() {
     assert!(fx.cfg.vdir.join("stale").is_dir());
 }
 
+/// A fixture whose vdirsyncer cannot be started (the sync fails too; only the discovery
+/// fields are asserted).
+fn unstartable_vdirsyncer() -> Fx {
+    let mut fx =
+        Fx::new(DISCOVERY_SCRIPT).with_dav(serde_json::json!({"remote_only":[],"local_only":[]}));
+    let missing = fx.path("no-such-vdirsyncer").to_str().unwrap().to_string();
+    fx.sync_mut().command = missing;
+    fx
+}
+
+#[test]
+fn an_unstartable_vdirsyncer_is_only_a_discovery_warning_when_not_requested() {
+    let fx = unstartable_vdirsyncer();
+    let state = fx.state();
+    fs::create_dir_all(state.join("sync")).unwrap();
+    fs::write(state.join("sync/rediscover"), "backup-id").unwrap();
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(report.discovery_error.is_some(), "{report:?}");
+    assert!(report.discovery_is_warning, "{report:?}");
+    let m = messages(&fx.cfg, &report);
+    assert!(
+        m.warnings
+            .iter()
+            .any(|w| w.contains("list discovery unavailable")),
+        "{m:?}"
+    );
+    assert!(
+        !m.problems.iter().any(|p| p.contains("list discovery")),
+        "{m:?}"
+    );
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert_eq!(st.discovery_error, None, "not persisted");
+}
+
+#[test]
+fn an_unstartable_vdirsyncer_is_a_saved_discovery_problem_when_requested() {
+    let fx = unstartable_vdirsyncer();
+    let report = run(&fx.cfg, &discover_opts(), now()).unwrap();
+    let m = messages(&fx.cfg, &report);
+    let found: Vec<_> = m
+        .problems
+        .iter()
+        .filter(|p| p.contains("list discovery unavailable"))
+        .collect();
+    assert_eq!(found.len(), 1, "{m:?}");
+    let st = SyncStatus::load(&fx.state()).unwrap();
+    assert!(st.discovery_error.is_some(), "{st:?}");
+}
+
 #[test]
 fn stop_request_interrupts_a_hanging_discovery_promptly() {
     let fx =
