@@ -9,26 +9,24 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
 use super::SyncError;
 use super::discover::{DiscoverError, discover_watched};
-use super::hook::{HOOK_LOG_ENV, VDIR_ENV, read_hook_log, uid_of};
+use super::hook::{read_hook_log, uid_of};
 use super::lock::LockFile;
 use super::manifest::Manifest;
 use super::output::{SyncOutput, parse};
 use super::reconcile::reconcile;
 use super::running::{self, Running, running_path, stop_requested};
 use super::status::{CollState, SyncStatus, backoff, coll_states};
-use super::vdirsyncer::{self, LOCAL_STORAGE, PAIR};
+use super::vdirsyncer::{self, Control, LOCAL_STORAGE, Outcome, PAIR, Ran, Vdirsyncer};
 use crate::config::{Config, SyncConfig};
 use crate::conflicts::{ConflictKind, ConflictStore, NewConflict, Side};
 use crate::lists::helper::Watch;
@@ -115,11 +113,6 @@ pub struct RunReport {
     pub discovery_is_warning: bool,
 }
 
-/// Grace for the stderr reader threads after the child is gone (a grandchild may still
-/// hold the pipe).
-const DRAIN_GRACE: Duration = Duration::from_secs(1);
-/// How often a running child is polled for exit.
-const POLL: Duration = Duration::from_millis(25);
 /// A requested rerun happens at most this many times per call.
 const MAX_RERUNS: usize = 2;
 
@@ -302,20 +295,16 @@ fn one_pass(
         manifest = Manifest::default();
     }
     fs::write(&hook_log, b"")?;
-    let mut args = vec!["sync".to_string()];
-    if force.is_empty() {
-        args.push(PAIR.to_string());
-    } else {
-        args.push("--force-delete".into());
-        args.extend(force.iter().map(|c| format!("{}/{c}", PAIR)));
-    }
-    let child_env = ChildEnv {
+    let vds = Vdirsyncer {
         sync,
-        hook_log: &hook_log,
+        config: vdirsyncer_config,
         vdir: &cfg.vdir,
         state,
-        vdirsyncer_config,
+        hook_log: Some(&hook_log),
+    };
+    let control = RunControl {
         running: &guard,
+        state,
     };
     let rediscover = state.join("sync/rediscover");
     let discover_marker = state.join("sync/discover");
@@ -372,7 +361,7 @@ fn one_pass(
     }
     let mut discovery_reports = BTreeMap::new();
     let discovery = if rediscover.exists() {
-        let mut ran = run_command(&child_env, &["discover".into(), PAIR.to_string()])?;
+        let mut ran = vds.discover(&control)?;
         let success = matches!(&ran.outcome, Outcome::Exited(st) if st.success())
             && !ran
                 .stderr
@@ -408,7 +397,7 @@ fn one_pass(
     };
     let mut ran = match discovery {
         Some(failed) => failed,
-        None => run_command(&child_env, &args)?,
+        None => vds.sync(force, &control)?,
     };
     let mut out = parse(PAIR, &ran.stderr);
     report.forced.extend(force.iter().cloned());
@@ -421,9 +410,7 @@ fn one_pass(
         force,
     )?;
     if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
-        let mut args = vec!["sync".to_string(), "--force-delete".to_string()];
-        args.extend(auto.iter().map(|c| format!("{}/{c}", PAIR)));
-        let second = run_command(&child_env, &args)?;
+        let second = vds.sync(&auto, &control)?;
         merge_forced(&mut out, parse(PAIR, &second.stderr), &auto);
         ran.outcome = second.outcome;
         report.forced.extend(auto.iter().cloned());
@@ -436,7 +423,7 @@ fn one_pass(
         transient(sync, &ran, &out, &states).is_some()
     };
     report.metasync_error = match ran.outcome {
-        Outcome::Exited(_) if sync.metasync && !sync_failed() => metasync(&child_env)?,
+        Outcome::Exited(_) if sync.metasync && !sync_failed() => metasync(&vds, &control)?,
         _ => None,
     };
     let hook = read_hook_log(&hook_log)?;
@@ -555,7 +542,7 @@ fn list_display_name(cfg: &Config, id: &str) -> Option<String> {
 /// Content of `sync/discover` after a discovery timed out once.
 const TIMED_OUT_MARK: &[u8] = b"timed-out";
 
-/// Whether the pass must stop now: a stop request. Like `run_command`, not `hold_queue`: a
+/// Whether the pass must stop now: a stop request. Like `Vdirsyncer::run`, not `hold_queue`: a
 /// daemon shutdown gives a running sync its grace period before it writes the request.
 fn stop_pending(guard: &RefCell<RunningGuard>, state: &Path) -> bool {
     let since = guard.borrow().rec.started;
@@ -577,6 +564,28 @@ impl Watch for DiscoverWatch<'_> {
         // Best effort, as for a sync child: without the record it cannot be stopped from
         // elsewhere, but it runs.
         let _ = self.running.borrow_mut().set_child(Some(pgid));
+    }
+
+    fn finished(&self) {
+        let _ = self.running.borrow_mut().set_child(None);
+    }
+
+    fn stop_requested(&self) -> bool {
+        stop_pending(self.running, self.state)
+    }
+}
+
+/// Records a vdirsyncer child in `running.json` and stops it on request.
+struct RunControl<'a> {
+    running: &'a RefCell<RunningGuard>,
+    state: &'a Path,
+}
+
+impl Control for RunControl<'_> {
+    fn started(&self, pid: u32) {
+        // Best effort: without the record the sync cannot be stopped from elsewhere, but it
+        // runs.
+        let _ = self.running.borrow_mut().set_child(Some(pid));
     }
 
     fn finished(&self) {
@@ -889,10 +898,9 @@ fn safe_path(vdir: &Path, rel: &str) -> Option<PathBuf> {
 }
 
 /// Runs `<command> metasync <pair>`; returns its failure, if any.
-fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
-    let sync = env.sync;
-    let args = ["metasync".to_string(), PAIR.to_string()];
-    let ran = run_command(env, &args)?;
+fn metasync(vds: &Vdirsyncer, c: &dyn Control) -> Result<Option<String>, SyncError> {
+    let sync = vds.sync;
+    let ran = vds.metasync(c)?;
     // The first `error:`/`critical:` line (progress lines like `Metasyncing …` come first),
     // else the first non-empty line.
     let message = || {
@@ -914,53 +922,6 @@ fn metasync(env: &ChildEnv) -> Result<Option<String>, SyncError> {
         Outcome::Stopped => Some("metasync stopped".into()),
         Outcome::SpawnFailed(msg) => Some(msg.clone()),
     })
-}
-
-enum Outcome {
-    Exited(ExitStatus),
-    TimedOut,
-    /// Killed on request (`sync/stop`).
-    Stopped,
-    SpawnFailed(String),
-}
-
-struct Ran {
-    stderr: String,
-    outcome: Outcome,
-}
-
-/// Starts a thread that reads `r` to the end and sends what it read.
-fn reader<R: Read + Send + 'static>(mut r: R) -> Result<mpsc::Receiver<String>, SyncError> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::Builder::new()
-        .name("sync-output".into())
-        .spawn(move || {
-            let mut buf = Vec::new();
-            let _ = r.read_to_end(&mut buf);
-            let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
-        })
-        .map_err(|e| SyncError::Spawn(format!("cannot start an output reader: {e}")))?;
-    Ok(rx)
-}
-
-/// Kills `child` and, on Unix, its whole process group (it leads one: see
-/// [`run_command`]), so a wrapper's vdirsyncer cannot keep writing the vdir after the
-/// runner gives up its shared lock. No libc here: the group goes through `kill(1)` (see
-/// [`running::kill_group`]); the direct kill is the fallback.
-fn kill_tree(child: &mut std::process::Child) {
-    #[cfg(unix)]
-    running::kill_group(child.id());
-    let _ = child.kill();
-}
-
-/// What every vdirsyncer child of one pass gets.
-struct ChildEnv<'a> {
-    sync: &'a SyncConfig,
-    hook_log: &'a Path,
-    vdir: &'a Path,
-    state: &'a Path,
-    vdirsyncer_config: &'a Path,
-    running: &'a RefCell<RunningGuard>,
 }
 
 /// Keeps `sync/running.json` for the pass that created it, and removes it on drop.
@@ -1018,99 +979,4 @@ fn remove_if_exists(p: &Path) -> io::Result<()> {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
-}
-
-/// Runs `<command> args…` with `VDIRSYNCER_CONFIG` (when configured), the hook log and the
-/// vdir in the environment. Its stdin is a shared lock on the vdir of its own (the lock file
-/// is empty, so it reads EOF as from null): the kernel keeps that lock until the child and
-/// whatever inherited it exit, so a child orphaned by a killed runner (Ctrl-C) still keeps
-/// writers and the next run's recovery waiting. stdout is drained and dropped; stderr is
-/// returned. The child is killed after `timeout_secs`, or when a stop is requested (see
-/// [`running`]); with a stop already pending it is not started.
-fn run_command(env: &ChildEnv, args: &[String]) -> Result<Ran, SyncError> {
-    let sync = env.sync;
-    let since = env.running.borrow().rec.started;
-    if stop_requested(env.state, since)? {
-        env.running.borrow_mut().stopped = true;
-        return Ok(Ran {
-            stderr: String::new(),
-            outcome: Outcome::Stopped,
-        });
-    }
-    let lock = VdirLock::shared_for_child(env.state)?;
-    let mut cmd = Command::new(&sync.command);
-    cmd.args(args)
-        .env(HOOK_LOG_ENV, env.hook_log)
-        .env(VDIR_ENV, env.vdir)
-        .stdin(Stdio::from(lock))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    cmd.env("VDIRSYNCER_CONFIG", env.vdirsyncer_config);
-    // Its own process group, so a timeout also kills what a wrapper script started. A
-    // Ctrl-C at the terminal therefore reaches only tdo; the stdin lock covers that.
-    #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            return Ok(Ran {
-                stderr: String::new(),
-                outcome: Outcome::SpawnFailed(format!("cannot run {}: {e}", sync.command)),
-            });
-        }
-    };
-    // Best effort: without the record the sync cannot be stopped from elsewhere, but it runs.
-    let _ = env.running.borrow_mut().set_child(Some(child.id()));
-    let readers = (
-        child.stdout.take().map(reader).transpose(),
-        child.stderr.take().map(reader).transpose(),
-    );
-    let (out_rx, err_rx) = match readers {
-        (Ok(o), Ok(e)) => (o, e),
-        (Err(err), _) | (_, Err(err)) => {
-            kill_tree(&mut child);
-            let _ = child.wait();
-            return Err(err);
-        }
-    };
-    // A timeout too large for `Instant` is ~forever (a year is plenty).
-    let deadline = Instant::now()
-        .checked_add(Duration::from_secs(sync.timeout_secs))
-        .unwrap_or_else(|| Instant::now() + Duration::from_secs(365 * 24 * 3600));
-    let outcome = loop {
-        if let Some(st) = child.try_wait()? {
-            break Outcome::Exited(st);
-        }
-        // An unreadable request counts as none: returning here would leave the child
-        // running with no record of it.
-        if stop_requested(env.state, since).unwrap_or(false) {
-            kill_tree(&mut child);
-            child.wait()?;
-            env.running.borrow_mut().stopped = true;
-            break Outcome::Stopped;
-        }
-        if Instant::now() >= deadline {
-            kill_tree(&mut child);
-            child.wait()?;
-            break Outcome::TimedOut;
-        }
-        std::thread::sleep(POLL);
-    };
-    let _ = env.running.borrow_mut().set_child(None);
-    // After a normal exit, wait for the rest of stderr until the deadline: a run whose
-    // output is incomplete must not look clean. After a kill, give it a short grace only.
-    let wait = match outcome {
-        Outcome::Exited(_) => deadline.saturating_duration_since(Instant::now()),
-        _ => Duration::ZERO,
-    }
-    .max(DRAIN_GRACE);
-    if let Some(rx) = out_rx {
-        let _ = rx.recv_timeout(wait);
-    }
-    let (stderr, outcome) = match err_rx.map(|rx| rx.recv_timeout(wait)) {
-        None => (String::new(), outcome),
-        Some(Ok(s)) => (s, outcome),
-        Some(Err(_)) => (String::new(), Outcome::TimedOut),
-    };
-    Ok(Ran { stderr, outcome })
 }
