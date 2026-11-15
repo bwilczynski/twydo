@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use twydo_core::config::{Config, SyncConfig};
+use twydo_core::lists::backup::Remote;
 use twydo_core::lists::call::RemoteRequest;
 use twydo_core::lists::engine::run;
 use twydo_core::lists::operation::{self, ListOperation, Phase, snapshot};
 use twydo_core::store::bind_vdir_state;
 use twydo_testdav::{
-    FakeDav, add_collection, calls, collections, fake_vdirsyncer, flag, flag_value,
+    FakeDav, add_collection, add_resource, calls, collections, fake_vdirsyncer, flag, flag_value,
 };
 
 const ID: &str = "op-1";
@@ -340,6 +341,124 @@ fn a_record_from_the_current_version_still_reconciles() {
     fs::write(e.state.join("lists/active"), ID).unwrap();
     let mut request: RemoteRequest = serde_json::from_value(stored).unwrap();
     request.mode = "reconcile".into();
+    let result = run(&e.cfg, &request).unwrap();
+    assert_eq!(result["name"], "Renamed");
+    assert_eq!(record(&e).phase, Phase::RemoteConfirmed);
+}
+
+/// Two resources on "work", a local folder, and a finished preview; returns the backup id.
+fn previewed(e: &Env) -> String {
+    add_collection(root(e), "work", "Work", "#112233");
+    add_resource(
+        root(e),
+        "work",
+        "a.ics",
+        "\"1\"",
+        "first synthetic resource",
+    );
+    add_resource(
+        root(e),
+        "work",
+        "b.ics",
+        "\"2\"",
+        "second synthetic resource",
+    );
+    local_list(e, "work", "Work", "#112233");
+    let request = request(e, "preview-delete", "work");
+    prepare(e, &request, "prepared", json!({}));
+    let result = run(&e.cfg, &request).unwrap();
+    assert_eq!(result["resources"], 2);
+    assert_eq!(record(e).phase, Phase::RemoteConfirmed);
+    ID.to_string()
+}
+
+/// Replaces the finished preview record by a prepared `delete` naming the backup.
+fn prepared_delete(e: &Env, backup: &str, phase: &str, mode: &str) -> RemoteRequest {
+    let mut request = request(e, "delete", "work");
+    request.backup = Some(backup.into());
+    request.mode = mode.into();
+    prepare(e, &request, phase, json!({}));
+    request
+}
+
+fn none_of(e: &Env, methods: &[&str]) {
+    for method in methods {
+        assert_eq!(count(e, method), 0, "{method} was sent");
+    }
+}
+
+#[test]
+fn preview_delete_writes_a_backup_that_backup_rs_can_read() {
+    let e = env();
+    let id = previewed(&e);
+    // Matched to `backup::Remote`, the type `backup.rs` reads `remote.json` as.
+    let path = e.state.join("lists/backups").join(&id).join("remote.json");
+    let remote: Remote = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(remote.format, 1);
+    assert_eq!(remote.resources.len(), 2);
+    assert!(remote.resources.iter().all(|r| r.sha256.len() == 64));
+    assert_eq!(record(&e).receipt.unwrap()["backup"], id);
+    none_of(&e, &["DELETE", "PROPPATCH", "MKCALENDAR"]);
+}
+
+#[test]
+fn delete_revalidates_against_the_backup_then_deletes() {
+    let e = env();
+    let id = previewed(&e);
+    let request = prepared_delete(&e, &id, "prepared", "execute");
+    let result = run(&e.cfg, &request).unwrap();
+    assert_eq!(result["deleted"], true);
+    let saved = record(&e);
+    assert_eq!(saved.phase, Phase::RemoteConfirmed);
+    assert_eq!(saved.receipt.as_ref(), Some(&result));
+    assert!(!collections(root(&e)).contains_key("work"));
+    assert_eq!(count(&e, "DELETE"), 1);
+}
+
+#[test]
+fn delete_refuses_when_the_server_changed_since_the_preview() {
+    let e = env();
+    let id = previewed(&e);
+    flag(root(&e), "mutate_before_delete");
+    let request = prepared_delete(&e, &id, "prepared", "execute");
+    let refused = run(&e.cfg, &request).unwrap_err();
+    assert_eq!(refused.code, "changed");
+    let saved = record(&e);
+    assert_eq!(saved.phase, Phase::Uncertain);
+    assert_eq!(
+        saved.receipt,
+        Some(json!({"no_remote_write": true, "reason": "changed"}))
+    );
+    none_of(&e, &["DELETE"]);
+    assert!(collections(root(&e)).contains_key("work"));
+}
+
+#[test]
+fn reconcile_of_a_delete_reports_present_when_nothing_was_deleted() {
+    let e = env();
+    let id = previewed(&e);
+    let request = prepared_delete(&e, &id, "remote-started", "reconcile");
+    // A reconcile needs the target the execute recorded.
+    let mut saved = record(&e);
+    saved.remote_target = Some(format!("{}work/", e.server.url()));
+    operation::save(&e.state, &saved).unwrap();
+    let refused = run(&e.cfg, &request).unwrap_err();
+    assert_eq!(refused.code, "present");
+    assert_eq!(
+        record(&e).receipt,
+        Some(json!({"present": true, "reason": "present"}))
+    );
+    none_of(&e, &["DELETE"]);
+}
+
+#[test]
+fn an_unrelated_server_list_with_an_odd_id_does_not_block_an_edit() {
+    let e = env();
+    add_collection(root(&e), "work", "Work", "#112233");
+    add_collection(root(&e), ".hidden", "Odd", "#000000");
+    local_list(&e, "work", "Work", "#112233");
+    let request = request(&e, "edit", "work");
+    prepare(&e, &request, "prepared", json!({}));
     let result = run(&e.cfg, &request).unwrap();
     assert_eq!(result["name"], "Renamed");
     assert_eq!(record(&e).phase, Phase::RemoteConfirmed);

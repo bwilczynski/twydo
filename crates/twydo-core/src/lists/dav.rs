@@ -647,7 +647,18 @@ impl Dav {
 
     /// The task lists on the server: the configured URL's calendars if it has any, else
     /// those in the calendar home. A list's id is the percent-decoded last path segment.
+    /// Any id that is not plain is refused, as discovery does.
     pub fn list_home(&self) -> Result<Vec<Listed>, Refused> {
+        let listed = self.list_home_raw()?;
+        if listed.iter().any(|l| !plain(&l.id)) {
+            return Err(Refused::new("mapping"));
+        }
+        Ok(listed)
+    }
+
+    /// [`Dav::list_home`] without judging the ids: every list with its decoded last path
+    /// segment. A caller that picks one list validates that one only.
+    pub fn list_home_raw(&self) -> Result<Vec<Listed>, Refused> {
         let hrefs = match self.calendars_at(&self.root) {
             Ok(found) if !found.is_empty() => found,
             Ok(_) | Err(Soft::Failed) => {
@@ -656,17 +667,16 @@ impl Dav {
             }
             Err(Soft::Hard(refused)) => return Err(refused),
         };
-        hrefs
+        Ok(hrefs
             .into_iter()
             .map(|url| {
                 let last = url.trim_end_matches('/').rsplit('/').next().unwrap_or("");
-                let id = unquote(last);
-                if !plain(&id) {
-                    return Err(Refused::new("mapping"));
+                Listed {
+                    id: unquote(last),
+                    url,
                 }
-                Ok(Listed { id, url })
             })
-            .collect()
+            .collect())
     }
 
     /// One list, after checking that its URL names exactly `id` below the configured origin.
