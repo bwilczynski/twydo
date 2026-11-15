@@ -145,12 +145,17 @@ fn sync_while_form_open_is_stale_not_overwritten() {
         f.title, "From phone",
         "the form now shows the synced version"
     );
-    assert!(f.error.as_deref().unwrap().contains("changed on disk"));
+    // What the user typed is kept on top of it (#110), so `Esc` would still ask.
+    assert_eq!(f.start, "3d");
+    assert!(f.is_dirty());
+    let error = f.error.as_deref().unwrap();
+    assert!(error.contains("changed on disk"), "{error}");
+    assert!(
+        error.ends_with("the saved version with your changes"),
+        "{error}"
+    );
 
     // Saving again now applies against the version the user can see.
-    for c in "3d".chars() {
-        app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
-    }
     let Outcome::Write(req) = app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
     else {
         panic!("expected a write");
@@ -158,6 +163,8 @@ fn sync_while_form_open_is_stale_not_overwritten() {
     assert_eq!(w.run(&req), Ok("saved".into()));
     let text = fs::read_to_string(env.task_file()).unwrap();
     assert!(text.contains("SUMMARY:From phone"), "{text}");
+    // The typed Start (3d: 2026-11-07) is written as 2Do's StartDate.
+    assert!(text.contains("StartDate%22%3A1794009600"), "{text}");
 }
 
 fn sync_config(env: &Env) -> Config {

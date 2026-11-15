@@ -1098,8 +1098,10 @@ impl App {
     }
 
     /// After a refused save: if the task changed on disk since the form opened, rebuild the
-    /// form from the current version so the next save cannot overwrite what the user has not
-    /// seen. When the task is gone the form closes and the error becomes the message.
+    /// form from the current version with the user's typing on top (see [`EditForm::rebase`]),
+    /// so the next save writes only what was typed; a typed field the saved version changed
+    /// too is named in the error, since saving replaces it. When the task is gone the
+    /// form closes and the error becomes the message.
     fn refresh_form(&mut self, error: String) {
         let (Some(form), Some(base)) = (&self.form, &self.form_base) else {
             return;
@@ -1121,11 +1123,30 @@ impl App {
         });
         let focus = form.focus;
         let mut form = if changed {
-            let mut f = self.card_for(now_idx);
+            // The saved version, with what the user typed on top: nothing typed is lost, and
+            // `Esc` still asks before discarding it.
+            let (mut f, rebased) = form.rebase(self.card_for(now_idx));
             if f.fields().contains(&focus) {
                 f.focus = focus;
             }
-            f.error = Some(format!("{error}; the form now shows the saved version"));
+            let names = |fs: &[Field]| fs.iter().map(|f| f.name()).collect::<Vec<_>>().join(", ");
+            let mut msg = format!("{error}; the form now shows the saved version");
+            if f.is_dirty() {
+                msg.push_str(" with your changes");
+            }
+            if !rebased.overlap.is_empty() {
+                msg.push_str(&format!(
+                    " (saving replaces its {})",
+                    names(&rebased.overlap)
+                ));
+            }
+            if !rebased.dropped.is_empty() {
+                msg.push_str(&format!(
+                    "; your {} could not be kept",
+                    names(&rebased.dropped)
+                ));
+            }
+            f.error = Some(msg);
             self.hold_form_base();
             f
         } else {
@@ -1350,8 +1371,8 @@ impl App {
         self.picker = None;
         let adding = self.adding.take();
         let converting = self.converting.take();
-        // A refused edit keeps the form (and its typing, unless the task changed meanwhile),
-        // with the reason in it; a refused row keeps its text too.
+        // A refused edit keeps the form and its typing (over the saved version if the task
+        // changed meanwhile), with the reason in it; a refused row keeps its text too.
         if let Err(e) = &result {
             if self.form.is_some() {
                 self.refresh_form(e.clone());

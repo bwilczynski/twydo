@@ -26,6 +26,31 @@ pub enum Field {
     Notes,
 }
 
+impl Field {
+    /// The field's name in messages, lower case.
+    pub fn name(self) -> &'static str {
+        match self {
+            Field::Title => "title",
+            Field::List => "list",
+            Field::Type => "type",
+            Field::Due => "due",
+            Field::Start => "start",
+            Field::Repeat => "repeat",
+            Field::Alert => "alert",
+            Field::Notes => "notes",
+        }
+    }
+}
+
+/// What [`EditForm::rebase`] reports besides the card, each list in Tab order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Rebased {
+    /// Typed fields the saved version changed as well: saving replaces its value.
+    pub overlap: Vec<Field>,
+    /// Typed fields the saved version's card cannot take: their typing is lost.
+    pub dropped: Vec<Field>,
+}
+
 /// Why typing into Alert does nothing on a task whose alerts Twydo can't write back.
 pub const ALERT_READ_ONLY: &str = "this task has alerts Twydo can't edit";
 
@@ -247,7 +272,12 @@ impl EditForm {
         if self.uid.is_none() && !self.title.trim().is_empty() {
             return true;
         }
-        let now = Values {
+        self.values() != self.initial
+    }
+
+    /// The field values as they stand now.
+    fn values(&self) -> Values {
+        Values {
             title: self.title.clone(),
             list: self.list.clone(),
             kind: self.kind,
@@ -256,8 +286,50 @@ impl EditForm {
             repeat: self.repeat.clone(),
             alert: self.alert.clone(),
             notes: self.notes.clone(),
-        };
-        now != self.initial
+        }
+    }
+
+    /// This card's typing carried onto `onto`, the card for the task's saved version (after a
+    /// save refused because the task changed meanwhile). Each field typed here (one that
+    /// differs from when this card opened) keeps its typed value; the others show the saved
+    /// one. `onto` keeps the saved version as its starting values, so a save writes only the
+    /// typed fields and `Esc` still asks before discarding them. What could not be carried, and
+    /// what the saved version changed too, is reported in [`Rebased`].
+    pub fn rebase(&self, mut onto: EditForm) -> (EditForm, Rebased) {
+        let (now, mine) = (self.values(), &self.initial);
+        let theirs = onto.initial.clone();
+        let fields = onto.fields();
+        let mut out = Rebased::default();
+        macro_rules! carry {
+            ($field:expr, $m:ident) => {
+                if now.$m != mine.$m {
+                    // The saved version has no such field (the task became an item, say), or
+                    // an Alert Twydo can't edit, or a repeat rule the field cannot show, which
+                    // an empty field keeps rather than clears.
+                    let lost = !fields.contains(&$field)
+                        || ($field == Field::Alert
+                            && onto.stored_alert == CustomAlert::Unsupported)
+                        || ($field == Field::Repeat && onto.kept_rule && now.repeat.is_empty());
+                    if lost {
+                        out.dropped.push($field);
+                    } else {
+                        if theirs.$m != mine.$m && theirs.$m != now.$m {
+                            out.overlap.push($field);
+                        }
+                        onto.$m = now.$m.clone();
+                    }
+                }
+            };
+        }
+        carry!(Field::Title, title);
+        carry!(Field::List, list);
+        carry!(Field::Type, kind);
+        carry!(Field::Due, due);
+        carry!(Field::Start, start);
+        carry!(Field::Repeat, repeat);
+        carry!(Field::Alert, alert);
+        carry!(Field::Notes, notes);
+        (onto, out)
     }
 
     /// A key while the discard question is shown.
