@@ -411,18 +411,20 @@ fn reconcile_with_list_still_present_releases_the_fence() {
 #[test]
 fn deleted_list_is_not_recreated_by_the_next_sync() {
     use twydo_core::sync::discover::discover;
-    let (d, cfg) = offline();
+    let (_d, cfg) = offline();
     let mut service = ListService::open(&cfg, None).unwrap();
     let preview = service.preview_delete("synthetic").unwrap();
     service.delete_list(&preview).unwrap();
+    // Discovery lists a fake server that no longer has the list.
+    let (dav_dir, _server, mut dav_cfg) = common::lists::offline_dav();
+    dav_cfg.vdir = cfg.vdir.clone();
+    dav_cfg.state_dir = cfg.state_dir.clone();
     let state = twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap();
-    let found = discover(&cfg, &state).unwrap();
+    let found = discover(&dav_cfg, &state).unwrap();
     assert!(found.adopted.is_empty());
     assert!(!cfg.vdir.join("synthetic").exists());
     assert!(
-        !server(d.path())["calls"]
-            .as_array()
-            .unwrap()
+        !twydo_testdav::calls(dav_dir.path())
             .iter()
             .any(|v| v == "MKCALENDAR")
     );

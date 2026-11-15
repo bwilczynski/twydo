@@ -1143,6 +1143,24 @@ fn hook_uses_the_vdir_of_tdo_sync() {
     assert_eq!(open[0].remote.as_deref(), Some(remote.as_str()));
 }
 
+/// The backstop behind discovery: Twydo never gives vdirsyncer a way to create a list on the
+/// server. A local folder without a remote one makes the real `vdirsyncer discover` ask
+/// whether to create it; with no input it must give up and create nothing.
+#[test]
+fn real_vdirsyncer_discover_without_input_creates_nothing() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    fs::create_dir_all(p.vdir().join("orphan")).unwrap();
+    // `vdirsyncer_env` runs the command with no stdin: it reads end of file.
+    let (code, stderr) = p.vdirsyncer(&["discover", "twydo"]);
+    assert_ne!(code, 0, "discover must fail: {stderr}");
+    assert!(
+        !p.server().join("orphan").exists(),
+        "the remote list was created: {stderr}"
+    );
+    assert!(p.server().join(COLL).is_dir());
+}
+
 #[test]
 fn forgetting_a_remote_deleted_collection_refreshes_real_vdirsyncer_cache() {
     require_vdirsyncer!();

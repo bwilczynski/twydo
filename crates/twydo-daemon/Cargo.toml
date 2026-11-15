@@ -22,3 +22,4 @@ notify = "8.2.1"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+twydo-testdav = { path = "../twydo-testdav" }

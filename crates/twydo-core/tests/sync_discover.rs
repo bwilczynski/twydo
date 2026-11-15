@@ -1,58 +1,90 @@
-//! The helper's `discover` action: adopts remote-only lists, never creates remote ones.
+//! Discovery: adopts remote-only lists, never creates remote ones.
 #![cfg(unix)]
 
 mod common;
 
 use std::fs;
+use std::path::Path;
 
-use common::lists::{flag, offline};
+use common::lists::offline_dav;
 use twydo_core::sync::discover::{DiscoverError, discover};
+use twydo_testdav::{add_collection, calls, collections, flag};
 
-fn script(root: &std::path::Path, remote_only: &[&str], local_only: &[&str]) {
-    let path = root.join("server.json");
-    let mut server: serde_json::Value = fs::read(&path)
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
-        .unwrap_or_else(|_| serde_json::json!({"calls":[],"collections":{},"flags":{}}));
-    server["discover"] = serde_json::json!({"remote_only": remote_only, "local_only": local_only});
-    fs::write(path, server.to_string()).unwrap();
+/// The server holds these collections and the vdir these (empty) folders.
+fn script(
+    root: &Path,
+    cfg: &twydo_core::config::Config,
+    remote_only: &[&str],
+    local_only: &[&str],
+) {
+    for id in remote_only {
+        add_collection(root, id, id, "#112233");
+    }
+    for id in local_only {
+        fs::create_dir_all(cfg.vdir.join(id)).unwrap();
+    }
 }
 
 fn state(cfg: &twydo_core::config::Config) -> std::path::PathBuf {
     twydo_core::store::bind_vdir_state(&cfg.state_dir(), &cfg.vdir).unwrap()
 }
 
-fn calls(root: &std::path::Path) -> Vec<String> {
-    let server: serde_json::Value =
-        serde_json::from_slice(&fs::read(root.join("server.json")).unwrap()).unwrap();
-    serde_json::from_value(server["calls"].clone()).unwrap()
-}
-
 #[test]
 fn discover_adopts_a_remote_only_list() {
-    let (d, cfg) = offline();
-    script(d.path(), &["phone-list"], &[]);
+    let (d, _server, cfg) = offline_dav();
+    script(d.path(), &cfg, &["phone-list"], &[]);
     let found = discover(&cfg, &state(&cfg)).unwrap();
     assert_eq!(found.adopted, ["phone-list"]);
     assert!(cfg.vdir.join("phone-list").is_dir());
+    assert!(calls(d.path()).iter().any(|c| c == "DISCOVER"));
 }
 
 #[test]
 fn discover_never_creates_a_remote_list() {
-    let (d, cfg) = offline();
-    script(d.path(), &[], &["stale"]);
+    let (d, _server, cfg) = offline_dav();
+    script(d.path(), &cfg, &[], &["stale"]);
     match discover(&cfg, &state(&cfg)) {
         Err(DiscoverError::Missing { id }) => assert_eq!(id, "stale"),
         other => panic!("{other:?}"),
     }
     assert!(!calls(d.path()).iter().any(|c| c == "MKCALENDAR"));
+    assert!(collections(d.path()).is_empty());
 }
 
 #[test]
 fn discover_maps_other_refusals() {
-    let (d, cfg) = offline();
+    let (d, _server, cfg) = offline_dav();
     flag(d.path(), "fail_refresh_once");
     match discover(&cfg, &state(&cfg)) {
-        Err(DiscoverError::Failed(message)) => assert!(!message.contains("https://"), "{message}"),
+        Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn a_failed_vdirsyncer_discover_removes_adopted_folders() {
+    let (d, _server, cfg) = offline_dav();
+    script(d.path(), &cfg, &["phone-list", "tablet-list"], &["kept"]);
+    add_collection(d.path(), "kept", "kept", "#112233");
+    flag(d.path(), "fail_refresh_once");
+    match discover(&cfg, &state(&cfg)) {
+        Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(!cfg.vdir.join("phone-list").exists());
+    assert!(!cfg.vdir.join("tablet-list").exists());
+    assert!(cfg.vdir.join("kept").is_dir());
+    assert!(!calls(d.path()).iter().any(|c| c == "MKCALENDAR"));
+}
+
+#[test]
+fn a_non_plain_server_id_fails_and_creates_nothing() {
+    let (d, _server, cfg) = offline_dav();
+    script(d.path(), &cfg, &["good-list", "bad%2Fid"], &[]);
+    match discover(&cfg, &state(&cfg)) {
+        Err(DiscoverError::Failed(message)) => assert!(!message.contains("http"), "{message}"),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(fs::read_dir(&cfg.vdir).unwrap().count(), 0);
+    assert!(!calls(d.path()).iter().any(|c| c == "DISCOVER"));
 }
