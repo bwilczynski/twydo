@@ -37,7 +37,13 @@ an isolated test daemon with `tdo daemon stop`. A custom write-policy matrix is 
 The notifier (Plan 2, [design](docs/superpowers/specs/2026-11-14-notifier-design.md)) is
 implemented: a daemon thread over the pure planner `remind::plan`. Alert editing (issue #111,
 [plan](docs/superpowers/plans/2026-11-14-alert-editing.md)) is implemented; the alerts round is
-complete. Next: write-queue plan 3
+complete. List operations no longer use a Python helper: issue #86 phase 1 (the Rust list
+client in the daemon, [design](docs/superpowers/specs/2026-11-15-rust-list-client-design.md),
+[plan](docs/superpowers/plans/2026-11-15-rust-list-client.md)) is implemented, and
+`[sync].list_python` is gone. The spec's "Server check" (one bounded round on the isolated test list: create a list,
+rename and recolour it, preview its deletion, delete it, run one discovery) has not been run
+against the real server. It needs the user's explicit approval, and must pass before release.
+Next: write-queue plan 3
 (rebasing inside the daemon, re-planning with `store::plan`).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.

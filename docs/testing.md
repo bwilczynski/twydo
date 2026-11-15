@@ -1,9 +1,12 @@
 # Testing
 
-Run `mise run test` for the Rust workspace, Python helper tests and documentation links.
+Run `mise run test` for the Rust workspace, the Python tests of the development scripts in
+`tools/tests` and the documentation links.
 Run `mise run lint` for Clippy and formatting. Integration tests use synthetic fixtures,
 temporary configuration/state directories and their own Unix sockets. The real-vdirsyncer
 suite skips when vdirsyncer is unavailable; a skipped run does not verify that integration.
+List operations and discovery run against `crates/twydo-testdav`, a fake CalDAV server
+that tests start on localhost; it needs no Python or network.
 
 ## Evidence cases
 

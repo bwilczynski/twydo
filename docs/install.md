@@ -35,14 +35,11 @@ cargo install --path crates/tdo
 
 Either puts the `tdo` binary in `~/.cargo/bin`.
 
-The collection helper is bundled in `tdo`; it does not need a source checkout at runtime.
-It needs a Python interpreter with **vdirsyncer 0.21.x** installed. By default Twydo uses
-vdirsyncer's own interpreter, read from the shebang of `[sync].command` (system packages,
-Homebrew and pipx all name it there), else `python3`. Set
-[`[sync].list_python`](config.md#sync) when neither is right (for example, `command` is a
-wrapper script). The helper checks its adapter before
-network access and uses the vdirsyncer config Twydo generates from `[sync]`.
-Task sync still uses `[sync].command` independently.
+Syncing needs the `vdirsyncer` command (version **0.21.x**) on the PATH of the daemon, or set
+[`[sync].command`](config.md#sync). Twydo runs its `sync`, `metasync` and `discover` commands;
+it needs no Python interpreter. List operations (create, rename, recolour, delete, discovery of
+new lists) are CalDAV requests the daemon sends itself, with the `[sync]` username, the output
+of `password_command` and `ca_file`.
 
 ## Try it without your data
 
