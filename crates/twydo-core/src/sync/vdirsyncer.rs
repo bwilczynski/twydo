@@ -33,10 +33,14 @@ pub(crate) trait Control {
     fn started(&self, _pid: u32) {}
     /// The child is gone.
     fn finished(&self) {}
-    /// Whether the child must not start, or must be killed now.
-    fn stop_requested(&self) -> bool {
-        false
+    /// Whether the child must not start, or must be killed now. A pure query: it must not
+    /// record anything.
+    fn stop_requested(&self) -> Result<bool, SyncError> {
+        Ok(false)
     }
+    /// The run was stopped: called exactly where the stop takes effect (before the spawn, or
+    /// after the killed child was reaped).
+    fn stopped(&self) {}
 }
 
 /// For callers with no running record and no stop requests.
@@ -125,7 +129,8 @@ impl Vdirsyncer<'_> {
     /// stop is requested (see [`Control`]); with a stop already pending it is not started.
     fn run(&self, args: &[String], c: &dyn Control) -> Result<Ran, SyncError> {
         let sync = self.sync;
-        if c.stop_requested() {
+        if c.stop_requested()? {
+            c.stopped();
             return Ok(Ran {
                 stderr: String::new(),
                 outcome: Outcome::Stopped,
@@ -176,9 +181,12 @@ impl Vdirsyncer<'_> {
             if let Some(st) = child.try_wait()? {
                 break Outcome::Exited(st);
             }
-            if c.stop_requested() {
+            // An unreadable request counts as none: returning here would leave the child
+            // running with no record of it.
+            if c.stop_requested().unwrap_or(false) {
                 kill_tree(&mut child);
                 child.wait()?;
+                c.stopped();
                 break Outcome::Stopped;
             }
             if Instant::now() >= deadline {
