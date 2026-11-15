@@ -38,6 +38,11 @@ name = "twydo-daemon"
 git_tag_enable = false
 changelog_update = false
 
+# Test support only: never released, tagged or put in a changelog.
+[[package]]
+name = "twydo-testdav"
+release = false
+
 [changelog]
 commit_parsers = [
     { message = "^feat", group = "added" },
