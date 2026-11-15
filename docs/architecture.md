@@ -462,6 +462,16 @@ sync brought in someone else's change to the same task is refused rather than ov
 If undo or redo would recreate a UID already present under another filename, it refuses
 before preparing a journal entry, so unrelated writes can continue.
 
+An undo of a step still queued when it was made withdraws the item if no drain has claimed
+it, and otherwise reverts the journal entry the drain committed from it. While the item is
+claimed and that entry does not exist yet, the drain is mid-commit and the undo answers busy.
+A drainer writes the entry, or the refusal record, before it drops the claim, so a step whose
+item is neither queued nor claimed and has no entry cannot be reverted: it was refused (its
+record may have been pruned), withdrawn by another request, or committed and its entry pruned
+after `retention_days`. Undo skips it and undoes the step before it, as it does for a refused
+step; in the last case the step's write stays. (An applied step whose entry was pruned is not
+skipped: its undo is refused.)
+
 An entry stays pending until a sync confirms the server holds its result; the sync runner then
 sets `synced`. A synced entry is pruned `retention_days` (default 30) after confirmation, and
 undo keeps working until then. `prepared` and `abandoned` entries are never pruned.

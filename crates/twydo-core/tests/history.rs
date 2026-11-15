@@ -171,6 +171,63 @@ fn a_refused_queued_step_is_skipped_and_the_step_before_it_is_undone() {
 }
 
 #[test]
+fn a_refused_queued_step_whose_record_was_pruned_is_skipped() {
+    let env = env();
+    let w = writer(&env);
+    let mut h = History::new();
+    let before = read(&env, A);
+    apply(&env, &w, &mut h, "first", &title(A, "first"));
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let item = queue(&env, &w, &mut h, "second", &title(E, "second"));
+    drop(sync);
+    // A drain refused the queued edit, and the retention pruned the refusal record since.
+    let q = Queue::open(&env.state).unwrap();
+    assert!(q.claim(&item.id).unwrap());
+    q.refuse(&item, "changed elsewhere", false, now()).unwrap();
+    assert_eq!(q.prune(later()).unwrap(), 1);
+    assert!(!q.is_refused(&item.id).unwrap());
+    let a = lazy(&w, Duration::ZERO);
+    let (got, step) = undo(&mut h, a, &env).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert_eq!(step.title, "first");
+    assert_eq!(read(&env, A), before);
+}
+
+#[test]
+fn a_queued_step_another_request_withdrew_is_skipped() {
+    let env = env();
+    let w = writer(&env);
+    let mut h = History::new();
+    let before = read(&env, A);
+    apply(&env, &w, &mut h, "first", &title(A, "first"));
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let item = queue(&env, &w, &mut h, "second", &title(E, "second"));
+    drop(sync);
+    let q = Queue::open(&env.state).unwrap();
+    assert!(q.cancel_by(&item, None, now()).unwrap());
+    let (got, step) = undo(&mut h, lazy(&w, Duration::ZERO), &env).unwrap();
+    assert!(matches!(got, Submitted::Applied(_)), "{got:?}");
+    assert_eq!(step.title, "first");
+    assert_eq!(read(&env, A), before);
+}
+
+#[test]
+fn undo_of_a_queued_step_a_drain_holds_claimed_is_busy() {
+    let env = env();
+    let w = writer(&env);
+    let mut h = History::new();
+    let sync = VdirLock::exclusive(&env.state).unwrap();
+    let item = queue(&env, &w, &mut h, "rename", &title(A, "Queued"));
+    drop(sync);
+    // A drainer claimed the item and has not committed or refused it yet.
+    assert!(Queue::open(&env.state).unwrap().claim(&item.id).unwrap());
+    assert!(matches!(
+        undo(&mut h, lazy(&w, Duration::ZERO), &env),
+        Err(WriteError::Busy)
+    ));
+}
+
+#[test]
 fn an_empty_history_says_nothing_to_undo() {
     let env = env();
     let w = writer(&env);

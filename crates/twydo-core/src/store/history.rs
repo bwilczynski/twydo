@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use super::queue::{self, Item, Queue};
+use super::queue::{self, Item, Queue, Queued};
 use super::writer::{Ctx, Fence, Writer};
 use super::{Drained, Submitted, WriteError, drained_outcome};
 
@@ -130,7 +130,8 @@ impl History {
 }
 
 /// Reverts `step`: the result and the step for the other list. `None` when `step` was a queued
-/// item a drain refused, so nothing of it was ever written.
+/// item a drain refused, so nothing of it was ever written, or one whose fate is no longer
+/// recorded.
 fn revert_step(
     step: &Step,
     label: &str,
@@ -148,13 +149,21 @@ fn revert_step(
                 let title = step.title.clone();
                 return Ok(Some((Submitted::Cancelled, Step { title, state })));
             }
-            // A drainer got there first: the entry it commits names the item. Until that
-            // entry exists the drainer is mid-commit, unless it refused the item.
+            // A drainer got there first: the entry it commits names the item. Without that
+            // entry, a held claim means the drainer is mid-commit. It writes the entry or the
+            // refusal record before it drops the claim, so the claim is looked at first: once
+            // it is gone, no entry means nothing of the step can be reverted (refused, its
+            // record pruned by retention, or withdrawn by another request) and it is skipped.
+            let claimed = matches!(
+                Queue::open(&writer.state)?.state(&item.id)?,
+                Some(Queued::Claimed(_))
+            );
             let Some(entry) = writer.journal.by_queue_id(&item.id)? else {
-                if Queue::open(&writer.state)?.is_refused(&item.id)? {
-                    return Ok(None);
-                }
-                return Err(WriteError::Busy);
+                return if claimed {
+                    Err(WriteError::Busy)
+                } else {
+                    Ok(None)
+                };
             };
             revert_entry(&entry.id, label, access, origin, ctx, drained)?
         }
