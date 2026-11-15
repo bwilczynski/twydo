@@ -2,8 +2,11 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
-use twydo_testdav::{FakeDav, add_collection, calls, collections, fake_vdirsyncer};
+use twydo_testdav::{
+    FakeDav, add_collection, calls, collections, fake_vdirsyncer, flag, flag_value,
+};
 
 const AUTH: &str = "Authorization: Basic YWxpY2U6c2VjcmV0\r\n";
 
@@ -184,4 +187,34 @@ fn fake_vdirsyncer_discover_fails_on_a_one_sided_list() {
             .count(),
         3
     );
+}
+
+#[test]
+fn a_hanging_request_does_not_block_other_requests() {
+    let root = tempfile::tempdir().unwrap();
+    let dav = std::sync::Arc::new(FakeDav::start(root.path()));
+    flag(root.path(), "hang_after_create_once");
+    flag_value(root.path(), "hang_seconds", "5");
+    let hanging = dav.clone();
+    let worker =
+        std::thread::spawn(move || request(&hanging, "MKCALENDAR", "/dav/alice/slow/", AUTH, ""));
+    // Wait until the MKCALENDAR has been applied and is hanging.
+    let started = std::time::Instant::now();
+    while collections(root.path()).is_empty() {
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "MKCALENDAR never arrived"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let asked = std::time::Instant::now();
+    let headers = format!("{AUTH}Depth: 0\r\n");
+    let (status, _) = request(&dav, "PROPFIND", "/dav/alice/slow/", &headers, "");
+    assert_eq!(status, 207);
+    assert!(
+        asked.elapsed() < Duration::from_secs(2),
+        "blocked behind the hang"
+    );
+    drop(dav);
+    let _ = worker.join();
 }

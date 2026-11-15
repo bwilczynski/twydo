@@ -17,8 +17,8 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -41,7 +41,9 @@ fn read_state(root: &Path) -> Value {
 }
 
 fn replace_file(path: &Path, content: &str) {
-    let tmp = path.with_extension(format!("tmp{}", std::process::id()));
+    static WRITES: AtomicU64 = AtomicU64::new(0);
+    let unique = WRITES.fetch_add(1, Ordering::SeqCst);
+    let tmp = path.with_extension(format!("tmp{}-{unique}", std::process::id()));
     fs::write(&tmp, content).expect("write state file");
     fs::rename(&tmp, path).expect("replace state file");
 }
@@ -207,7 +209,7 @@ impl FakeDav {
         let server = Server {
             root: root.to_path_buf(),
             stop: stop.clone(),
-            inventories: HashMap::new(),
+            inventories: Arc::default(),
         };
         let handle = thread::spawn(move || server.run(listener));
         FakeDav {
@@ -264,46 +266,53 @@ struct Resource {
     body: String,
 }
 
+#[derive(Clone)]
 struct Server {
     root: PathBuf,
     stop: Arc<AtomicBool>,
     /// Depth-1 listings of a collection since its last named property read: the `changed`
     /// fault alters the listing from the second one on.
-    inventories: HashMap<String, u32>,
+    inventories: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 impl Server {
-    fn run(mut self, listener: TcpListener) {
+    fn run(self, listener: TcpListener) {
         for stream in listener.incoming() {
             if self.stop.load(Ordering::SeqCst) {
                 break;
             }
-            let Ok(mut stream) = stream else { continue };
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
-            let Some(request) = read_request(&mut stream) else {
-                continue;
-            };
-            if let Reply::Response {
-                status,
-                headers,
-                body,
-            } = self.handle(&request)
-            {
-                let mut head = format!(
-                    "HTTP/1.1 {status} {}\r\nContent-Type: application/xml; charset=utf-8\r\n\
-                     Content-Length: {}\r\nConnection: close\r\n",
-                    reason(status),
-                    body.len()
-                );
-                for (name, value) in headers {
-                    head.push_str(&format!("{name}: {value}\r\n"));
-                }
-                head.push_str("\r\n");
-                let _ = stream.write_all(head.as_bytes());
-                let _ = stream.write_all(&body);
-            }
-            // Otherwise the stream is dropped unanswered.
+            let Ok(stream) = stream else { continue };
+            // A request that hangs must not block the others.
+            let mut server = self.clone();
+            thread::spawn(move || server.serve(stream));
         }
+    }
+
+    fn serve(&mut self, mut stream: TcpStream) {
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+        let Some(request) = read_request(&mut stream) else {
+            return;
+        };
+        if let Reply::Response {
+            status,
+            headers,
+            body,
+        } = self.handle(&request)
+        {
+            let mut head = format!(
+                "HTTP/1.1 {status} {}\r\nContent-Type: application/xml; charset=utf-8\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n",
+                reason(status),
+                body.len()
+            );
+            for (name, value) in headers {
+                head.push_str(&format!("{name}: {value}\r\n"));
+            }
+            head.push_str("\r\n");
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body);
+        }
+        // Otherwise the stream is dropped unanswered.
     }
 
     fn sleep(&self, seconds: f64) {
@@ -496,7 +505,7 @@ impl Server {
             "PROPFIND" => {
                 let named = request.body.contains("displayname");
                 if named {
-                    self.inventories.remove(id);
+                    self.inventories.lock().unwrap().remove(id);
                 }
                 let fault = self.inventory_fault();
                 let mut collection = state["collections"][id].clone();
@@ -528,9 +537,12 @@ impl Server {
     }
 
     fn inventory(&mut self, state: &Value, id: &str) -> Reply {
-        let count = self.inventories.entry(id.to_string()).or_insert(0);
-        *count += 1;
-        let count = *count;
+        let count = {
+            let mut all = self.inventories.lock().unwrap();
+            let n = all.entry(id.to_string()).or_insert(0);
+            *n += 1;
+            *n
+        };
         let fault = self.inventory_fault();
         let collection = &state["collections"][id];
         let mut resources = self.resources(collection);
@@ -602,7 +614,13 @@ impl Server {
             return reply(404, "");
         };
         let found = &resources[position];
-        let inventories = self.inventories.get(id).copied().unwrap_or(0);
+        let inventories = self
+            .inventories
+            .lock()
+            .unwrap()
+            .get(id)
+            .copied()
+            .unwrap_or(0);
         let current = self.etag_for(&fault, &found.etag, inventories);
         if let Some(wanted) = request.headers.get("if-match")
             && *wanted != current
