@@ -274,7 +274,8 @@ you forget one, the next discovery reports the next.
 
 The `vdirsyncer discover` run of a discovery sits under the sync run: it is recorded in
 `sync/running.json`, holds the shared vdir lock (inherited from the run, so it outlives even a
-killed daemon) for as long as it runs, and is killed with its process group when the sync is stopped (`tdo sync stop`, a write
+killed daemon) for as long as it runs, and is killed with its process group when the sync is
+stopped (`tdo sync stop`, a write
 that stops it, or the daemon shutting down after its grace period) or times out. If discovery
 fails, is stopped or times out, the folders it had already created are removed again (only
 while empty), so no list is half adopted.
