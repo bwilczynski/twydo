@@ -143,8 +143,10 @@ Three things differ because there is no child process:
 - **Deadline.** Each request has a timeout, and the operation checks an overall deadline of
   `[sync].timeout_secs` between requests. On expiry it records `uncertain` and fails with the
   current timeout wording.
-- **Stopping.** A stop request is checked between requests rather than by killing a process
-  group. A request already sent runs to its own timeout.
+- **Stopping.** A list operation is not interrupted by a stop request, as before this change
+  (the helper ran unwatched): it ends at its deadline at the latest. A stop request applies to
+  discovery, which checks it before listing the server, again before running
+  `vdirsyncer discover`, and while that command runs.
 
 The operation record keeps format 1 and keeps reading the fields it has today. Fields that
 only addressed the helper (`pair`, `local_storage`, `config`, `version`) are accepted and
@@ -258,7 +260,8 @@ change is not released.
 ## Decisions made by the author, for the user to check
 
 - In-process calls replace the helper process; locks are held by the daemon process itself.
-- Stopping takes effect between requests, not mid-request.
+- A list operation is not stoppable and ends at its deadline; a stop request applies to
+  discovery only.
 - Old operation records stay readable.
 - A leftover `list_python` line is an error fixed by `tdo config init`, so the release is
   breaking. The alternative is to accept and ignore the line, which no other key does.
