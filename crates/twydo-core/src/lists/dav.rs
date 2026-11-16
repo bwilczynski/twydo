@@ -530,13 +530,15 @@ fn agent(sync: &SyncConfig) -> Result<Agent, Refused> {
 
 /// Runs the password command and prepares a client for `sync`. Nothing is sent yet.
 pub fn connect(sync: &SyncConfig, deadline: Instant) -> Result<Dav, Refused> {
+    // The trust anchors first: a bad ca_file is reported without fetching a credential.
+    let agent = agent(sync)?;
     let secret = password(&sync.password_command, deadline)?;
     let auth = format!(
         "Basic {}",
         STANDARD.encode(format!("{}:{secret}", sync.username))
     );
     Ok(Dav {
-        agent: agent(sync)?,
+        agent,
         configured: sync.url.clone(),
         root: format!("{}/", sync.url.trim_end_matches('/')),
         auth,

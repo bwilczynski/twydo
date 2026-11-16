@@ -374,6 +374,22 @@ fn a_password_command_that_exits_leaves_its_background_child_running() {
 }
 
 #[test]
+fn a_bad_ca_file_is_reported_without_running_the_password_command() {
+    let s = setup();
+    let scratch = tempfile::tempdir().unwrap();
+    let marker = scratch.path().join("ran");
+    let script = format!("touch '{}'; printf secret", marker.display());
+    let mut config = sync(s.server.url(), &["sh", "-c", &script]);
+    config.ca_file = Some(scratch.path().join("missing.pem"));
+    let refused = connect(&config, Instant::now() + Duration::from_secs(10))
+        .err()
+        .expect("refused");
+    assert_eq!(refused.code, "connect");
+    assert!(!refused.sent);
+    assert!(!marker.exists(), "the password command ran");
+}
+
+#[test]
 fn a_trailing_newline_is_stripped_and_oversized_output_is_refused() {
     let s = setup();
     add_collection(root(&s), "work", "Work", "#112233");
