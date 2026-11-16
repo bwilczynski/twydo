@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/bwilczynski/twydo/compare/v0.4.2...v0.5.0) - 2026-11-16
+
+### Added
+
+- *(config)* [**breaking**] remove the list_python setting
+- *(lists)* [**breaking**] remove the python helper around vdirsyncer
+- *(sync)* discover lists without the python helper
+- *(lists)* run list operations in process
+- *(lists)* add a rust caldav client for list calls
+- *(daemon)* [**breaking**] protocol generation 3
+
+### Fixed
+
+- *(lists)* check ca_file before fetching the password
+- *(sync)* refuse to adopt a list on another host
+- *(lists)* leave what the password command started running
+- *(lists)* say why refreshing vdirsyncer's collections failed
+- *(sync)* let a paired list with an unusual id through discovery
+- *(lists)* [**breaking**] refuse to resume an operation started by an older twydo
+- *(lists)* keep every failure after a write marked as sent
+- *(lists)* report connection and tls failures as such
+- *(lists)* mark failures before a write as not sent
+- *(lists)* bound the password command and tighten the caldav client
+- *(daemon)* withdraw the stop request before announcing sync.finished
+
 ## [0.4.2](https://github.com/bwilczynski/twydo/compare/v0.4.1...v0.4.2) - 2026-11-15
 
 ### Fixed
