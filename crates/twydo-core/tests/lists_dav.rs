@@ -333,16 +333,43 @@ fn a_password_command_that_leaves_a_child_running_still_times_out() {
         .err()
         .expect("refused");
     assert!(started.elapsed() < Duration::from_secs(5));
-    assert!(
-        ["credentials", "timeout"].contains(&refused.code),
-        "{}",
-        refused.code
+    assert_eq!(refused.code, "timeout");
+}
+
+/// Whether the process is alive, by asking the shell.
+#[cfg(unix)]
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// A command that prints the password and exits while a background child (a credential agent)
+/// keeps the pipe open succeeds at once and leaves the child running.
+#[test]
+fn a_password_command_that_exits_leaves_its_background_child_running() {
+    let s = setup();
+    let scratch = tempfile::tempdir().unwrap();
+    let pidfile = scratch.path().join("pid");
+    let script = format!(
+        "sleep 30 & echo $! > '{}'; printf secret",
+        pidfile.display()
     );
-    // A command that exits but leaves a writer behind does not hang either.
-    let config = sync(s.server.url(), &["sh", "-c", "sleep 30 & printf secret"]);
+    let config = sync(s.server.url(), &["sh", "-c", &script]);
     let started = Instant::now();
     let dav = connect(&config, started + Duration::from_secs(10)).expect("connect");
-    assert!(started.elapsed() < Duration::from_secs(5));
+    let took = started.elapsed();
+    let pid = std::fs::read_to_string(&pidfile)
+        .unwrap()
+        .trim()
+        .to_string();
+    let still = alive(&pid);
+    // Clean up before asserting, so a failure leaves nothing behind.
+    let _ = std::process::Command::new("kill").arg(&pid).status();
+    assert!(took < Duration::from_secs(5), "{took:?}");
+    assert!(still, "the background child was killed");
     drop(dav);
 }
 
