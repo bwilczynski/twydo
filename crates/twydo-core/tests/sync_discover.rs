@@ -89,6 +89,19 @@ fn a_non_plain_server_id_fails_and_creates_nothing() {
     assert!(!calls(d.path()).iter().any(|c| c == "DISCOVER"));
 }
 
+/// vdirsyncer names a folder after the decoded id, so a server id such as `a:b` may already
+/// have a local folder that Twydo's stricter rule would refuse to adopt.
+#[test]
+fn a_non_plain_server_id_that_already_has_a_local_folder_does_not_block_discovery() {
+    let (d, _server, cfg) = offline();
+    script(d.path(), &cfg, &["good-list", "paired:id"], &["paired:id"]);
+    let found = discover(&cfg, &state(&cfg)).unwrap();
+    assert_eq!(found.adopted, ["good-list"]);
+    assert!(cfg.vdir.join("paired:id").is_dir());
+    assert!(cfg.vdir.join("good-list").is_dir());
+    assert!(calls(d.path()).iter().any(|c| c == "DISCOVER"));
+}
+
 #[test]
 fn vdirsyncer_discover_gets_a_non_terminal_stdin_at_end_of_file() {
     let (d, _server, cfg) = offline();

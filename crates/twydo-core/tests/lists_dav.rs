@@ -272,7 +272,7 @@ fn list_home_finds_collections_through_the_principal() {
     add_collection(root(&s), "work", "Work", "#112233");
     add_collection(root(&s), "home", "Home", "#445566");
     let dav = client(&s);
-    let mut found = dav.list_home().unwrap();
+    let mut found = dav.list_home_raw().unwrap();
     found.sort_by(|a, b| a.id.cmp(&b.id));
     let ids: Vec<&str> = found.iter().map(|l| l.id.as_str()).collect();
     assert_eq!(ids, ["home", "work"]);
@@ -292,7 +292,7 @@ fn a_redirect_is_refused_and_not_followed() {
     let dav = client(&s);
     let list = dav.collection(&url(&s, "work"), "work").unwrap();
     assert_eq!(list.read_properties().unwrap_err().code, "dav");
-    assert_eq!(dav.list_home().unwrap_err().code, "dav");
+    assert_eq!(dav.list_home_raw().unwrap_err().code, "dav");
     // Only the requests to the server itself were made.
     assert!(calls(root(&s)).iter().all(|c| c == "PROPFIND"));
 }
@@ -498,7 +498,7 @@ fn a_calendar_home_on_another_origin_is_refused_without_contacting_it() {
     let other = FakeDav::start(other_root.path());
     flag_value(root(&s), "foreign_home", &other.url());
     let dav = client(&s);
-    let refused = dav.list_home().unwrap_err();
+    let refused = dav.list_home_raw().unwrap_err();
     assert_eq!(refused.code, "mapping");
     assert!(calls(other_root.path()).is_empty());
 }

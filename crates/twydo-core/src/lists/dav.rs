@@ -159,7 +159,7 @@ fn unquote(text: &str) -> String {
 }
 
 /// Whether `id` is a plain collection identity that is safe in a request path.
-fn plain(id: &str) -> bool {
+pub(crate) fn plain(id: &str) -> bool {
     super::plain_id(id) && id.len() <= 255 && !id.chars().any(|c| "/\\%?#:\0\r\n".contains(c))
 }
 
@@ -683,18 +683,9 @@ impl Dav {
     }
 
     /// The task lists on the server: the configured URL's calendars if it has any, else
-    /// those in the calendar home. A list's id is the percent-decoded last path segment.
-    /// Any id that is not plain is refused, as discovery does.
-    pub fn list_home(&self) -> Result<Vec<Listed>, Refused> {
-        let listed = self.list_home_raw()?;
-        if listed.iter().any(|l| !plain(&l.id)) {
-            return Err(Refused::new("mapping"));
-        }
-        Ok(listed)
-    }
-
-    /// [`Dav::list_home`] without judging the ids: every list with its decoded last path
-    /// segment. A caller that picks one list validates that one only.
+    /// those in the calendar home. A list's id is the percent-decoded last path segment, as
+    /// vdirsyncer names its local folder. The ids are not judged: a caller that picks one list
+    /// validates that one only, and discovery judges the ids that have no local folder.
     pub fn list_home_raw(&self) -> Result<Vec<Listed>, Refused> {
         let hrefs = match self.calendars_at(&self.root) {
             Ok(found) if !found.is_empty() => found,
