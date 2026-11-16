@@ -86,6 +86,14 @@ fn until(what: &str, ok: impl Fn() -> bool) {
     }
 }
 
+/// Waits until the sent-state file names `key`. A delivery is recorded after the sink has
+/// it (a crash in between may repeat one, never lose one), so the file can lag the sink.
+fn recorded(fx: &Fixture, key: &str) {
+    until("the delivery is never recorded", || {
+        fs::read_to_string(state_file(fx)).is_ok_and(|s| s.contains(key))
+    });
+}
+
 fn status(c: &Client) -> StatusView {
     c.call("status.get", empty()).unwrap()
 }
@@ -122,7 +130,7 @@ fn delivers_when_the_clock_reaches_the_trigger() {
         assert_eq!(got[0].key, KEY);
         assert_eq!(got[0].title, "Ping");
     }
-    assert!(fs::read_to_string(state_file(&fx)).unwrap().contains(KEY));
+    recorded(&fx, KEY);
     move_to(&td, &clock, t(5, 1, 0));
     std::thread::sleep(QUIET);
     assert_eq!(count(&sink), 1, "once");
@@ -178,7 +186,7 @@ fn failed_delivery_is_retried_and_reported() {
     move_to(&td, &clock, t(5, 0, 5));
     until("never retried", || count(&sink) == 1);
     status_until(&c, "error never cleared", |s| s.notifier_error.is_none());
-    assert!(fs::read_to_string(state_file(&fx)).unwrap().contains(KEY));
+    recorded(&fx, KEY);
 }
 
 #[test]
