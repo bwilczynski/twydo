@@ -38,14 +38,10 @@ name = "twydo-daemon"
 git_tag_enable = false
 changelog_update = false
 
-# Test support only: never released, tagged or put in a changelog. It is newer than the last
-# release tag, so it needs, like a new crate (see twydo-daemon above), a `git_tag_name` that is
-# never created: with the shared `v{{ version }}` release-plz looks for it in the tree of the
-# previous tag and fails with "cannot find package". `release = false` does not skip that lookup.
+# Test support only: never released, tagged or put in a changelog.
 [[package]]
 name = "twydo-testdav"
 release = false
-git_tag_name = "twydo-testdav-v{{ version }}"
 
 [changelog]
 commit_parsers = [
