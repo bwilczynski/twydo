@@ -58,7 +58,9 @@ impl std::fmt::Display for DiscoverError {
 impl std::error::Error for DiscoverError {}
 
 /// Refreshes vdirsyncer's collection cache. Callers hold the sync run lock and the shared
-/// vdir lock (`state` is the vdir's state directory).
+/// vdir lock (`state` is the vdir's state directory). The daemon runs the watched form; this
+/// one is the entry point of the tests.
+#[doc(hidden)]
 pub fn discover(cfg: &Config, state: &Path) -> Result<Discovered, DiscoverError> {
     let Some(sync) = cfg.sync.as_ref() else {
         return Err(DiscoverError::Failed(wording("config").into()));
@@ -138,6 +140,15 @@ pub(crate) fn discover_watched(
         remove_adopted(&adopted);
         e
     };
+    // Nothing is created on the server by the command below, and that rests on three things:
+    // (a) both sides exist for every list before it runs (the folders above and the server's
+    // own listing); (b) its stdin is at end-of-file, so its "create it?" prompt aborts instead
+    // of being answered; and (c) vdirsyncer 0.21's `_sanity_check_collections`
+    // (cli/discover.py) builds each side with `create=True` and creates a missing one without
+    // asking, but only a filesystem storage raises "collection not found" when it is built
+    // (`checkdir` in utils.py; the CalDAV storage makes no request then), so only a local
+    // folder could be re-created. A release that changes (b) or (c) needs this re-checked; the
+    // test `real_vdirsyncer_discover_without_input_creates_nothing` covers (b).
     let ran = vds
         .discover(control)
         .map_err(|e| fail(DiscoverError::Failed(e.to_string())))?;

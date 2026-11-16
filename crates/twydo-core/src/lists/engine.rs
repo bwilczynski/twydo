@@ -86,10 +86,7 @@ fn validate(r: &RemoteRequest) -> Result<(), Refused> {
 }
 
 fn action_unknown(action: &str) -> bool {
-    !matches!(
-        action,
-        "resolve" | "create" | "edit" | "preview-delete" | "delete"
-    )
+    !matches!(action, "create" | "edit" | "preview-delete" | "delete")
 }
 
 fn is_symlink(path: &Path) -> bool {
