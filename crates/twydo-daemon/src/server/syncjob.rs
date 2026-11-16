@@ -35,20 +35,13 @@ impl SyncDone {
     /// The end of a sync, after the caller let the lane go (so the drain hook has run):
     /// publishes the vdir as the sync left it, then reports the sync idle and sends
     /// `sync.finished` with the status after it, in one step: `status.sync.state` stays
-    /// `running` until `sync.finished` is sent. Then the sync is no longer active (a stop
-    /// request that came in meanwhile is withdrawn).
+    /// `running` until `sync.finished` is sent. The sync stops being active first (a stop
+    /// request that came in meanwhile is withdrawn), so a client that sees `sync.finished`
+    /// finds `sync/stop` gone and a new `sync.stop` answering `stopping: false`.
     pub fn finish(self, shared: &Arc<Shared>) {
         if let Err(e) = shared.publisher.reload(Cause::Sync, Vec::new()) {
             eprintln!("tdo daemon: reload after a sync failed: {e}");
         }
-        shared
-            .publisher
-            .finish_sync(|status_rev| Event::SyncFinished {
-                job_id: self.job_id,
-                reason: self.reason,
-                result: self.result,
-                status_rev,
-            });
         {
             let mut gate = shared.runner.stop_gate();
             gate.active = None;
@@ -58,6 +51,14 @@ impl SyncDone {
                 eprintln!("tdo daemon: cannot withdraw the stop request: {e}");
             }
         }
+        shared
+            .publisher
+            .finish_sync(|status_rev| Event::SyncFinished {
+                job_id: self.job_id,
+                reason: self.reason,
+                result: self.result,
+                status_rev,
+            });
         shared.sync_finished_notifier();
         shared.poke_scheduler();
     }
