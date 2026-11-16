@@ -761,6 +761,26 @@ impl Collection<'_> {
             .send(method, &self.url, headers, body.map(str::as_bytes))
     }
 
+    /// Sends the write request of an operation (MKCALENDAR, PROPPATCH, DELETE). From here on
+    /// the write may have been applied, so every failure of the request itself is `sent`: a
+    /// connect-class error is not told apart from one on a connection that was already open.
+    fn write(
+        &self,
+        method: &str,
+        headers: &[(&str, &str)],
+        body: Option<&str>,
+    ) -> Result<Reply, Refused> {
+        self.request(method, headers, body)
+            .map_err(Refused::mark_sent)
+    }
+
+    /// Runs the steps that follow a write. The rule: a failure after the write request, whatever
+    /// its code (including a `connect` failure of a read-back), is `sent`, because the server
+    /// may have applied the write. Every post-write step of an operation goes through here.
+    fn after_write<T>(&self, steps: impl FnOnce() -> Result<T, Refused>) -> Result<T, Refused> {
+        steps().map_err(Refused::mark_sent)
+    }
+
     pub fn read_properties(&self) -> Result<Properties, Refused> {
         let body = "<d:propfind xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\" \
                     xmlns:a=\"http://apple.com/ns/ical/\">\
@@ -844,21 +864,23 @@ impl Collection<'_> {
             escape(name),
             escape(color)
         );
-        let reply = self.request(
+        let reply = self.write(
             "MKCALENDAR",
             &[("Content-Type", XML_UTF8), ("If-None-Match", "*")],
             Some(&body),
         )?;
-        if reply.status != 201 {
-            return Err(dav());
-        }
-        let after = self.read_properties()?;
-        if after.name.as_deref() != Some(name)
-            || after.color.as_deref().and_then(canonical_color) != canonical_color(color)
-        {
-            return Err(dav());
-        }
-        Ok(after)
+        self.after_write(|| {
+            if reply.status != 201 {
+                return Err(dav());
+            }
+            let after = self.read_properties()?;
+            if after.name.as_deref() != Some(name)
+                || after.color.as_deref().and_then(canonical_color) != canonical_color(color)
+            {
+                return Err(dav());
+            }
+            Ok(after)
+        })
     }
 
     /// Best effort: the server enforces no precondition, so the read-back is the only check.
@@ -894,25 +916,28 @@ impl Collection<'_> {
             "<d:propertyupdate xmlns:d=\"{D}\" xmlns:a=\"{A}\"><d:set><d:prop>{set}</d:prop>\
              </d:set></d:propertyupdate>"
         );
-        let reply = self.request("PROPPATCH", &[("Content-Type", XML_UTF8)], Some(&body))?;
-        if reply.status != 207 {
-            return Err(dav());
-        }
-        let doc = parse(utf8(&reply.body, "dav")?, "dav")?;
-        let confirmed = successful_properties(&doc, &self.url)?;
-        if (changes.name.is_some() && !confirmed.contains_key(&(D, "displayname")))
-            || (changes.color.is_some() && !confirmed.contains_key(&(A, "calendar-color")))
-        {
-            return Err(dav());
-        }
-        let after = self.read_properties()?;
-        let wrong = |color: bool, now: &Option<String>, wanted: &Option<String>| {
-            wanted.is_some() && !same_metadata(color, now.as_deref(), wanted.as_deref())
-        };
-        if wrong(false, &after.name, &changes.name) || wrong(true, &after.color, &changes.color) {
-            return Err(dav());
-        }
-        Ok(after)
+        let reply = self.write("PROPPATCH", &[("Content-Type", XML_UTF8)], Some(&body))?;
+        self.after_write(|| {
+            if reply.status != 207 {
+                return Err(dav());
+            }
+            let doc = parse(utf8(&reply.body, "dav")?, "dav")?;
+            let confirmed = successful_properties(&doc, &self.url)?;
+            if (changes.name.is_some() && !confirmed.contains_key(&(D, "displayname")))
+                || (changes.color.is_some() && !confirmed.contains_key(&(A, "calendar-color")))
+            {
+                return Err(dav());
+            }
+            let after = self.read_properties()?;
+            let wrong = |color: bool, now: &Option<String>, wanted: &Option<String>| {
+                wanted.is_some() && !same_metadata(color, now.as_deref(), wanted.as_deref())
+            };
+            if wrong(false, &after.name, &changes.name) || wrong(true, &after.color, &changes.color)
+            {
+                return Err(dav());
+            }
+            Ok(after)
+        })
     }
 
     fn raw_properties(&self) -> Result<Vec<u8>, Refused> {
@@ -1058,11 +1083,11 @@ impl Collection<'_> {
         if !unchanged {
             return Err(Refused::unsent("changed"));
         }
-        let reply = self.request("DELETE", &[], None)?;
-        match reply.status {
+        let reply = self.write("DELETE", &[], None)?;
+        self.after_write(|| match reply.status {
             200 | 202 | 204 | 404 => Ok(()),
             _ => Err(dav()),
-        }
+        })
     }
 
     /// Read-only: never sends DELETE. `Ok` means the list is gone.

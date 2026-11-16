@@ -486,3 +486,25 @@ fn a_create_whose_probe_fails_records_no_remote_write_and_can_be_cancelled() {
     operation::cancel_unstarted(&e.cfg, ID).unwrap();
     assert_eq!(record(&e).phase, Phase::Complete);
 }
+
+#[test]
+fn a_create_applied_by_the_server_then_cut_off_is_uncertain_and_not_cancellable() {
+    let e = env();
+    flag(root(&e), "gone_after_write");
+    let request = request(&e, "create", "fresh");
+    prepare(&e, &request, "prepared", json!({}));
+    let refused = run(&e.cfg, &request).unwrap_err();
+    assert!(refused.sent);
+    assert_eq!(count(&e, "MKCALENDAR"), 1);
+    let saved = record(&e);
+    assert_eq!(saved.phase, Phase::Uncertain);
+    assert!(saved.remote_target.is_some());
+    assert_eq!(
+        saved
+            .receipt
+            .as_ref()
+            .and_then(|r| r.get("no_remote_write")),
+        None
+    );
+    assert!(operation::cancel_unstarted(&e.cfg, ID).is_err());
+}

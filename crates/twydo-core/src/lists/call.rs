@@ -35,6 +35,12 @@ impl Refused {
         }
     }
 
+    /// The same refusal, marked as raised once a write may have reached the server.
+    pub fn mark_sent(mut self) -> Self {
+        self.sent = true;
+        self
+    }
+
     /// The same refusal, marked as raised before any write was sent.
     pub fn not_sent(mut self) -> Self {
         self.sent = false;
