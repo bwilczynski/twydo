@@ -8,7 +8,7 @@ use std::path::Path;
 
 use common::lists::offline;
 use twydo_core::sync::discover::{DiscoverError, discover};
-use twydo_testdav::{add_collection, calls, collections, flag};
+use twydo_testdav::{add_collection, calls, collections, flag, flag_value};
 
 /// The server holds these collections and the vdir these (empty) folders.
 fn script(
@@ -100,6 +100,25 @@ fn a_non_plain_server_id_that_already_has_a_local_folder_does_not_block_discover
     assert!(cfg.vdir.join("paired:id").is_dir());
     assert!(cfg.vdir.join("good-list").is_dir());
     assert!(calls(d.path()).iter().any(|c| c == "DISCOVER"));
+}
+
+#[test]
+fn a_server_list_on_another_origin_is_not_adopted() {
+    let (d, _server, cfg) = offline();
+    script(d.path(), &cfg, &["good-list"], &[]);
+    flag_value(
+        d.path(),
+        "foreign_list_origin",
+        "http://other.example.test:9",
+    );
+    match discover(&cfg, &state(&cfg)) {
+        Err(DiscoverError::Failed(message)) => {
+            assert_eq!(message, twydo_core::lists::call::wording("mapping"));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(fs::read_dir(&cfg.vdir).unwrap().count(), 0);
+    assert!(!calls(d.path()).iter().any(|c| c == "DISCOVER"));
 }
 
 #[test]

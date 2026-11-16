@@ -471,6 +471,18 @@ impl Server {
                 propstat("200 OK", &collection_props(c))
             ));
         }
+        // A calendar the listing places on another origin, as a hostile or broken server
+        // might: the flag holds that origin, such as `http://other.example.test`.
+        if let Some(origin) = flag_get(&self.root, "foreign_list_origin") {
+            rows.push_str(&format!(
+                "<d:response><d:href>{}/dav/alice/elsewhere/</d:href>{}</d:response>",
+                escape(&origin),
+                propstat(
+                    "200 OK",
+                    &collection_props(&json!({"name": "Elsewhere", "color": "#112233"}))
+                )
+            ));
+        }
         multistatus(&rows)
     }
 
