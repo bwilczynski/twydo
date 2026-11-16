@@ -508,3 +508,27 @@ fn a_create_applied_by_the_server_then_cut_off_is_uncertain_and_not_cancellable(
     );
     assert!(operation::cancel_unstarted(&e.cfg, ID).is_err());
 }
+
+#[test]
+fn a_deadline_that_expires_after_the_target_is_recorded_is_cancellable() {
+    let e = env();
+    flag_value(root(&e), "delay_propfind_once", "3");
+    let mut request = request(&e, "create", "fresh");
+    request.timeout_secs = 1;
+    prepare(&e, &request, "prepared", json!({}));
+    let refused = run(&e.cfg, &request).unwrap_err();
+    assert_eq!(refused.code, "timeout");
+    assert!(!refused.sent);
+    assert_eq!(count(&e, "MKCALENDAR"), 0);
+    let saved = record(&e);
+    assert!(saved.remote_target.is_some());
+    assert_eq!(
+        saved
+            .receipt
+            .as_ref()
+            .and_then(|r| r.get("no_remote_write")),
+        Some(&json!(true))
+    );
+    operation::cancel_unstarted(&e.cfg, ID).unwrap();
+    assert_eq!(record(&e).phase, Phase::Complete);
+}
