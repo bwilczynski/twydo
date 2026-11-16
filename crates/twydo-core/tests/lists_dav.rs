@@ -499,3 +499,52 @@ fn a_calendar_home_on_another_origin_is_refused_without_contacting_it() {
     assert_eq!(refused.code, "mapping");
     assert!(calls(other_root.path()).is_empty());
 }
+
+/// The server applies the write, then stops accepting connections: the read-back fails with a
+/// connect-class error, which after a write must still count as sent.
+#[test]
+fn a_failed_read_back_after_create_is_sent() {
+    let s = setup();
+    flag(root(&s), "gone_after_write");
+    let dav = client(&s);
+    let list = dav.collection(&url(&s, "fresh"), "fresh").unwrap();
+    let refused = list.create("Fresh", "#aabbcc").unwrap_err();
+    assert_eq!(refused.code, "connect");
+    assert!(refused.sent);
+    assert!(calls(root(&s)).iter().any(|c| c == "MKCALENDAR"));
+    assert!(collections(root(&s)).contains_key("fresh"));
+}
+
+#[test]
+fn a_failed_read_back_after_a_metadata_write_is_sent() {
+    let s = setup();
+    add_collection(root(&s), "work", "Work", "#112233");
+    flag(root(&s), "gone_after_write");
+    let dav = client(&s);
+    let list = dav.collection(&url(&s, "work"), "work").unwrap();
+    let changes = Changes {
+        name: Some("Renamed".into()),
+        color: None,
+    };
+    let refused = list
+        .write_metadata(&changes, &props("Work", "#112233"))
+        .unwrap_err();
+    assert_eq!(refused.code, "connect");
+    assert!(refused.sent);
+    assert!(calls(root(&s)).iter().any(|c| c == "PROPPATCH"));
+    assert_eq!(collections(root(&s))["work"].0.as_deref(), Some("Renamed"));
+}
+
+/// DELETE has no read-back; its own failure after the request left is sent.
+#[test]
+fn a_failed_delete_request_is_sent() {
+    let s = setup();
+    seeded(&s);
+    let dav = client(&s);
+    let list = dav.collection(&url(&s, "work"), "work").unwrap();
+    let backup = list.capture().unwrap();
+    flag(root(&s), "fail_delete_once");
+    let refused = list.delete(&backup).unwrap_err();
+    assert!(refused.sent);
+    assert!(calls(root(&s)).iter().any(|c| c == "DELETE"));
+}

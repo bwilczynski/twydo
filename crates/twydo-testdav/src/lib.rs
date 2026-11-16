@@ -243,6 +243,8 @@ impl FakeDav {
             root: root.to_path_buf(),
             stop: stop.clone(),
             inventories: Arc::default(),
+            port,
+            closed: Arc::default(),
         };
         let handle = thread::spawn(move || server.run(listener));
         FakeDav {
@@ -306,6 +308,9 @@ struct Server {
     /// Depth-1 listings of a collection since its last named property read: the `changed`
     /// fault alters the listing from the second one on.
     inventories: Arc<Mutex<HashMap<String, u32>>>,
+    port: u16,
+    /// Set once the listener is closed, so later connections are refused.
+    closed: Arc<AtomicBool>,
 }
 
 impl Server {
@@ -319,6 +324,19 @@ impl Server {
             let mut server = self.clone();
             thread::spawn(move || server.serve(stream));
         }
+        drop(listener);
+        self.closed.store(true, Ordering::SeqCst);
+    }
+
+    /// The `gone_after_write` fault: closes the listener before answering a write, so the
+    /// write is applied and every later connection is refused.
+    fn go_away(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+        let _ = TcpStream::connect(("127.0.0.1", self.port));
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while !self.closed.load(Ordering::SeqCst) && std::time::Instant::now() < until {
+            thread::sleep(Duration::from_millis(5));
+        }
     }
 
     fn serve(&mut self, mut stream: TcpStream) {
@@ -326,11 +344,19 @@ impl Server {
         let Some(request) = read_request(&mut stream) else {
             return;
         };
+        let answer = self.handle(&request);
+        let wrote = matches!(
+            request.method.as_str(),
+            "MKCALENDAR" | "PROPPATCH" | "DELETE"
+        );
+        if wrote && flag_get(&self.root, "gone_after_write").is_some() {
+            self.go_away();
+        }
         if let Reply::Response {
             status,
             headers,
             body,
-        } = self.handle(&request)
+        } = answer
         {
             let mut head = format!(
                 "HTTP/1.1 {status} {}\r\nContent-Type: application/xml; charset=utf-8\r\n\
@@ -485,6 +511,12 @@ impl Server {
             && flag_take(&root, "fail_propfind_once").is_some()
         {
             return reply(500, "");
+        }
+        if request.method == "PROPFIND"
+            && depth == "0"
+            && let Some(seconds) = flag_take(&root, "delay_propfind_once")
+        {
+            self.sleep(seconds.parse().unwrap_or(1.0));
         }
         match request.method.as_str() {
             "MKCALENDAR" => {
