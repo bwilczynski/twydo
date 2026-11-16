@@ -115,6 +115,11 @@ fn prepare(e: &Env, request: &RemoteRequest, phase: &str, extra: Value) {
         "phase": phase,
         "request": stored,
         "holds": holds,
+        "connection": twydo_core::lists::engine::connection_digest(
+            e.cfg.sync.as_ref().unwrap(),
+            &e.vdir,
+        )
+        .unwrap(),
     });
     for (key, value) in extra.as_object().unwrap() {
         record[key] = value.clone();
@@ -300,11 +305,8 @@ fn a_changed_connection_is_a_mapping_refusal() {
     assert!(calls(root(&e)).is_empty());
 }
 
-#[test]
-fn a_record_from_the_current_version_still_reconciles() {
-    let e = env();
-    add_collection(root(&e), "work", "Renamed", "#112233");
-    local_list(&e, "work", "Work", "#112233");
+/// A record as the version before the Rust list client wrote it: no `connection`.
+fn old_record(e: &Env, remote_target: Option<&str>) -> RemoteRequest {
     let operation = e.state.join("lists/operations").join(format!("{ID}.json"));
     fs::create_dir_all(operation.parent().unwrap()).unwrap();
     fs::create_dir_all(e.state.join("sync")).unwrap();
@@ -331,19 +333,48 @@ fn a_record_from_the_current_version_still_reconciles() {
   "format": 1, "id": "{ID}", "created": "2026-11-12T10:00:00Z", "vdir": {vdir},
   "phase": "remote-started", "request": {stored},
   "holds": {{"displayname": [87, 111, 114, 107], "color": [35, 49, 49, 50, 50, 51, 51]}},
-  "receipt": null, "remote_target": "{target}work/", "connection_digest": "abc",
+  "receipt": null, "remote_target": {target}, "connection_digest": "abc",
   "local_base": null, "local_after": null, "retired": null
 }}"#,
         vdir = json!(e.vdir),
-        target = e.server.url()
+        target = json!(remote_target)
     );
     fs::write(&operation, fixture).unwrap();
     fs::write(e.state.join("lists/active"), ID).unwrap();
-    let mut request: RemoteRequest = serde_json::from_value(stored).unwrap();
-    request.mode = "reconcile".into();
-    let result = run(&e.cfg, &request).unwrap();
-    assert_eq!(result["name"], "Renamed");
-    assert_eq!(record(&e).phase, Phase::RemoteConfirmed);
+    serde_json::from_value(stored).unwrap()
+}
+
+#[test]
+fn a_record_from_before_the_upgrade_is_refused_before_any_request() {
+    let e = env();
+    add_collection(root(&e), "work", "Renamed", "#112233");
+    local_list(&e, "work", "Work", "#112233");
+    let target = format!("{}work/", e.server.url());
+    let stored = old_record(&e, Some(&target));
+    // It still reads.
+    assert!(record(&e).connection.is_none());
+    for (mode, keep_server) in [("reconcile", false), ("reconcile", true)] {
+        let mut request = stored.clone();
+        request.mode = mode.into();
+        request.keep_server = keep_server;
+        let refused = run(&e.cfg, &request).unwrap_err();
+        assert_eq!(refused.code, "upgrade", "{mode}");
+        assert!(!refused.sent);
+        assert!(calls(root(&e)).is_empty());
+    }
+    let saved = record(&e);
+    assert_eq!(saved.phase, Phase::RemoteStarted);
+    assert!(saved.connection.is_none());
+}
+
+#[test]
+fn a_record_from_before_the_upgrade_with_no_target_can_still_be_cancelled() {
+    let e = env();
+    local_list(&e, "work", "Work", "#112233");
+    old_record(&e, None);
+    operation::cancel_unstarted(&e.cfg, ID).unwrap();
+    assert_eq!(record(&e).phase, Phase::Complete);
+    assert!(!e.state.join("lists/active").exists());
 }
 
 /// Two resources on "work", a local folder, and a finished preview; returns the backup id.

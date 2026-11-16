@@ -80,6 +80,9 @@ pub fn wording(code: &str) -> &'static str {
         "discovery" => {
             "collection discovery found missing lists; resolve them before retrying (no unrelated list was created)"
         }
+        "upgrade" => {
+            "this list operation was started by an older Twydo and cannot be resumed; check on the server whether the change happened and make it there if needed"
+        }
         "timeout" => "list operation timed out; reconcile its recorded operation before retrying",
         "changed" => "the list changed on the server since the preview; preview the deletion again",
         "present" => "the list still exists on the server",

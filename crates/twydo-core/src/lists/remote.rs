@@ -10,7 +10,10 @@ use crate::store::bind_vdir_state;
 
 use super::operation::{self, ListOperation, Phase};
 use super::{ListError, ListService, ListState, plain_id};
-use super::{call::RemoteRequest, engine};
+use super::{
+    call::{RemoteRequest, wording},
+    engine,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListRequest {
@@ -285,8 +288,16 @@ impl ListService {
         let mut request = operation::recovery_request(&self.config, &record.request)?;
         request.mode = "reconcile".into();
         request.keep_server = keep_server;
-        engine::invoke(&self.config, &request).map_err(|e| {
-            ListError::Refused(format!("list operation {id} remains unresolved: {e}"))
+        engine::run(&self.config, &request).map_err(|refused| {
+            if refused.code == "upgrade" {
+                // Said as it is: no command resumes or abandons such an operation.
+                ListError::Refused(wording(refused.code).into())
+            } else {
+                ListError::Refused(format!(
+                    "list operation {id} remains unresolved: {}",
+                    wording(refused.code)
+                ))
+            }
         })?;
         self.finalize_remote(id)
     }

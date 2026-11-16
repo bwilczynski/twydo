@@ -655,3 +655,28 @@ fn recovery_regenerates_the_config_before_reconciling() {
         "recovery must ensure the generated config"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn an_unresolved_delete_from_before_the_upgrade_is_refused_and_stays_fenced() {
+    let (d, _server, mut cfg) = offline();
+    cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    let mut service = ListService::open(&cfg, None).unwrap();
+    let (state, id) = unresolved_delete(&d, &cfg, &mut service);
+    // Rewrite the record as the version before the Rust list client left it.
+    let path = state.join("lists/operations").join(format!("{id}.json"));
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    record.as_object_mut().unwrap().remove("connection");
+    fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+    let before = calls(d.path()).len();
+    let message = service.reconcile(&id).unwrap_err().to_string();
+    assert_eq!(message, twydo_core::lists::call::wording("upgrade"));
+    assert_eq!(calls(d.path()).len(), before, "no request is made");
+    assert_eq!(deletes(d.path()), 1);
+    assert_eq!(
+        fs::read_to_string(state.join("lists/active"))
+            .unwrap()
+            .trim(),
+        id
+    );
+}
