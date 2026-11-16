@@ -218,7 +218,8 @@ fn guard(
 }
 
 /// The connection an operation started on, so reconciling cannot reach another account.
-fn connection_digest(sync: &SyncConfig, vdir: &Path) -> Result<String, Refused> {
+#[doc(hidden)]
+pub fn connection_digest(sync: &SyncConfig, vdir: &Path) -> Result<String, Refused> {
     let encoded = serde_json::to_string(&(
         &sync.url,
         &sync.username,
@@ -399,8 +400,14 @@ fn dispatch(cx: &Cx, mut record: Option<&mut ListOperation>) -> Result<Value, Re
         if mode == "execute" {
             record.connection = Some(digest);
             save(cx, record).map_err(unsent)?;
-        } else if record.connection.as_ref().is_some_and(|c| *c != digest) {
-            return Err(Refused::unsent("mapping"));
+        } else {
+            // A record without a connection was written by an older Twydo: nothing says
+            // which account it started on, so it is never resumed.
+            match record.connection.as_ref() {
+                None => return Err(Refused::unsent("upgrade")),
+                Some(c) if *c != digest => return Err(Refused::unsent("mapping")),
+                Some(_) => {}
+            }
         }
     }
     if mode == "refresh" {
@@ -587,7 +594,10 @@ pub fn run(cfg: &Config, request: &RemoteRequest) -> Result<Value, Refused> {
         }
         save(&cx, &record).map(|()| result)
     });
-    if let Err(refused) = &outcome {
+    // A refusal to resume leaves the older record exactly as it was found.
+    if let Err(refused) = &outcome
+        && refused.code != "upgrade"
+    {
         record_failure(&cx, &mut record, refused);
     }
     drop(held);

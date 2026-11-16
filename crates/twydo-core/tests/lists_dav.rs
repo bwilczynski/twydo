@@ -443,6 +443,9 @@ fn error_text_never_contains_the_url() {
         "credentials",
         "operation",
         "timeout",
+        "upgrade",
+        "discovery",
+        "vdirsyncer",
         "protocol",
         "anything else",
     ] {

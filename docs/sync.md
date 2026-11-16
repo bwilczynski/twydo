@@ -42,9 +42,12 @@ in [config.md](config.md) (`[sync]`).
    Your old vdirsyncer config and its status directory are left unused; delete them when you
    like. The first sync after the upgrade discovers the collections again. A list operation left
    unresolved before the upgrade cannot be resumed: reconcile answers that it was started before
-   Twydo generated the vdirsyncer config. No command abandons a started list operation, so
-   resolve such operations (reconcile them) before upgrading, and otherwise check on the server
-   whether the change happened.
+   Twydo generated the vdirsyncer config. The release that removes the Python list helper
+   has the same limit: a list operation left unfinished before upgrading to it cannot be
+   resumed, and reconcile answers that it was started by an older Twydo. No command abandons a
+   started list operation, so such an operation stays unresolved, and `tdo` refuses to write or
+   sync until it is resolved. Finish (reconcile) every list operation before upgrading, and otherwise check on
+   the server whether the change happened and make it there if needed.
 
 3. **Check by hand.** `tdo sync` should print `synced`; `tdo status` shows the result, with
    each list's state under `lists:` by id and display name (`<id> (<name>): ok`). The

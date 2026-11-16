@@ -388,6 +388,7 @@ impl ListService {
                 )));
             }
             "changed" => CHANGED,
+            "upgrade" => return Err(ListError::Refused(wording("upgrade").into())),
             code => {
                 return Err(ListError::Refused(format!(
                     "list operation {id} remains unresolved: {}",

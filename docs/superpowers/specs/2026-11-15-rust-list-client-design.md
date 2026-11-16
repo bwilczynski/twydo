@@ -45,9 +45,10 @@ tool.
 - Spec §11 preservation, conflict and recovery contracts apply unchanged. List writes stay
   best effort under the accepted risk recorded in the
   [best-effort list writes design](2026-11-12-best-effort-list-writes-design.md).
-- An operation record written by the current version (`lists/operations/<id>.json`, format 1,
-  which embeds the helper request) must still be readable, so an operation interrupted before
-  an upgrade can be reconciled after it.
+- An operation record written before this change (`lists/operations/<id>.json`, format 1,
+  which embeds the helper request) stays readable, but reconciling it is refused: the record
+  carries no fingerprint of the account the operation started on that the new client can
+  compare (owner's decision of 2026-11-16).
 - No device access is authorised by this document. See [Server check](#server-check).
 - Twydo is MIT. New dependencies must be permissive.
 
@@ -150,7 +151,11 @@ Three things differ because there is no child process:
 
 The operation record keeps format 1 and keeps reading the fields it has today. Fields that
 only addressed the helper (`pair`, `local_storage`, `config`, `version`) are accepted and
-ignored when read.
+ignored when read. A record written before this change has no `connection` fingerprint, so a
+reconcile of it is refused with the code `upgrade` (before any server call or password
+command, nothing sent), by the owner's decision of 2026-11-16: the old record carries no
+fingerprint of the account that the new client can compare. A record with no remote target
+is still cleared as never sent. No command resumes or abandons the others.
 
 ### Discovery
 
@@ -262,7 +267,9 @@ change is not released.
 - In-process calls replace the helper process; locks are held by the daemon process itself.
 - A list operation is not stoppable and ends at its deadline; a stop request applies to
   discovery only.
-- Old operation records stay readable.
+- Old operation records stay readable (format 1), but an operation started before this change
+  is refused on reconcile, by the owner's decision of 2026-11-16, because the old record
+  carries no fingerprint of the account the new client can compare.
 - A leftover `list_python` line is an error fixed by `tdo config init`, so the release is
   breaking. The alternative is to accept and ignore the line, which no other key does.
 - Discovery fails safely through the no-terminal-input backstop rather than by any new guard
