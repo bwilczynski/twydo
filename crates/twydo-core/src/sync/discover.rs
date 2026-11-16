@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use super::vdirsyncer::{Control, Outcome, TEST_REMOTE_ENV, Uncontrolled, Vdirsyncer, ensure};
 use crate::config::Config;
 use crate::lists::call::wording;
-use crate::lists::dav::connect;
+use crate::lists::dav::{connect, plain};
 
 /// What a successful discovery changed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,13 +99,20 @@ pub(crate) fn discover_watched(
         .checked_add(Duration::from_secs(vds.sync.timeout_secs))
         .unwrap_or_else(|| Instant::now() + Duration::from_secs(365 * 24 * 3600));
     let dav = connect(vds.sync, deadline).map_err(refused)?;
-    let listed: BTreeSet<String> = dav
-        .list_home()
+    let listed: Vec<String> = dav
+        .list_home_raw()
         .map_err(refused)?
         .into_iter()
         .map(|l| l.id)
         .collect();
     let local = local_ids(&cfg.vdir);
+    // A server id that is not plain can never be adopted: vdirsyncer's own discovery would
+    // find no folder for it, reach its not-found handler and abort. One that already has a
+    // folder of that name was synced before and pairs fine.
+    if listed.iter().any(|id| !plain(id) && !local.contains(id)) {
+        return Err(DiscoverError::Failed(wording("mapping").into()));
+    }
+    let listed: BTreeSet<String> = listed.into_iter().collect();
     // A local list the server lacks usually means it was deleted elsewhere: report it, and
     // create nothing here or there.
     if let Some(id) = local.iter().find(|id| !listed.contains(*id)) {
