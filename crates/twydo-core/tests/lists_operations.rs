@@ -19,7 +19,7 @@ fn setup() -> (tempfile::TempDir, Config, RemoteRequest) {
     cfg.sync = Some(SyncConfig::default());
     fs::create_dir_all(cfg.vdir.join("synthetic")).unwrap();
     fs::write(cfg.vdir.join("synthetic/displayname"), "Synthetic").unwrap();
-    let mut request = RemoteRequest::new(&cfg, "resolve").unwrap();
+    let mut request = RemoteRequest::new(&cfg, "edit").unwrap();
     request.collection = Some("synthetic".into());
     (root, cfg, request)
 }
