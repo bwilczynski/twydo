@@ -391,11 +391,18 @@ pub struct Dav {
 /// The most password output accepted; more is refused rather than truncated.
 const MAX_PASSWORD: usize = 64 * 1024;
 
+/// How long output is still awaited after the password command has exited without the pipe
+/// reaching end-of-file, because something it started in the background holds it open.
+const PASSWORD_GRACE: Duration = Duration::from_millis(200);
+
 /// Runs `password_command` in its own process group; its stderr is discarded and stdin is
-/// null. The group is killed on a timeout and once the command has exited, so a forked
-/// process that keeps the pipe open cannot outlive the deadline.
+/// null. The group is killed only on a timeout. After a normal exit what the command started
+/// in the background (a credential agent) is left running, and its output is taken as read
+/// once a short grace passes without end-of-file, so a child that keeps the pipe open cannot
+/// hold the call to its deadline.
 fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
     use std::os::unix::process::CommandExt;
+    use std::sync::{Arc, Mutex};
     let credentials = || Refused::new("credentials");
     let (program, args) = argv.split_first().ok_or_else(credentials)?;
     let mut child = Command::new(program)
@@ -408,13 +415,19 @@ fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
         .map_err(|_| credentials())?;
     let group = child.id();
     let mut stdout = child.stdout.take().ok_or_else(credentials)?;
+    let read = Arc::new(Mutex::new(Vec::new()));
     let (sender, receiver) = std::sync::mpsc::channel();
+    let sink = Arc::clone(&read);
     std::thread::spawn(move || {
-        let mut out = Vec::new();
-        let _ = (&mut stdout)
-            .take(MAX_PASSWORD as u64 + 1)
-            .read_to_end(&mut out);
-        let _ = sender.send(out);
+        let mut chunk = [0u8; 4096];
+        while let Ok(n) = stdout.read(&mut chunk) {
+            let mut out = sink.lock().unwrap_or_else(|e| e.into_inner());
+            out.extend_from_slice(&chunk[..n]);
+            if n == 0 || out.len() > MAX_PASSWORD {
+                break;
+            }
+        }
+        let _ = sender.send(());
     });
     let status = loop {
         match child.try_wait() {
@@ -428,12 +441,9 @@ fn password(argv: &[String], deadline: Instant) -> Result<String, Refused> {
             }
         }
     };
-    // Whatever the command left behind must not keep the pipe open.
-    crate::sync::running::kill_group(group);
-    let wait = deadline.saturating_duration_since(Instant::now());
-    let out = receiver
-        .recv_timeout(wait)
-        .map_err(|_| Refused::new("timeout"))?;
+    let wait = PASSWORD_GRACE.min(deadline.saturating_duration_since(Instant::now()));
+    let _ = receiver.recv_timeout(wait);
+    let out = std::mem::take(&mut *read.lock().unwrap_or_else(|e| e.into_inner()));
     if !status.success() || out.len() > MAX_PASSWORD {
         return Err(credentials());
     }
