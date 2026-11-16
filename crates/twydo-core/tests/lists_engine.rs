@@ -175,6 +175,52 @@ fn refresh_confirms_locally_after_discover() {
     assert_eq!(count(&e, "DISCOVER"), 1);
 }
 
+/// A refresh of a confirmed edit, with the fake vdirsyncer's behaviour set by `setup`.
+fn refresh_with(setup: impl FnOnce(&mut Env)) -> twydo_core::lists::call::Refused {
+    let mut e = env();
+    setup(&mut e);
+    add_collection(root(&e), "work", "Work", "#112233");
+    local_list(&e, "work", "Renamed", "#112233");
+    let after = snapshot(&e.vdir.join("work")).unwrap();
+    let mut request = request(&e, "edit", "work");
+    request.mode = "refresh".into();
+    prepare(
+        &e,
+        &request,
+        "remote-confirmed",
+        json!({"local_after": after, "local_base": after}),
+    );
+    run(&e.cfg, &request).unwrap_err()
+}
+
+#[test]
+fn a_refresh_that_cannot_start_vdirsyncer_says_so() {
+    let refused = refresh_with(|e| {
+        e.cfg.sync.as_mut().unwrap().command = "/nonexistent/synthetic-vdirsyncer".into();
+    });
+    assert_eq!(refused.code, "vdirsyncer");
+    assert_eq!(
+        refused.to_string(),
+        "cannot run vdirsyncer; check [sync].command"
+    );
+}
+
+#[test]
+fn a_refresh_that_times_out_is_a_timeout() {
+    let refused = refresh_with(|e| {
+        flag_value(root(e), "discover_sleep", "10");
+        e.cfg.sync.as_mut().unwrap().timeout_secs = 1;
+    });
+    assert_eq!(refused.code, "timeout");
+}
+
+#[test]
+fn a_refresh_that_vdirsyncer_fails_is_a_discovery_failure() {
+    let refused = refresh_with(|e| flag(root(e), "fail_refresh_once"));
+    assert_eq!(refused.code, "discovery");
+    assert!(refused.to_string().contains("could not refresh"));
+}
+
 #[test]
 fn a_stale_edit_records_no_remote_write() {
     let e = env();
