@@ -3081,10 +3081,6 @@
             "description": "vdirsyncer executable.",
             "type": "string"
           },
-          "list_python": {
-            "description": "Python interpreter containing the supported vdirsyncer collection adapter. Unset means\nvdirsyncer's own interpreter (from the shebang of `command`), else `python3`.",
-            "type": "string"
-          },
           "max_backoff_secs": {
             "default": 1800,
             "format": "uint64",
@@ -4024,7 +4020,7 @@
   },
   "info": {
     "title": "tdo",
-    "version": "2"
+    "version": "3"
   },
   "methods": [
     {
@@ -4884,5 +4880,5 @@
       }
     }
   },
-  "x-protocol": 2
+  "x-protocol": 3
 }
