@@ -78,8 +78,9 @@ pub fn wording(code: &str) -> &'static str {
             "server values differ from the requested save; review them or explicitly keep server values"
         }
         "discovery" => {
-            "collection discovery found missing lists; resolve them before retrying (no unrelated list was created)"
+            "vdirsyncer could not refresh its list of collections; a list may be missing on one side (no list was created on the server)"
         }
+        "vdirsyncer" => "cannot run vdirsyncer; check [sync].command",
         "upgrade" => {
             "this list operation was started by an older Twydo and cannot be resumed; check on the server whether the change happened and make it there if needed"
         }

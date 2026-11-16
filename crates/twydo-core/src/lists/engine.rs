@@ -361,16 +361,21 @@ fn refresh(cx: &Cx) -> Result<Value, Refused> {
     }
     .discover(&Uncontrolled)
     .map_err(|_| discovery())?;
-    let clean = matches!(&ran.outcome, Outcome::Exited(status) if status.success())
-        && !ran.stderr.lines().any(|line| {
-            let line = line.trim_start();
-            line.starts_with("error: ") || line.starts_with("critical: ")
-        });
-    if clean {
-        Ok(json!({"refreshed": true}))
-    } else {
-        Err(discovery())
+    match &ran.outcome {
+        Outcome::SpawnFailed(_) => return Err(Refused::new("vdirsyncer")),
+        Outcome::TimedOut => return Err(Refused::new("timeout")),
+        Outcome::Stopped => return Err(discovery()),
+        Outcome::Exited(status) => {
+            let logged = ran.stderr.lines().any(|line| {
+                let line = line.trim_start();
+                line.starts_with("error: ") || line.starts_with("critical: ")
+            });
+            if !status.success() || logged {
+                return Err(discovery());
+            }
+        }
     }
+    Ok(json!({"refreshed": true}))
 }
 
 fn save(cx: &Cx, record: &ListOperation) -> Result<(), Refused> {
