@@ -99,12 +99,12 @@ pub(crate) fn discover_watched(
         .checked_add(Duration::from_secs(vds.sync.timeout_secs))
         .unwrap_or_else(|| Instant::now() + Duration::from_secs(365 * 24 * 3600));
     let dav = connect(vds.sync, deadline).map_err(refused)?;
-    let listed: Vec<String> = dav
-        .list_home_raw()
-        .map_err(refused)?
-        .into_iter()
-        .map(|l| l.id)
-        .collect();
+    let found = dav.list_home_raw().map_err(refused)?;
+    // A calendar on another host is never adopted: its folder would pair vdirsyncer with it.
+    if found.iter().any(|l| !dav.on_origin(&l.url)) {
+        return Err(DiscoverError::Failed(wording("mapping").into()));
+    }
+    let listed: Vec<String> = found.into_iter().map(|l| l.id).collect();
     let local = local_ids(&cfg.vdir);
     // A server id that is not plain can never be adopted: vdirsyncer's own discovery would
     // find no folder for it, reach its not-found handler and abort. One that already has a

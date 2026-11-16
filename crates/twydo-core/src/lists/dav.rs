@@ -717,6 +717,12 @@ impl Dav {
             .collect())
     }
 
+    /// Whether `url` is on the configured origin (scheme and host:port).
+    pub fn on_origin(&self, url: &str) -> bool {
+        let (origin, target) = (split(&self.root), split(url));
+        (&origin.scheme, origin.netloc) == (&target.scheme, target.netloc)
+    }
+
     /// One list, after checking that its URL names exactly `id` below the configured origin.
     pub fn collection(&self, url: &str, id: &str) -> Result<Collection<'_>, Refused> {
         validate_target(&self.configured, url, id)?;
