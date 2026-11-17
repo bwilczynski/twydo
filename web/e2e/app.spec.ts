@@ -35,14 +35,34 @@ test("Today lists the due tasks", async ({ page }, info) => {
   }
 });
 
-test("complete and undo", async ({ page }) => {
-  const box = page.getByRole("checkbox", { name: "Complete Synthetic task 3" });
-  await box.click();
+test("complete and undo", async ({ page, context }) => {
+  const name = "Complete Synthetic task 3";
+  // A second page of the same device sees what the daemon holds, not this page's local state.
+  const other = await context.newPage();
+  await other.goto(base());
+  await expect(other.getByRole("checkbox", { name })).toBeVisible();
+
+  await page.getByRole("checkbox", { name }).click();
   await expect(page.getByRole("status")).toContainText('Completed "Synthetic task 3"');
+  await expect(page.getByRole("checkbox", { name })).toBeChecked();
+  // The completion reached the daemon: a fresh load lists the task as done.
+  await other.reload();
+  const done = other.locator("section", { has: other.getByRole("heading", { name: "DONE" }) });
+  const finished = done.getByRole("checkbox", { name });
+  await expect(finished).toBeChecked();
+  await expect(finished).toBeDisabled();
+
   await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.getByRole("status")).toHaveCount(0);
+  await other.reload();
+  const back = other.getByRole("checkbox", { name });
+  await expect(back).toBeVisible();
+  await expect(back).not.toBeChecked();
+  await expect(back).toBeEnabled();
+  await expect(other.getByRole("heading", { name: "DONE" })).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole("checkbox", { name: "Complete Synthetic task 3" })).toBeEnabled();
+  await expect(page.getByRole("checkbox", { name })).not.toBeChecked();
+  await expect(page.getByRole("heading", { name: "DONE" })).toHaveCount(0);
 });
 
 test("capture from Inbox and from Today", async ({ page }, info) => {
@@ -71,6 +91,7 @@ test("capture from Inbox and from Today", async ({ page }, info) => {
 
 // Last: it stops the daemon, and restarts it for whatever runs next.
 test("daemon stopped shows offline state", async ({ page }) => {
+  test.setTimeout(60_000);
   stopDaemon();
   try {
     await expect(page.getByText("Can't reach Twydo")).toBeVisible({ timeout: 20_000 });

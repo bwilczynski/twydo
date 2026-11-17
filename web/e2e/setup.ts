@@ -1,5 +1,15 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,8 +19,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../..");
 const tdo = process.env.TDO_BIN ?? join(repo, "target/debug/tdo");
 
-/** Environment of every `tdo` the suite runs: its own config, state and socket, never the user's. */
+/**
+ * Environment of every `tdo` the suite runs: its own config, state, data, cache, runtime and
+ * socket, never the user's. It fails closed: without the isolated paths it throws.
+ */
 export function tdoEnv(): NodeJS.ProcessEnv {
+  const need = ["E2E_SOCKET", "E2E_CONFIG", "E2E_XDG_STATE", "E2E_RUNTIME", "E2E_ROOT"] as const;
+  for (const k of need) {
+    if (!process.env[k]) throw new Error(`e2e isolation: ${k} is not set; refusing to run tdo`);
+  }
   const env = { ...process.env };
   delete env.TWYDO_SOCKET;
   return {
@@ -18,6 +35,8 @@ export function tdoEnv(): NodeJS.ProcessEnv {
     TWYDO_SOCKET: process.env.E2E_SOCKET,
     XDG_CONFIG_HOME: process.env.E2E_CONFIG,
     XDG_STATE_HOME: process.env.E2E_XDG_STATE,
+    XDG_DATA_HOME: join(process.env.E2E_ROOT!, "xdg-data"),
+    XDG_CACHE_HOME: join(process.env.E2E_ROOT!, "xdg-cache"),
     XDG_RUNTIME_DIR: process.env.E2E_RUNTIME,
     HOME: process.env.E2E_ROOT,
     TWYDO_NOTIFIER: "off",
@@ -28,10 +47,19 @@ export function tdoRun(args: string[]): string {
   return execFileSync(tdo, args, { env: tdoEnv(), encoding: "utf8" });
 }
 
-/** Starts `tdo daemon` in the background; callers wait for it with {@link waitForDaemon}. */
+const logPath = (name: string) => join(process.env.E2E_ROOT!, `${name}.log`);
+
+/** Starts `tdo daemon` in the background, logging to the temp dir; its pid is recorded. */
 export function startDaemon(): ChildProcess {
-  const child = spawn(tdo, ["daemon"], { env: tdoEnv(), stdio: "ignore", detached: true });
+  const log = openSync(logPath("daemon"), "a");
+  const child = spawn(tdo, ["daemon"], {
+    env: tdoEnv(),
+    stdio: ["ignore", log, log],
+    detached: true,
+  });
+  closeSync(log);
   child.unref();
+  if (child.pid) writeFileSync(join(process.env.E2E_ROOT!, "daemon.pid"), String(child.pid));
   return child;
 }
 
@@ -48,11 +76,29 @@ export async function waitForDaemon(): Promise<void> {
   }
 }
 
+/** Stops the daemon; kills it by recorded pid when `daemon stop` fails or times out. */
 export function stopDaemon(): void {
   try {
-    tdoRun(["daemon", "stop"]);
+    execFileSync(tdo, ["daemon", "stop"], { env: tdoEnv(), timeout: 15_000, stdio: "ignore" });
+    return;
   } catch {
-    // already stopped
+    // fall through to the pid
+  }
+  try {
+    const pidFile = join(process.env.E2E_ROOT!, "daemon.pid");
+    if (existsSync(pidFile)) process.kill(Number(readFileSync(pidFile, "utf8")), "SIGKILL");
+  } catch {
+    // already gone
+  }
+}
+
+function dumpLogs(): void {
+  for (const n of ["daemon", "gateway"]) {
+    try {
+      console.error(`--- ${n}.log ---\n${readFileSync(logPath(n), "utf8")}`);
+    } catch {
+      // no log
+    }
   }
 }
 
@@ -144,7 +190,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   let gateway: ChildProcess | undefined;
   const teardown = async () => {
-    gateway?.kill();
+    if (gateway && gateway.exitCode === null) {
+      const exited = new Promise<void>((r) => gateway!.once("exit", () => r()));
+      gateway.kill();
+      await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))]);
+      if (gateway.exitCode === null) gateway.kill("SIGKILL");
+    }
     stopDaemon();
     rmSync(root, { recursive: true, force: true });
     rmSync(sockDir, { recursive: true, force: true });
@@ -152,6 +203,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   try {
     startDaemon();
     await waitForDaemon();
+    const gwLog = openSync(logPath("gateway"), "a");
     gateway = spawn(
       tdo,
       [
@@ -167,10 +219,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         "--assets",
         join(repo, "web/dist"),
       ],
-      { env: tdoEnv(), stdio: "ignore" },
+      { env: tdoEnv(), stdio: ["ignore", gwLog, gwLog] },
     );
+    closeSync(gwLog);
     await waitForPort(port);
   } catch (e) {
+    dumpLogs();
     await teardown();
     throw e;
   }

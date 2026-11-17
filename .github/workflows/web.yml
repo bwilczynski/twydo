@@ -22,6 +22,8 @@ jobs:
       - name: Build
         run: mise run web-build
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Build tdo
         run: cargo build -p tdo
 
@@ -30,3 +32,13 @@ jobs:
 
       - name: End-to-end
         run: cd web && npm run e2e
+
+      - name: Upload e2e results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-results
+          path: |
+            web/test-results
+            web/playwright-report
+          if-no-files-found: ignore
