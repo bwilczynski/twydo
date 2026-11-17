@@ -9,6 +9,8 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
  iPhone (2Do) ──CalDAV──▶ CalDAV server ◀──CalDAV── vdirsyncer ──files──▶ vdir
                                                          ▲                  ▲
                                                          └─ runs it ─ tdo daemon ◀──socket── tdo (TUI, CLI)
+                                                                              ▲
+                                    phone app ──HTTPS/WebSocket── tdo gateway ┘
 ```
 
 - **The vdir** is the source of truth on your machine: a folder with one subfolder per list
@@ -21,6 +23,9 @@ their files. For what a task looks like on disk, see [data-model.md](data-model.
   decides when to sync. See [The daemon](#the-daemon).
 - **`tdo`** is its client: the TUI, `tdo op`, `tdo sync` and `tdo conflicts resolve` ask the
   daemon instead of touching the vdir themselves.
+- **The gateway** (`tdo gateway serve`) is the only part that listens on the network. It serves
+  the phone web app and relays device requests to the daemon over the socket like any other
+  client; it keeps only its paired-device state ([gateway.md](gateway.md)).
 - **2Do on the iPhone** syncs with the same server. Twydo writes every change the way 2Do itself
   writes it, so the phone reads Twydo's changes as its own ([compatibility.md](compatibility.md)).
 

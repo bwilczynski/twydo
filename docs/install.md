@@ -81,6 +81,8 @@ close the TUI, syncs, and is started again on demand. Its log is
 setup) set `TWYDO_SOCKET` next to `XDG_CONFIG_HOME`. For writing your own client, see
 [protocol.md](protocol.md).
 
+To use Twydo from your phone, run the gateway next to the daemon: see [gateway.md](gateway.md).
+
 ### Start it at login
 
 A daemon started on demand is detached: it keeps syncing after you close the TUI, until you stop

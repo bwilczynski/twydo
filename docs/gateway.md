@@ -1,0 +1,91 @@
+# The phone gateway
+
+`tdo gateway` serves a small web app for your phone and talks to the daemon for it. You add
+the app to the home screen and capture, complete and undo tasks from anywhere. It is a client
+of the daemon like the TUI: it never reads your configuration or your vdir, and the daemon
+never opens a network port. The design is in
+[the MVP spec](superpowers/specs/2026-11-17-phone-companion-mvp-design.md).
+
+## Security model
+
+- The gateway listens on `127.0.0.1:8787` by default. Put a TLS reverse proxy in front of it
+  and let it pass WebSocket upgrades on `/ws`. Do not expose the port directly.
+- `--origin` (or `TWYDO_GATEWAY_ORIGIN`) is the public `https://` origin the phone uses. The
+  gateway refuses WebSocket upgrades from any other origin. It is required.
+- `--insecure` serves plain HTTP on a trusted network: no origin is required and the device
+  cookie is not marked `Secure`. Use it only on a network you trust.
+- A device pairs once with a code (valid 10 minutes, single use, five wrong attempts void it).
+  It then holds a long-lived `HttpOnly` cookie. The gateway stores only hashes of codes and
+  keys, in files only you can read.
+- A revoked device loses access within 5 seconds, and its open connection is closed.
+- Logs name the device and the method, never a task title.
+
+## With Docker
+
+The image `ghcr.io/bwilczynski/twydo` holds `tdo` and vdirsyncer and runs the daemon and the
+gateway together. Everything it keeps is under the volume `/data`.
+
+1. Copy `contrib/docker/docker-compose.yaml` and `contrib/docker/env.sample` to a folder. Rename
+   the sample to `.env` and set your origin.
+2. Put the CalDAV password in `caldav_password` next to them.
+3. Write `data/config/twydo/config.toml` (below). The container runs as uid 1000, so
+   `data` must be writable by it.
+4. `docker compose up -d`.
+
+The compose file binds the port to `127.0.0.1`; your proxy forwards to it.
+
+## Without Docker
+
+Install `tdo` and vdirsyncer ([install.md](install.md)), write the configuration as for the
+desktop, and run:
+
+```sh
+tdo gateway serve --origin https://tasks.example.test
+```
+
+The gateway needs a daemon; any `tdo` command starts one, or install it as a service
+(`tdo daemon install`). `contrib/systemd/tdo-gateway.service` is a reference unit for the
+gateway itself. Set `TWYDO_GATEWAY_LISTEN` or `--listen` to change the address, and
+`TWYDO_GATEWAY_STATE` or `--state-dir` to move its state (default
+`$XDG_STATE_HOME/twydo/gateway`).
+
+## The server's configuration
+
+The server has its own `config.toml`, in the same format as the desktop's
+([config.md](config.md)). `[writes]` has the same mode and matrix, so the phone gets exactly the
+operations the desktop would. In the image the path is `/data/config/twydo/config.toml`:
+
+```toml
+vdir = "/data/vdir"
+
+[sync]
+url = "https://dav.example.test/dav/"
+username = "tasks"
+password_command = ["cat", "/run/secrets/caldav_password"]
+```
+
+Do not run a second sync from another machine on the same vdir; the server's daemon is the
+one that syncs with CalDAV.
+
+## Pairing
+
+Pair from inside the installed home-screen app, not from the browser tab: the home-screen app
+keeps its own cookies, so a device paired in Safari is not paired in the app.
+
+```sh
+docker compose exec twydo tdo gateway pair phone
+# without Docker: tdo gateway pair phone
+```
+
+Open the app from the home screen and enter the code. `--role display` pairs a read-only
+device.
+
+```sh
+tdo gateway devices          # name, role, paired at, last seen
+tdo gateway revoke phone
+```
+
+## Logs
+
+Docker: `docker compose logs -f twydo`. Without Docker the gateway logs to standard error and
+the daemon to `$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`.
