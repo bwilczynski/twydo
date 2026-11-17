@@ -1,0 +1,8 @@
+{
+  "name": "Twydo",
+  "short_name": "Twydo",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff"
+}

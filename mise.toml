@@ -2,6 +2,7 @@
 [tools]
 rust = { version = "1.99.0", profile = "minimal", components = ["clippy", "rustfmt", "rust-analyzer"] }
 cargo-dist = "0.33.0"
+node = "24"
 release-plz = "0.4.3"
 # README demo only (mise run demo); vhs also needs ffmpeg on PATH.
 vhs = "0.12.1"
@@ -16,4 +17,6 @@ test = [
     "python3 tools/check_evidence.py",
 ]
 lint = "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
+web-build = "cd web && npm ci && npm run build"
+web-check = "cd web && npm ci && npm run check"
 demo = "docs/demo/render.sh"

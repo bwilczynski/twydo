@@ -1,0 +1,23 @@
+name: Web
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: node
+
+      - name: Check
+        run: mise run web-check
+
+      - name: Build
+        run: mise run web-build

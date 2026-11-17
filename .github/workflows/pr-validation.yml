@@ -12,6 +12,9 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  web:
+    uses: ./.github/workflows/web.yml
+
   conventional-commits:
     runs-on: ubuntu-latest
     steps:
