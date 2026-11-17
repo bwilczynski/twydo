@@ -1,0 +1,14 @@
+# Reference unit for the phone gateway without Docker; see docs/gateway.md.
+# The gateway needs the daemon: install it too (tdo daemon install) or start it first.
+[Unit]
+Description=Twydo phone gateway
+After=network.target
+
+[Service]
+ExecStart=/home/you/.local/share/mise/shims/tdo gateway serve --origin https://tasks.example.test
+Environment="PATH=/home/you/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin"
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=default.target

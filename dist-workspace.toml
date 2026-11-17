@@ -13,6 +13,9 @@ targets = [
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
 ]
+# Build the web app before every dist build so each binary embeds the real app.
+github-build-setup = "../build-setup.yml"
+
 # Build every target natively; the macOS frameworks `notify` links against
 # make cross-compiling impractical.
 [dist.github-custom-runners]
