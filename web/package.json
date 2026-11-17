@@ -1,0 +1,27 @@
+{
+  "name": "twydo-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "gen": "node scripts/gen-types.mjs",
+    "dev": "vite",
+    "prebuild": "npm run gen",
+    "build": "tsc --noEmit && vite build",
+    "precheck": "npm run gen",
+    "check": "tsc --noEmit && vitest run",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@preact/signals": "^2.11.4",
+    "preact": "^11.2.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "jsdom": "^31.0.1",
+    "json-schema-to-typescript": "^16.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
