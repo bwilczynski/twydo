@@ -235,11 +235,48 @@ pub fn origin_ok(
     let Some(origin) = value("origin") else {
         return !require_present;
     };
+    let Ok(origin) = normalize_origin(origin) else {
+        return false;
+    };
     match expected {
-        Some(e) => origin == e,
-        None if insecure => value("host").is_some_and(|h| origin == format!("http://{h}")),
+        Some(e) => normalize_origin(e).is_ok_and(|e| origin == e),
+        None if insecure => {
+            value("host").is_some_and(|h| origin == format!("http://{}", h.to_ascii_lowercase()))
+        }
         None => false,
     }
+}
+
+/// Parse `scheme://host[:port]` (http or https; one trailing `/` allowed; no userinfo, path or
+/// query) and lower-case scheme and host. Used for both `--origin` and the request's `Origin`.
+pub fn normalize_origin(raw: &str) -> Result<String, String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return Err("the origin is empty".into());
+    }
+    let s = s.strip_suffix('/').unwrap_or(s);
+    let Some((scheme, rest)) = s.split_once("://") else {
+        return Err(format!("{raw:?} is not scheme://host[:port]"));
+    };
+    let scheme = scheme.to_ascii_lowercase();
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("{raw:?} must start with http:// or https://"));
+    }
+    if rest.is_empty() || rest.contains(['/', '?', '#', '@', ' ']) {
+        return Err(format!(
+            "{raw:?} must be only scheme://host[:port], with no path, query or credentials"
+        ));
+    }
+    let (host, port) = match rest.rsplit_once(':') {
+        Some((h, p)) if !rest.ends_with(']') => (h, Some(p)),
+        _ => (rest, None),
+    };
+    if host.is_empty()
+        || port.is_some_and(|p| p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err(format!("{raw:?} has an invalid host or port"));
+    }
+    Ok(format!("{scheme}://{}", rest.to_ascii_lowercase()))
 }
 
 /// `connect-src` entries for the WebSocket: derived from `--origin`.
@@ -256,7 +293,7 @@ fn ws_origin(origin: &str) -> Option<String> {
 pub fn csp(origin: Option<&str>) -> String {
     let ws = origin.and_then(ws_origin).map(|w| format!(" {w}"));
     format!(
-        "default-src 'self'; connect-src 'self'{}; img-src 'self' data:",
+        "default-src 'self'; connect-src 'self'{}; img-src 'self' data:; frame-ancestors 'none'",
         ws.unwrap_or_default()
     )
 }
@@ -282,6 +319,8 @@ impl Response {
         r.headers
             .push(("Content-Type".into(), "application/json".into()));
         r.headers.push(("Cache-Control".into(), "no-store".into()));
+        r.headers
+            .push(("X-Content-Type-Options".into(), "nosniff".into()));
         r.body = v.to_string().into_bytes();
         r
     }
@@ -498,7 +537,7 @@ fn pair(req: &Request, ctx: &Ctx) -> Response {
     };
     match ctx.store.redeem(&code, Utc::now()) {
         Ok((device, key)) => {
-            println!("paired device {}", device.name);
+            eprintln!("paired device {}", device.name);
             let secure = if ctx.opts.insecure { "" } else { "; Secure" };
             let mut r = Response::json(200, "OK", json!({ "device": device.name, "key": key }));
             r.headers.push((
