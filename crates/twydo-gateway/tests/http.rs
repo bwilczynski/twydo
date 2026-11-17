@@ -124,11 +124,40 @@ fn serves_index_and_manifest() {
     assert_eq!(r.status, 200);
     assert!(r.head.to_lowercase().contains("content-type: text/html"));
     assert!(r.head.contains("X-Content-Type-Options: nosniff"));
-    assert!(r.head.contains("Content-Security-Policy: default-src 'self'; connect-src 'self' wss://tasks.example.test; img-src 'self' data:"));
+    assert!(r.head.contains("Content-Security-Policy: default-src 'self'; connect-src 'self' wss://tasks.example.test; img-src 'self' data:; frame-ancestors 'none'"));
     // The manifest is only present in a real build.
     if !twydo_gateway::assets::PLACEHOLDER {
         assert_eq!(get(s.addr, "/manifest.webmanifest", "").status, 200);
     }
+}
+
+#[test]
+fn json_responses_are_nosniff() {
+    let s = start(false, None);
+    let r = get(s.addr, "/session", "");
+    assert_eq!(r.status, 401);
+    assert!(
+        r.head.contains("X-Content-Type-Options: nosniff"),
+        "{}",
+        r.head
+    );
+}
+
+#[test]
+fn origin_normaliser() {
+    use twydo_gateway::http::normalize_origin as n;
+    assert_eq!(
+        n("https://Tasks.Example.test/").unwrap(),
+        "https://tasks.example.test"
+    );
+    assert_eq!(n("HTTPS://a.test:8443").unwrap(), "https://a.test:8443");
+    assert!(n("").is_err());
+    assert!(n("https://a.test/app").is_err());
+    assert!(n("https://a.test//").is_err());
+    assert!(n("https://a.test?x=1").is_err());
+    assert!(n("ftp://a.test").is_err());
+    assert!(n("a.test").is_err());
+    assert!(n("https://a.test:").is_err());
 }
 
 #[test]
@@ -216,6 +245,18 @@ fn session_accepts_cookie_with_origin() {
     assert_eq!(r.status, 200);
     assert!(r.body.contains("\"device\":\"Pixel\""));
     assert!(r.body.contains("\"role\":\"phone\""));
+}
+
+#[test]
+fn session_origin_comparison_ignores_case_and_trailing_slash() {
+    let s = start(false, None);
+    let (key, _) = pair(&s);
+    let r = get(
+        s.addr,
+        "/session",
+        &format!("Cookie: twydo_device={key}\r\nOrigin: HTTPS://Tasks.Example.test\r\n"),
+    );
+    assert_eq!(r.status, 200);
 }
 
 #[test]

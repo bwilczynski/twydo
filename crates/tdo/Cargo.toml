@@ -10,7 +10,7 @@ description.workspace = true
 [dependencies]
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.7", features = ["derive", "env"] }
 ratatui = { version = "0.30.2", features = ["unstable-rendered-line-info"] }
 serde = "1.0.229"
 serde_json = "1.0.154"
@@ -18,6 +18,7 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 twydo-core = { path = "../twydo-core" }
 twydo-daemon = { path = "../twydo-daemon" }
+twydo-gateway = { path = "../twydo-gateway" }
 signal-hook = "0.3"
 libc = "0.2"
 unicode-width = "0.2.3"
@@ -26,3 +27,4 @@ toml_edit = "0.25"
 
 [dev-dependencies]
 twydo-testdav = { path = "../twydo-testdav" }
+tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }

@@ -87,6 +87,14 @@ enum Command {
         #[command(subcommand)]
         command: Option<cli::daemon::DaemonCommand>,
     },
+    /// Serve the phone app and manage paired devices
+    Gateway {
+        /// Where the gateway keeps paired devices
+        #[arg(long, value_name = "PATH")]
+        state_dir: Option<PathBuf>,
+        #[command(subcommand)]
+        command: cli::gateway::GatewayCommand,
+    },
     /// Report data health, recurrence evidence and operation permissions
     Check {
         /// Compatibility matrix file (default: the matrix built into tdo)
@@ -146,6 +154,11 @@ fn main() {
                 detach,
             ),
         }),
+        Command::Gateway { state_dir, command } => {
+            let target =
+                tdo::client::Target::from_flags(cli.vdir.as_deref(), cli.socket.as_deref());
+            std::process::exit(cli::gateway::run(state_dir.as_deref(), &target, command))
+        }
         Command::Config { command } => std::process::exit(cli::config::run(
             command,
             cli.vdir.as_deref(),

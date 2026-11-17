@@ -2258,8 +2258,10 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "toml_edit",
+ "tungstenite",
  "twydo-core",
  "twydo-daemon",
+ "twydo-gateway",
  "twydo-testdav",
  "unicode-width",
 ]
