@@ -14,7 +14,8 @@ pub use sync_activity::SyncActivity;
 pub use sync_state::ClientSync;
 
 pub use lists::{CollectionBackups, ListAction, ListCompletion};
-pub use newrow::{NewRow, default_list, inbox_list};
+pub use newrow::NewRow;
+pub use twydo_core::views::{default_list, inbox_list};
 
 use std::cell::Cell;
 

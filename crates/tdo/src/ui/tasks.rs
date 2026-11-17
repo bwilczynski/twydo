@@ -1,6 +1,5 @@
 //! Middle pane: the current view's tasks under date-group headers.
 
-use chrono::NaiveDate;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -9,7 +8,7 @@ use ratatui::widgets::{Padding, Paragraph};
 use twydo_core::format::relative_date;
 use twydo_core::model::repeat::{parse_rrule, short_hint};
 use twydo_core::model::{Status, Task, TaskKind};
-use twydo_core::views::{DateGroup, Row, View, build_view, date_group};
+use twydo_core::views::{DateGroup, Row, View, build_view, date_group, group_label};
 use unicode_width::UnicodeWidthStr;
 
 use super::{bar_color, card, dim, pad, pane_block, theme, truncate, view_name};
@@ -25,28 +24,6 @@ fn pane_title(app: &App) -> String {
         View::Today => format!("Today · {}", app.now.format("%A %-d %b")),
         v => view_name(&app.snapshot, v),
     }
-}
-
-fn group_title(g: DateGroup, today: NaiveDate) -> Option<String> {
-    Some(match g {
-        DateGroup::Overdue => "OVERDUE".to_string(),
-        DateGroup::InProgress => "IN PROGRESS".into(),
-        DateGroup::LaterToday => "LATER TODAY".into(),
-        DateGroup::Today => "TODAY".into(),
-        DateGroup::Tomorrow => "TOMORROW".into(),
-        DateGroup::DayAfterTomorrow => "DAY AFTER TOMORROW".into(),
-        DateGroup::Next7Days => "NEXT 7 DAYS".into(),
-        DateGroup::Next2Weeks => "NEXT 2 WEEKS".into(),
-        DateGroup::Next30Days => "NEXT 30 DAYS".into(),
-        DateGroup::Future => "FUTURE".into(),
-        DateGroup::Done => "DONE".into(),
-        DateGroup::NoDueDate => "NO DUE DATE".into(),
-        DateGroup::Scheduled => "SCHEDULED".into(),
-        DateGroup::CompletedOn(d) if d == today => "TODAY".into(),
-        DateGroup::CompletedOn(d) if d.succ_opt() == Some(today) => "YESTERDAY".into(),
-        DateGroup::CompletedOn(d) => d.format("%a %-d %b").to_string(),
-        DateGroup::Ungrouped => return None,
-    })
 }
 
 /// The status glyph: completed, cancelled, repeating or open.
@@ -141,7 +118,7 @@ fn items(app: &App) -> Vec<Item> {
         if kept.is_empty() {
             continue;
         }
-        if let Some(title) = group_title(g, today) {
+        if let Some(title) = group_label(g, today) {
             if !out.is_empty() {
                 out.push(Item::Blank);
             }
