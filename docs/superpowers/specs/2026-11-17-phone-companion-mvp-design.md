@@ -113,8 +113,9 @@ iPhone (PWA) ──HTTPS/WSS──▶ reverse proxy (TLS) ──HTTP/WS──▶
   `crates/twydo-gateway` that `tdo` links, as it links `twydo-daemon` *(my call)*. It connects to
   the daemon socket with the same client code `tdo` uses (socket resolution, `hello` with the
   instance, on-demand start, reconnect).
-- **PWA:** static HTML, CSS and plain JavaScript (ES modules, no framework, no build step)
-  embedded in the gateway binary and served from the same origin as the WebSocket *(my call)*.
+- **PWA:** TypeScript with Preact, built with Vite (user decision; §9.5), in `web/`. The built
+  static files are embedded in the gateway binary and served from the same origin as the
+  WebSocket. Node is a build-time dependency only; the phone and the NAS never run it.
 
 ## 6. Daemon change: `views.get`
 
@@ -254,7 +255,7 @@ deadline above.
 
 `GET /` serves the PWA; also `manifest.webmanifest`, icons (including `apple-touch-icon`), and a
 service worker that only caches the app shell so it installs and opens quickly *(my call; it
-caches no task data in the MVP)*. Assets are embedded at build time.
+caches no task data in the MVP)*. Assets are the Vite build output, embedded at compile time (§9.5).
 
 ## 8. Room for other devices
 
@@ -336,6 +337,30 @@ rounded sections, round checkboxes, bottom tab bar, sheets).
 - All data access sits behind one small module (`getView`, `submit`, `undo`, `onChange`) so a
   later WebAssembly-backed version can replace it without touching the screens.
 
+### 9.5 Technology and build
+
+Chosen over plain JavaScript (no checks against the protocol; hand-written DOM updates grow
+messy with later screens) and a Rust/WebAssembly UI (brings back the deferred WebAssembly):
+
+- **TypeScript + Preact + Vite** (user decision). Preact (with `@preact/signals` for state
+  *(my call)*) keeps the runtime small and the dependency surface low; Vite is the dev server
+  and production build, and handles WebAssembly when the offline step comes.
+- **Protocol types are generated** from `schema/tdo.openrpc.json` (the method params and
+  results the PWA uses) into TypeScript as part of the web build, never hand-written and never
+  committed *(my call; the generator tool is the builder's call)*. The JSON-RPC client in the
+  data module is typed by them.
+- **Keep dependencies few:** Preact, signals, Vite and its Preact plugin, the type generator,
+  test tools. No UI component library; the iOS look is hand-made CSS. `package-lock.json` is
+  committed; `npm ci` in CI. Dependabot (or the repo's existing update tooling) covers `web/`.
+- **Embedding:** `npm run build` writes `web/dist/`; the gateway embeds it at compile time. When
+  `web/dist/` is missing, the gateway still compiles and serves a placeholder page saying the
+  PWA was not built *(my call)*, so `cargo build` and `cargo test` for the rest of the workspace
+  never need Node. Release and Docker builds run the web build first, and a CI check fails a
+  release whose binary carries the placeholder.
+- **Development:** `tdo gateway serve --assets <dir>` serves files from disk instead of the
+  embedded ones; or the Vite dev server forwards `/ws` and `/pair` to a running gateway
+  (`--origin http://localhost:5173 --insecure`), so the app reloads on save.
+
 ## 10. Later, in rough order (not designed here)
 
 1. **Lists and All** tabs: `views.get` gains `all` and `list`; a `lists` summary for the Lists
@@ -396,6 +421,10 @@ The user runs it on a NAS that runs containers, so **the container image is part
 - **CI:** the image build runs on pull requests that touch it (build only, no push) and on
   release tags (build and push). A smoke test starts the container against a synthetic vdir and
   checks that the PWA loads and an unpaired WebSocket is refused.
+- **Web build in CI and releases:** a `web` job runs `npm ci`, type generation, `tsc --noEmit`,
+  unit tests and `npm run build` on pull requests. The release binaries (cargo-dist) and the
+  Docker build run the web build before `cargo build`, so every released `tdo` carries the real
+  PWA (§9.5).
 - New and changed pages: a `docs/gateway.md` (setup, pairing, roles, security notes), the
   `views.get` section in `protocol.md`, `architecture.md`'s diagram and "The pieces",
   `README.md` index; `python3 tools/check_links.py` passes.
@@ -417,7 +446,10 @@ The user runs it on a NAS that runs containers, so **the container image is part
   - capture and complete through the gateway produce the same files as `tdo op` would;
   - events reach a subscribed WebSocket; daemon gone closes the socket with a reason.
 - **PWA:** a few browser tests at phone size, light and dark: pairing, Today and Inbox render,
-  complete + undo, capture from both tabs, disconnected state.
+  complete + undo, capture from both tabs, disconnected state *(my call: Playwright with WebKit,
+  the engine closest to iOS Safari, against a gateway and isolated test daemon; component and
+  data-layer unit tests with Vitest)*. `tsc --noEmit` against the generated protocol types runs
+  in CI, so a schema change that breaks the PWA fails the build.
 - **Interop on the device:** a task captured and one completed from the phone are read correctly
   by 2Do and `tdo`, recorded like earlier rounds. Only with the user's explicit approval, as for
   every device round (AGENTS.md).
