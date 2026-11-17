@@ -100,6 +100,13 @@ fn today_matches_build_view() {
     for (sec, (g, _)) in v.sections.iter().zip(&want.groups) {
         assert_eq!(sec.label, group_label(*g, now.date_naive()));
     }
+    let want_keys: Vec<SectionKey> = want
+        .groups
+        .iter()
+        .map(|(g, _)| SectionKey::from(*g))
+        .collect();
+    let got_keys: Vec<SectionKey> = v.sections.iter().map(|s| s.group).collect();
+    assert_eq!(got_keys, want_keys);
     assert_eq!(v.sections[0].group, SectionKey::Overdue);
     assert_eq!(v.title, "Today");
     assert_eq!(v.open_count, want.counts.total);
@@ -284,4 +291,29 @@ fn revision_and_epoch_match_snapshot_get() {
     let v: ViewsGetResult = c.call("views.get", json!({ "view": "today" })).unwrap();
     assert_eq!(v.revision, snap.revision);
     assert_eq!(v.epoch, info.epoch);
+}
+
+#[test]
+fn nested_subtask_carries_depth_and_parent() {
+    let fx = fx();
+    fx.write(
+        "inbox/list.ics",
+        &ics(
+            "chk",
+            "Packing",
+            "DUE:20261117T170000\r\nX-2DOAPP-METADATA:@tasktype:checklist\r\n",
+        ),
+    );
+    fx.write(
+        "inbox/item.ics",
+        &ics("item", "Socks", "RELATED-TO;RELTYPE=PARENT:chk\r\n"),
+    );
+    let td = start(&fx, |_| {});
+    let v = get(&td, "today");
+    let child = row(&v, "item");
+    assert_eq!(child.depth, 1);
+    let parent = child.parent.as_ref().expect("parent hint");
+    assert_eq!(parent.uid, "chk");
+    assert_eq!(parent.title, "Packing");
+    assert_eq!(row(&v, "chk").depth, 0);
 }
