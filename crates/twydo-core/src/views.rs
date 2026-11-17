@@ -293,6 +293,59 @@ pub enum DateGroup {
     Done,
 }
 
+/// The section header text for a date group; `None` for an ungrouped view.
+pub fn group_label(g: DateGroup, today: NaiveDate) -> Option<String> {
+    Some(match g {
+        DateGroup::Overdue => "OVERDUE".to_string(),
+        DateGroup::InProgress => "IN PROGRESS".into(),
+        DateGroup::LaterToday => "LATER TODAY".into(),
+        DateGroup::Today => "TODAY".into(),
+        DateGroup::Tomorrow => "TOMORROW".into(),
+        DateGroup::DayAfterTomorrow => "DAY AFTER TOMORROW".into(),
+        DateGroup::Next7Days => "NEXT 7 DAYS".into(),
+        DateGroup::Next2Weeks => "NEXT 2 WEEKS".into(),
+        DateGroup::Next30Days => "NEXT 30 DAYS".into(),
+        DateGroup::Future => "FUTURE".into(),
+        DateGroup::Done => "DONE".into(),
+        DateGroup::NoDueDate => "NO DUE DATE".into(),
+        DateGroup::Scheduled => "SCHEDULED".into(),
+        DateGroup::CompletedOn(d) if d == today => "TODAY".into(),
+        DateGroup::CompletedOn(d) if d.succ_opt() == Some(today) => "YESTERDAY".into(),
+        DateGroup::CompletedOn(d) => d.format("%a %-d %b").to_string(),
+        DateGroup::Ungrouped => return None,
+    })
+}
+
+/// The Inbox: the config's `default_list` when that list exists, else the list named Inbox.
+/// `None` when neither exists; it never falls back to an arbitrary list.
+pub fn inbox_list(snap: &Snapshot) -> Option<String> {
+    let lists = &snap.collections;
+    let configured = snap
+        .config
+        .default_list
+        .as_ref()
+        .filter(|id| lists.iter().any(|c| &c.id == *id));
+    configured.cloned().or_else(|| {
+        lists
+            .iter()
+            .find(|c| {
+                c.display_name
+                    .as_deref()
+                    .unwrap_or(&c.id)
+                    .eq_ignore_ascii_case("inbox")
+            })
+            .map(|c| c.id.clone())
+    })
+}
+
+/// The list new tasks go to outside a list: the [`inbox_list`], else the first list. Empty
+/// when there is no list.
+pub fn default_list(snap: &Snapshot) -> String {
+    inbox_list(snap)
+        .or_else(|| snap.collections.first().map(|c| c.id.clone()))
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Row {
     /// Index into [`Snapshot::tasks`].

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use twydo_core::edit::{Change, NewTask, Op, Placement};
 use twydo_core::model::TaskKind;
-use twydo_core::views::{Snapshot, View};
+use twydo_core::views::{View, default_list};
 
 use super::{App, Mode, Outcome};
 use crate::form::{EditForm, NewTarget, edit_line, one_line};
@@ -37,36 +37,6 @@ pub(super) struct Adding {
     task: NewTask,
     /// UIDs loaded before the write.
     before: HashSet<String>,
-}
-
-/// The Inbox: the config's `default_list` when that list exists, else the list named Inbox.
-/// `None` when neither exists; it never falls back to an arbitrary list.
-pub fn inbox_list(snap: &Snapshot) -> Option<String> {
-    let lists = &snap.collections;
-    let configured = snap
-        .config
-        .default_list
-        .as_ref()
-        .filter(|id| lists.iter().any(|c| &c.id == *id));
-    configured.cloned().or_else(|| {
-        lists
-            .iter()
-            .find(|c| {
-                c.display_name
-                    .as_deref()
-                    .unwrap_or(&c.id)
-                    .eq_ignore_ascii_case("inbox")
-            })
-            .map(|c| c.id.clone())
-    })
-}
-
-/// The list new tasks go to outside a list: the [`inbox_list`], else the first list. Empty
-/// when there is no list.
-pub fn default_list(snap: &Snapshot) -> String {
-    inbox_list(snap)
-        .or_else(|| snap.collections.first().map(|c| c.id.clone()))
-        .unwrap_or_default()
 }
 
 impl App {
