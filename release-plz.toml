@@ -20,7 +20,7 @@ release_commits = "^(feat|fix)"
 [[package]]
 name = "tdo"
 changelog_path = "./CHANGELOG.md"
-changelog_include = ["twydo-core", "twydo-daemon"]
+changelog_include = ["twydo-core", "twydo-daemon", "twydo-gateway"]
 
 [[package]]
 name = "twydo-core"
@@ -36,6 +36,14 @@ changelog_update = false
 [[package]]
 name = "twydo-daemon"
 git_tag_enable = false
+changelog_update = false
+
+# Released like twydo-daemon; new, so it carries a tag name that is never created (see above).
+# Remove the line once a release includes the crate.
+[[package]]
+name = "twydo-gateway"
+git_tag_enable = false
+git_tag_name = "twydo-gateway-v{{ version }}"
 changelog_update = false
 
 # Test support only: never released, tagged or put in a changelog.
