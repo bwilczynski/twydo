@@ -172,30 +172,6 @@ fn touch_records_last_seen_and_session() {
     ));
 }
 
-/// Pin the mtime so the test does not depend on the filesystem's timestamp granularity.
-fn set_mtime(d: &tempfile::TempDir, secs: u64) {
-    let f = std::fs::OpenOptions::new()
-        .write(true)
-        .open(d.path().join("gw/devices.json"))
-        .unwrap();
-    f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs))
-        .unwrap();
-}
-
-#[test]
-fn changed_since_sees_admin_change() {
-    let (d, s) = store();
-    let mut mark = None;
-    assert!(!s.changed_since(&mut mark));
-    let code = s.new_code("A", Role::Phone, now()).unwrap();
-    set_mtime(&d, 1_000_000);
-    assert!(s.changed_since(&mut mark));
-    assert!(!s.changed_since(&mut mark));
-    s.redeem(&code, now()).unwrap();
-    set_mtime(&d, 2_000_000);
-    assert!(s.changed_since(&mut mark));
-}
-
 #[test]
 fn wrong_attempt_with_nothing_pending_does_not_write() {
     let (d, s) = store();

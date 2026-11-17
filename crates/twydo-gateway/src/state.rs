@@ -8,7 +8,6 @@ use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -321,14 +320,5 @@ impl Store {
             }
             None => (Err(StateError::NoSuchDevice), false),
         })
-    }
-
-    /// True when `devices.json` changed (mtime) since `mark`; updates `mark`. Note that
-    /// `touch` also changes the file.
-    pub fn changed_since(&self, mark: &mut Option<SystemTime>) -> bool {
-        let now = fs::metadata(self.path()).and_then(|m| m.modified()).ok();
-        let changed = now != *mark;
-        *mark = now;
-        changed
     }
 }

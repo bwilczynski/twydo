@@ -6,6 +6,23 @@ use chrono::Utc;
 use twydo_gateway::http::{Limits, ServeOptions, serve_with_limits};
 use twydo_gateway::state::{Role, Store};
 
+struct NoDaemon;
+
+impl twydo_gateway::Connector for NoDaemon {
+    fn connect(
+        &self,
+        _: Option<String>,
+    ) -> Result<
+        (
+            twydo_daemon::client::Client,
+            twydo_daemon::protocol::methods::HelloResult,
+        ),
+        String,
+    > {
+        Err("no daemon".into())
+    }
+}
+
 const ORIGIN: &str = "https://tasks.example.test";
 
 struct Srv {
@@ -38,7 +55,7 @@ fn start_with(
         state_dir: state,
     };
     std::thread::spawn(move || {
-        let _ = serve_with_limits(listener, opts, limits);
+        let _ = serve_with_limits(listener, opts, std::sync::Arc::new(NoDaemon), limits);
     });
     let d = dir.path().to_path_buf();
     Srv {
@@ -237,7 +254,7 @@ fn ws_requires_origin_for_cookies() {
     );
     assert_eq!(
         get(s.addr, "/ws", &format!("{c}Origin: {ORIGIN}\r\n")).status,
-        501
+        400 // authenticated, but not an upgrade request
     );
 }
 
@@ -327,11 +344,11 @@ fn revoked_key_refused() {
 }
 
 #[test]
-fn ws_is_not_implemented_yet() {
+fn ws_needs_upgrade_headers_once_authenticated() {
     let s = start(false, None);
     let (key, _) = pair(&s);
     let r = get(s.addr, "/ws", &format!("Authorization: Bearer {key}\r\n"));
-    assert_eq!(r.status, 501);
+    assert_eq!(r.status, 400);
     assert_eq!(get(s.addr, "/ws", "").status, 401);
 }
 

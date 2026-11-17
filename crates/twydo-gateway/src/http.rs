@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use serde_json::json;
 
+use crate::Connector;
 use crate::assets::{self, ASSETS};
 use crate::state::{Device, Store};
 
@@ -320,9 +321,10 @@ impl Default for Limits {
     }
 }
 
-struct Ctx {
+pub(crate) struct Ctx {
+    pub(crate) connector: Arc<dyn Connector>,
     opts: ServeOptions,
-    store: Store,
+    pub(crate) store: Store,
     limits: Limits,
     active: AtomicUsize,
 }
@@ -336,18 +338,24 @@ impl Drop for Slot<'_> {
 }
 
 /// Serve on an already bound listener. Blocks; one thread per connection.
-pub fn serve_on(listener: TcpListener, opts: ServeOptions) -> io::Result<()> {
-    serve_with_limits(listener, opts, Limits::default())
+pub fn serve_on(
+    listener: TcpListener,
+    opts: ServeOptions,
+    connector: Arc<dyn Connector>,
+) -> io::Result<()> {
+    serve_with_limits(listener, opts, connector, Limits::default())
 }
 
 /// [`serve_on`] with explicit resource bounds.
 pub fn serve_with_limits(
     listener: TcpListener,
     opts: ServeOptions,
+    connector: Arc<dyn Connector>,
     limits: Limits,
 ) -> io::Result<()> {
     let store = Store::open(&opts.state_dir).map_err(io::Error::other)?;
     let ctx = Arc::new(Ctx {
+        connector,
         opts,
         store,
         limits,
@@ -371,16 +379,34 @@ pub fn serve_with_limits(
     Ok(())
 }
 
+/// Bind `opts.listen`; tests read the bound address from the listener.
+pub fn bind(opts: &ServeOptions) -> io::Result<TcpListener> {
+    TcpListener::bind(opts.listen)
+}
+
 /// Bind `opts.listen` and serve.
-pub fn serve(opts: ServeOptions) -> io::Result<()> {
-    let listener = TcpListener::bind(opts.listen)?;
-    serve_on(listener, opts)
+pub fn serve(opts: ServeOptions, connector: Arc<dyn Connector>) -> io::Result<()> {
+    let listener = bind(&opts)?;
+    serve_on(listener, opts, connector)
 }
 
 fn handle(mut stream: TcpStream, ctx: &Ctx) -> io::Result<()> {
     stream.set_write_timeout(Some(READ_TIMEOUT))?;
     let deadline = Instant::now() + ctx.limits.request_deadline;
     let resp = match read_request(&mut stream, deadline) {
+        Ok(req) if req.method == "GET" && req.path == "/ws" => match upgrade(&req, ctx) {
+            Ok((device, key, accept)) => {
+                let head = format!(
+                    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\
+                     Connection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n"
+                );
+                stream.write_all(head.as_bytes())?;
+                stream.flush()?;
+                crate::ws::run(stream, ctx, device, &key);
+                return Ok(());
+            }
+            Err(r) => r,
+        },
         Ok(req) => route(&req, ctx),
         Err(e) => {
             let (s, r) = e.status();
@@ -402,7 +428,6 @@ fn route(req: &Request, ctx: &Ctx) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
         ("POST", "/pair") => pair(req, ctx),
         ("GET", "/session") => session(req, ctx),
-        ("GET", "/ws") => ws(req, ctx),
         ("GET" | "HEAD", _) => static_asset(req, ctx),
         _ => Response::error(405, "Method Not Allowed", "method not allowed"),
     }
@@ -440,11 +465,28 @@ fn session(req: &Request, ctx: &Ctx) -> Response {
     }
 }
 
-fn ws(req: &Request, ctx: &Ctx) -> Response {
-    match require_device(req, ctx, true) {
-        Ok(_) => Response::error(501, "Not Implemented", "websocket not implemented"),
-        Err(r) => r,
+/// Check a `/ws` request: who it is (401), where it comes from (403), and that it really is
+/// a WebSocket upgrade (400). Returns the device, its key and the `Sec-WebSocket-Accept` value.
+fn upgrade(req: &Request, ctx: &Ctx) -> Result<(Device, String, String), Response> {
+    let device = require_device(req, ctx, true)?;
+    let headers = as_httparse(req);
+    let key = credential(&headers).map(|(k, _)| k).unwrap_or_default();
+    let has_token = |name: &str, token: &str| {
+        req.header(name)
+            .is_some_and(|v| v.split(',').any(|t| t.trim().eq_ignore_ascii_case(token)))
+    };
+    let bad = |m: &str| Response::error(400, "Bad Request", m);
+    if !has_token("connection", "upgrade") || !has_token("upgrade", "websocket") {
+        return Err(bad("expected a websocket upgrade"));
     }
+    if req.header("sec-websocket-version").map(str::trim) != Some("13") {
+        return Err(bad("unsupported websocket version"));
+    }
+    let Some(ws_key) = req.header("sec-websocket-key").map(str::trim) else {
+        return Err(bad("missing Sec-WebSocket-Key"));
+    };
+    let accept = tungstenite::handshake::derive_accept_key(ws_key.as_bytes());
+    Ok((device, key, accept))
 }
 
 fn pair(req: &Request, ctx: &Ctx) -> Response {
