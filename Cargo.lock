@@ -2427,6 +2427,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "twydo-gateway"
+version = "0.5.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "getrandom 0.3.4",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.21",
+ "twydo-core",
+ "twydo-daemon",
+]
+
+[[package]]
 name = "twydo-testdav"
 version = "0.5.0"
 dependencies = [
