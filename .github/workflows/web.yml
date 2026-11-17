@@ -14,10 +14,19 @@ jobs:
 
       - uses: jdx/mise-action@v4
         with:
-          install_args: node
+          install_args: node rust
 
       - name: Check
         run: mise run web-check
 
       - name: Build
         run: mise run web-build
+
+      - name: Build tdo
+        run: cargo build -p tdo
+
+      - name: Install WebKit
+        run: cd web && npx playwright install --with-deps webkit
+
+      - name: End-to-end
+        run: cd web && npm run e2e

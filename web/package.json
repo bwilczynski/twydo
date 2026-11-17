@@ -10,13 +10,15 @@
     "build": "tsc --noEmit && vite build",
     "precheck": "npm run gen",
     "check": "tsc --noEmit && vitest run",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@preact/signals": "^2.11.4",
     "preact": "^11.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@preact/preset-vite": "^2.10.6",
     "@testing-library/preact": "^3.2.6",
     "jsdom": "^31.0.1",

@@ -19,4 +19,5 @@ test = [
 lint = "cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all --check"
 web-build = "cd web && npm ci && npm run build"
 web-check = "cd web && npm ci && npm run check"
+web-e2e = "cargo build -p tdo && cd web && npm ci && npm run build && npm run e2e"
 demo = "docs/demo/render.sh"
