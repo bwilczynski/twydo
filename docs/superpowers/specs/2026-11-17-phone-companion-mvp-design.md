@@ -23,7 +23,7 @@ away from the desk:
 2. **Completing on the go:** tick tasks off one-handed, with an undo straight after.
 
 The MVP is the smallest thing that does both on the user's iPhone: a home-screen web app (PWA)
-with two tabs, **Today** and **Inbox**, talking to a new `tdo gateway` command that bridges the
+with two tabs, **Inbox** and **Today**, talking to a new `tdo gateway` command that bridges the
 daemon's existing JSON-RPC protocol to a WebSocket. No App Store, no native app, no WebAssembly.
 
 The gateway is also the way in for other devices later, for example an e-ink display on the
@@ -34,7 +34,7 @@ device (§8).
 
 **Goals (MVP)**
 
-- Today and Inbox, with the same membership, date groups and order as `tdo` shows them.
+- Inbox and Today, with the same membership, date groups and order as `tdo` shows them.
 - Capture: title and optional note.
 - Complete any task the gate allows; undo the last completion or capture from the phone.
 - Read a task's note.
@@ -278,6 +278,17 @@ how this design covers it:
 Same look as the old design's §4, reduced to two tabs (native iOS feel: large title, grouped
 rounded sections, round checkboxes, bottom tab bar, sheets).
 
+- **Tab bar:** **Inbox** first, **Today** second (user decision). Each tab is an icon without
+  a text label (user decision): a mailbox for Inbox, a calendar day for Today. *(my calls:)*
+  - The icons are inline SVGs from an openly licensed set such as Lucide (`mailbox`,
+    `calendar`), not Apple's SF Symbols, whose licence does not allow use on the web.
+  - The Today icon shows the current day of the month inside the calendar, taken from
+    `views.get`'s `today`, like the iOS Calendar icon.
+  - The selected tab is tinted with the accent colour, the other grey; each tab has an
+    `aria-label` (`Inbox`, `Today`) so VoiceOver reads it. The screen's large title still names
+    the view.
+  - The app opens on the last tab used, Inbox the first time.
+
 ```
 ┌───────────────────────────┐
 │ Today                   5 │
@@ -292,7 +303,7 @@ rounded sections, round checkboxes, bottom tab bar, sheets).
 │ └───────────────────────┘ │
 │                       (+) │
 │ ───────────────────────── │
-│   Today        Inbox      │
+│     [mailbox]  [cal 17]   │
 └───────────────────────────┘
 ```
 
