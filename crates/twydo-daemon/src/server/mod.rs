@@ -17,6 +17,7 @@ pub mod reports;
 pub mod schedule;
 pub mod sessions;
 pub mod syncjob;
+pub mod views;
 pub mod watch;
 pub mod writes;
 
@@ -156,6 +157,8 @@ pub struct Shared {
     /// The canonical vdir.
     pub vdir: PathBuf,
     pub epoch: String,
+    /// The daemon's clock: scheduler, notifier and `views.get`.
+    pub clock: Arc<dyn schedule::Clock>,
     /// What `hello` and `daemon.info` report as the daemon's version.
     pub version: String,
     pub started: Instant,
@@ -341,6 +344,7 @@ impl Daemon {
             instance,
             vdir,
             epoch: format!("d-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
+            clock: Arc::clone(&opts.clock),
             version: opts
                 .version_for_test
                 .take()

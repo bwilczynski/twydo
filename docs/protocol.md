@@ -58,6 +58,11 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
 
 ## Data, writes and events
 
+- `views.get` takes `{view: "inbox" | "today"}` and returns a finished view for thin clients
+  (a phone, a display) that hold no view logic: dated sections with labels, rows with relative
+  due text, overdue and pending flags, and the `capture` target for a new task. Dates and
+  groups follow the daemon's clock in the configured timezone (`now`, `today`). A client that
+  writes from a view sends `based_on` built from the result's `epoch` and `revision`.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
 - `events.subscribe` starts notifications: `event` (with a rising `seq`: `data.changed`,

@@ -26,6 +26,7 @@ use crate::protocol::methods::*;
 use crate::protocol::reports::{CheckReport, CheckReportParams, ExportResult};
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
+use crate::protocol::views::{ViewsGetParams, ViewsGetResult};
 use crate::protocol::wire::WireSnapshot;
 
 /// An empty params or result object.
@@ -77,6 +78,12 @@ pub const METHODS: &[MethodSpec] = &[
     ),
     m("events.unsubscribe", false, of::<Empty>, of::<Empty>),
     m("snapshot.get", false, of::<Empty>, of::<WireSnapshot>),
+    m(
+        "views.get",
+        false,
+        of::<ViewsGetParams>,
+        of::<ViewsGetResult>,
+    ),
     m("status.get", false, of::<Empty>, of::<StatusView>),
     m("op.submit", false, of::<SubmitParams>, of::<WriteResult>),
     m("op.undo", false, of::<UndoParams>, of::<WriteResult>),
