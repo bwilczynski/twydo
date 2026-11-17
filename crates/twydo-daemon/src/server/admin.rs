@@ -8,6 +8,7 @@
 //! conflict records the request, so a resend after a restart replays
 //! ([`ConflictStore::by_request`]).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -46,24 +47,37 @@ fn to_value<T: serde::Serialize>(r: T) -> Result<Value, RpcError> {
 /// `conflicts.list`: the unresolved conflicts, as `tdo conflicts` shows them (those of an
 /// archived list are left out, as the sync summary leaves them out).
 pub fn conflicts_list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
-    let found = (|| -> std::io::Result<Vec<ConflictView>> {
-        let cfg = &shared.cfg;
-        let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
-            return Ok(Vec::new());
-        };
-        let Some(store) = ConflictStore::existing(&state)? else {
-            return Ok(Vec::new());
-        };
-        let archived = retired::list(cfg)?;
-        Ok(store
-            .unresolved()?
-            .iter()
-            .filter(|c| !archived.iter().any(|b| b.conflicts.contains(&c.id)))
-            .map(ConflictView::of)
-            .collect())
-    })()
-    .map_err(internal)?;
+    let found = unresolved_conflicts(shared)
+        .map_err(internal)?
+        .iter()
+        .map(ConflictView::of)
+        .collect();
     to_value(ConflictList { conflicts: found })
+}
+
+/// The unresolved conflicts of a list that is not archived.
+fn unresolved_conflicts(shared: &Shared) -> std::io::Result<Vec<twydo_core::conflicts::Conflict>> {
+    let cfg = &shared.cfg;
+    let Some(state) = existing_vdir_state(&cfg.state_dir(), &cfg.vdir)? else {
+        return Ok(Vec::new());
+    };
+    let Some(store) = ConflictStore::existing(&state)? else {
+        return Ok(Vec::new());
+    };
+    let archived = retired::list(cfg)?;
+    Ok(store
+        .unresolved()?
+        .into_iter()
+        .filter(|c| !archived.iter().any(|b| b.conflicts.contains(&c.id)))
+        .collect())
+}
+
+/// The UIDs of the tasks with an unresolved conflict.
+pub fn unresolved_conflict_uids(shared: &Shared) -> std::io::Result<HashSet<String>> {
+    Ok(unresolved_conflicts(shared)?
+        .into_iter()
+        .map(|c| c.uid)
+        .collect())
 }
 
 /// `conflicts.show`: both versions of one conflict and the task as the vdir holds it now.

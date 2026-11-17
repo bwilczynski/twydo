@@ -198,6 +198,7 @@ fn every_open_enum_reads_an_unknown_value() {
     use twydo_daemon::protocol::methods::{OpState, SyncState, WireCollState, WriteOutcome};
     use twydo_daemon::protocol::rpc::ErrorKind;
     use twydo_daemon::protocol::sync::{SyncOutcome, SyncReason};
+    use twydo_daemon::protocol::views::SectionKey;
     let doc = schema::document();
     let open: Vec<&str> = doc["components"]["schemas"]
         .as_object()
@@ -216,6 +217,7 @@ fn every_open_enum_reads_an_unknown_value() {
             "JobResult",
             "JobState",
             "OpState",
+            "SectionKey",
             "SyncOutcome",
             "SyncReason",
             "SyncState",
@@ -291,6 +293,10 @@ fn every_open_enum_reads_an_unknown_value() {
     assert_eq!(
         serde_json::from_value::<WireSide>(json!("brand_new")).unwrap(),
         WireSide::Unknown
+    );
+    assert_eq!(
+        serde_json::from_value::<SectionKey>(json!("brand_new")).unwrap(),
+        SectionKey::Unknown
     );
     let ev: EventEnvelope =
         serde_json::from_value(json!({"seq": 3, "type": "brand.new", "x": 1})).unwrap();
