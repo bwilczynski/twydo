@@ -1,6 +1,7 @@
 # Twydo on the phone (self-hosted web app): design
 
-Date: 2026-11-05. Status: draft for review. No build date is set; this records the design so it
+Date: 2026-11-05. Status: draft for review; superseded in part by
+[the 2026-11-17 MVP design](2026-11-17-phone-companion-mvp-design.md). No build date is set; this records the design so it
 can be planned when the work starts.
 
 This design covers a phone companion to `tdo`: a small web server that runs next to the user's

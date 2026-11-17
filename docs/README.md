@@ -10,6 +10,7 @@
 | [sync.md](sync.md) | Setting up vdirsyncer and `tdo sync`, conflicts, emptied lists, known limits |
 | [compatibility.md](compatibility.md) | Using Twydo alongside 2Do on the iPhone: moving from Dropbox, verified mode, what is verified |
 | [config.md](config.md) | Every configuration key |
+| [gateway.md](gateway.md) | The phone web app: running the gateway, Docker, pairing devices, security |
 
 ## How it works
 
