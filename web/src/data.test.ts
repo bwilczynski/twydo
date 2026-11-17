@@ -163,6 +163,86 @@ describe("data source", () => {
     expect(typeof m.params.session).toBe("string");
   });
 
+  it("a refused op.finished for a queued completion reaches onRefusal with its uid", async () => {
+    const ds = setup();
+    await opened();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o9", revision: 2, message: "q" });
+    const seen: unknown[] = [];
+    ds.onRefusal((r) => seen.push(r));
+    await ds.complete("uid-1");
+    const rid = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
+    FakeWebSocket.last.notify("event", {
+      type: "op.finished",
+      seq: 9,
+      op_id: "o9",
+      request_id: rid,
+      state: { state: "applied", op_id: "o9" },
+    });
+    expect(seen).toEqual([]);
+    await ds.complete("uid-2");
+    const rid2 = FakeWebSocket.last.calls("op.submit")[1]!.params.request_id;
+    FakeWebSocket.last.notify("event", {
+      type: "op.finished",
+      seq: 10,
+      op_id: "o10",
+      request_id: rid2,
+      state: { state: "refused", kind: "stale", message: "The task changed" },
+    });
+    expect(seen).toEqual([{ kind: "complete", uid: "uid-2", message: "The task changed" }]);
+  });
+
+  it("a refused op.finished for a queued capture reaches onRefusal with its draft", async () => {
+    const ds = setup();
+    await opened();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o9", revision: 2, message: "q" });
+    const seen: unknown[] = [];
+    ds.onRefusal((r) => seen.push(r));
+    const capture = { collection: "c1", name: "Inbox", due: null };
+    await ds.create("Water plants", "ferns", capture);
+    const rid = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
+    const finished = { type: "op.finished", seq: 9, op_id: "o9", request_id: rid };
+    FakeWebSocket.last.notify("event", { ...finished, state: { state: "refused", kind: "stale", message: "nope" } });
+    expect(seen).toEqual([{ kind: "create", title: "Water plants", note: "ferns", capture, message: "nope" }]);
+    // The entry is consumed: a repeat reports nothing.
+    FakeWebSocket.last.notify("event", { ...finished, state: { state: "refused", message: "nope" } });
+    expect(seen).toHaveLength(1);
+  });
+
+  it("a cancelled op.finished for a queued undo reaches onRefusal", async () => {
+    const ds = setup();
+    await opened();
+    FakeWebSocket.handlers["op.undo"] = () => ({ outcome: "queued", op_id: "o9", revision: 2, message: "q" });
+    const seen: unknown[] = [];
+    ds.onRefusal((r) => seen.push(r));
+    await ds.undo();
+    const rid = FakeWebSocket.last.calls("op.undo")[0]!.params.request_id;
+    FakeWebSocket.last.notify("event", {
+      type: "op.finished",
+      seq: 9,
+      op_id: "o9",
+      request_id: rid,
+      state: { state: "cancelled", message: "gone" },
+    });
+    expect(seen).toEqual([{ kind: "undo", message: "gone" }]);
+  });
+
+  it("an applied (non-queued) capture is not tracked", async () => {
+    const ds = setup();
+    await opened();
+    const seen: unknown[] = [];
+    ds.onRefusal((r) => seen.push(r));
+    await ds.create("Buy milk", "", { collection: "c1", name: "Inbox", due: null });
+    const rid = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
+    FakeWebSocket.last.notify("event", {
+      type: "op.finished",
+      seq: 9,
+      op_id: "o",
+      request_id: rid,
+      state: { state: "refused", message: "late" },
+    });
+    expect(seen).toEqual([]);
+  });
+
   it("retry reuses request_id", async () => {
     const ds = setup();
     await opened();
@@ -245,9 +325,97 @@ describe("data source", () => {
     FakeWebSocket.last.open();
     await flush();
     await p;
-    const sent = FakeWebSocket.last.sent.map((m) => m.method);
-    expect(sent.indexOf("views.get")).toBeLessThan(sent.indexOf("op.submit"));
-    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(4);
+    // The displayed view (revision 1) is the basis; the daemon decides whether it is stale.
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(1);
+  });
+
+  it("a write with no displayed view fetches first and uses that revision", async () => {
+    const ds = setup();
+    revision = 5;
+    await flush(); // /session
+    const p = ds.complete("uid-1");
+    FakeWebSocket.last.open();
+    await flush();
+    await p;
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(5);
+  });
+
+  it("a tick on a cached tab sends that tab's revision, not another view's", async () => {
+    const ds = setup();
+    await opened(); // inbox at 1
+    revision = 1;
+    await ds.refresh("today"); // today cached at 1
+    revision = 2;
+    await ds.refresh("inbox"); // inbox fetched at 2
+    // Back to Today with its refresh still pending.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    FakeWebSocket.handlers["views.get"] = (p) =>
+      view(p.view === "today" ? "Today" : "Inbox", revision);
+    const orig = FakeWebSocket.last.send.bind(FakeWebSocket.last);
+    let hold = true;
+    FakeWebSocket.last.send = (d: string) => {
+      const m = JSON.parse(d);
+      if (hold && m.method === "views.get") {
+        void gate.then(() => orig(d));
+        return;
+      }
+      orig(d);
+    };
+    const refreshing = ds.refresh("today");
+    await flush();
+    expect(ds.view("today").value?.revision).toBe(1);
+    const p = ds.complete("uid-1");
+    await flush();
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(1);
+    hold = false;
+    release();
+    await refreshing;
+    await p;
+  });
+
+  it("switching to a cached view is not fresh until its fetch completes", async () => {
+    const ds = setup();
+    await opened();
+    await ds.refresh("today");
+    expect(ds.fresh.value).toBe(true);
+    const orig = FakeWebSocket.last.send.bind(FakeWebSocket.last);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    FakeWebSocket.last.send = (d: string) => {
+      if (JSON.parse(d).method === "views.get") void gate.then(() => orig(d));
+      else orig(d);
+    };
+    const p = ds.refresh("inbox");
+    expect(ds.fresh.value).toBe(false);
+    await flush();
+    expect(ds.fresh.value).toBe(false);
+    release();
+    await p;
+    expect(ds.fresh.value).toBe(true);
+  });
+
+  it("another view's fetch finishing does not make the visible view fresh", async () => {
+    const ds = setup();
+    await opened(); // inbox visible and fresh
+    const orig = FakeWebSocket.last.send.bind(FakeWebSocket.last);
+    const held: string[] = [];
+    FakeWebSocket.last.send = (d: string) => {
+      if (JSON.parse(d).method === "views.get") held.push(d);
+      else orig(d);
+    };
+    const first = ds.refresh("today"); // in flight, held
+    await flush();
+    const second = ds.refresh("inbox"); // visible is inbox again; coalesced behind the first
+    expect(ds.fresh.value).toBe(false);
+    orig(held[0]!); // today's reply arrives while inbox is visible
+    await flush();
+    expect(ds.view("today").value).toBeDefined();
+    expect(ds.fresh.value).toBe(false);
+    await flush();
+    orig(held[1]!); // the visible view's own fetch completes
+    await Promise.all([first, second]);
+    expect(ds.fresh.value).toBe(true);
   });
 
   it("a write gives up when the socket does not open", async () => {

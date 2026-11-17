@@ -16,16 +16,32 @@ export type Connection = "connecting" | "open" | "closed" | "unpaired";
 export interface DataSource {
   view(name: ViewName): ReadonlySignal<ViewsGetResult | undefined>;
   connection: ReadonlySignal<Connection>;
-  /** True only after a successful fetch on the current open socket; false when hidden or closed. */
+  /**
+   * True only while the visible view was fetched successfully on the current open socket; false
+   * when hidden, closed, or after switching to a view whose fetch has not completed.
+   */
   fresh: ReadonlySignal<boolean>;
   refresh(name: ViewName): Promise<void>;
-  /** based_on comes from the last view fetched. */
+  /** based_on is the epoch/revision of the view displayed when called, never a newer fetch. */
   complete(uid: string): Promise<WriteResult>;
   create(title: string, note: string, capture: CaptureTarget): Promise<WriteResult>;
   undo(): Promise<WriteResult>;
+  /**
+   * A queued completion, capture or undo the daemon later refused or cancelled (`op.finished`).
+   * Returns an unsubscribe function.
+   */
+  onRefusal(cb: (refusal: Refusal) => void): () => void;
   /** Stop listening and close the socket. */
   dispose(): void;
 }
+
+/** A queued action the daemon later refused or cancelled, with what is needed to report it. */
+export type Refusal =
+  | { kind: "complete"; uid: string; message: string }
+  | { kind: "create"; title: string; note: string; capture: CaptureTarget; message: string }
+  | { kind: "undo"; message: string };
+
+type Pending = Refusal extends infer R ? (R extends Refusal ? Omit<R, "message"> : never) : never;
 
 export interface DataSourceOptions {
   url?: string;
@@ -65,12 +81,15 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   };
   const connection = signal<Connection>("connecting");
   let visible: ViewName = "inbox";
-  let basedOn: BasedOn | undefined;
   let unpaired = false;
   const fresh = signal(false);
   const now = opts.now ?? Date.now;
   // The one action that lost its connection before a reply; a retry of it reuses the id.
   let kept: { key: string; id: string; at: number } | undefined;
+
+  // Queued-capable actions in flight, by request id, so a later `op.finished` can name them.
+  const pending = new Map<string, Pending>();
+  const refusalCbs = new Set<(r: Refusal) => void>();
 
   const sock = new RpcSocket(url, opts.ws);
 
@@ -102,8 +121,8 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           const name = visible;
           const v = await sock.call<ViewsGetResult>("views.get", { view: name });
           views[name].value = v;
-          basedOn = { epoch: v.epoch, revision: v.revision };
-          if (sock.current === "open") fresh.value = true;
+          // Only the visible view's own fetch makes it fresh; another view's does not.
+          if (sock.current === "open" && name === visible) fresh.value = true;
         } while (again);
       } finally {
         fetching = undefined;
@@ -135,6 +154,16 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     } else if (method === "event") {
       const t = (params as { type?: string } | undefined)?.type;
       if (t === "data.changed" || t === "status.changed") refetchQuietly();
+      else if (t === "op.finished") {
+        const e = params as { request_id?: string | null; state?: { state?: string; message?: string } };
+        const p = e.request_id ? pending.get(e.request_id) : undefined;
+        if (e.request_id) pending.delete(e.request_id);
+        const st = e.state?.state;
+        if (p && (st === "refused" || st === "cancelled")) {
+          const message = e.state?.message ?? "The change was not applied";
+          for (const cb of refusalCbs) cb({ ...p, message } as Refusal);
+        }
+      }
     }
   });
 
@@ -158,15 +187,26 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   // Without a session the upgrade would be refused; check first.
   void checkSession();
 
-  async function submit(key: string, method: "op.submit" | "op.undo", extra: object): Promise<WriteResult> {
+  async function submit(key: string, method: "op.submit" | "op.undo", extra: object, what: Pending): Promise<WriteResult> {
     // Keep the id only for a retry of the same action, inside the retry window.
     if (!kept || kept.key !== key || now() - kept.at > RETRY_WINDOW_MS) {
+      if (kept) pending.delete(kept.id); // an abandoned id can no longer be retried
       kept = { key, id: newRequestId(), at: now() };
     }
     const mine = kept;
+    // The basis is what the user sees now, captured at invocation; a newer fetch never replaces
+    // it (the daemon refuses stale writes). With no view displayed yet, nothing was seen, so
+    // the first fetch below supplies it.
+    const shown = views[visible].value;
+    let basedOn: BasedOn | undefined = shown && { epoch: shown.epoch, revision: shown.revision };
+    pending.set(mine.id, what);
     // Wait for the connection, then for data no older than this socket.
     await sock.ready(READY_MS);
-    if (method === "op.submit" && (!basedOn || !fresh.value)) await fetchVisible();
+    if (method === "op.submit" && !basedOn) {
+      await fetchVisible();
+      const v = views[visible].value;
+      if (v) basedOn = { epoch: v.epoch, revision: v.revision };
+    }
     const params =
       method === "op.submit"
         ? { session: "", request_id: mine.id, based_on: basedOn, ...extra }
@@ -174,11 +214,14 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     try {
       const r = await sock.call<WriteResult>(method, params);
       if (kept === mine) kept = undefined;
+      // Only a queued write can be finished later.
+      if (r.outcome !== "queued") pending.delete(mine.id);
       return r;
     } catch (e) {
       // A reply (even a refusal) settles the request; a lost connection does not.
       if (e instanceof Error && e.name === "RpcError") {
         if (kept === mine) kept = undefined;
+        pending.delete(mine.id);
         if ((e as { data?: { kind?: string } }).data?.kind === "stale") {
           fresh.value = false;
           refetchQuietly();
@@ -193,12 +236,13 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     connection,
     fresh,
     refresh(name) {
+      if (name !== visible) fresh.value = false; // the cached view is unconfirmed until fetched
       visible = name;
       return fetchVisible();
     },
     complete(uid) {
       const op: Op = { Complete: { uid } };
-      return submit(`complete:${uid}`, "op.submit", { op });
+      return submit(`complete:${uid}`, "op.submit", { op }, { kind: "complete", uid });
     },
     create(title, note, capture) {
       const task: NewTask = {
@@ -209,10 +253,15 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
         due: capture.due ? { Date: capture.due } : null,
       };
       const op: Op = { Create: task };
-      return submit(`create:${capture.collection}\0${capture.due ?? ""}\0${title}\0${note}`, "op.submit", { op });
+      const key = `create:${capture.collection}\0${capture.due ?? ""}\0${title}\0${note}`;
+      return submit(key, "op.submit", { op }, { kind: "create", title, note, capture });
     },
     undo() {
-      return submit("undo", "op.undo", {});
+      return submit("undo", "op.undo", {}, { kind: "undo" });
+    },
+    onRefusal(cb) {
+      refusalCbs.add(cb);
+      return () => refusalCbs.delete(cb);
     },
     dispose() {
       document.removeEventListener("visibilitychange", onVisibility);
