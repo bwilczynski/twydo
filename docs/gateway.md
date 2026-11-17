@@ -11,12 +11,16 @@ never opens a network port. The design is in
 - The gateway listens on `127.0.0.1:8787` by default. Put a TLS reverse proxy in front of it
   and let it pass WebSocket upgrades on `/ws`. Do not expose the port directly.
 - `--origin` (or `TWYDO_GATEWAY_ORIGIN`) is the public `https://` origin the phone uses. The
-  gateway refuses WebSocket upgrades from any other origin. It is required.
+  gateway refuses requests from any other origin. It is required, and must be only
+  `scheme://host[:port]` (no path; a trailing `/` and upper case are tolerated). `http://` is
+  refused unless `--insecure` is given.
 - `--insecure` serves plain HTTP on a trusted network: no origin is required and the device
   cookie is not marked `Secure`. Use it only on a network you trust.
 - A device pairs once with a code (valid 10 minutes, single use, five wrong attempts void it).
   It then holds a long-lived `HttpOnly` cookie. The gateway stores only hashes of codes and
   keys, in files only you can read.
+- Wrong pairing attempts are charged to every pending code. Anyone who can reach `/pair` can
+  therefore void a pending code; make a new one. Pair on a trusted network, or quickly.
 - A revoked device loses access within 5 seconds, and its open connection is closed.
 - Logs name the device and the method, never a task title.
 
@@ -27,10 +31,14 @@ gateway together. Everything it keeps is under the volume `/data`.
 
 1. Copy `contrib/docker/docker-compose.yaml` and `contrib/docker/env.sample` to a folder. Rename
    the sample to `.env` and set your origin.
-2. Put the CalDAV password in `caldav_password` next to them.
+2. Put the CalDAV password in `caldav_password` next to them. The container runs as uid 1000,
+   so that user must be able to read it (`chown 1000 caldav_password; chmod 400 caldav_password`).
 3. Write `data/config/twydo/config.toml` (below). The container runs as uid 1000, so
    `data` must be writable by it.
 4. `docker compose up -d`.
+
+The first release publishes the package private: the repository owner makes the GHCR package
+public once (package settings, change visibility) before others can pull it.
 
 The compose file binds the port to `127.0.0.1`; your proxy forwards to it.
 
@@ -87,5 +95,6 @@ tdo gateway revoke phone
 
 ## Logs
 
-Docker: `docker compose logs -f twydo`. Without Docker the gateway logs to standard error and
-the daemon to `$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`.
+The gateway writes all its log lines (pairing, writes) to standard error: with Docker use
+`docker compose logs -f twydo`. Without Docker they go to your terminal or service manager, and
+the daemon logs to `$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`.

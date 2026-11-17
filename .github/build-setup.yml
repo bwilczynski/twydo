@@ -1,0 +1,11 @@
+- name: Set up Node
+  uses: actions/setup-node@v4
+  with:
+    node-version: 24
+- name: Build the web app
+  run: |
+    cd web
+    npm ci
+    npm run build
+- name: Require the web app in the binary
+  run: echo TWYDO_REQUIRE_WEB=1 >> "$GITHUB_ENV"

@@ -1,0 +1,21 @@
+# Copy env.sample to .env, put the CalDAV password in ./caldav_password, and write
+# ./data/config/twydo/config.toml (see docs/gateway.md). Then: docker compose up -d
+services:
+  twydo:
+    image: ghcr.io/bwilczynski/twydo:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/data
+    # A fresh socket directory on every start, owned by the container user.
+    tmpfs:
+      - /run/twydo:mode=0700,uid=1000,gid=1000
+    environment:
+      TWYDO_GATEWAY_ORIGIN: ${TWYDO_GATEWAY_ORIGIN}
+    secrets:
+      - caldav_password
+
+secrets:
+  caldav_password:
+    file: ./caldav_password
