@@ -348,3 +348,28 @@ fn nested_subtask_carries_depth_and_parent() {
     assert_eq!(parent.title, "Packing");
     assert_eq!(row(&v, "chk").depth, 0);
 }
+
+#[test]
+fn sync_absent_without_sync_config() {
+    let fx = fx();
+    let td = start(&fx, |_| {});
+    assert_eq!(get(&td, "today").sync, None);
+}
+
+#[test]
+fn sync_summary_reports_failure() {
+    let fx = fx();
+    let cfg = fx.with_sync("exit 0");
+    let status = twydo_core::sync::status::SyncStatus {
+        last_error: Some("Cannot reach the server".into()),
+        failures: 1,
+        // Far ahead of the test clock, so no background run replaces it.
+        next_attempt: Some(Utc.with_ymd_and_hms(2026, 11, 18, 0, 0, 0).unwrap()),
+        ..Default::default()
+    };
+    status.save(&fx.state()).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |o| o.clock = morning());
+    let sync = get(&td, "inbox").sync.expect("sync summary");
+    assert!(sync.attention, "{sync:?}");
+    assert_eq!(sync.headline, "Sync failing");
+}

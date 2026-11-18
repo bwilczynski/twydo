@@ -1,7 +1,7 @@
 //! `views.get`: a finished view for a thin client (a phone, a display), so the client needs
 //! no view logic of its own. Daemon time and the configured timezone decide every date.
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use twydo_core::model::TaskKind;
@@ -34,6 +34,20 @@ pub struct ViewsGetResult {
     /// Where a task captured in this view goes; none when there is no list at all.
     pub capture: Option<CaptureTarget>,
     pub sections: Vec<ViewSection>,
+    /// What sync needs from a person; absent when sync is not configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncSummary>,
+}
+
+/// A short, phone-sized account of sync, built from the same status the TUI status line reads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SyncSummary {
+    /// Something needs a person: a failing sync, a refused emptying, conflicts, sync off.
+    pub attention: bool,
+    pub headline: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub last_success: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

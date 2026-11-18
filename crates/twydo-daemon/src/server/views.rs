@@ -15,6 +15,7 @@ use twydo_core::views::{
 
 use super::Shared;
 use super::admin::unresolved_conflict_uids;
+use super::syncsummary::summary;
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::views::{
     CaptureTarget, RowList, RowParent, SectionKey, ViewName, ViewRow, ViewSection, ViewsGetParams,
@@ -90,6 +91,11 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         open_count: counts(snap, &view, now).total,
         capture,
         sections,
+        sync: shared.publisher.status().and_then(|s| {
+            let conflicts = s.conflicts;
+            s.sync
+                .map(|v| summary(&v, conflicts, now.fixed_offset(), &list_name))
+        }),
     };
     serde_json::to_value(result).map_err(internal)
 }
