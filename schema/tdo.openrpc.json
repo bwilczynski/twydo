@@ -3373,6 +3373,36 @@
         ],
         "type": "object"
       },
+      "SyncSummary": {
+        "description": "A short, phone-sized account of sync, built from the same status the TUI status line reads.",
+        "properties": {
+          "attention": {
+            "description": "Something needs a person: a failing sync, a refused emptying, conflicts, sync off.",
+            "type": "boolean"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "headline": {
+            "type": "string"
+          },
+          "last_success": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "attention",
+          "headline"
+        ],
+        "type": "object"
+      },
       "SyncView": {
         "properties": {
           "auto": {
@@ -3739,6 +3769,17 @@
               "$ref": "#/components/schemas/ViewSection"
             },
             "type": "array"
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What sync needs from a person; absent when sync is not configured."
           },
           "title": {
             "description": "`Today`, or the Inbox list's display name.",

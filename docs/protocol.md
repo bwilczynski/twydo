@@ -62,7 +62,11 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   (a phone, a display) that hold no view logic: dated sections with labels, rows with relative
   due text, overdue and pending flags, and the `capture` target for a new task. Dates and
   groups follow the daemon's clock in the configured timezone (`now`, `today`). A client that
-  writes from a view sends `based_on` built from the result's `epoch` and `revision`.
+  writes from a view sends `based_on` built from the result's `epoch` and `revision`. The result
+  also carries `sync` (absent without `[sync]`): `attention`, a `headline`, an optional `detail`
+  (at most 300 characters) and `last_success`. `attention` is true when sync needs a person: a
+  failing sync, failed list discovery, a list emptied and not applied (with the
+  `tdo sync --force-delete` command), conflicts or automatic sync off. It informs only.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
 - `events.subscribe` starts notifications: `event` (with a rising `seq`: `data.changed`,
