@@ -106,7 +106,7 @@ fn row(
     let today = now.date_naive();
     let day_of = |d: &IcalDateTime| match d.resolve(now.timezone()).0 {
         Resolved::Date(day) => day,
-        Resolved::Instant(i) => i.date_naive(),
+        Resolved::Instant(i) => i.with_timezone(&now.timezone()).date_naive(),
     };
     let color = snap
         .collections

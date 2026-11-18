@@ -54,6 +54,24 @@ fn utc_values_use_the_local_zone() {
     assert_eq!(relative_date(&d, now()), "Today 18:30");
 }
 
+#[test]
+fn zoned_values_are_dated_in_the_configured_zone() {
+    // now is 2026-11-04 10:00 in New York.
+    let zoned = |local: &str, tzid: &str| IcalDateTime::Zoned {
+        local: NaiveDateTime::parse_from_str(local, "%Y-%m-%dT%H:%M").unwrap(),
+        tzid: tzid.into(),
+    };
+    // 2026-11-05 00:30 in Auckland (UTC+13) is 2026-11-04 06:30 in New York: Today, not Tomorrow.
+    let d = zoned("2026-11-05T00:30", "Pacific/Auckland");
+    assert_eq!(relative_date(&d, now()), "Today 06:30");
+    // 2026-11-04 20:00 in Los Angeles (UTC-8) is 2026-11-04 23:00 in New York: still Today.
+    let d = zoned("2026-11-04T20:00", "America/Los_Angeles");
+    assert_eq!(relative_date(&d, now()), "Today 23:00");
+    // 2026-11-04 10:00 in Auckland is 2026-11-03 16:00 in New York: Yesterday, not Today.
+    let d = zoned("2026-11-04T10:00", "Pacific/Auckland");
+    assert_eq!(relative_date(&d, now()), "Yesterday 16:00");
+}
+
 fn task(start: Option<IcalDateTime>) -> Task {
     Task {
         uid: "u".into(),

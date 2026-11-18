@@ -12,7 +12,11 @@ use crate::model::{Alarm, Task, Trigger};
 pub fn relative_date(d: &IcalDateTime, now: DateTime<Tz>) -> String {
     let (day, time) = match d.resolve(now.timezone()).0 {
         Resolved::Date(day) => (day, None),
-        Resolved::Instant(t) => (t.date_naive(), Some(t.format("%H:%M").to_string())),
+        Resolved::Instant(t) => {
+            // A value with its own TZID stays in that zone; date and time are `now`'s.
+            let t = t.with_timezone(&now.timezone());
+            (t.date_naive(), Some(t.format("%H:%M").to_string()))
+        }
     };
     let days = (day - now.date_naive()).num_days();
     let text = match days {
