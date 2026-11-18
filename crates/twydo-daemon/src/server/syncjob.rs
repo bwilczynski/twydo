@@ -6,8 +6,9 @@ use std::sync::Arc;
 use chrono::Utc;
 use serde_json::Value;
 use twydo_core::sync::report::{NOT_CONFIGURED, collection_id, messages, switch_message};
-use twydo_core::sync::run::{RunOptions, run_with};
+use twydo_core::sync::run::{RunOptions, RunReport, run_with};
 use twydo_core::sync::running;
+use twydo_core::sync::status::SyncStatus;
 use twydo_core::sync::switch;
 
 use super::Shared;
@@ -64,6 +65,24 @@ impl SyncDone {
     }
 }
 
+/// Logs what is news about a sync that ended, one `tdo daemon:` line each.
+fn log_sync(shared: &Shared, report: Option<&RunReport>, run_error: Option<&str>) {
+    match SyncStatus::load(&shared.state_dir) {
+        Ok(status) => {
+            let lines =
+                shared
+                    .sync_log
+                    .lock()
+                    .unwrap()
+                    .lines(report, run_error, &status, Utc::now());
+            for line in lines {
+                eprintln!("tdo daemon: {line}");
+            }
+        }
+        Err(e) => eprintln!("tdo daemon: cannot read sync status: {e}"),
+    }
+}
+
 /// Runs one sync. The caller holds the lane long, and calls [`SyncDone::finish`] after
 /// letting it go. The queued edits the runner drained get their `op.finished` here, one each,
 /// also when the run failed after draining them.
@@ -91,6 +110,8 @@ pub fn run_sync(
     });
     shared.test_point("sync");
     let ran = run_with(&shared.cfg, &shared.writer, &opts, Utc::now());
+    let run_error = ran.as_ref().err().map(ToString::to_string);
+    log_sync(shared, ran.as_ref().ok(), run_error.as_deref());
     let result = match ran {
         Ok(mut report) => {
             let mut m = messages(&shared.cfg, &report);
