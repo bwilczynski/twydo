@@ -38,12 +38,10 @@ name = "twydo-daemon"
 git_tag_enable = false
 changelog_update = false
 
-# Released like twydo-daemon; new, so it carries a tag name that is never created (see above).
-# Remove the line once a release includes the crate.
+# Released like twydo-daemon. It needed the never-created tag name until v0.6.0.
 [[package]]
 name = "twydo-gateway"
 git_tag_enable = false
-git_tag_name = "twydo-gateway-v{{ version }}"
 changelog_update = false
 
 # Test support only: never released, tagged or put in a changelog.
