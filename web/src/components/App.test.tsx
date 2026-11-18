@@ -332,3 +332,41 @@ describe("polish", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 });
+
+describe("sync warning", () => {
+  const failing = {
+    attention: true,
+    headline: "Sync failing",
+    detail: "Cannot reach the server. Next try 14:10.",
+    last_success: null,
+  };
+
+  it("shows sync warning when attention", () => {
+    const { ds } = fake();
+    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    inbox.value = { ...inbox.value, sync: failing };
+    render(<App ds={ds} />);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Sync failing");
+    expect(alert.textContent).toContain("Cannot reach the server. Next try 14:10.");
+  });
+
+  it("no warning when all is well", () => {
+    const { ds } = fake();
+    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    inbox.value = { ...inbox.value, sync: { ...failing, attention: false } };
+    render(<App ds={ds} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Sync failing")).toBeNull();
+  });
+
+  it("warning clears on refetch", async () => {
+    const { ds } = fake();
+    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    inbox.value = { ...inbox.value, sync: failing };
+    render(<App ds={ds} />);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    inbox.value = { ...inbox.value, sync: { attention: false, headline: "Synced" } };
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});

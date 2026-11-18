@@ -93,6 +93,14 @@ tdo gateway devices          # name, role, paired at, last seen
 tdo gateway revoke phone
 ```
 
+## The sync warning
+
+When the daemon's sync needs attention (the server unreachable, a failing sync, a list that
+cannot be discovered), the phone shows a red strip under the view title with a headline and a
+detail line, for example the next retry time. It comes from the `sync` summary in `views.get`,
+clears itself on the next refresh once sync is healthy, and has no close button. Nothing can be
+fixed from the phone: act on it with `tdo` on the machine running the daemon.
+
 ## Logs
 
 The gateway writes all its log lines (pairing, writes) to standard error: with Docker use
