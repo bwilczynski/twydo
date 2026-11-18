@@ -214,9 +214,16 @@ vdirsyncer refuses to sync a list that became empty on either side until it is t
   every one of those files (moving or deleting the tasks) and the list has no unresolved conflict,
   the runner reruns that list with `--force-delete` itself. A foreground run prints
   `applied the emptied list "<name>" on the server`.
-- **Anything else** is never forced: emptied on the server, local files that vanished some other
-  way (even if Twydo deleted some of the others), or a list Twydo has not synced yet. `tdo sync`
-  exits 1 with
+- **Emptied on the server.** A list the server emptied is applied here the same way when
+  nothing local would be lost. The runner reruns it with `--force-delete` only if all of these
+  hold: the run did not find every list (two or more) emptied on the server, which looks like a
+  server problem rather than a deliberate clean-up; the list has no unresolved conflict; no
+  pending journal entry writes to it; the manifest has a record of it; and every task file now
+  in the list is in that record. A foreground run prints
+  `applied the list "<name>" emptied on the server`.
+- **Anything else** is never forced: whatever fails the checks above, local files that vanished
+  some other way (even if Twydo deleted some of the others), or a list Twydo has not synced yet.
+  `tdo sync` exits 1 with
   `list "<name>" was emptied here; to apply that on the server run: tdo sync --force-delete "<name>"`
   (or `... emptied on the server; to apply that here ...`). After checking that this is what you
   want, run the command. `--force-delete` takes a list's directory name or its unique display
