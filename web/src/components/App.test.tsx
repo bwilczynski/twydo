@@ -320,6 +320,32 @@ describe("polish", () => {
     expect(screen.getByText("Can't reach Twydo")).toBeTruthy();
   });
 
+  it("an empty list shows its icon, Nothing here and how to add", () => {
+    const { ds, inbox } = fake();
+    inbox.value = mkView("Inbox", []);
+    const { container } = render(<App ds={ds} />);
+    expect(screen.getByText("Nothing here").className).toBe("empty-title");
+    expect(screen.getByText("Tap + to add a new task")).toBeTruthy();
+    expect(container.querySelector(".empty svg")).toBeTruthy();
+  });
+
+  it("an empty Today shows the calendar with today's day", () => {
+    localStorage.setItem("twydo.tab", "today");
+    const { ds } = fake();
+    (ds.view("today") as any).value = mkView("Today", [], "2026-11-17");
+    const { container } = render(<App ds={ds} />);
+    expect(container.querySelector(".empty svg")!.textContent).toBe("17");
+  });
+
+  it("an empty list offline does not suggest adding", () => {
+    const { ds, inbox, connection } = fake();
+    inbox.value = mkView("Inbox", []);
+    connection.value = "closed";
+    render(<App ds={ds} />);
+    expect(screen.getByText("Nothing here")).toBeTruthy();
+    expect(screen.queryByText("Tap + to add a new task")).toBeNull();
+  });
+
   it("a row a refresh dropped animates out, then goes", async () => {
     vi.useFakeTimers();
     const { ds, inbox } = fake();

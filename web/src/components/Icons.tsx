@@ -29,9 +29,9 @@ function Svg({ children, size = 26 }: { children: ComponentChildren; size?: numb
   );
 }
 
-export function MailboxIcon() {
+export function MailboxIcon({ size }: { size?: number }) {
   return (
-    <Svg>
+    <Svg size={size}>
       <path d="M22 17a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5C2 7 4 5 6.5 5H18c2.2 0 4 1.8 4 4v8Z" />
       <polyline points="15,9 18,9 18,11" />
       <path d="M6.5 5C9 5 11 7 11 9.5V17a2 2 0 0 1-2 2" />
@@ -41,9 +41,9 @@ export function MailboxIcon() {
 }
 
 /** A calendar with the day of the month inside, like the iOS Calendar icon. */
-export function CalendarDayIcon({ day }: { day: number | string }) {
+export function CalendarDayIcon({ day, size }: { day: number | string; size?: number }) {
   return (
-    <Svg>
+    <Svg size={size}>
       <path d="M8 2v4" />
       <path d="M16 2v4" />
       <rect width="18" height="18" x="3" y="4" rx="2" />
