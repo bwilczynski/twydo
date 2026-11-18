@@ -19,7 +19,7 @@ thiserror = "2.0.21"
 twydo-core = { path = "../twydo-core" }
 twydo-daemon = { path = "../twydo-daemon" }
 twydo-gateway = { path = "../twydo-gateway" }
-signal-hook = "0.3"
+signal-hook = "0.4"
 libc = "0.2"
 unicode-width = "0.2.3"
 shell-words = "1"
