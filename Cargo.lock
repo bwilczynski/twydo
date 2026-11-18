@@ -2499,7 +2499,7 @@ dependencies = [
 name = "twydo-core"
 version = "0.6.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "chrono-tz",
  "iana-time-zone",
@@ -2541,7 +2541,7 @@ dependencies = [
 name = "twydo-gateway"
 version = "0.6.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "getrandom 0.3.4",
  "httparse",
