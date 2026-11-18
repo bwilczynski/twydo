@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- *(web)* add the phone app project with typed json-rpc data layer
+- *(web)* add inbox and today screens with capture and undo
+- *(gateway)* ship a container image with the daemon and the gateway
 - *(cli)* add tdo gateway to serve the phone app
 - *(daemon)* add views.get for thin clients
 - *(gateway)* bridge device websockets to the daemon
