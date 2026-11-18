@@ -121,6 +121,28 @@
         ],
         "type": "object"
       },
+      "CaptureTarget": {
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "due": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "name"
+        ],
+        "type": "object"
+      },
       "Cause": {
         "enum": [
           "op",
@@ -2872,6 +2894,65 @@
         ],
         "type": "object"
       },
+      "RowList": {
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "RowParent": {
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "title"
+        ],
+        "type": "object"
+      },
+      "SectionKey": {
+        "description": "One date group. `CompletedOn(_)` is `Completed`; its date is in the label.",
+        "enum": [
+          "overdue",
+          "in_progress",
+          "later_today",
+          "today",
+          "tomorrow",
+          "day_after_tomorrow",
+          "next7_days",
+          "next2_weeks",
+          "next30_days",
+          "future",
+          "done",
+          "no_due_date",
+          "scheduled",
+          "completed",
+          "ungrouped"
+        ],
+        "type": "string",
+        "x-open": true
+      },
       "ShutdownParams": {
         "properties": {
           "when_idle": {
@@ -3488,6 +3569,195 @@
             ]
           }
         },
+        "type": "object"
+      },
+      "ViewName": {
+        "description": "The views a thin client can ask for. Closed: an unknown name is invalid params.",
+        "enum": [
+          "inbox",
+          "today"
+        ],
+        "type": "string"
+      },
+      "ViewRow": {
+        "properties": {
+          "completed": {
+            "description": "The task is completed or cancelled: shown done, not tappable on a phone.",
+            "type": "boolean"
+          },
+          "conflict": {
+            "description": "The task has an unresolved sync conflict.",
+            "type": "boolean"
+          },
+          "depth": {
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "due": {
+            "description": "The due value relative to daemon time (`Yesterday`, `Today 17:00`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_today": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "list": {
+            "$ref": "#/components/schemas/RowList"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RowParent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "description": "A queued edit is laid over this row.",
+            "type": "boolean"
+          },
+          "repeats": {
+            "type": "boolean"
+          },
+          "start": {
+            "description": "The start value, only while it is after today.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "title",
+          "depth",
+          "overdue",
+          "due_today",
+          "completed",
+          "kind",
+          "repeats",
+          "list",
+          "pending",
+          "conflict"
+        ],
+        "type": "object"
+      },
+      "ViewSection": {
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/SectionKey"
+          },
+          "label": {
+            "description": "The header text; none for an ungrouped view.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ViewRow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "group",
+          "rows"
+        ],
+        "type": "object"
+      },
+      "ViewsGetParams": {
+        "properties": {
+          "view": {
+            "$ref": "#/components/schemas/ViewName"
+          }
+        },
+        "required": [
+          "view"
+        ],
+        "type": "object"
+      },
+      "ViewsGetResult": {
+        "properties": {
+          "capture": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaptureTarget"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where a task captured in this view goes; none when there is no list at all."
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "now": {
+            "description": "The daemon's clock, in the configured timezone.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "open_count": {
+            "description": "The view's open tasks, as the sidebar counts them.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/ViewSection"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "`Today`, or the Inbox list's display name.",
+            "type": "string"
+          },
+          "today": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision",
+          "now",
+          "today",
+          "title",
+          "open_count",
+          "sections"
+        ],
         "type": "object"
       },
       "WireCollState": {
@@ -4152,6 +4422,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/WireSnapshot"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "views.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/ViewsGetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ViewsGetResult"
         }
       },
       "x-lifecycle": false
