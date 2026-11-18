@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ViewsGetResult, ViewRow } from "../gen/protocol";
 import { arrivals, departures, display, type Leaving } from "../motion";
@@ -11,6 +12,7 @@ export function TaskList({
   done,
   busy,
   disabled,
+  empty,
   onToggle,
   onOpen,
 }: {
@@ -18,6 +20,8 @@ export function TaskList({
   done: Set<string>;
   busy: Set<string>;
   disabled?: boolean;
+  /** Shown when the view has no rows (and none is still leaving). */
+  empty: ComponentChildren;
   onToggle: (row: ViewRow) => void;
   onOpen: (row: ViewRow) => void;
 }) {
@@ -53,7 +57,7 @@ export function TaskList({
   }, [view]);
 
   const sections = display(view.sections, leaving);
-  if (sections.length === 0) return <p class="empty">Nothing here</p>;
+  if (sections.length === 0) return <>{empty}</>;
   return (
     <>
       {sections.map((s) => (

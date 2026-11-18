@@ -4,7 +4,7 @@ import type { ViewRow } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
 import { CaptureSheet } from "./components/CaptureSheet";
 import { DetailSheet } from "./components/DetailSheet";
-import { PlusIcon, SpinnerIcon } from "./components/Icons";
+import { CalendarDayIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { SyncWarning } from "./components/SyncWarning";
@@ -155,6 +155,7 @@ export function App({ ds }: { ds: DataSource }) {
 
   const offline = connection === "closed";
   const updated = view?.now.slice(11, 16);
+  const canAdd = !offline && !!view?.capture;
 
   return (
     <div class="app">
@@ -178,6 +179,7 @@ export function App({ ds }: { ds: DataSource }) {
             done={new Set(done.keys())}
             busy={busy}
             disabled={offline}
+            empty={<EmptyList tab={tab} day={dayOf(today)} canAdd={canAdd} />}
             onToggle={complete}
             onOpen={setDetail}
           />
@@ -206,6 +208,18 @@ export function App({ ds }: { ds: DataSource }) {
         <CaptureSheet initial={capturing.initial} onAdd={add} onCancel={() => setCapturing(undefined)} />
       )}
       {detail && <DetailSheet row={detail} onClose={() => setDetail(undefined)} />}
+    </div>
+  );
+}
+
+function EmptyList({ tab, day, canAdd }: { tab: ViewName; day: string; canAdd: boolean }) {
+  return (
+    <div class="empty">
+      <span class="empty-icon">
+        {tab === "today" ? <CalendarDayIcon day={day} size={72} /> : <MailboxIcon size={72} />}
+      </span>
+      <p class="empty-title">Nothing here</p>
+      {canAdd && <p class="empty-hint">Tap + to add a new task</p>}
     </div>
   );
 }
