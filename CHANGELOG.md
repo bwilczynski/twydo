@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/bwilczynski/twydo/compare/v0.5.0...v0.6.0) - 2026-11-18
+
+### Added
+
+- *(cli)* add tdo gateway to serve the phone app
+- *(daemon)* add views.get for thin clients
+- *(gateway)* bridge device websockets to the daemon
+- *(gateway)* serve the web app, pairing and device auth over http
+- *(gateway)* allowlist and rewrite device requests per role
+- *(gateway)* add the gateway crate with device pairing state
+
+### Fixed
+
+- *(core)* date zoned due and start values in the configured timezone
+
 ## [0.5.0](https://github.com/bwilczynski/twydo/compare/v0.4.2...v0.5.0) - 2026-11-16
 
 ### Added
