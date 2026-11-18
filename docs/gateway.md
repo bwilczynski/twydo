@@ -98,3 +98,18 @@ tdo gateway revoke phone
 The gateway writes all its log lines (pairing, writes) to standard error: with Docker use
 `docker compose logs -f twydo`. Without Docker they go to your terminal or service manager, and
 the daemon logs to `$XDG_STATE_HOME/twydo/daemon-<socket-id>.log`.
+
+The daemon logs sync state changes, not every run, one `tdo daemon:` line each (the same
+lines land in that file). Lists appear by collection id, never by name:
+
+```text
+tdo daemon: sync ok (3 lists)
+tdo daemon: sync failed (attempt 2, next in 120s): <error>
+tdo daemon: sync ok again after 4 failures
+tdo daemon: list discovery failed: <error>
+tdo daemon: applied list <id> emptied on the server
+tdo daemon: list <id> emptied on the server; not applied (edits here not yet synced)
+```
+
+A failure is logged once per distinct error text, and a recovery once. An emptied list that
+is applied is logged every time; one that is held is logged when it first appears.

@@ -17,6 +17,7 @@ pub mod reports;
 pub mod schedule;
 pub mod sessions;
 pub mod syncjob;
+pub mod synclog;
 pub mod views;
 pub mod watch;
 pub mod writes;
@@ -197,6 +198,8 @@ pub struct Shared {
     /// Set once stopping: a sync then leaves the queued edits on disk
     /// ([`twydo_core::sync::run::RunOptions::hold_queue`]).
     pub hold_queue: Arc<AtomicBool>,
+    /// What the daemon has logged about syncs; see [`synclog::SyncLog`].
+    pub sync_log: Mutex<synclog::SyncLog>,
     /// How long a sync running at shutdown may go on before it is stopped.
     shutdown_grace: Duration,
     /// See [`DaemonOptions::stop_wait`].
@@ -371,6 +374,7 @@ impl Daemon {
             jobs: job_store,
             runner: jobs::JobRunner::new(),
             hold_queue: Arc::new(AtomicBool::new(false)),
+            sync_log: Mutex::new(synclog::SyncLog::default()),
             shutdown_grace: opts.shutdown_grace,
             stop_wait: opts.stop_wait,
             status_refresh: Mutex::new(Refresher::default()),
