@@ -249,6 +249,37 @@ fn conflict_flag_set_for_unresolved_conflict() {
 }
 
 #[test]
+fn zoned_due_is_dated_in_the_daemon_timezone() {
+    let fx = fx();
+    // 2026-11-18 00:30 in Auckland (UTC+13) is 2026-11-17 11:30 UTC: today, not tomorrow.
+    fx.write(
+        "inbox/nz.ics",
+        &ics(
+            "nz",
+            "Zoned",
+            "DUE;TZID=Pacific/Auckland:20261118T003000\r\n",
+        ),
+    );
+    // 2026-11-17 22:00 in New York (UTC-5) is 2026-11-18 03:00 UTC: tomorrow, not today.
+    fx.write(
+        "inbox/ny.ics",
+        &ics(
+            "ny",
+            "Zoned west",
+            "DUE;TZID=America/New_York:20261117T220000\r\n",
+        ),
+    );
+    let td = start(&fx, |_| {});
+    let v = get(&td, "inbox");
+    let nz = row(&v, "nz");
+    assert!(nz.due_today);
+    assert_eq!(nz.due.as_deref(), Some("Today 11:30"));
+    let ny = row(&v, "ny");
+    assert!(!ny.due_today);
+    assert_eq!(ny.due.as_deref(), Some("Tomorrow 03:00"));
+}
+
+#[test]
 fn today_follows_daemon_timezone() {
     let fx = fx();
     let mut cfg = fx.config();
