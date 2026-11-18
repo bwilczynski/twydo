@@ -1,14 +1,31 @@
 version: 2
+# One weekly PR per ecosystem for non-breaking updates; anything that may break stays in its own
+# PR. Dependabot reads versions literally, so for Cargo a 0.x minor bump (0.3 -> 0.4) counts as
+# "minor" although it is breaking: Cargo groups patches only.
 updates:
   - package-ecosystem: npm
     directory: /web
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      web:
+        update-types: [minor, patch]
+
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        update-types: [patch]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        update-types: [minor, patch]
