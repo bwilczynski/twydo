@@ -44,7 +44,7 @@ input, textarea { font: inherit; color: inherit; }
   max-width: 640px;
   margin: 0 auto;
 }
-.screen.stale .card { opacity: 0.55; }
+.screen.is-offline .card { opacity: 0.55; }
 .large-title { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 4px 8px; }
 .large-title h1 { font-size: 34px; font-weight: 700; margin: 0; }
 .count { color: var(--secondary); font-size: 20px; }
@@ -78,7 +78,32 @@ input, textarea { font: inherit; color: inherit; }
 .marker { display: inline-flex; }
 .marker.urgent { color: var(--danger); }
 .pending-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+/* Rows a refresh added or dropped; --h is the row's measured height (TaskRow). */
+.row.entering, .row.leaving { overflow: hidden; }
+.row.entering { animation: row-in 300ms ease-out; }
+.row.leaving { animation: row-out 300ms ease-in forwards; pointer-events: none; }
+@keyframes row-in {
+  from { opacity: 0; min-height: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+  to { opacity: 1; max-height: var(--h, 52px); }
+}
+@keyframes row-out {
+  from { opacity: 1; max-height: var(--h, 52px); }
+  to { opacity: 0; min-height: 0; max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row.entering { animation: fade-in 200ms; }
+  .row.leaving { animation: fade-out 200ms forwards; }
+}
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+
 .empty { text-align: center; color: var(--secondary); margin-top: 48px; }
+
+/* The first load, before any view of this tab has arrived: an iOS-style activity indicator. */
+.loading { display: flex; justify-content: center; margin-top: 30vh; color: var(--secondary); }
+.spinner { width: 28px; height: 28px; animation: spin 1s steps(8) infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; display: flex;

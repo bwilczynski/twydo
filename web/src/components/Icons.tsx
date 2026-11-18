@@ -123,3 +123,25 @@ export function AlertIcon() {
     </Svg>
   );
 }
+
+/** An iOS-style activity indicator: eight fading spokes, turned in steps by CSS (our own). */
+export function SpinnerIcon() {
+  return (
+    <svg class="spinner" viewBox="0 0 24 24" aria-hidden="true">
+      {Array.from({ length: 8 }, (_, i) => (
+        <line
+          key={i}
+          x1="12"
+          y1="2.5"
+          x2="12"
+          y2="7"
+          stroke="currentColor"
+          stroke-width="2.4"
+          stroke-linecap="round"
+          opacity={1 - i * 0.11}
+          transform={`rotate(${-i * 45} 12 12)`}
+        />
+      ))}
+    </svg>
+  );
+}
