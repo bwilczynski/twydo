@@ -24,7 +24,7 @@ use twydo_core::sync::manifest::Manifest;
 use twydo_core::sync::output::parse;
 use twydo_core::sync::reconcile::reconcile;
 use twydo_core::sync::report::messages;
-use twydo_core::sync::run::{RunOptions, Skip};
+use twydo_core::sync::run::{HeldEmptied, HeldReason, RunOptions, Skip};
 use twydo_core::sync::running::{
     Reaped, Running, StopResult, clear_stop, process_start, reap_orphan, request_stop, running,
 };
@@ -2116,6 +2116,208 @@ fn queued_final_task_deletion_is_automatically_sent_on_the_rerun() {
         panic!("{drained:?}")
     };
     assert!(synced(&fx, id));
+}
+
+/// A fake that prints `emptied` unless asked to force-delete, recording its calls; returns
+/// the calls file.
+fn emptying_fake(fx: &Fx, emptied: &str) -> PathBuf {
+    let calls = fx.path("calls");
+    write_script(
+        Path::new(&fx.cfg.sync.as_ref().unwrap().command),
+        &format!(
+            "echo \"$*\" >> '{calls}'\n\
+             if [ \"$2\" = --force-delete ]; then {clean}; else {empty}; fi\nexit 0",
+            calls = calls.display(),
+            clean = cat_fixture("clean.txt"),
+            empty = cat_fixture(emptied),
+        ),
+    );
+    calls
+}
+
+/// Seeds the tasks and runs a clean first sync, so the manifest lists them.
+fn synced_once(fx: &mut Fx) {
+    seed_tasks(fx);
+    write_script(
+        Path::new(&fx.cfg.sync.as_ref().unwrap().command),
+        &format!("{}\nexit 0", cat_fixture("clean.txt")),
+    );
+    run(&fx.cfg, &manual(), now()).unwrap();
+}
+
+fn forced(calls: &Path) -> bool {
+    fs::read_to_string(calls)
+        .unwrap()
+        .contains("--force-delete")
+}
+
+#[test]
+fn server_emptied_list_is_applied() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert_eq!(report.auto_forced, ["c1"]);
+    assert_eq!(report.auto_forced_remote, ["c1"]);
+    assert_eq!(report.collections.get("c1"), Some(&CollState::Ok));
+    assert!(
+        fs::read_to_string(calls)
+            .unwrap()
+            .contains("--force-delete twydo/c1")
+    );
+    assert!(report.held_emptied.is_empty(), "{:?}", report.held_emptied);
+}
+
+#[test]
+fn forced_pass_that_fails_is_not_reported_applied() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let calls = fx.path("calls");
+    write_script(
+        Path::new(&fx.cfg.sync.as_ref().unwrap().command),
+        &format!(
+            "echo \"$*\" >> '{calls}'\n\
+             if [ \"$2\" = --force-delete ]; then \
+             echo 'Syncing twydo/c1' >&2; \
+             echo 'error: Unknown error occurred for twydo/c1: Cannot connect' >&2; exit 1; \
+             else {empty}; fi\nexit 0",
+            calls = calls.display(),
+            empty = cat_fixture("emptied-remote.txt"),
+        ),
+    );
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(forced(&calls));
+    assert!(report.auto_forced.is_empty(), "{:?}", report.auto_forced);
+    assert!(
+        report.auto_forced_remote.is_empty(),
+        "{:?}",
+        report.auto_forced_remote
+    );
+    assert!(matches!(
+        report.collections.get("c1"),
+        Some(CollState::Error { .. })
+    ));
+}
+
+fn assert_held_remote(report: &twydo_core::sync::run::RunReport, reason: HeldReason) {
+    assert_eq!(
+        report.collections.get("c1"),
+        Some(&CollState::EmptiedRemote)
+    );
+    assert_eq!(
+        report.held_emptied.get("c1"),
+        Some(&HeldEmptied {
+            remote: true,
+            reason
+        })
+    );
+    assert!(report.auto_forced.is_empty());
+}
+
+#[test]
+fn held_when_local_only_file() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    fs::copy(qa_path(&fx), fx.cfg.vdir.join("c1/new.ics")).unwrap();
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    assert_held_remote(&report, HeldReason::LocalOnlyFiles);
+}
+
+#[test]
+fn held_when_queued_edit_in_list() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let (mut store, _) = Store::open(&fx.cfg).unwrap();
+    let snap = Snapshot::new(
+        twydo_core::vdir::load(&fx.cfg.vdir).unwrap(),
+        fx.cfg.clone(),
+    );
+    let op = Op::Edit {
+        uid: QA.into(),
+        changes: vec![Change::Summary("renamed".into())],
+    };
+    store.apply(&snap, &op, now()).unwrap();
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    assert_held_remote(&report, HeldReason::QueuedEdits);
+}
+
+#[test]
+fn held_without_manifest_record() {
+    let mut fx = Fx::new("");
+    seed_tasks(&mut fx);
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    assert_held_remote(&report, HeldReason::NoRecord);
+}
+
+#[test]
+fn held_when_list_has_conflict() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let a = task("u1", "after");
+    ConflictStore::open(&fx.state())
+        .unwrap()
+        .record(
+            twydo_core::conflicts::NewConflict {
+                uid: "u1".into(),
+                collection: "c1".into(),
+                path: "c1/u1.ics".into(),
+                kind: ConflictKind::Journal,
+                held: false,
+                vdir_holds: Side::Remote,
+                local: Some(a.clone()),
+                remote: Some(a),
+            },
+            now(),
+        )
+        .unwrap();
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    assert_held_remote(&report, HeldReason::Conflict);
+}
+
+#[test]
+fn held_when_every_list_emptied() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let calls = emptying_fake(&fx, "emptied-remote-all.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    for c in ["c1", "Twydo test"] {
+        assert_eq!(
+            report.held_emptied.get(c),
+            Some(&HeldEmptied {
+                remote: true,
+                reason: HeldReason::EveryListEmptied
+            }),
+            "{c}"
+        );
+    }
+}
+
+#[test]
+fn local_emptying_not_by_twydo_is_held() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    for e in fs::read_dir(fx.cfg.vdir.join("c1")).unwrap() {
+        fs::remove_file(e.unwrap().path()).unwrap();
+    }
+    let calls = emptying_fake(&fx, "emptied-local.txt");
+    let report = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(!forced(&calls));
+    assert_eq!(
+        report.held_emptied.get("c1"),
+        Some(&HeldEmptied {
+            remote: false,
+            reason: HeldReason::NotEmptiedByTwydo
+        })
+    );
 }
 
 #[test]

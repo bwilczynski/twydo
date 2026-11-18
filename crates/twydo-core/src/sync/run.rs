@@ -93,6 +93,10 @@ pub struct RunReport {
     pub forced: Vec<String>,
     /// The part of `forced` that the runner chose itself (a list Twydo emptied).
     pub auto_forced: Vec<String>,
+    /// The part of `auto_forced` applied because the server emptied the list.
+    pub auto_forced_remote: Vec<String>,
+    /// Emptied lists (either side) this run did not force, by collection id.
+    pub held_emptied: BTreeMap<String, HeldEmptied>,
     pub metasync_error: Option<String>,
     /// A pass was stopped on request (see [`super::running::request_stop`]); no rerun
     /// followed it.
@@ -110,6 +114,38 @@ pub struct RunReport {
     /// The failure is only a warning: a background run, or a discovery that only the
     /// `sync/rediscover` gate triggered.
     pub discovery_is_warning: bool,
+}
+
+/// An emptied list the runner left alone, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeldEmptied {
+    /// The server side was emptied (otherwise the local side).
+    pub remote: bool,
+    pub reason: HeldReason,
+}
+
+/// Why an emptied list was not forced automatically.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeldReason {
+    NotEmptiedByTwydo,
+    NoRecord,
+    LocalOnlyFiles,
+    QueuedEdits,
+    Conflict,
+    EveryListEmptied,
+}
+
+impl std::fmt::Display for HeldReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            HeldReason::NotEmptiedByTwydo => "not emptied by Twydo",
+            HeldReason::NoRecord => "no record of the last sync",
+            HeldReason::LocalOnlyFiles => "tasks here that the server never had",
+            HeldReason::QueuedEdits => "edits here not yet synced",
+            HeldReason::Conflict => "unresolved conflict",
+            HeldReason::EveryListEmptied => "every list came back empty",
+        })
+    }
 }
 
 /// A requested rerun happens at most this many times per call.
@@ -402,16 +438,22 @@ fn one_pass(
         &out,
         &pending,
         &manifest,
+        &cfg.vdir,
         ConflictStore::existing(state)?,
         force,
     )?;
-    if !auto.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
-        let second = vds.sync(&auto, &control)?;
-        merge_forced(&mut out, parse(PAIR, &second.stderr), &auto);
+    report.held_emptied.extend(auto.held);
+    let both: Vec<String> = auto.local.iter().chain(&auto.remote).cloned().collect();
+    // Lists whose forced second pass ran; reported as applied only once the pass left them Ok.
+    let mut second_pass = Vec::new();
+    if !both.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
+        let second = vds.sync(&both, &control)?;
+        merge_forced(&mut out, parse(PAIR, &second.stderr), &both);
         ran.outcome = second.outcome;
-        report.forced.extend(auto.iter().cloned());
-        report.auto_forced.extend(auto);
+        second_pass = both;
     }
+    // (Selected lists get no second pass when the first one did not exit: they are neither
+    // held nor applied, and keep their emptied state.)
     // Not after a failed sync: a failure that repeats (no password, no network) would make
     // metasync wait the same way while writers still wait for the lock.
     let sync_failed = || {
@@ -443,6 +485,17 @@ fn one_pass(
                     message: message.into(),
                 };
             }
+        }
+    }
+
+    // A forced list counts as applied only when the pass that forced it did not fail for it.
+    for id in second_pass {
+        if collections.get(&id) == Some(&CollState::Ok) {
+            report.forced.push(id.clone());
+            if auto.remote.contains(&id) {
+                report.auto_forced_remote.push(id.clone());
+            }
+            report.auto_forced.push(id);
         }
     }
 
@@ -658,32 +711,93 @@ pub(crate) fn record_orphan_stop(cfg: &Config, state: &Path) -> io::Result<()> {
     status.save(state)
 }
 
-/// Collections to force-delete automatically: emptied on the local side, not forced
-/// explicitly, with no unresolved conflict, and whose every file at the last counted run
-/// (the manifest) a pending entry removed (see [`Manifest::emptied_by`]). An emptied
+/// What [`auto_force`] decided about the emptied collections.
+struct AutoForce {
+    /// Emptied locally by Twydo.
+    local: Vec<String>,
+    /// Emptied on the server, with nothing local that the force would lose.
+    remote: Vec<String>,
+    /// Emptied collections left alone.
+    held: BTreeMap<String, HeldEmptied>,
+}
+
+/// Collections to force-delete automatically, among those not forced explicitly.
+///
+/// Emptied on the local side: no unresolved conflict, and every file at the last counted
+/// run (the manifest) a pending entry removed (see [`Manifest::emptied_by`]). An emptied
 /// collection the journal does not fully account for (files removed by hand, a broken
-/// vdir, no Twydo sync yet) is never forced.
+/// vdir, no Twydo sync yet) is held.
+///
+/// Emptied on the server: not every collection of the run emptied (a server that lost
+/// everything is more likely broken), no unresolved conflict, no pending write in the
+/// list, a manifest record, and no file in the list that the record lacks. Then the force
+/// deletes only what the server already lost.
 fn auto_force(
     out: &SyncOutput,
     pending: &[crate::store::journal::Entry],
     manifest: &Manifest,
+    vdir: &Path,
     conflicts: Option<ConflictStore>,
     explicit: &[String],
-) -> Result<Vec<String>, SyncError> {
+) -> Result<AutoForce, SyncError> {
     let unresolved = match conflicts {
         Some(store) => store.unresolved()?,
         None => Vec::new(),
     };
     let states = coll_states(out, &[], LOCAL_STORAGE);
-    Ok(out
-        .emptied
-        .keys()
-        .filter(|c| states.get(*c) == Some(&CollState::EmptiedLocal))
-        .filter(|c| !explicit.contains(c))
-        .filter(|c| !unresolved.iter().any(|u| &u.collection == *c))
-        .filter(|c| manifest.emptied_by(c, pending))
-        .cloned()
-        .collect())
+    let every_list = states.len() >= 2 && states.values().all(|s| *s == CollState::EmptiedRemote);
+    let mut auto = AutoForce {
+        local: Vec::new(),
+        remote: Vec::new(),
+        held: BTreeMap::new(),
+    };
+    for c in out.emptied.keys().filter(|c| !explicit.contains(c)) {
+        let remote = match states.get(c) {
+            Some(CollState::EmptiedLocal) => false,
+            Some(CollState::EmptiedRemote) => true,
+            _ => continue,
+        };
+        let conflicted = unresolved.iter().any(|u| &u.collection == c);
+        let prefix = format!("{c}/");
+        let held = if !remote {
+            if !conflicted && manifest.emptied_by(c, pending) {
+                auto.local.push(c.clone());
+                continue;
+            }
+            if conflicted {
+                HeldReason::Conflict
+            } else {
+                HeldReason::NotEmptiedByTwydo
+            }
+        } else if every_list {
+            HeldReason::EveryListEmptied
+        } else if conflicted {
+            HeldReason::Conflict
+        } else if pending
+            .iter()
+            .flat_map(|e| &e.writes)
+            .any(|w| w.path.starts_with(&prefix))
+        {
+            HeldReason::QueuedEdits
+        } else {
+            match manifest.covers_local(vdir, c)? {
+                None => HeldReason::NoRecord,
+                Some(false) => HeldReason::LocalOnlyFiles,
+                Some(true) => {
+                    auto.remote.push(c.clone());
+                    continue;
+                }
+            }
+        };
+        auto.held.insert(
+            c.clone(),
+            HeldEmptied {
+                remote,
+                reason: held,
+            },
+        );
+    }
+    Ok(auto)
 }
 
 /// Replaces what `first` says about the `forced` collections with what `second` says.

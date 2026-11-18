@@ -818,12 +818,35 @@ fn emptying_before_any_twydo_sync_is_not_forced() {
 }
 
 #[test]
-fn remote_emptied_is_never_forced() {
+fn remote_emptied_is_applied_when_nothing_local_is_lost() {
     require_vdirsyncer!();
     let p = Pair::new();
     for u in ["u1", "u2", "u3"] {
         fs::remove_file(p.server().join(COLL).join(format!("{u}.ics"))).unwrap();
     }
+    let (code, out, err) = tdo_sync_args(&p, &[]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(
+        out.contains("applied the list \"c1\" emptied on the server"),
+        "{out}{err}"
+    );
+    for u in ["u1", "u2", "u3"] {
+        assert_eq!(p.read_vdir(u), None);
+    }
+}
+
+#[test]
+fn remote_emptied_with_a_local_only_task_is_not_forced() {
+    require_vdirsyncer!();
+    let p = Pair::new();
+    for u in ["u1", "u2", "u3"] {
+        fs::remove_file(p.server().join(COLL).join(format!("{u}.ics"))).unwrap();
+    }
+    fs::write(
+        p.vdir().join(COLL).join("u9.ics"),
+        task("u9", "never synced"),
+    )
+    .unwrap();
     let (code, out, err) = tdo_sync_args(&p, &[]);
     assert_eq!(code, 1, "{out}{err}");
     assert!(
@@ -839,7 +862,8 @@ fn remote_emptied_is_never_forced() {
     for u in ["u1", "u2", "u3"] {
         assert_eq!(p.read_vdir(u), None);
     }
-    assert!(!out.contains("applied the emptied list"), "{out}");
+    assert!(p.read_vdir("u9").is_some());
+    assert!(!out.contains("applied the"), "{out}");
 }
 
 #[test]

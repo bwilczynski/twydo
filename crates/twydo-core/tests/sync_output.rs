@@ -351,3 +351,26 @@ fn messages_keep_the_tdo_sync_wording() {
         vec!["applied the emptied list \"Chores\" on the server".to_string()]
     );
 }
+
+#[test]
+fn messages_word_a_server_side_emptying_differently() {
+    use twydo_core::config::Config;
+    use twydo_core::sync::report::messages;
+    use twydo_core::sync::run::RunReport;
+
+    let dir = tempfile::tempdir().unwrap();
+    let vdir = dir.path().join("vdir");
+    std::fs::create_dir_all(vdir.join("c3")).unwrap();
+    std::fs::write(vdir.join("c3/displayname"), "Chores\n").unwrap();
+    let mut cfg = Config::with_vdir(vdir);
+    cfg.state_dir = Some(dir.path().join("state"));
+    let r = RunReport {
+        auto_forced: vec!["c3".into()],
+        auto_forced_remote: vec!["c3".into()],
+        ..RunReport::default()
+    };
+    assert_eq!(
+        messages(&cfg, &r).notes,
+        vec!["applied the list \"Chores\" emptied on the server".to_string()]
+    );
+}

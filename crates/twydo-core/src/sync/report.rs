@@ -66,10 +66,17 @@ pub fn messages(cfg: &Config, r: &RunReport) -> Messages {
             .iter()
             .map(|c| format!("found new list \"{}\"", name_of(&names, c)))
             .chain(r.auto_forced.iter().map(|c| {
-                format!(
-                    "applied the emptied list \"{}\" on the server",
-                    name_of(&names, c)
-                )
+                if r.auto_forced_remote.contains(c) {
+                    format!(
+                        "applied the list \"{}\" emptied on the server",
+                        name_of(&names, c)
+                    )
+                } else {
+                    format!(
+                        "applied the emptied list \"{}\" on the server",
+                        name_of(&names, c)
+                    )
+                }
             }))
             .collect(),
     }

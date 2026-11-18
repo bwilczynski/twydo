@@ -128,6 +128,38 @@ impl Manifest {
                     .is_some_and(|w| w.after.is_none())
             })
     }
+
+    /// Whether every `.ics` file now in `vdir/coll` (plain files, not dot-files: the
+    /// listing [`Manifest::refresh`] makes) is one the manifest lists for it. `None` when
+    /// the manifest has no entry for `coll`. A file the manifest lacks is a task that was
+    /// never synced: emptying the list on the server would lose it.
+    pub fn covers_local(&self, vdir: &Path, coll: &str) -> io::Result<Option<bool>> {
+        let Some(files) = self.0.get(coll) else {
+            return Ok(None);
+        };
+        if !plain_name(coll) {
+            return Ok(Some(false));
+        }
+        match fs::read_dir(vdir.join(coll)) {
+            Ok(dir) => {
+                for d in dir {
+                    let d = d?;
+                    let Some(name) = d.file_name().to_str().map(str::to_string) else {
+                        continue;
+                    };
+                    if name.starts_with('.') || !name.ends_with(".ics") {
+                        continue;
+                    }
+                    if d.file_type()?.is_file() && !files.contains(&format!("{coll}/{name}")) {
+                        return Ok(Some(false));
+                    }
+                }
+                Ok(Some(true))
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Some(true)),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 fn plain_name(s: &str) -> bool {
@@ -269,5 +301,21 @@ mod tests {
             Manifest::load(&dir.path().join("none")).unwrap(),
             Manifest::default()
         );
+    }
+
+    #[test]
+    fn covers_local_compares_the_directory_with_the_listing() {
+        let dir = tempfile::tempdir().unwrap();
+        let vdir = dir.path();
+        fs::create_dir_all(vdir.join("c1")).unwrap();
+        let m = manifest(&["c1/a.ics", "c1/b.ics"]);
+        assert_eq!(m.covers_local(vdir, "c2").unwrap(), None);
+        fs::write(vdir.join("c1/a.ics"), "x").unwrap();
+        assert_eq!(m.covers_local(vdir, "c1").unwrap(), Some(true));
+        fs::write(vdir.join("c1/.new.ics.tmp"), "x").unwrap();
+        fs::write(vdir.join("c1/.new.ics"), "x").unwrap();
+        assert_eq!(m.covers_local(vdir, "c1").unwrap(), Some(true));
+        fs::write(vdir.join("c1/new.ics"), "x").unwrap();
+        assert_eq!(m.covers_local(vdir, "c1").unwrap(), Some(false));
     }
 }
