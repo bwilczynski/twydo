@@ -7,6 +7,7 @@ import { DetailSheet } from "./components/DetailSheet";
 import { PlusIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
+import { SyncWarning } from "./components/SyncWarning";
 import { dayOf, TabBar } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
 
@@ -163,6 +164,7 @@ export function App({ ds }: { ds: DataSource }) {
           <h1>{view?.title ?? (tab === "today" ? "Today" : "Inbox")}</h1>
           {view && <span class="count">{view.open_count}</span>}
         </header>
+        {view?.sync?.attention && <SyncWarning sync={view.sync} />}
         {!offline && !fresh && <p class="hint updating">Updating…</p>}
         {offline && <Offline updated={updated} onRetry={() => location.reload()} />}
         {view && (

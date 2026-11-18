@@ -132,3 +132,20 @@ input, textarea { font: inherit; color: inherit; }
 .primary:disabled { opacity: 0.5; }
 .offline { text-align: center; margin: 24px 0; }
 .offline-title { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+
+.sync-warning {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--danger);
+  background: var(--card);
+  color: var(--text);
+  font-size: 15px;
+}
+.sync-warning strong {
+  color: var(--danger);
+}
+.sync-warning p {
+  margin: 4px 0 0;
+  color: var(--secondary);
+}
