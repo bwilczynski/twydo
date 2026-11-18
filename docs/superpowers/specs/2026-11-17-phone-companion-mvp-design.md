@@ -342,6 +342,9 @@ rounded sections, round checkboxes, bottom tab bar, sheets).
   (`visibilitychange`), and every few minutes while open *(my call; covers day rollover)*.
 - iOS closes sockets of backgrounded apps: on becoming visible the PWA reconnects and refetches
   before showing data as current.
+- *(Amended by issue #144.)* While connected, a tab's last view (kept in memory only) is shown
+  at once and refreshed in place, with no "updating" label; rows animate in and out when the
+  fresh view arrives. Before a tab's first view, a spinner. Only a lost connection dims it.
 - Disconnected: a plain "Can't reach Twydo" state with Retry; tasks are not shown as current
   (they may be shown dimmed with "last updated <time>" *(my call)*).
 - Not paired / key revoked: the pairing screen.

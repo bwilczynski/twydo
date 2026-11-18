@@ -4,7 +4,7 @@ import type { ViewRow } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
 import { CaptureSheet } from "./components/CaptureSheet";
 import { DetailSheet } from "./components/DetailSheet";
-import { PlusIcon } from "./components/Icons";
+import { PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { SyncWarning } from "./components/SyncWarning";
@@ -37,7 +37,6 @@ export function App({ ds }: { ds: DataSource }) {
   const [capturing, setCapturing] = useState<{ initial?: { title: string; note: string } }>();
 
   const connection = ds.connection.value;
-  const fresh = ds.fresh.value;
   const view = ds.view(tab).value;
   // Any view will do for the date; prefer the one on screen.
   const today = view?.today ?? ds.view("inbox").value?.today ?? ds.view("today").value?.today;
@@ -159,16 +158,22 @@ export function App({ ds }: { ds: DataSource }) {
 
   return (
     <div class="app">
-      <main class={offline || !fresh ? "screen stale" : "screen"}>
+      {/* A cached view shows at once and refreshes in place; only offline dims it (spec §9.4). */}
+      <main class={offline ? "screen is-offline" : "screen"}>
         <header class="large-title">
           <h1>{view?.title ?? (tab === "today" ? "Today" : "Inbox")}</h1>
           {view && <span class="count">{view.open_count}</span>}
         </header>
         {view?.sync?.attention && <SyncWarning sync={view.sync} />}
-        {!offline && !fresh && <p class="hint updating">Updating…</p>}
         {offline && <Offline updated={updated} onRetry={() => location.reload()} />}
+        {!view && !offline && (
+          <div class="loading" role="status" aria-label="Loading">
+            <SpinnerIcon />
+          </div>
+        )}
         {view && (
           <TaskList
+            key={tab}
             view={view}
             done={new Set(done.keys())}
             busy={busy}

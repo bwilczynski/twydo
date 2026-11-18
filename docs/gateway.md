@@ -93,6 +93,14 @@ tdo gateway devices          # name, role, paired at, last seen
 tdo gateway revoke phone
 ```
 
+## Loading and refreshing
+
+The first time a tab opens, the phone shows a spinner until its view arrives. After that it
+keeps the last view of each tab in memory, never on the device's storage: switching tabs or
+returning to the app shows it at once, and when the fresh view arrives, rows that are new slide
+in and rows that are gone (a completed task, for example) slide out. Only a lost connection
+dims the list, under "Can't reach Twydo".
+
 ## The sync warning
 
 When the daemon's sync needs attention (the server unreachable, a failing sync, a list that

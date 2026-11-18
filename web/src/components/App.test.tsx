@@ -290,12 +290,70 @@ describe("polish", () => {
     expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("shows Updating when open but not fresh", () => {
+  it("shows a cached view while it refreshes, with no label and not dimmed", () => {
     const { ds, fresh } = fake();
     fresh.value = false;
-    render(<App ds={ds} />);
-    expect(screen.getByText("Updating…")).toBeTruthy();
+    const { container } = render(<App ds={ds} />);
+    expect(screen.getByText("Buy milk")).toBeTruthy();
+    expect(screen.queryByText(/Updating/)).toBeNull();
+    expect(screen.queryByRole("status", { name: "Loading" })).toBeNull();
+    expect(container.querySelector("main")!.className).toBe("screen");
     expect(screen.queryByText("Can't reach Twydo")).toBeNull();
+  });
+
+  it("shows a spinner on the first load, then the view", async () => {
+    const { ds, inbox } = fake();
+    inbox.value = undefined;
+    render(<App ds={ds} />);
+    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
+    inbox.value = mkView("Inbox", [row("u1", "Buy milk")]);
+    expect(await screen.findByText("Buy milk")).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Loading" })).toBeNull();
+  });
+
+  it("no spinner when offline before any view", () => {
+    const { ds, inbox, connection } = fake();
+    inbox.value = undefined;
+    connection.value = "closed";
+    render(<App ds={ds} />);
+    expect(screen.queryByRole("status", { name: "Loading" })).toBeNull();
+    expect(screen.getByText("Can't reach Twydo")).toBeTruthy();
+  });
+
+  it("a row a refresh dropped animates out, then goes", async () => {
+    vi.useFakeTimers();
+    const { ds, inbox } = fake();
+    render(<App ds={ds} />);
+    inbox.value = { ...mkView("Inbox", [row("u2", "Call the plumber"), row("u4", "New one")]), revision: 2 };
+    await vi.advanceTimersByTimeAsync(0);
+    const gone = screen.getByText("Buy milk").closest("li")!;
+    expect(gone.classList.contains("leaving")).toBe(true);
+    expect(gone.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByText("New one").closest("li")!.classList.contains("entering")).toBe(true);
+    expect(screen.getByText("Call the plumber").closest("li")!.className).toBe("row");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(screen.queryByText("Buy milk")).toBeNull();
+  });
+
+  it("a completed row leaves ticked", async () => {
+    vi.useFakeTimers();
+    const { ds, inbox } = fake();
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByLabelText("Complete Buy milk"));
+    await vi.advanceTimersByTimeAsync(0);
+    inbox.value = { ...mkView("Inbox", [row("u2", "Call the plumber")]), revision: 2 };
+    await vi.advanceTimersByTimeAsync(0);
+    const li = screen.getByText("Buy milk").closest("li")!;
+    expect(li.className).toContain("leaving");
+    expect(li.className).toContain("done");
+  });
+
+  it("switching tabs shows the other list without animating it in", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByLabelText("Today"));
+    expect(screen.getByText("Pay the invoice").closest("li")!.className).toBe("row");
+    expect(screen.queryByText("Buy milk")).toBeNull();
   });
 
   it("undo is disabled while a write is pending", async () => {
@@ -321,6 +379,14 @@ describe("polish", () => {
     render(<App ds={ds} />);
     expect((screen.getByLabelText("Complete Buy milk") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText("New task")).toBeNull();
+  });
+
+  it("offline dims the screen without taking the offline message's styles", () => {
+    const { ds, connection } = fake();
+    connection.value = "closed";
+    const { container } = render(<App ds={ds} />);
+    // `.offline` centres the "Can't reach Twydo" box; the screen must not match it.
+    expect(container.querySelector("main")!.className).toBe("screen is-offline");
   });
 
   it("renders markup in a title as literal text", () => {

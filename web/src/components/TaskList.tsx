@@ -1,5 +1,10 @@
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { ViewsGetResult, ViewRow } from "../gen/protocol";
+import { arrivals, departures, display, type Leaving } from "../motion";
 import { TaskRow } from "./TaskRow";
+
+/** How long a row that left the view stays on screen to animate out; matches the CSS. */
+export const LEAVE_MS = 300;
 
 export function TaskList({
   view,
@@ -16,21 +21,53 @@ export function TaskList({
   onToggle: (row: ViewRow) => void;
   onOpen: (row: ViewRow) => void;
 }) {
-  const sections = view.sections.filter((s) => s.rows.length > 0);
+  // Diffed against the previous view during render, so a leaving row never blinks out first.
+  // A list is mounted per tab: the first view it shows has nothing to animate.
+  const last = useRef<{ view?: ViewsGetResult; leaving: Leaving[]; entering: Set<string> }>({
+    leaving: [],
+    entering: new Set(),
+  });
+  const [, expire] = useState(0);
+  const st = last.current;
+  if (st.view !== view) {
+    const fresh = st.view ? departures(st.view.sections, view.sections, done) : [];
+    const live = new Set(view.sections.flatMap((s) => s.rows.map((r) => r.uid)));
+    const gone = new Set(fresh.map((l) => l.row.uid));
+    // Rows still leaving from an earlier change keep going unless they came back.
+    const older = st.leaving.filter((l) => !live.has(l.row.uid) && !gone.has(l.row.uid));
+    last.current = {
+      view,
+      leaving: [...older, ...fresh],
+      entering: arrivals(st.view?.sections, view.sections),
+    };
+  }
+  const { leaving, entering } = last.current;
+
+  useEffect(() => {
+    if (leaving.length === 0) return;
+    const t = setTimeout(() => {
+      last.current = { ...last.current, leaving: [] };
+      expire((n) => n + 1);
+    }, LEAVE_MS);
+    return () => clearTimeout(t);
+  }, [view]);
+
+  const sections = display(view.sections, leaving);
   if (sections.length === 0) return <p class="empty">Nothing here</p>;
   return (
     <>
-      {sections.map((s, i) => (
-        <section key={`${s.group}-${i}`} class="group">
+      {sections.map((s) => (
+        <section key={s.group} class="group">
           {s.label && <h2>{s.label}</h2>}
           <ul class="card">
-            {s.rows.map((r) => (
+            {s.rows.map(({ row: r, leaving: l }) => (
               <TaskRow
                 key={r.uid}
                 row={r}
-                done={done.has(r.uid)}
-                busy={busy.has(r.uid)}
+                done={l ? l.done : done.has(r.uid)}
+                busy={!l && busy.has(r.uid)}
                 disabled={disabled}
+                motion={l ? "leaving" : entering.has(r.uid) ? "entering" : undefined}
                 onToggle={() => onToggle(r)}
                 onOpen={() => onOpen(r)}
               />
