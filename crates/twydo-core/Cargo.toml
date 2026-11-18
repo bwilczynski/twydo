@@ -9,8 +9,8 @@ description.workspace = true
 
 [dependencies]
 schemars = { version = "1", features = ["chrono04"] }
-base64 = "0.22.1"
-sha2 = "0.10.9"
+base64 = "0.23.1"
+sha2 = "0.11.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 iana-time-zone = "0.1.65"

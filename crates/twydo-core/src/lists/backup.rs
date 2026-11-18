@@ -76,7 +76,10 @@ pub struct Backup {
     pub evidence: serde_json::Value,
 }
 fn hash(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 fn decode(value: &str) -> io::Result<Vec<u8>> {
     STANDARD

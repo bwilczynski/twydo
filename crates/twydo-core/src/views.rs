@@ -41,7 +41,10 @@ pub struct Snapshot {
 
 /// A task file's revision: the first 16 lowercase hex digits of the SHA-256 of its bytes.
 pub fn rev_of(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))[..16].to_string()
+    Sha256::digest(bytes)[..8]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 impl Snapshot {
