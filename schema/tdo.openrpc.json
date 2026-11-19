@@ -2932,7 +2932,7 @@
         "type": "object"
       },
       "SectionKey": {
-        "description": "One date group. `CompletedOn(_)` is `Completed`; its date is in the label.",
+        "description": "One date group. `CompletedOn(_)` is `Completed`; its date is the section's `date`.",
         "enum": [
           "overdue",
           "in_progress",
@@ -3602,12 +3602,18 @@
         "type": "object"
       },
       "ViewName": {
-        "description": "The views a thin client can ask for. Closed: an unknown name is invalid params.",
+        "description": "The views a thin client can ask for. `List` names one list in `ViewsGetParams::list`.",
         "enum": [
           "inbox",
-          "today"
+          "today",
+          "all",
+          "scheduled",
+          "done",
+          "next_3_days",
+          "list"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "ViewRow": {
         "properties": {
@@ -3698,6 +3704,14 @@
       },
       "ViewSection": {
         "properties": {
+          "date": {
+            "description": "The day of a `completed` section, which tells one such section from another.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "group": {
             "$ref": "#/components/schemas/SectionKey"
           },
@@ -3723,6 +3737,13 @@
       },
       "ViewsGetParams": {
         "properties": {
+          "list": {
+            "description": "The list's collection id; required for `list`, refused for every other view.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "view": {
             "$ref": "#/components/schemas/ViewName"
           }

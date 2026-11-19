@@ -7,17 +7,31 @@ use serde::{Deserialize, Serialize};
 use twydo_core::model::TaskKind;
 use twydo_core::views::DateGroup;
 
-/// The views a thin client can ask for. Closed: an unknown name is invalid params.
+/// The views a thin client can ask for. `List` names one list in `ViewsGetParams::list`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[schemars(transform = super::open_enum)]
 pub enum ViewName {
     Inbox,
     Today,
+    All,
+    Scheduled,
+    Done,
+    #[serde(rename = "next_3_days")]
+    Next3Days,
+    List,
+    /// A value this client does not know: a newer daemon sent it.
+    #[serde(other)]
+    #[schemars(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ViewsGetParams {
     pub view: ViewName,
+    /// The list's collection id; required for `list`, refused for every other view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -60,12 +74,15 @@ pub struct CaptureTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ViewSection {
     pub group: SectionKey,
+    /// The day of a `completed` section, which tells one such section from another.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<NaiveDate>,
     /// The header text; none for an ungrouped view.
     pub label: Option<String>,
     pub rows: Vec<ViewRow>,
 }
 
-/// One date group. `CompletedOn(_)` is `Completed`; its date is in the label.
+/// One date group. `CompletedOn(_)` is `Completed`; its date is the section's `date`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(transform = super::open_enum)]
