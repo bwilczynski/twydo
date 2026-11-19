@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/bwilczynski/twydo/compare/v0.6.0...v0.6.1) - 2026-11-19
+
+### Added
+
+- *(sync)* apply lists emptied on the server when nothing local is lost
+- *(daemon)* add views.list for thin clients
+- *(daemon)* serve every sidebar view from views.get
+- *(daemon)* add a sync summary to views.get
+- *(daemon)* log sync state changes to stderr
+- *(gateway)* allow views.list for phones and displays
+
 ## [0.6.0](https://github.com/bwilczynski/twydo/compare/v0.5.0...v0.6.0) - 2026-11-18
 
 ### Added
