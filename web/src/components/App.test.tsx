@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { signal } from "@preact/signals";
-import type { DataSource, Connection, Refusal, ViewName } from "../data";
+import type { DataSource, Connection, Refusal, ViewRef } from "../data";
 import type { ViewsGetResult, ViewRow } from "../gen/protocol";
 import { App } from "../App";
 
@@ -41,7 +41,7 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
   const connection = signal<Connection>("open");
   const fresh = signal(true);
   const ds = {
-    view: (n: ViewName) => (n === "today" ? today : inbox),
+    view: (n: ViewRef) => (n.view === "today" ? today : inbox),
     connection,
     fresh,
     refresh: vi.fn(async () => {}),
@@ -332,7 +332,7 @@ describe("polish", () => {
   it("an empty Today shows the calendar with today's day", () => {
     localStorage.setItem("twydo.tab", "today");
     const { ds } = fake();
-    (ds.view("today") as any).value = mkView("Today", [], "2026-11-17");
+    (ds.view({ view: "today" }) as any).value = mkView("Today", [], "2026-11-17");
     const { container } = render(<App ds={ds} />);
     expect(container.querySelector(".empty svg")!.textContent).toBe("17");
   });
@@ -418,7 +418,7 @@ describe("polish", () => {
   it("renders markup in a title as literal text", () => {
     const evil = "<img src=x onerror=alert(1)>";
     const { ds } = fake();
-    (ds.view("inbox") as any).value = mkView("Inbox", [row("u9", evil)]);
+    (ds.view({ view: "inbox" }) as any).value = mkView("Inbox", [row("u9", evil)]);
     const { container } = render(<App ds={ds} />);
     expect(screen.getByText(evil)).toBeTruthy();
     expect(container.querySelector("img")).toBeNull();
@@ -435,7 +435,7 @@ describe("sync warning", () => {
 
   it("shows sync warning when attention", () => {
     const { ds } = fake();
-    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    const inbox = ds.view({ view: "inbox" }) as unknown as { value: ViewsGetResult };
     inbox.value = { ...inbox.value, sync: failing };
     render(<App ds={ds} />);
     const alert = screen.getByRole("alert");
@@ -445,7 +445,7 @@ describe("sync warning", () => {
 
   it("no warning when all is well", () => {
     const { ds } = fake();
-    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    const inbox = ds.view({ view: "inbox" }) as unknown as { value: ViewsGetResult };
     inbox.value = { ...inbox.value, sync: { ...failing, attention: false } };
     render(<App ds={ds} />);
     expect(screen.queryByRole("alert")).toBeNull();
@@ -454,7 +454,7 @@ describe("sync warning", () => {
 
   it("warning clears on refetch", async () => {
     const { ds } = fake();
-    const inbox = ds.view("inbox") as unknown as { value: ViewsGetResult };
+    const inbox = ds.view({ view: "inbox" }) as unknown as { value: ViewsGetResult };
     inbox.value = { ...inbox.value, sync: failing };
     render(<App ds={ds} />);
     expect(screen.getByRole("alert")).toBeTruthy();
