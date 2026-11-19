@@ -180,3 +180,20 @@ input, textarea { font: inherit; color: inherit; }
   margin: 4px 0 0;
   color: var(--secondary);
 }
+
+.back {
+  display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -6px;
+  color: var(--accent); min-height: 44px;
+}
+.view-cell {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
+  padding: 8px 14px; text-align: left; border-bottom: 0.5px solid var(--separator);
+}
+.card li:last-child .view-cell { border-bottom: 0; }
+.view-bar { flex: none; width: 5px; height: 26px; border-radius: 3px; }
+.view-icon { flex: none; width: 22px; height: 22px; display: inline-flex; color: var(--accent); }
+.view-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.view-due { color: var(--danger); font-variant-numeric: tabular-nums; }
+.view-due + .view-total::before { content: "\2502"; color: var(--separator); margin-right: 6px; }
+.view-total { color: var(--secondary); font-variant-numeric: tabular-nums; }
+.view-chevron { flex: none; display: inline-flex; color: var(--separator); }
