@@ -89,6 +89,37 @@ test("capture from Inbox and from Today", async ({ page }, info) => {
   ).toBeVisible();
 });
 
+test.describe("views tab", () => {
+  // The daemon is shared with the other specs and the other colour scheme: leave it as found.
+  test.afterEach(async ({ page }) => {
+    const undo = page.getByRole("button", { name: "Undo" });
+    if (await undo.isVisible()) await undo.click();
+  });
+
+  test("opens a list and completes in it", async ({ page }) => {
+    const work = () => page.getByRole("button", { name: /^work/ });
+    await page.getByRole("tab", { name: "Views" }).click();
+    await expect(page.getByRole("heading", { name: "Views" })).toBeVisible();
+    for (const name of ["Inbox", "Today", "All"]) {
+      await expect(page.getByRole("button", { name })).toBeVisible();
+    }
+    await expect(work()).toBeVisible();
+    // The list's two tasks are due today: one count for due, one for open.
+    await expect(work().locator(".view-due")).toHaveText("2");
+    await expect(work().locator(".view-total")).toHaveText("2");
+    await work().click();
+    await expect(page.getByRole("heading", { name: "work" })).toBeVisible();
+
+    await page.getByRole("checkbox", { name: "Complete Synthetic due today" }).click();
+    await expect(page.getByRole("status")).toContainText('Completed "Synthetic due today"');
+
+    await page.getByRole("button", { name: "Views" }).click();
+    await expect(page.getByRole("heading", { name: "Views" })).toBeVisible();
+    await expect(work().locator(".view-due")).toHaveText("1");
+    await expect(work().locator(".view-total")).toHaveText("1");
+  });
+});
+
 // Last: it stops the daemon, and restarts it for whatever runs next.
 test("daemon stopped shows offline state", async ({ page }) => {
   test.setTimeout(60_000);
