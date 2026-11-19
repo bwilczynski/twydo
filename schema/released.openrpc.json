@@ -2932,7 +2932,7 @@
         "type": "object"
       },
       "SectionKey": {
-        "description": "One date group. `CompletedOn(_)` is `Completed`; its date is in the label.",
+        "description": "One date group. `CompletedOn(_)` is `Completed`; its date is the section's `date`.",
         "enum": [
           "overdue",
           "in_progress",
@@ -3373,6 +3373,36 @@
         ],
         "type": "object"
       },
+      "SyncSummary": {
+        "description": "A short, phone-sized account of sync, built from the same status the TUI status line reads.",
+        "properties": {
+          "attention": {
+            "description": "Something needs a person: a failing sync, a refused emptying, conflicts, sync off.",
+            "type": "boolean"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "headline": {
+            "type": "string"
+          },
+          "last_success": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "attention",
+          "headline"
+        ],
+        "type": "object"
+      },
       "SyncView": {
         "properties": {
           "auto": {
@@ -3572,12 +3602,18 @@
         "type": "object"
       },
       "ViewName": {
-        "description": "The views a thin client can ask for. Closed: an unknown name is invalid params.",
+        "description": "The views a thin client can ask for. `List` names one list in `ViewsGetParams::list`.",
         "enum": [
           "inbox",
-          "today"
+          "today",
+          "all",
+          "scheduled",
+          "done",
+          "next_3_days",
+          "list"
         ],
-        "type": "string"
+        "type": "string",
+        "x-open": true
       },
       "ViewRow": {
         "properties": {
@@ -3668,6 +3704,14 @@
       },
       "ViewSection": {
         "properties": {
+          "date": {
+            "description": "The day of a `completed` section, which tells one such section from another.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "group": {
             "$ref": "#/components/schemas/SectionKey"
           },
@@ -3691,8 +3735,34 @@
         ],
         "type": "object"
       },
+      "ViewsEntry": {
+        "anyOf": [
+          {
+            "properties": {
+              "heading": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/ViewsListItem"
+          }
+        ],
+        "description": "A heading, or a view to open with `views.get`."
+      },
       "ViewsGetParams": {
         "properties": {
+          "list": {
+            "description": "The list's collection id; required for `list`, refused for every other view.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "view": {
             "$ref": "#/components/schemas/ViewName"
           }
@@ -3740,6 +3810,17 @@
             },
             "type": "array"
           },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What sync needs from a person; absent when sync is not configured."
+          },
           "title": {
             "description": "`Today`, or the Inbox list's display name.",
             "type": "string"
@@ -3757,6 +3838,83 @@
           "title",
           "open_count",
           "sections"
+        ],
+        "type": "object"
+      },
+      "ViewsListItem": {
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`; a list's colour, none for the built-in views.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_count": {
+            "description": "The open tasks due today or overdue.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "open_count": {
+            "description": "The view's open tasks, as the sidebar counts them.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "view": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ViewsGetParams"
+              }
+            ],
+            "description": "The params that open this view through `views.get`."
+          }
+        },
+        "required": [
+          "view",
+          "name",
+          "open_count",
+          "due_count"
+        ],
+        "type": "object"
+      },
+      "ViewsListResult": {
+        "description": "`views.list`: the sidebar's entries, in display order, for a thin client's view picker.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ViewsEntry"
+            },
+            "type": "array"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "now": {
+            "description": "The daemon's clock, in the configured timezone.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "today": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision",
+          "now",
+          "today",
+          "entries"
         ],
         "type": "object"
       },
@@ -4422,6 +4580,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/WireSnapshot"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "views.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ViewsListResult"
         }
       },
       "x-lifecycle": false
