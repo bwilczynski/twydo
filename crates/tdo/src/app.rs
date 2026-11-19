@@ -15,7 +15,7 @@ pub use sync_state::ClientSync;
 
 pub use lists::{CollectionBackups, ListAction, ListCompletion};
 pub use newrow::NewRow;
-pub use twydo_core::views::{default_list, inbox_list};
+pub use twydo_core::views::{SidebarEntry, default_list, inbox_list, sidebar};
 
 use std::cell::Cell;
 
@@ -57,13 +57,6 @@ pub enum Mode {
     Command,
     /// The edit form is open.
     Insert,
-}
-
-/// One sidebar line: a group heading, or a selectable view.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SidebarEntry {
-    Heading(String),
-    Item(View),
 }
 
 /// The views behind the number keys 1-5.
@@ -308,56 +301,7 @@ impl App {
     /// order; the rest by display name under "Lists"), then the smart lists. The renderer
     /// draws exactly this, so navigation follows what is shown.
     pub fn sidebar_entries(&self) -> Vec<SidebarEntry> {
-        let s = &self.snapshot;
-        let shown = |id: &str| {
-            let p = s.config.list_prefs(id);
-            !p.archived && !p.hidden && s.collections.iter().any(|c| c.id == id)
-        };
-        let name = |c: &twydo_core::vdir::Collection| {
-            c.display_name.clone().unwrap_or_else(|| c.id.clone())
-        };
-        let inbox = inbox_list(s).filter(|id| shown(id));
-        let mut out: Vec<SidebarEntry> = inbox
-            .iter()
-            .map(|id| View::List(id.clone()))
-            .chain([View::Today, View::All, View::Scheduled, View::Done])
-            .map(SidebarEntry::Item)
-            .collect();
-
-        let mut placed: Vec<&str> = inbox.iter().map(String::as_str).collect();
-        for g in &s.config.groups {
-            let mut lists: Vec<&str> = Vec::new();
-            for l in &g.lists {
-                if shown(l) && !placed.contains(&l.as_str()) && !lists.contains(&l.as_str()) {
-                    lists.push(l);
-                }
-            }
-            if lists.is_empty() {
-                continue;
-            }
-            out.push(SidebarEntry::Heading(g.name.clone()));
-            for l in lists {
-                placed.push(l);
-                out.push(SidebarEntry::Item(View::List(l.to_string())));
-            }
-        }
-        let mut rest: Vec<_> = s
-            .collections
-            .iter()
-            .filter(|c| shown(&c.id) && !placed.contains(&c.id.as_str()))
-            .collect();
-        rest.sort_by_key(|c| (name(c).to_lowercase(), c.id.clone()));
-        if !rest.is_empty() {
-            out.push(SidebarEntry::Heading("Lists".into()));
-            out.extend(
-                rest.iter()
-                    .map(|c| SidebarEntry::Item(View::List(c.id.clone()))),
-            );
-        }
-
-        out.push(SidebarEntry::Heading("Smart lists".into()));
-        out.push(SidebarEntry::Item(View::Next3Days));
-        out
+        sidebar(&self.snapshot)
     }
 
     /// The selectable sidebar entries, in display order; `sidebar_cursor` indexes this.

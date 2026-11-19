@@ -19,7 +19,7 @@ use ratatui::layout::{Constraint, Flex, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
-use twydo_core::views::{Snapshot, View};
+use twydo_core::views::Snapshot;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, Pane};
@@ -184,26 +184,7 @@ pub(crate) fn pane_block(title: String, app: &App, pane: Pane) -> Block<'static>
         ))
 }
 
-/// The sidebar / status name of a view.
-pub(crate) fn view_name(snapshot: &Snapshot, view: &View) -> String {
-    match view {
-        View::Today => "Today".into(),
-        View::All => "All".into(),
-        View::Scheduled => "Scheduled".into(),
-        View::Done => "Done".into(),
-        View::Next3Days => "Next 3 Days".into(),
-        View::List(id) => list_name(snapshot, id),
-    }
-}
-
-pub(crate) fn list_name(snapshot: &Snapshot, id: &str) -> String {
-    snapshot
-        .collections
-        .iter()
-        .find(|c| c.id == id)
-        .and_then(|c| c.display_name.clone())
-        .unwrap_or_else(|| id.to_string())
-}
+pub(crate) use twydo_core::views::{list_name, view_name};
 
 /// The list colour for a `▌` bar, or dark grey when the list has none.
 pub(crate) fn bar_color(snapshot: &Snapshot, id: &str) -> Color {

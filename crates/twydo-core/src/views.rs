@@ -341,6 +341,89 @@ pub fn inbox_list(snap: &Snapshot) -> Option<String> {
     })
 }
 
+/// One sidebar line: a group heading, or a selectable view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SidebarEntry {
+    Heading(String),
+    Item(View),
+}
+
+/// The sidebar in display order: the focus lists (the visible [`inbox_list`], then the four
+/// main views), then the other visible lists (each configured group under its heading, in
+/// order; the rest by display name under "Lists"), then the smart lists. The renderer
+/// draws exactly this, so navigation follows what is shown.
+pub fn sidebar(snap: &Snapshot) -> Vec<SidebarEntry> {
+    let s = snap;
+    let shown = |id: &str| {
+        let p = s.config.list_prefs(id);
+        !p.archived && !p.hidden && s.collections.iter().any(|c| c.id == id)
+    };
+    let name = |c: &Collection| c.display_name.clone().unwrap_or_else(|| c.id.clone());
+    let inbox = inbox_list(s).filter(|id| shown(id));
+    let mut out: Vec<SidebarEntry> = inbox
+        .iter()
+        .map(|id| View::List(id.clone()))
+        .chain([View::Today, View::All, View::Scheduled, View::Done])
+        .map(SidebarEntry::Item)
+        .collect();
+
+    let mut placed: Vec<&str> = inbox.iter().map(String::as_str).collect();
+    for g in &s.config.groups {
+        let mut lists: Vec<&str> = Vec::new();
+        for l in &g.lists {
+            if shown(l) && !placed.contains(&l.as_str()) && !lists.contains(&l.as_str()) {
+                lists.push(l);
+            }
+        }
+        if lists.is_empty() {
+            continue;
+        }
+        out.push(SidebarEntry::Heading(g.name.clone()));
+        for l in lists {
+            placed.push(l);
+            out.push(SidebarEntry::Item(View::List(l.to_string())));
+        }
+    }
+    let mut rest: Vec<_> = s
+        .collections
+        .iter()
+        .filter(|c| shown(&c.id) && !placed.contains(&c.id.as_str()))
+        .collect();
+    rest.sort_by_key(|c| (name(c).to_lowercase(), c.id.clone()));
+    if !rest.is_empty() {
+        out.push(SidebarEntry::Heading("Lists".into()));
+        out.extend(
+            rest.iter()
+                .map(|c| SidebarEntry::Item(View::List(c.id.clone()))),
+        );
+    }
+
+    out.push(SidebarEntry::Heading("Smart lists".into()));
+    out.push(SidebarEntry::Item(View::Next3Days));
+    out
+}
+
+/// The sidebar / status name of a view.
+pub fn view_name(snap: &Snapshot, view: &View) -> String {
+    match view {
+        View::Today => "Today".into(),
+        View::All => "All".into(),
+        View::Scheduled => "Scheduled".into(),
+        View::Done => "Done".into(),
+        View::Next3Days => "Next 3 Days".into(),
+        View::List(id) => list_name(snap, id),
+    }
+}
+
+/// A list's display name, or its id when it has none.
+pub fn list_name(snap: &Snapshot, id: &str) -> String {
+    snap.collections
+        .iter()
+        .find(|c| c.id == id)
+        .and_then(|c| c.display_name.clone())
+        .unwrap_or_else(|| id.to_string())
+}
+
 /// The list new tasks go to outside a list: the [`inbox_list`], else the first list. Empty
 /// when there is no list.
 pub fn default_list(snap: &Snapshot) -> String {
