@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDataSource, newRequestId, type DataSource } from "./data";
+import { createDataSource, newRequestId, viewKey, type DataSource } from "./data";
 import { asWs, FakeRpcError, FakeWebSocket } from "./testutil";
 
 const view = (title: string, revision = 1) => ({
@@ -25,7 +25,8 @@ const made: DataSource[] = [];
 function setup() {
   FakeWebSocket.handlers = {
     "events.subscribe": () => ({}),
-    "views.get": (p) => view(p.view === "today" ? "Today" : "Inbox", revision),
+    "views.get": (p) => view(p.view === "today" ? "Today" : p.view === "list" ? "List" : "Inbox", revision),
+    "views.list": () => ({ epoch: "e1", revision, now: "2026-11-17T09:00:00+01:00", today: "2026-11-17", entries: [{ heading: "Lists" }] }),
     "op.submit": () => ({ outcome: "Applied", op_id: "o1", revision: 2, message: "ok" }),
     "op.undo": () => ({ outcome: "Applied", op_id: "o2", revision: 3, message: "ok" }),
   };
@@ -84,8 +85,8 @@ describe("data source", () => {
     const ws = FakeWebSocket.last;
     expect(ws.calls("events.subscribe")).toHaveLength(1);
     expect(ws.calls("views.get")[0]!.params).toEqual({ view: "inbox" });
-    expect(ds.view("inbox").value?.title).toBe("Inbox");
-    expect(ds.view("today").value).toBeUndefined();
+    expect(ds.view({ view: "inbox" }).value?.title).toBe("Inbox");
+    expect(ds.view({ view: "today" }).value).toBeUndefined();
   });
 
   it("refetches on data.changed, status.changed and missed", async () => {
@@ -111,8 +112,8 @@ describe("data source", () => {
   it("refresh fetches the named view and makes it the visible one", async () => {
     const ds = setup();
     await opened();
-    await ds.refresh("today");
-    expect(ds.view("today").value?.title).toBe("Today");
+    await ds.refresh({ view: "today" });
+    expect(ds.view({ view: "today" }).value?.title).toBe("Today");
     FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
     await flush();
     expect(viewsGets().at(-1)!.params).toEqual({ view: "today" });
@@ -151,7 +152,7 @@ describe("data source", () => {
     const ds = setup();
     await opened();
     revision = 7;
-    await ds.refresh("inbox");
+    await ds.refresh({ view: "inbox" });
     const r = await ds.complete("uid-1");
     expect(r.outcome).toBe("Applied");
     const m = FakeWebSocket.last.calls("op.submit")[0]!;
@@ -276,7 +277,7 @@ describe("data source", () => {
     await expect(ds.complete("uid-1")).rejects.toMatchObject({ data: { kind: "stale" } });
     await flush();
     expect(viewsGets()).toHaveLength(n + 1);
-    expect(ds.view("inbox").value?.revision).toBe(9);
+    expect(ds.view({ view: "inbox" }).value?.revision).toBe(9);
   });
 
   it("create in Inbox sends no due date", async () => {
@@ -344,9 +345,9 @@ describe("data source", () => {
     const ds = setup();
     await opened(); // inbox at 1
     revision = 1;
-    await ds.refresh("today"); // today cached at 1
+    await ds.refresh({ view: "today" }); // today cached at 1
     revision = 2;
-    await ds.refresh("inbox"); // inbox fetched at 2
+    await ds.refresh({ view: "inbox" }); // inbox fetched at 2
     // Back to Today with its refresh still pending.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -362,9 +363,9 @@ describe("data source", () => {
       }
       orig(d);
     };
-    const refreshing = ds.refresh("today");
+    const refreshing = ds.refresh({ view: "today" });
     await flush();
-    expect(ds.view("today").value?.revision).toBe(1);
+    expect(ds.view({ view: "today" }).value?.revision).toBe(1);
     const p = ds.complete("uid-1");
     await flush();
     expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(1);
@@ -377,7 +378,7 @@ describe("data source", () => {
   it("switching to a cached view is not fresh until its fetch completes", async () => {
     const ds = setup();
     await opened();
-    await ds.refresh("today");
+    await ds.refresh({ view: "today" });
     expect(ds.fresh.value).toBe(true);
     const orig = FakeWebSocket.last.send.bind(FakeWebSocket.last);
     let release!: () => void;
@@ -386,7 +387,7 @@ describe("data source", () => {
       if (JSON.parse(d).method === "views.get") void gate.then(() => orig(d));
       else orig(d);
     };
-    const p = ds.refresh("inbox");
+    const p = ds.refresh({ view: "inbox" });
     expect(ds.fresh.value).toBe(false);
     await flush();
     expect(ds.fresh.value).toBe(false);
@@ -404,13 +405,13 @@ describe("data source", () => {
       if (JSON.parse(d).method === "views.get") held.push(d);
       else orig(d);
     };
-    const first = ds.refresh("today"); // in flight, held
+    const first = ds.refresh({ view: "today" }); // in flight, held
     await flush();
-    const second = ds.refresh("inbox"); // visible is inbox again; coalesced behind the first
+    const second = ds.refresh({ view: "inbox" }); // visible is inbox again; coalesced behind the first
     expect(ds.fresh.value).toBe(false);
     orig(held[0]!); // today's reply arrives while inbox is visible
     await flush();
-    expect(ds.view("today").value).toBeDefined();
+    expect(ds.view({ view: "today" }).value).toBeDefined();
     expect(ds.fresh.value).toBe(false);
     await flush();
     orig(held[1]!); // the visible view's own fetch completes
@@ -439,7 +440,7 @@ describe("data source", () => {
     expect(FakeWebSocket.instances).toHaveLength(2);
     FakeWebSocket.last.open();
     await flush();
-    expect(ds.view("inbox").value?.revision).toBe(3);
+    expect(ds.view({ view: "inbox" }).value?.revision).toBe(3);
     expect(ds.fresh.value).toBe(true);
   });
 
@@ -535,5 +536,116 @@ describe("data source", () => {
     await ds.complete("a");
     const ids = FakeWebSocket.instances.flatMap((w) => w.calls("op.submit")).map((m) => m.params.request_id);
     expect(new Set(ids).size).toBe(3);
+  });
+});
+
+describe("all views", () => {
+  const viewsLists = () => FakeWebSocket.instances.flatMap((w) => w.calls("views.list"));
+
+  it("view_key_forms", () => {
+    expect(viewKey({ view: "list", list: "w" })).toBe("list:w");
+    expect(viewKey({ view: "done" })).toBe("done");
+  });
+
+  it("refresh_views_fetches_views_list", async () => {
+    const ds = setup();
+    await opened();
+    await ds.refresh("views");
+    expect(viewsLists().at(-1)!.params).toEqual({});
+    expect(ds.viewsList.value?.entries).toEqual([{ heading: "Lists" }]);
+  });
+
+  it("refresh_list_sends_list_param", async () => {
+    const ds = setup();
+    await opened();
+    const before = ds.view({ view: "inbox" }).value;
+    await ds.refresh({ view: "list", list: "w" });
+    expect(viewsGets().at(-1)!.params).toEqual({ view: "list", list: "w" });
+    expect(ds.view({ view: "list", list: "w" }).value?.title).toBe("List");
+    expect(ds.view({ view: "inbox" }).value).toBe(before);
+  });
+
+  it("data_changed_refetches_visible", async () => {
+    const ds = setup();
+    await opened();
+    await ds.refresh("views");
+    const gets = viewsGets().length;
+    const lists = viewsLists().length;
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    expect(viewsLists()).toHaveLength(lists + 1);
+    expect(viewsGets()).toHaveLength(gets);
+  });
+
+  it("gone_list_reports_once", async () => {
+    const ds = setup();
+    await opened();
+    const ref = { view: "list" as const, list: "w" };
+    await ds.refresh(ref);
+    expect(ds.view(ref).value).toBeDefined();
+    const gone = vi.fn();
+    ds.onGone(gone);
+    FakeWebSocket.handlers["views.get"] = () => {
+      throw new FakeRpcError(-32602, "no such list", "invalid");
+    };
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 }); // a quiet refetch
+    await flush();
+    expect(gone).toHaveBeenCalledTimes(1);
+    expect(gone).toHaveBeenCalledWith(ref);
+    expect(ds.view(ref).value).toBeUndefined();
+    // Visible is now the views list: a later refetch asks for it and reports nothing more.
+    const lists = viewsLists().length;
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 2 });
+    await flush();
+    expect(viewsLists()).toHaveLength(lists + 1);
+    expect(gone).toHaveBeenCalledTimes(1);
+  });
+
+  it("gone_list_not_shown_is_not_reported_and_keeps_the_coalesced_fetch", async () => {
+    const ds = setup();
+    await opened();
+    const ref = { view: "list" as const, list: "w" };
+    await ds.refresh(ref);
+    const gone = vi.fn();
+    ds.onGone(gone);
+    const orig = FakeWebSocket.last.send.bind(FakeWebSocket.last);
+    const held: string[] = [];
+    FakeWebSocket.last.send = (d: string) => {
+      if (JSON.parse(d).method === "views.get") held.push(d);
+      else orig(d);
+    };
+    const first = ds.refresh(ref); // in flight, held
+    await flush();
+    const second = ds.refresh({ view: "today" }); // navigated away; coalesced
+    FakeWebSocket.last.fail(JSON.parse(held[0]!).id, -32602, "no such list", "invalid");
+    await flush();
+    orig(held[1]!);
+    await Promise.all([first, second]);
+    expect(gone).not.toHaveBeenCalled();
+    expect(held).toHaveLength(2);
+    expect(JSON.parse(held[1]!).params).toEqual({ view: "today" });
+    expect(ds.view({ view: "today" }).value?.title).toBe("Today");
+    expect(ds.view(ref).value).toBeUndefined();
+  });
+
+  it("fresh_is_false_after_refresh_views_until_views_list_answers", async () => {
+    const ds = setup();
+    await opened();
+    expect(ds.fresh.value).toBe(true);
+    const p = ds.refresh("views");
+    expect(ds.fresh.value).toBe(false);
+    await p;
+    expect(ds.fresh.value).toBe(true);
+  });
+
+  it("complete_uses_opened_view_basis", async () => {
+    const ds = setup();
+    await opened(); // inbox at 1
+    revision = 3;
+    await ds.refresh({ view: "inbox" });
+    revision = 7;
+    await ds.refresh({ view: "list", list: "w" });
+    await ds.complete("uid-1");
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(7);
   });
 });

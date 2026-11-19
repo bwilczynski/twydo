@@ -1,16 +1,17 @@
-import type { ViewName } from "../data";
 import { CalendarDayIcon, MailboxIcon } from "./Icons";
+
+export type Tab = "inbox" | "today";
 
 export function TabBar({
   tab,
   day,
   onSelect,
 }: {
-  tab: ViewName;
+  tab: Tab;
   day: string | number;
-  onSelect: (t: ViewName) => void;
+  onSelect: (t: Tab) => void;
 }) {
-  const btn = (name: ViewName, label: string, icon: preact.ComponentChildren) => (
+  const btn = (name: Tab, label: string, icon: preact.ComponentChildren) => (
     <button
       role="tab"
       type="button"

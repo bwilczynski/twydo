@@ -5,23 +5,39 @@ import type {
   CaptureTarget,
   NewTask,
   Op,
+  ViewsGetParams,
   ViewsGetResult,
+  ViewsListResult,
   WriteResult,
 } from "./gen/protocol";
 import { RpcSocket } from "./rpc";
 
-export type ViewName = "inbox" | "today";
+/** One view as `views.get` takes it; a list also names its collection. */
+export type ViewRef = ViewsGetParams;
+/** What the screen shows: a view, or the Views tab's own list of views. */
+export type Visible = ViewRef | "views";
+export const viewKey = (ref: ViewRef): string => (ref.view === "list" ? `list:${ref.list}` : ref.view);
 export type Connection = "connecting" | "open" | "closed" | "unpaired";
 
+const sameTarget = (a: Visible, b: Visible): boolean =>
+  a === "views" || b === "views" ? a === b : viewKey(a) === viewKey(b);
+
 export interface DataSource {
-  view(name: ViewName): ReadonlySignal<ViewsGetResult | undefined>;
+  view(ref: ViewRef): ReadonlySignal<ViewsGetResult | undefined>;
+  /** The sidebar entries of the Views tab, once fetched. */
+  viewsList: ReadonlySignal<ViewsListResult | undefined>;
   connection: ReadonlySignal<Connection>;
   /**
    * True only while the visible view was fetched successfully on the current open socket; false
    * when hidden, closed, or after switching to a view whose fetch has not completed.
    */
   fresh: ReadonlySignal<boolean>;
-  refresh(name: ViewName): Promise<void>;
+  refresh(v: Visible): Promise<void>;
+  /**
+   * The shown list view was refused as invalid (the list is gone). Its cached entry is dropped
+   * and the visible target becomes "views", so this fires once. Fires for quiet refetches too. Returns an unsubscribe function.
+   */
+  onGone(cb: (ref: ViewRef) => void): () => void;
   /** based_on is the epoch/revision of the view displayed when called, never a newer fetch. */
   complete(uid: string): Promise<WriteResult>;
   create(title: string, note: string, capture: CaptureTarget): Promise<WriteResult>;
@@ -75,12 +91,17 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   const fetchFn = opts.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
   const sessionUrl = new URL("/session", url.replace(/^ws/, "http")).toString();
 
-  const views: Record<ViewName, ReturnType<typeof signal<ViewsGetResult | undefined>>> = {
-    inbox: signal(undefined),
-    today: signal(undefined),
+  const views = new Map<string, ReturnType<typeof signal<ViewsGetResult | undefined>>>();
+  const viewSignal = (ref: ViewRef) => {
+    const key = viewKey(ref);
+    let s = views.get(key);
+    if (!s) views.set(key, (s = signal<ViewsGetResult | undefined>(undefined)));
+    return s;
   };
+  const viewsList = signal<ViewsListResult | undefined>(undefined);
+  const goneCbs = new Set<(ref: ViewRef) => void>();
   const connection = signal<Connection>("connecting");
-  let visible: ViewName = "inbox";
+  let visible: Visible = { view: "inbox" };
   let unpaired = false;
   const fresh = signal(false);
   const now = opts.now ?? Date.now;
@@ -118,11 +139,32 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
       try {
         do {
           again = false;
-          const name = visible;
-          const v = await sock.call<ViewsGetResult>("views.get", { view: name });
-          views[name].value = v;
+          const target = visible;
+          if (target === "views") {
+            viewsList.value = await sock.call<ViewsListResult>("views.list", {});
+          } else {
+            const params: ViewsGetParams = target.view === "list" ? { view: "list", list: target.list } : { view: target.view };
+            let v: ViewsGetResult;
+            try {
+              v = await sock.call<ViewsGetResult>("views.get", params);
+            } catch (e) {
+              if (target.view !== "list" || (e as { data?: { kind?: string } }).data?.kind !== "invalid") throw e;
+              viewSignal(target).value = undefined;
+              if (!sameTarget(target, visible)) {
+                // Navigated away meanwhile: nothing to report; serve the coalesced fetch if any.
+                if (again) continue;
+                return;
+              }
+              // Report once: later refetches fetch the views list instead of the gone list.
+              visible = "views";
+              for (const cb of goneCbs) cb(target);
+              if (again) continue;
+              throw e;
+            }
+            viewSignal(target).value = v;
+          }
           // Only the visible view's own fetch makes it fresh; another view's does not.
-          if (sock.current === "open" && name === visible) fresh.value = true;
+          if (sock.current === "open" && sameTarget(target, visible)) fresh.value = true;
         } while (again);
       } finally {
         fetching = undefined;
@@ -197,14 +239,16 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     // The basis is what the user sees now, captured at invocation; a newer fetch never replaces
     // it (the daemon refuses stale writes). With no view displayed yet, nothing was seen, so
     // the first fetch below supplies it.
-    const shown = views[visible].value;
+    // A views list carries no basis; the opened view's does.
+    const basis = visible === "views" ? undefined : viewSignal(visible);
+    const shown = basis?.value;
     let basedOn: BasedOn | undefined = shown && { epoch: shown.epoch, revision: shown.revision };
     pending.set(mine.id, what);
     // Wait for the connection, then for data no older than this socket.
     await sock.ready(READY_MS);
     if (method === "op.submit" && !basedOn) {
       await fetchVisible();
-      const v = views[visible].value;
+      const v = visible === "views" ? undefined : viewSignal(visible).value;
       if (v) basedOn = { epoch: v.epoch, revision: v.revision };
     }
     const params =
@@ -232,13 +276,18 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   }
 
   return {
-    view: (name) => views[name],
+    view: (ref) => viewSignal(ref),
+    viewsList,
     connection,
     fresh,
-    refresh(name) {
-      if (name !== visible) fresh.value = false; // the cached view is unconfirmed until fetched
-      visible = name;
+    refresh(v) {
+      if (!sameTarget(visible, v)) fresh.value = false; // unconfirmed until fetched
+      visible = v;
       return fetchVisible();
+    },
+    onGone(cb) {
+      goneCbs.add(cb);
+      return () => goneCbs.delete(cb);
     },
     complete(uid) {
       const op: Op = { Complete: { uid } };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import type { DataSource, ViewName } from "./data";
+import type { DataSource } from "./data";
 import type { ViewRow } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
 import { CaptureSheet } from "./components/CaptureSheet";
@@ -8,12 +8,12 @@ import { CalendarDayIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./component
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { SyncWarning } from "./components/SyncWarning";
-import { dayOf, TabBar } from "./components/TabBar";
+import { dayOf, TabBar, type Tab } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
 
 const TAB_KEY = "twydo.tab";
 
-function loadTab(): ViewName {
+function loadTab(): Tab {
   try {
     return localStorage.getItem(TAB_KEY) === "today" ? "today" : "inbox";
   } catch {
@@ -25,7 +25,7 @@ let bannerSeq = 0;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function App({ ds }: { ds: DataSource }) {
-  const [tab, setTab] = useState<ViewName>(loadTab);
+  const [tab, setTab] = useState<Tab>(loadTab);
   // Rows ticked locally. The value is the revision of the write's answer (null while it is in
   // flight): once a view that new arrives, the row's own `completed`/`pending` is trusted.
   const [done, setDone] = useState<Map<string, number | null>>(new Map());
@@ -37,12 +37,12 @@ export function App({ ds }: { ds: DataSource }) {
   const [capturing, setCapturing] = useState<{ initial?: { title: string; note: string } }>();
 
   const connection = ds.connection.value;
-  const view = ds.view(tab).value;
+  const view = ds.view({ view: tab }).value;
   // Any view will do for the date; prefer the one on screen.
-  const today = view?.today ?? ds.view("inbox").value?.today ?? ds.view("today").value?.today;
+  const today = view?.today ?? ds.view({ view: "inbox" }).value?.today ?? ds.view({ view: "today" }).value?.today;
 
   useEffect(() => {
-    ds.refresh(tab).catch(() => {});
+    ds.refresh({ view: tab }).catch(() => {});
   }, [tab]);
 
   // A row the view no longer has is gone for good; forget its local state.
@@ -95,7 +95,7 @@ export function App({ ds }: { ds: DataSource }) {
     }
   };
 
-  const select = (t: ViewName) => {
+  const select = (t: Tab) => {
     setTab(t);
     try {
       localStorage.setItem(TAB_KEY, t);
@@ -109,7 +109,7 @@ export function App({ ds }: { ds: DataSource }) {
     setBusy((b) => new Set(b).add(row.uid));
     try {
       const r = await track(() => ds.complete(row.uid));
-      const now = ds.view(tab).value;
+      const now = ds.view({ view: tab }).value;
       setDone((d) => {
         if (!d.has(row.uid)) return d;
         const n = new Map(d);
@@ -212,7 +212,7 @@ export function App({ ds }: { ds: DataSource }) {
   );
 }
 
-function EmptyList({ tab, day, canAdd }: { tab: ViewName; day: string; canAdd: boolean }) {
+function EmptyList({ tab, day, canAdd }: { tab: Tab; day: string; canAdd: boolean }) {
   return (
     <div class="empty">
       <span class="empty-icon">
