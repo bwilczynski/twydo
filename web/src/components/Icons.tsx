@@ -63,6 +63,36 @@ export function CalendarDayIcon({ day, size }: { day: number | string; size?: nu
   );
 }
 
+/** A bulleted list: the Views tab, and the empty state of views without their own icon. */
+export function ListIcon({ size }: { size?: number }) {
+  return (
+    <Svg size={size}>
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </Svg>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <Svg size={16}>
+      <path d="m9 18 6-6-6-6" />
+    </Svg>
+  );
+}
+
+export function ChevronLeftIcon() {
+  return (
+    <Svg size={22}>
+      <path d="m15 18-6-6 6-6" />
+    </Svg>
+  );
+}
+
 export function PlusIcon() {
   return (
     <Svg>

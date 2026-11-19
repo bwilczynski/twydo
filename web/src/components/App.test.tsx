@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { signal } from "@preact/signals";
 import type { DataSource, Connection, Refusal, ViewRef } from "../data";
-import type { ViewsGetResult, ViewRow } from "../gen/protocol";
+import type { ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
 import { App } from "../App";
 
 const row = (uid: string, title: string, extra: Partial<ViewRow> = {}): ViewRow => ({
@@ -31,6 +31,21 @@ const mkView = (title: string, rows: ViewRow[], due: string | null = null): View
   capture: { collection: "c1", name: "Inbox", due },
 });
 
+const viewsListResult = (): ViewsListResult => ({
+  epoch: "e",
+  revision: 1,
+  now: "2026-11-17T09:00:00+01:00",
+  today: "2026-11-17",
+  entries: [
+    { view: { view: "inbox" }, name: "Inbox", color: null, open_count: 3, due_count: 0 },
+    { view: { view: "today" }, name: "Today", color: null, open_count: 5, due_count: 2 },
+    { view: { view: "all" }, name: "All", color: null, open_count: 0, due_count: 0 },
+    { heading: "Lists" },
+    { view: { view: "list", list: "c9" }, name: "Bills", color: "#ff0000", open_count: 4, due_count: 0 },
+  ],
+});
+
+let gone: (r: ViewRef) => void = () => {};
 let refusal: (r: Refusal) => void = () => {};
 
 function fake(over: Partial<Record<string, unknown>> = {}) {
@@ -38,10 +53,18 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     mkView("Inbox", [row("u1", "Buy milk", { note: "2%" }), row("u2", "Call the plumber")]),
   );
   const today = signal<ViewsGetResult | undefined>(mkView("Today", [row("u3", "Pay the invoice")], "2026-11-17"));
+  const all = signal<ViewsGetResult | undefined>(mkView("All", [row("u4", "Everything else")]));
+  const bills = signal<ViewsGetResult | undefined>(mkView("Bills", [row("u5", "Pay rent")]));
   const connection = signal<Connection>("open");
   const fresh = signal(true);
   const ds = {
-    view: (n: ViewRef) => (n.view === "today" ? today : inbox),
+    view: (n: ViewRef) =>
+      n.view === "today" ? today : n.view === "all" ? all : n.view === "list" ? bills : inbox,
+    viewsList: signal(viewsListResult()),
+    onGone: vi.fn((cb: (r: ViewRef) => void) => {
+      gone = cb;
+      return () => {};
+    }),
     connection,
     fresh,
     refresh: vi.fn(async () => {}),
@@ -55,7 +78,7 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     dispose: vi.fn(),
     ...over,
   } as unknown as DataSource & { complete: any; create: any; undo: any };
-  return { ds, connection, fresh, inbox };
+  return { ds, connection, fresh, inbox, bills };
 }
 
 beforeEach(() => localStorage.clear());
@@ -65,11 +88,11 @@ afterEach(() => {
 });
 
 describe("tabs", () => {
-  it("tabs are Inbox then Today with aria-labels", () => {
+  it("tabs are Inbox, Today then Views with aria-labels", () => {
     const { ds } = fake();
     render(<App ds={ds} />);
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.getAttribute("aria-label"))).toEqual(["Inbox", "Today"]);
+    expect(tabs.map((t) => t.getAttribute("aria-label"))).toEqual(["Inbox", "Today", "Views"]);
     expect(tabs[0]!.getAttribute("aria-selected")).toBe("true");
   });
 
@@ -460,5 +483,162 @@ describe("sync warning", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
     inbox.value = { ...inbox.value, sync: { attention: false, headline: "Synced" } };
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+describe("views tab", () => {
+  const openViewsTab = () => fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+  const back = () => screen.queryByRole("button", { name: "Views" });
+
+  it("lists headings and one button per entry with its counts", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(screen.getByText("Lists")).toBeTruthy();
+    const today = screen.getByRole("button", { name: /Today/ });
+    expect(today.querySelector(".view-due")!.textContent).toBe("2");
+    expect(today.querySelector(".view-due")!.getAttribute("aria-label")).toBe("2 due");
+    expect(today.querySelector(".view-total")!.textContent).toBe("5");
+    expect(today.textContent!.indexOf("2")).toBeLessThan(today.textContent!.indexOf("5"));
+    expect(screen.getByRole("button", { name: /Bills/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /All/ }).textContent).toBe("All");
+  });
+
+  it("tapping an entry opens the view with a back button", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    fireEvent.click(screen.getByRole("button", { name: /All/ }));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("All");
+    expect(screen.getByText("Everything else")).toBeTruthy();
+    fireEvent.click(back()!);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(back()).toBeNull();
+  });
+
+  it("the Inbox entry opens inside the Views tab", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    fireEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+    expect(screen.getByRole("tab", { name: "Views" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Buy milk")).toBeTruthy();
+    expect(back()).toBeTruthy();
+  });
+
+  it("tapping the Views tab again pops to the list", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    fireEvent.click(screen.getByRole("button", { name: /All/ }));
+    openViewsTab();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+  });
+
+  it("an open view survives a tab switch and a reload", () => {
+    const { ds } = fake();
+    const first = render(<App ds={ds} />);
+    openViewsTab();
+    fireEvent.click(screen.getByRole("button", { name: /All/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "Today" }));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Today");
+    openViewsTab();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("All");
+    first.unmount();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("All");
+  });
+
+  it("dates the tab icon from the views list on a cold reload into it", () => {
+    const { ds } = fake();
+    localStorage.setItem("twydo.tab", "views");
+    (ds.view({ view: "inbox" }) as any).value = undefined;
+    (ds.view({ view: "today" }) as any).value = undefined;
+    (ds.viewsList as any).value = { ...viewsListResult(), today: "2026-11-23" };
+    render(<App ds={ds} />);
+    expect(screen.getByLabelText("Today").textContent).toContain("23");
+  });
+
+  it("a deleted open list pops back with a banner", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    fireEvent.click(screen.getByRole("button", { name: /Bills/ }));
+    expect(localStorage.getItem("twydo.open")).toContain("c9");
+    gone({ view: "list", list: "c9" });
+    expect(await screen.findByText("That list is gone")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(localStorage.getItem("twydo.open")).toBeNull();
+  });
+
+  it("a remembered list that is gone pops back on the first fetch", async () => {
+    localStorage.setItem("twydo.tab", "views");
+    localStorage.setItem("twydo.open", JSON.stringify({ view: "list", list: "c9" }));
+    const { ds } = fake({
+      refresh: vi.fn(async (v: unknown) => {
+        if (v !== "views") gone({ view: "list", list: "c9" });
+      }),
+    });
+    render(<App ds={ds} />);
+    expect(await screen.findByText("That list is gone")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+  });
+
+  it("malformed remembered state counts as absent", () => {
+    localStorage.setItem("twydo.tab", "views");
+    localStorage.setItem("twydo.open", "{nope");
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+  });
+
+  it("has no New task button on the list, but has one in an opened view", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openViewsTab();
+    expect(screen.queryByLabelText("New task")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /All/ }));
+    expect(screen.getByLabelText("New task")).toBeTruthy();
+  });
+
+  it("shows the spinner while the views list first loads", () => {
+    const { ds } = fake({ viewsList: signal(undefined) });
+    render(<App ds={ds} />);
+    openViewsTab();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(screen.getByRole("status", { name: "Loading" })).toBeTruthy();
+  });
+
+  it("titles an opened view from the list until its first fetch", () => {
+    localStorage.setItem("twydo.tab", "views");
+    localStorage.setItem("twydo.open", JSON.stringify({ view: "list", list: "c9" }));
+    const { ds, bills } = fake();
+    bills.value = undefined;
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Bills");
+  });
+
+  it("keeps the title's height when nothing names the view yet", () => {
+    localStorage.setItem("twydo.tab", "views");
+    localStorage.setItem("twydo.open", JSON.stringify({ view: "list", list: "zz" }));
+    const { ds, bills } = fake({ viewsList: signal(undefined) });
+    (bills as any).value = undefined;
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("\u00a0");
+  });
+
+  it.each([
+    [{ view: "bogus" }],
+    [{ view: "list" }],
+    [{ view: "all", list: "c9" }],
+    [{ view: "list", list: 5 }],
+  ])("remembered %j is treated as absent", (stored) => {
+    localStorage.setItem("twydo.tab", "views");
+    localStorage.setItem("twydo.open", JSON.stringify(stored));
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(screen.getByText("Lists")).toBeTruthy();
   });
 });

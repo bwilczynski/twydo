@@ -61,7 +61,7 @@ export function TaskList({
   return (
     <>
       {sections.map((s) => (
-        <section key={s.group} class="group">
+        <section key={s.id} class="group">
           {s.label && <h2>{s.label}</h2>}
           <ul class="card">
             {s.rows.map(({ row: r, leaving: l }) => (

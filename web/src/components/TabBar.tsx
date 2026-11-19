@@ -1,6 +1,6 @@
-import { CalendarDayIcon, MailboxIcon } from "./Icons";
+import { CalendarDayIcon, ListIcon, MailboxIcon } from "./Icons";
 
-export type Tab = "inbox" | "today";
+export type Tab = "inbox" | "today" | "views";
 
 export function TabBar({
   tab,
@@ -27,6 +27,7 @@ export function TabBar({
     <nav class="tabbar" role="tablist">
       {btn("inbox", "Inbox", <MailboxIcon />)}
       {btn("today", "Today", <CalendarDayIcon day={day} />)}
+      {btn("views", "Views", <ListIcon />)}
     </nav>
   );
 }
