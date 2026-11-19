@@ -13,12 +13,18 @@ use crate::state::{Device, Role};
 
 const PHONE: &[&str] = &[
     "views.get",
+    "views.list",
     "events.subscribe",
     "events.unsubscribe",
     "op.submit",
     "op.undo",
 ];
-const DISPLAY: &[&str] = &["views.get", "events.subscribe", "events.unsubscribe"];
+const DISPLAY: &[&str] = &[
+    "views.get",
+    "views.list",
+    "events.subscribe",
+    "events.unsubscribe",
+];
 
 pub struct Ctx<'a> {
     pub device: &'a Device,
@@ -103,7 +109,7 @@ pub fn inbound(
                 serde_json::to_value(p).map_err(|_| invalid("invalid views.get params"))?,
             ));
         }
-        "events.subscribe" | "events.unsubscribe" => {
+        "views.list" | "events.subscribe" | "events.unsubscribe" => {
             return Ok((method.to_string(), json!({})));
         }
         _ => {}

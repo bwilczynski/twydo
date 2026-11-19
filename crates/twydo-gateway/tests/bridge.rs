@@ -84,6 +84,45 @@ fn display_is_read_only() {
 }
 
 #[test]
+fn views_list_allowed_for_both_roles() {
+    for role in [Role::Phone, Role::Display] {
+        let (m, p) = run(role, "views.list", Some(json!({"x": 1}))).unwrap();
+        assert_eq!(m, "views.list");
+        assert_eq!(p, json!({}));
+        let (m, p) = run(role, "views.list", None).unwrap();
+        assert_eq!(m, "views.list");
+        assert_eq!(p, json!({}));
+    }
+}
+
+#[test]
+fn views_get_list_param_forwarded() {
+    let (_, p) = run(
+        Role::Phone,
+        "views.get",
+        Some(json!({"view": "list", "list": "work"})),
+    )
+    .unwrap();
+    assert_eq!(p, json!({"view": "list", "list": "work"}));
+    let (_, p) = run(
+        Role::Phone,
+        "views.get",
+        Some(json!({"view": "list", "list": "work", "extra": 1})),
+    )
+    .unwrap();
+    assert_eq!(p, json!({"view": "list", "list": "work"}));
+}
+
+#[test]
+fn views_get_unknown_view_refused() {
+    assert_refused(run(
+        Role::Phone,
+        "views.get",
+        Some(json!({"view": "someday"})),
+    ));
+}
+
+#[test]
 fn methods_outside_role_refused() {
     for m in [
         "lists.delete",
