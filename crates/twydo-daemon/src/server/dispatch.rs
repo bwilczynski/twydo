@@ -162,6 +162,7 @@ pub fn dispatch(
             shared.bus.unsubscribe(conn.id);
             Ok(json!({}))
         }
+        "views.list" => super::views::list(shared),
         "views.get" => super::views::get(shared, parse(params)?),
         "snapshot.get" => to_result(&shared.publisher.current().1.wire),
         "status.get" => match shared.publisher.status() {

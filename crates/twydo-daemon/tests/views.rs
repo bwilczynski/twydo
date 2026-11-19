@@ -10,11 +10,17 @@ use twydo_core::edit::{Change, Op};
 use twydo_core::model::TaskKind;
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::views::{Expansion, View, build_view, counts, group_label, view_name};
+use twydo_core::views::{
+    Expansion, SidebarEntry, View, build_view, counts, group_label, sidebar, view_name,
+};
 use twydo_daemon::protocol::methods::DaemonInfo;
 use twydo_daemon::protocol::rpc::ErrorKind;
-use twydo_daemon::protocol::views::{SectionKey, ViewsGetResult};
+use twydo_daemon::protocol::views::{
+    SectionKey, ViewName, ViewsEntry, ViewsGetParams, ViewsGetResult, ViewsListItem,
+    ViewsListResult,
+};
 use twydo_daemon::protocol::wire::WireSnapshot;
+use twydo_daemon::server::schedule::Clock;
 
 fn ics(uid: &str, summary: &str, extra: &str) -> String {
     format!(
@@ -508,4 +514,108 @@ fn hidden_list_is_served_by_id() {
     let mut got = uids(&v);
     got.sort();
     assert_eq!(got, ["loose", "next"]);
+}
+
+fn list_entries(td: &TestDaemon) -> ViewsListResult {
+    td.client().call("views.list", json!({})).unwrap()
+}
+
+fn items(r: &ViewsListResult) -> Vec<&ViewsListItem> {
+    r.entries
+        .iter()
+        .filter_map(|e| match e {
+            ViewsEntry::View(i) => Some(i),
+            ViewsEntry::Heading { .. } => None,
+        })
+        .collect()
+}
+
+#[test]
+fn views_list_matches_sidebar() {
+    let fx = fx();
+    let td = start(&fx, |c| {
+        c.groups = vec![twydo_core::config::Group {
+            name: "G".into(),
+            lists: vec!["work".into()],
+        }];
+    });
+    let r = list_entries(&td);
+    let mut snap = fx.snapshot();
+    snap.config.groups = vec![twydo_core::config::Group {
+        name: "G".into(),
+        lists: vec!["work".into()],
+    }];
+    let side = sidebar(&snap);
+    assert_eq!(r.entries.len(), side.len());
+    let now = morning().now().with_timezone(&snap.tz());
+    for (got, want) in r.entries.iter().zip(&side) {
+        match (got, want) {
+            (ViewsEntry::Heading { heading }, SidebarEntry::Heading(h)) => assert_eq!(heading, h),
+            (ViewsEntry::View(i), SidebarEntry::Item(v)) => {
+                assert_eq!(i.name, view_name(&snap, v));
+                let c = counts(&snap, v, now);
+                assert_eq!(i.open_count, c.total);
+                assert_eq!(i.due_count, c.due_or_overdue);
+            }
+            other => panic!("mismatch: {other:?}"),
+        }
+    }
+    assert_eq!(
+        items(&r)[0].view,
+        ViewsGetParams {
+            view: ViewName::Inbox,
+            list: None
+        }
+    );
+    assert!(
+        r.entries
+            .iter()
+            .any(|e| matches!(e, ViewsEntry::Heading { heading } if heading == "G"))
+    );
+}
+
+#[test]
+fn views_list_omits_hidden_inbox() {
+    let fx = fx();
+    let td = start(&fx, |c| {
+        c.lists.insert(
+            "inbox".into(),
+            twydo_core::config::ListPrefs {
+                hidden: true,
+                ..Default::default()
+            },
+        );
+    });
+    let r = list_entries(&td);
+    let it = items(&r);
+    assert_eq!(it[0].view.view, ViewName::Today);
+    assert!(it.iter().all(|i| i.view.view != ViewName::Inbox));
+}
+
+#[test]
+fn views_list_item_round_trips() {
+    let fx = fx();
+    let td = start(&fx, |_| {});
+    let r = list_entries(&td);
+    assert!(items(&r).len() >= 6);
+    for i in items(&r) {
+        let v = get_ref(&td, serde_json::to_value(&i.view).unwrap());
+        assert_eq!(v.title, i.name);
+    }
+}
+
+#[test]
+fn views_list_colors() {
+    let fx = fx();
+    fx.write("work/color", "#336699\n");
+    let td = start(&fx, |_| {});
+    let r = list_entries(&td);
+    let it = items(&r);
+    let work = it
+        .iter()
+        .find(|i| i.view.list.as_deref() == Some("work"))
+        .unwrap();
+    assert_eq!(work.color.as_deref(), Some("#336699"));
+    let today = it.iter().find(|i| i.view.view == ViewName::Today).unwrap();
+    assert_eq!(today.color, None);
 }

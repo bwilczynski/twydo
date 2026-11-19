@@ -9,8 +9,8 @@ use serde_json::Value;
 use twydo_core::ical::value::{IcalDateTime, Resolved};
 use twydo_core::model::{Status, Task};
 use twydo_core::views::{
-    DateGroup, Expansion, Row, Snapshot, View, build_view, counts, date_group, default_list,
-    group_label, inbox_list, view_name,
+    DateGroup, Expansion, Row, SidebarEntry, Snapshot, View, build_view, counts, date_group,
+    default_list, group_label, inbox_list, sidebar, view_name,
 };
 
 use super::Shared;
@@ -18,8 +18,8 @@ use super::admin::unresolved_conflict_uids;
 use super::syncsummary::summary;
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::views::{
-    CaptureTarget, RowList, RowParent, SectionKey, ViewName, ViewRow, ViewSection, ViewsGetParams,
-    ViewsGetResult,
+    CaptureTarget, RowList, RowParent, SectionKey, ViewName, ViewRow, ViewSection, ViewsEntry,
+    ViewsGetParams, ViewsGetResult, ViewsListItem, ViewsListResult,
 };
 
 /// Check the params and map them to a core view.
@@ -142,6 +142,99 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
     serde_json::to_value(result).map_err(internal)
 }
 
+/// A list's colour as `#rrggbb`.
+fn list_color(snap: &Snapshot, id: &str) -> Option<String> {
+    snap.collections
+        .iter()
+        .find(|c| c.id == id)
+        .and_then(|c| c.color)
+        .map(|(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+}
+
+/// The sidebar, finished: names and counts at the daemon's clock, each view as the params
+/// that open it.
+pub fn list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
+    let (revision, published) = shared.publisher.current();
+    let snap = &published.snap;
+    let now = shared.clock.now().with_timezone(&snap.tz());
+    let inbox = inbox_list(snap);
+    let entries = sidebar(snap)
+        .into_iter()
+        .map(|e| match e {
+            SidebarEntry::Heading(heading) => ViewsEntry::Heading { heading },
+            SidebarEntry::Item(v) => {
+                let c = counts(snap, &v, now);
+                let (params, color) = match &v {
+                    View::List(id) if Some(id) == inbox.as_ref() => (
+                        ViewsGetParams {
+                            view: ViewName::Inbox,
+                            list: None,
+                        },
+                        list_color(snap, id),
+                    ),
+                    View::List(id) => (
+                        ViewsGetParams {
+                            view: ViewName::List,
+                            list: Some(id.clone()),
+                        },
+                        list_color(snap, id),
+                    ),
+                    View::Today => (
+                        ViewsGetParams {
+                            view: ViewName::Today,
+                            list: None,
+                        },
+                        None,
+                    ),
+                    View::All => (
+                        ViewsGetParams {
+                            view: ViewName::All,
+                            list: None,
+                        },
+                        None,
+                    ),
+                    View::Scheduled => (
+                        ViewsGetParams {
+                            view: ViewName::Scheduled,
+                            list: None,
+                        },
+                        None,
+                    ),
+                    View::Done => (
+                        ViewsGetParams {
+                            view: ViewName::Done,
+                            list: None,
+                        },
+                        None,
+                    ),
+                    View::Next3Days => (
+                        ViewsGetParams {
+                            view: ViewName::Next3Days,
+                            list: None,
+                        },
+                        None,
+                    ),
+                };
+                ViewsEntry::View(ViewsListItem {
+                    view: params,
+                    name: view_name(snap, &v),
+                    color,
+                    open_count: c.total,
+                    due_count: c.due_or_overdue,
+                })
+            }
+        })
+        .collect();
+    serde_json::to_value(ViewsListResult {
+        epoch: shared.epoch.clone(),
+        revision,
+        now: now.fixed_offset(),
+        today: now.date_naive(),
+        entries,
+    })
+    .map_err(internal)
+}
+
 fn row(
     snap: &Snapshot,
     r: &Row,
@@ -156,12 +249,7 @@ fn row(
         Resolved::Date(day) => day,
         Resolved::Instant(i) => i.with_timezone(&now.timezone()).date_naive(),
     };
-    let color = snap
-        .collections
-        .iter()
-        .find(|c| c.id == t.collection)
-        .and_then(|c| c.color)
-        .map(|(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"));
+    let color = list_color(snap, &t.collection);
     ViewRow {
         uid: t.uid.clone(),
         title: t.summary.clone(),

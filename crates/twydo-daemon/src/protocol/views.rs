@@ -34,6 +34,38 @@ pub struct ViewsGetParams {
     pub list: Option<String>,
 }
 
+/// `views.list`: the sidebar's entries, in display order, for a thin client's view picker.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ViewsListResult {
+    pub epoch: String,
+    pub revision: u64,
+    /// The daemon's clock, in the configured timezone.
+    pub now: DateTime<FixedOffset>,
+    pub today: NaiveDate,
+    pub entries: Vec<ViewsEntry>,
+}
+
+/// A heading, or a view to open with `views.get`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ViewsEntry {
+    Heading { heading: String },
+    View(ViewsListItem),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ViewsListItem {
+    /// The params that open this view through `views.get`.
+    pub view: ViewsGetParams,
+    pub name: String,
+    /// `#rrggbb`; a list's colour, none for the built-in views.
+    pub color: Option<String>,
+    /// The view's open tasks, as the sidebar counts them.
+    pub open_count: usize,
+    /// The open tasks due today or overdue.
+    pub due_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ViewsGetResult {
     pub epoch: String,

@@ -3735,6 +3735,25 @@
         ],
         "type": "object"
       },
+      "ViewsEntry": {
+        "anyOf": [
+          {
+            "properties": {
+              "heading": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "heading"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/components/schemas/ViewsListItem"
+          }
+        ],
+        "description": "A heading, or a view to open with `views.get`."
+      },
       "ViewsGetParams": {
         "properties": {
           "list": {
@@ -3819,6 +3838,83 @@
           "title",
           "open_count",
           "sections"
+        ],
+        "type": "object"
+      },
+      "ViewsListItem": {
+        "properties": {
+          "color": {
+            "description": "`#rrggbb`; a list's colour, none for the built-in views.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_count": {
+            "description": "The open tasks due today or overdue.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "open_count": {
+            "description": "The view's open tasks, as the sidebar counts them.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "view": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ViewsGetParams"
+              }
+            ],
+            "description": "The params that open this view through `views.get`."
+          }
+        },
+        "required": [
+          "view",
+          "name",
+          "open_count",
+          "due_count"
+        ],
+        "type": "object"
+      },
+      "ViewsListResult": {
+        "description": "`views.list`: the sidebar's entries, in display order, for a thin client's view picker.",
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ViewsEntry"
+            },
+            "type": "array"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "now": {
+            "description": "The daemon's clock, in the configured timezone.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "today": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision",
+          "now",
+          "today",
+          "entries"
         ],
         "type": "object"
       },
@@ -4484,6 +4580,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/WireSnapshot"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "views.list",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ViewsListResult"
         }
       },
       "x-lifecycle": false
