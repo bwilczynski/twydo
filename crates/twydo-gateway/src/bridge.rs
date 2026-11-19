@@ -7,7 +7,7 @@ use twydo_daemon::client::Notification;
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::methods::{SubmitParams, UndoParams};
 use twydo_daemon::protocol::rpc::{ErrorKind, RpcError};
-use twydo_daemon::protocol::views::ViewsGetParams;
+use twydo_daemon::protocol::views::{ViewName, ViewsGetParams};
 
 use crate::state::{Device, Role};
 
@@ -95,6 +95,9 @@ pub fn inbound(
         "views.get" => {
             let p: ViewsGetParams = serde_json::from_value(params.unwrap_or(Value::Null))
                 .map_err(|_| invalid("invalid views.get params"))?;
+            if p.view == ViewName::Unknown {
+                return Err(invalid("invalid views.get params"));
+            }
             return Ok((
                 method.to_string(),
                 serde_json::to_value(p).map_err(|_| invalid("invalid views.get params"))?,

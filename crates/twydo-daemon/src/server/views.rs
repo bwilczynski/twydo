@@ -10,7 +10,7 @@ use twydo_core::ical::value::{IcalDateTime, Resolved};
 use twydo_core::model::{Status, Task};
 use twydo_core::views::{
     DateGroup, Expansion, Row, Snapshot, View, build_view, counts, date_group, default_list,
-    group_label, inbox_list,
+    group_label, inbox_list, view_name,
 };
 
 use super::Shared;
@@ -21,6 +21,33 @@ use crate::protocol::views::{
     CaptureTarget, RowList, RowParent, SectionKey, ViewName, ViewRow, ViewSection, ViewsGetParams,
     ViewsGetResult,
 };
+
+/// Check the params and map them to a core view.
+pub(crate) fn resolve(snap: &Snapshot, p: &ViewsGetParams) -> Result<View, RpcError> {
+    let invalid = |m: &str| RpcError::refused(ErrorKind::Invalid, m.to_string());
+    if p.list.is_some() && p.view != ViewName::List {
+        return Err(invalid("list is only for the list view"));
+    }
+    Ok(match p.view {
+        ViewName::Inbox => View::List(inbox_list(snap).unwrap_or_else(|| default_list(snap))),
+        ViewName::Today => View::Today,
+        ViewName::All => View::All,
+        ViewName::Scheduled => View::Scheduled,
+        ViewName::Done => View::Done,
+        ViewName::Next3Days => View::Next3Days,
+        ViewName::List => {
+            let id = p
+                .list
+                .as_deref()
+                .ok_or_else(|| invalid("list needs a list id"))?;
+            if !snap.collections.iter().any(|c| c.id == id) {
+                return Err(invalid("no such list"));
+            }
+            View::List(id.to_string())
+        }
+        ViewName::Unknown => return Err(invalid("unknown view")),
+    })
+}
 
 fn internal(e: impl std::fmt::Display) -> RpcError {
     RpcError::refused(ErrorKind::Internal, e.to_string())
@@ -42,30 +69,41 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
             .map(|c| c.display_name.clone().unwrap_or_else(|| c.id.clone()))
             .unwrap_or_else(|| id.to_string())
     };
-    let (view, title, capture) = match p.view {
-        ViewName::Today => {
-            let id = default_list(snap);
-            let capture = (!id.is_empty()).then(|| CaptureTarget {
-                name: list_name(&id),
-                collection: id,
-                due: Some(today),
-            });
-            (View::Today, "Today".to_string(), capture)
-        }
-        ViewName::Inbox => {
-            let id = inbox_list(snap).unwrap_or_else(|| default_list(snap));
-            if id.is_empty() {
-                (View::List(id), "Inbox".to_string(), None)
-            } else {
-                let name = list_name(&id);
+    let view = resolve(snap, &p)?;
+    let default_capture = |due| {
+        let id = default_list(snap);
+        (!id.is_empty()).then(|| CaptureTarget {
+            name: list_name(&id),
+            collection: id,
+            due,
+        })
+    };
+    let (title, capture) = match p.view {
+        ViewName::Today => ("Today".to_string(), default_capture(Some(today))),
+        ViewName::Inbox => match &view {
+            View::List(id) if !id.is_empty() => {
+                let name = list_name(id);
                 let capture = CaptureTarget {
                     collection: id.clone(),
                     name: name.clone(),
                     due: None,
                 };
-                (View::List(id), name, Some(capture))
+                (name, Some(capture))
             }
-        }
+            _ => ("Inbox".to_string(), None),
+        },
+        ViewName::List => match &view {
+            View::List(id) => (
+                view_name(snap, &view),
+                Some(CaptureTarget {
+                    collection: id.clone(),
+                    name: list_name(id),
+                    due: None,
+                }),
+            ),
+            _ => unreachable!("resolve maps list to View::List"),
+        },
+        _ => (view_name(snap, &view), default_capture(None)),
     };
 
     let built = build_view(snap, &view, now, &Expansion::default());
@@ -74,6 +112,10 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         .iter()
         .map(|(group, rows)| ViewSection {
             group: SectionKey::from(*group),
+            date: match group {
+                DateGroup::CompletedOn(d) => Some(*d),
+                _ => None,
+            },
             label: group_label(*group, today),
             rows: rows
                 .iter()

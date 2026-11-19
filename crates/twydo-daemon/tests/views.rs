@@ -10,7 +10,7 @@ use twydo_core::edit::{Change, Op};
 use twydo_core::model::TaskKind;
 use twydo_core::store::bind_vdir_state;
 use twydo_core::store::fsio::VdirLock;
-use twydo_core::views::{Expansion, View, build_view, group_label};
+use twydo_core::views::{Expansion, View, build_view, counts, group_label, view_name};
 use twydo_daemon::protocol::methods::DaemonInfo;
 use twydo_daemon::protocol::rpc::ErrorKind;
 use twydo_daemon::protocol::views::{SectionKey, ViewsGetResult};
@@ -201,6 +201,37 @@ fn completed_rows_are_flagged() {
 }
 
 #[test]
+fn completed_days_are_told_apart_by_date() {
+    let fx = fx();
+    for (uid, day) in [("fin1", "20261117"), ("fin2", "20261116")] {
+        fx.write(
+            &format!("inbox/{uid}.ics"),
+            &ics(
+                uid,
+                "Finished",
+                &format!("STATUS:COMPLETED\r\nCOMPLETED:{day}T080000Z\r\n"),
+            ),
+        );
+    }
+    let td = start(&fx, |_| {});
+    let v = get(&td, "done");
+    let dates: Vec<_> = v
+        .sections
+        .iter()
+        .filter(|s| s.group == SectionKey::Completed)
+        .map(|s| s.date)
+        .collect();
+    let d = |day| chrono::NaiveDate::from_ymd_opt(2026, 11, day);
+    assert_eq!(dates, vec![d(17), d(16)]);
+    assert!(
+        v.sections
+            .iter()
+            .filter(|s| s.group != SectionKey::Completed)
+            .all(|s| s.date.is_none())
+    );
+}
+
+#[test]
 fn queued_write_shows_pending() {
     let fx = fx();
     let cfg = fx.config();
@@ -308,7 +339,7 @@ fn unknown_view_is_invalid_params() {
     let td = start(&fx(), |_| {});
     let e = td
         .client()
-        .call::<_, ViewsGetResult>("views.get", json!({ "view": "all" }))
+        .call::<_, ViewsGetResult>("views.get", json!({ "view": "someday" }))
         .unwrap_err();
     assert_eq!(kind(&e), ErrorKind::Invalid);
 }
@@ -372,4 +403,109 @@ fn sync_summary_reports_failure() {
     let sync = get(&td, "inbox").sync.expect("sync summary");
     assert!(sync.attention, "{sync:?}");
     assert_eq!(sync.headline, "Sync failing");
+}
+
+fn get_ref(td: &TestDaemon, params: serde_json::Value) -> ViewsGetResult {
+    td.client().call("views.get", params).unwrap()
+}
+
+#[test]
+fn every_view_matches_build_view() {
+    let fx = fx();
+    fx.write(
+        "work/fin.ics",
+        &ics(
+            "fin",
+            "Finished",
+            "STATUS:COMPLETED\r\nCOMPLETED:20261116T080000Z\r\n",
+        ),
+    );
+    let td = start(&fx, |_| {});
+    let snap = fx.snapshot();
+    let now = Utc
+        .with_ymd_and_hms(2026, 11, 17, 9, 0, 0)
+        .unwrap()
+        .with_timezone(&snap.tz());
+    let cases = [
+        (json!({"view": "all"}), View::All),
+        (json!({"view": "scheduled"}), View::Scheduled),
+        (json!({"view": "done"}), View::Done),
+        (json!({"view": "next_3_days"}), View::Next3Days),
+        (
+            json!({"view": "list", "list": "work"}),
+            View::List("work".into()),
+        ),
+    ];
+    for (params, view) in cases {
+        let v = get_ref(&td, params.clone());
+        let want = build_view(&snap, &view, now, &Expansion::default());
+        let want_uids: Vec<_> = want
+            .groups
+            .iter()
+            .flat_map(|(_, rows)| rows.iter().map(|r| snap.tasks[r.task].uid.clone()))
+            .collect();
+        assert_eq!(uids(&v), want_uids, "{params}");
+        let got: Vec<_> = v
+            .sections
+            .iter()
+            .map(|s| (s.group, s.label.clone()))
+            .collect();
+        let exp: Vec<_> = want
+            .groups
+            .iter()
+            .map(|(g, _)| (SectionKey::from(*g), group_label(*g, now.date_naive())))
+            .collect();
+        assert_eq!(got, exp, "{params}");
+        assert_eq!(v.title, view_name(&snap, &view), "{params}");
+        assert_eq!(v.open_count, counts(&snap, &view, now).total, "{params}");
+    }
+    assert!(!uids(&get_ref(&td, json!({"view": "all"}))).is_empty());
+}
+
+#[test]
+fn capture_for_new_views() {
+    let td = start(&fx(), |_| {});
+    let c = get_ref(&td, json!({"view": "list", "list": "work"}))
+        .capture
+        .unwrap();
+    assert_eq!((c.collection.as_str(), c.due), ("work", None));
+    for view in ["all", "scheduled", "done", "next_3_days"] {
+        let c = get_ref(&td, json!({ "view": view })).capture.unwrap();
+        assert_eq!((c.collection.as_str(), c.due), ("inbox", None), "{view}");
+    }
+}
+
+#[test]
+fn list_param_must_match_view() {
+    let td = start(&fx(), |_| {});
+    for params in [
+        json!({"view": "list"}),
+        json!({"view": "today", "list": "work"}),
+        json!({"view": "list", "list": "nope"}),
+    ] {
+        let e = td
+            .client()
+            .call::<_, ViewsGetResult>("views.get", params.clone())
+            .unwrap_err();
+        assert_eq!(kind(&e), ErrorKind::Invalid, "{params}");
+    }
+}
+
+#[test]
+fn hidden_list_is_served_by_id() {
+    let fx = fx();
+    let mut cfg = fx.config();
+    cfg.timezone = Some("UTC".into());
+    cfg.lists.insert(
+        "work".into(),
+        twydo_core::config::ListPrefs {
+            hidden: true,
+            ..Default::default()
+        },
+    );
+    let td = TestDaemon::start_cfg(&fx, cfg, |o| o.clock = morning());
+    let v = get_ref(&td, json!({"view": "list", "list": "work"}));
+    let mut got = uids(&v);
+    got.sort();
+    assert_eq!(got, ["loose", "next"]);
 }
