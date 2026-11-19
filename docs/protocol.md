@@ -58,15 +58,34 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
 
 ## Data, writes and events
 
-- `views.get` takes `{view: "inbox" | "today"}` and returns a finished view for thin clients
-  (a phone, a display) that hold no view logic: dated sections with labels, rows with relative
-  due text, overdue and pending flags, and the `capture` target for a new task. Dates and
+- `views.get` takes `{view, list?}` and returns a finished view for thin clients
+  (a phone, a display) that hold no view logic: dated sections with labels (a `completed`
+  section also carries its `date`, since a view can have several), rows with relative due text,
+  overdue and pending flags, and the `capture` target for a new task. Dates and
   groups follow the daemon's clock in the configured timezone (`now`, `today`). A client that
   writes from a view sends `based_on` built from the result's `epoch` and `revision`. The result
   also carries `sync` (absent without `[sync]`): `attention`, a `headline`, an optional `detail`
   (at most 300 characters) and `last_success`. `attention` is true when sync needs a person: a
   failing sync, failed list discovery, a list emptied and not applied (with the
   `tdo sync --force-delete` command), conflicts or automatic sync off. It informs only.
+  `view` is `inbox`, `today`, `all`, `scheduled`, `done`, `next_3_days` or `list`; the set is
+  open, so a client treats an unknown value it receives as unknown. `list` names one list by
+  its collection id in `list`, which is required for `list` and refused (error kind `invalid`)
+  for every other view. A list id that does not exist, an unknown `view` and a missing `list`
+  are refused the same way. `inbox` and `today` return exactly what they always did. The `title`
+  of any other view is its sidebar name, and `capture` is the list that view's new tasks go to
+  (the named list for `list`, the default list for the others; `today` also sets its due date).
+- `views.list` takes no parameters and returns the sidebar for a view picker: `epoch`,
+  `revision`, `now`, `today` and `entries`, in display order. An entry is a heading
+  (`{heading}`, such as a configured group or "Lists") or a view `{view, name, color,
+  open_count, due_count}`. `view` is the `views.get` params that open it, so a client passes it
+  back unchanged. The focus lists come first (the Inbox list as `{view: "inbox"}`, then
+  `today`, `all`, `scheduled`, `done`), then the other visible lists as `{view: "list", list}`
+  under their headings, then the "Smart lists" heading with `next_3_days`. Hidden and archived
+  lists are left out. `color` is `#rrggbb` for a list (the Inbox entry carries its list's
+  colour) and null for Today, All, Scheduled, Done and Next 3 Days.
+  `open_count` and `due_count` are the counts the TUI sidebar shows: the open tasks, and those
+  due today or overdue.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
 - `events.subscribe` starts notifications: `event` (with a rising `seq`: `data.changed`,

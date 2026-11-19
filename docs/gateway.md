@@ -102,6 +102,23 @@ in and rows that are gone (a completed task, for example) slide out. Only a lost
 dims the list, under "Can't reach Twydo". An empty list shows its icon, "Nothing here" and, when
 a task can be added, a hint to tap **+**.
 
+## Views
+
+The app has three tabs: Inbox, Today and Views. Views lists what the desktop sidebar shows,
+from `views.list`: Inbox, Today, All, Scheduled and Done, then your lists (under their group
+headings, or "Lists") and the Next 3 Days smart list, each a button with its colour or icon, the
+number due today and the number open. Tapping one opens that view in the same tab, with a
+**Views** button above the title to go back; tapping the Views tab again also goes back. The
+phone remembers the opened view in this browser (not on the server) and shows it again next
+time. If that list is deleted, the phone returns to the Views list and says "That list is
+gone". A new task from any view goes to that view's capture list, as in the desktop. Both
+`views.get` and `views.list` are in the allowlist of both roles (phone and display); only the
+phone role may write.
+
+Done is not paged: `views.get` returns every completed task in one result. Measured on the
+test fixture, a completed row is about 270 bytes of JSON, plus a few hundred bytes for the
+rest of the result, so a few thousand completed tasks come to roughly a megabyte per fetch.
+
 ## The sync warning
 
 When the daemon's sync needs attention (the server unreachable, a failing sync, a list that
