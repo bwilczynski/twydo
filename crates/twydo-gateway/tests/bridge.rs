@@ -166,11 +166,31 @@ fn create_with_repeat_parent_start_kind_or_timed_due_refused() {
 }
 
 #[test]
+fn tasks_get_allowed_for_both_roles() {
+    for role in [Role::Phone, Role::Display] {
+        let (m, p) = run(role, "tasks.get", Some(json!({"uid": "u1", "x": 1}))).unwrap();
+        assert_eq!((m.as_str(), p), ("tasks.get", json!({"uid": "u1"})));
+        assert_refused(run(role, "tasks.get", Some(json!({}))));
+        assert_refused(run(role, "tasks.get", None));
+    }
+}
+
+#[test]
+fn phone_may_reopen() {
+    let op = || submit(json!({"Reopen": {"uid": "u"}}));
+    assert!(run(Role::Phone, "op.submit", op()).is_ok());
+    assert_refused(run(Role::Display, "op.submit", op()));
+}
+
+#[test]
 fn delete_move_edit_refused() {
     for op in [
         json!({"Delete": {"uid": "u"}}),
         json!({"Edit": {"uid": "u", "changes": []}}),
         json!({"Reorder": {"uid": "u", "anchor": "a", "placement": "Before"}}),
+        json!({"Move": {"uid": "u", "to": "c"}}),
+        json!({"Save": {"uid": "u", "changes": [], "to": null}}),
+        json!({"Reparent": {"uid": "u", "collection": "c", "parent": null}}),
     ] {
         assert_refused(run(Role::Phone, "op.submit", submit(op)));
     }

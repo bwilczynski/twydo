@@ -7,12 +7,14 @@ use twydo_daemon::client::Notification;
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::methods::{SubmitParams, UndoParams};
 use twydo_daemon::protocol::rpc::{ErrorKind, RpcError};
+use twydo_daemon::protocol::tasks::TasksGetParams;
 use twydo_daemon::protocol::views::{ViewName, ViewsGetParams};
 
 use crate::state::{Device, Role};
 
 const PHONE: &[&str] = &[
     "views.get",
+    "tasks.get",
     "views.list",
     "events.subscribe",
     "events.unsubscribe",
@@ -21,6 +23,7 @@ const PHONE: &[&str] = &[
 ];
 const DISPLAY: &[&str] = &[
     "views.get",
+    "tasks.get",
     "views.list",
     "events.subscribe",
     "events.unsubscribe",
@@ -62,7 +65,7 @@ fn phone_may_submit(op: &Op) -> bool {
                 && t.kind == TaskKind::Task
                 && matches!(t.due, None | Some(Due::Date(_)))
         }
-        Op::Complete { .. } => true,
+        Op::Complete { .. } | Op::Reopen { .. } => true,
         _ => false,
     }
 }
@@ -107,6 +110,14 @@ pub fn inbound(
             return Ok((
                 method.to_string(),
                 serde_json::to_value(p).map_err(|_| invalid("invalid views.get params"))?,
+            ));
+        }
+        "tasks.get" => {
+            let p: TasksGetParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|_| invalid("invalid tasks.get params"))?;
+            return Ok((
+                method.to_string(),
+                serde_json::to_value(p).map_err(|_| invalid("invalid tasks.get params"))?,
             ));
         }
         "views.list" | "events.subscribe" | "events.unsubscribe" => {

@@ -112,8 +112,9 @@ number due today and the number open. Tapping one opens that view in the same ta
 phone remembers the opened view in this browser (not on the server) and shows it again next
 time. If that list is deleted, the phone returns to the Views list and says "That list is
 gone". A new task from any view goes to that view's capture list, as in the desktop. Both
-`views.get` and `views.list` are in the allowlist of both roles (phone and display); only the
-phone role may write.
+`views.get` and `views.list` are in the allowlist of both roles (phone and display); so is
+`tasks.get` (one task and its children). Only the phone role may write: it may complete and
+reopen any task and capture plain tasks.
 
 Done is not paged: `views.get` returns every completed task in one result. Measured on the
 test fixture, a completed row is about 270 bytes of JSON, plus a few hundred bytes for the
