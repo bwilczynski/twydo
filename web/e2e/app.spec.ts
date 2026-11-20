@@ -89,6 +89,61 @@ test("capture from Inbox and from Today", async ({ page }, info) => {
   ).toBeVisible();
 });
 
+test("tick and untick a checklist item", async ({ page }, info) => {
+  await page.getByRole("button", { name: /Synthetic packing/ }).click();
+  await expect(page.getByRole("heading", { name: "Synthetic packing" })).toBeVisible();
+  await expect(page.getByText("Items · 2 open")).toBeVisible();
+  if (process.env.E2E_SCREENSHOTS) {
+    await page.screenshot({
+      path: `${process.env.E2E_SCREENSHOTS}/task-${info.project.name}.png`,
+    });
+  }
+  const socks = (verb: string) => page.getByRole("checkbox", { name: `${verb} Synthetic socks` });
+  await socks("Complete").click();
+  await expect(page.getByRole("status")).toContainText('Completed "Synthetic socks"');
+  await page.reload();
+  await expect(socks("Reopen")).toBeChecked();
+  await socks("Reopen").click();
+  await expect(page.getByRole("status")).toContainText('Reopened "Synthetic socks"');
+  await expect(socks("Complete")).not.toBeChecked();
+  await socks("Complete").click();
+  await expect(page.getByRole("status")).toContainText('Completed "Synthetic socks"');
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(socks("Complete")).not.toBeChecked();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+});
+
+test("new task sheet slides up full screen", async ({ page }, info) => {
+  await expect(page.getByRole("checkbox", { name: "Complete Synthetic task 1" })).toBeVisible();
+  await page.getByRole("button", { name: "New task" }).click();
+  const form = page.getByRole("form", { name: "New task" });
+  await expect(form).toBeVisible();
+  // A fixed inset-0 box is viewport-sized even mid-slide: wait until it has also arrived at the
+  // top-left corner, i.e. the slide-up has finished.
+  const view = page.viewportSize()!;
+  await expect
+    .poll(async () => {
+      const b = await form.boundingBox();
+      if (!b) return false;
+      return (
+        b.y <= 1 &&
+        Math.abs(b.x) <= 1 &&
+        Math.abs(b.width - view.width) <= 1 &&
+        Math.abs(b.height - view.height) <= 1
+      );
+    })
+    .toBe(true);
+  if (process.env.E2E_SCREENSHOTS) {
+    await page.screenshot({
+      path: `${process.env.E2E_SCREENSHOTS}/sheet-${info.project.name}.png`,
+    });
+  }
+  await page.getByLabel("Title").fill("Synthetic captured");
+  await page.getByRole("button", { name: "Add" }).click();
+  await expect(page.getByRole("status")).toContainText('Added "Synthetic captured"');
+});
+
 test.describe("views tab", () => {
   // The daemon is shared with the other specs and the other colour scheme: leave it as found.
   test.afterEach(async ({ page }) => {

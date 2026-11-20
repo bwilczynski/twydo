@@ -110,7 +110,7 @@ export function pairingCode(name: string): string {
   return m[1];
 }
 
-const ics = (uid: string, summary: string, due?: string) =>
+const ics = (uid: string, summary: string, due?: string, extra = "") =>
   [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -119,6 +119,7 @@ const ics = (uid: string, summary: string, due?: string) =>
     `UID:${uid}`,
     `SUMMARY:${summary}`,
     ...(due ? [`DUE;VALUE=DATE:${due}`] : []),
+    ...(extra ? extra.split("\n") : []),
     "END:VTODO",
     "END:VCALENDAR",
     "",
@@ -169,6 +170,19 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const t = today();
   for (let i = 1; i <= 3; i++) {
     writeFileSync(join(vdir, "inbox", `i${i}.ics`), ics(`i${i}`, `Synthetic task ${i}`));
+  }
+  writeFileSync(
+    join(vdir, "inbox", "chk1.ics"),
+    ics("chk1", "Synthetic packing", undefined, "X-2DOAPP-METADATA:@tasktype:checklist"),
+  );
+  for (const [uid, title] of [
+    ["chk1a", "Synthetic socks"],
+    ["chk1b", "Synthetic charger"],
+  ]) {
+    writeFileSync(
+      join(vdir, "inbox", `${uid}.ics`),
+      ics(uid, title, undefined, "RELATED-TO;RELTYPE=PARENT:chk1"),
+    );
   }
   writeFileSync(join(vdir, "work", "w1.ics"), ics("w1", "Synthetic due today", t));
   writeFileSync(join(vdir, "work", "w2.ics"), ics("w2", "Synthetic also due today", t));
