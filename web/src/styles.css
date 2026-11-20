@@ -212,3 +212,41 @@ input, textarea { font: inherit; color: inherit; }
 .screen > p.urgent { margin: 0 4px 8px; }
 .note-card { padding: 12px 14px; }
 .note-card a { color: var(--accent); overflow-wrap: anywhere; }
+
+/* Task form sheet and confirmation sheet */
+.task-form { overflow-y: auto; }
+.task-form input, .task-form select, .task-form textarea { font-size: 16px; }
+.sheet.full.task-form textarea { flex: none; min-height: 5em; overflow: hidden; }
+.task-form .field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.task-form .field > label { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+.task-form .label { width: 56px; flex: none; color: var(--secondary); font-size: 15px; }
+.task-form select { flex: 1; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--bg); color: inherit; }
+.task-form .field > .label { align-self: center; }
+.task-form .preview { flex-basis: 100%; margin: 0 0 0 64px; }
+.task-form .picker { position: relative; }
+.task-form .cal { padding: 6px; }
+.task-form .hidden-date { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; padding: 0; }
+.task-form .chips { display: flex; gap: 6px; flex-basis: 100%; margin-left: 64px; }
+.chip { padding: 4px 12px; border-radius: 14px; background: var(--bg); font-size: 15px; }
+.chip:disabled { opacity: 0.4; }
+.segmented { display: flex; flex: 1; background: var(--bg); border-radius: 10px; padding: 2px; }
+.segmented button { flex: 1; padding: 7px 4px; border-radius: 8px; font-size: 15px; }
+.segmented button.on { background: var(--card); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }
+.notice { margin: 0; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--accent); }
+.notice button { color: var(--accent); font-weight: 600; }
+
+.backdrop {
+  position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.confirm {
+  width: 100%; max-width: 640px; background: var(--card); border-radius: 14px 14px 0 0;
+  padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
+  display: flex; flex-direction: column; gap: 12px; text-align: center;
+  animation: sheet-up 250ms ease-out;
+}
+.confirm h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.confirm p { margin: 0; }
+.confirm button { padding: 12px; border-radius: 10px; background: var(--bg); color: var(--accent); font-size: 17px; }
+.confirm button.danger { color: var(--danger); }
+@media (prefers-reduced-motion: reduce) { .confirm { animation: none; } }
