@@ -53,6 +53,23 @@ pub struct Rebased {
     pub dropped: Vec<Field>,
 }
 
+/// What a form's text cannot show about where it started: the stored rule and alert exactly,
+/// the parent kind that decides the fields and the declared kind. Two forms with equal starting
+/// text can differ here (a rule with a timed end shows as an empty field). Opaque to clients:
+/// they send it back unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormBasis {
+    /// The stored `RRULE` value, with `;FROM-COMPLETION` appended when it repeats from the
+    /// completion date; none without a rule.
+    pub repeat: Option<String>,
+    /// The stored alert: `none`, `at-due`, `<minutes>m` or `unsupported`.
+    pub alert: String,
+    /// The kind of the parent the task is an item of.
+    pub item_of: Option<TaskKind>,
+    /// The kind the task's file declares.
+    pub declared: TaskKind,
+}
+
 /// Why typing into Alert does nothing on a task whose alerts Twydo can't write back.
 pub const ALERT_READ_ONLY: &str = "this task has alerts Twydo can't edit";
 
@@ -112,6 +129,8 @@ pub struct Form {
     parent: Option<String>,
     /// The task's repeat as stored, to tell an unchanged rule typed differently from a change.
     stored_repeat: Option<RepeatSpec>,
+    /// The stored rule's text, exactly (see [`FormBasis::repeat`]).
+    stored_rrule: Option<String>,
     /// The stored rule cannot be written in the field's syntax: the field starts empty and
     /// the rule stays as it is unless something is typed.
     kept_rule: bool,
@@ -157,6 +176,10 @@ impl Form {
         let mut f = Form::with(Some(task.uid.clone()), None, values, stored_repeat);
         f.item_of = item_of;
         f.kept_rule = kept_rule;
+        f.stored_rrule = task.rrule.as_ref().map(|r| match task.from_completion {
+            true => format!("{r};FROM-COMPLETION"),
+            false => r.clone(),
+        });
         f.declared = crate::views::declared_kind(task);
         f.stored_alert = task.custom_alert;
         f
@@ -204,6 +227,7 @@ impl Form {
             item_of: None,
             parent,
             stored_repeat,
+            stored_rrule: None,
             kept_rule: false,
             declared: v.kind,
             stored_alert: CustomAlert::None,
@@ -282,10 +306,24 @@ impl Form {
     /// one. `onto` keeps the saved version as its starting values, so a save writes only the
     /// typed fields and `Esc` still asks before discarding them. What could not be carried, and
     /// what the saved version changed too, is reported in [`Rebased`].
-    pub fn rebase(&self, mut onto: Form) -> (Form, Rebased) {
+    pub fn rebase(&self, onto: Form) -> (Form, Rebased) {
+        self.rebase_from(&self.basis(), onto)
+    }
+
+    /// [`Form::rebase`] for a card rebuilt from its starting text, whose own basis is not the
+    /// one it opened on: `opened` is. A typed Repeat or Alert counts as replacing a change made
+    /// elsewhere when the stored rule or alert changed since `opened`, even if the field's text
+    /// did not (a rule with a timed end shows as an empty field).
+    pub fn rebase_from(&self, opened: &FormBasis, mut onto: Form) -> (Form, Rebased) {
         let (now, mine) = (self.values(), &self.initial);
         let theirs = onto.initial.clone();
         let fields = onto.fields();
+        let current = onto.basis();
+        let hidden = |f: Field| match f {
+            Field::Repeat => opened.repeat != current.repeat,
+            Field::Alert => opened.alert != current.alert,
+            _ => false,
+        };
         let mut out = Rebased::default();
         macro_rules! carry {
             ($field:expr, $m:ident) => {
@@ -300,7 +338,7 @@ impl Form {
                     if lost {
                         out.dropped.push($field);
                     } else {
-                        if theirs.$m != mine.$m && theirs.$m != now.$m {
+                        if theirs.$m != now.$m && (theirs.$m != mine.$m || hidden($field)) {
                             out.overlap.push($field);
                         }
                         onto.$m = now.$m.clone();
@@ -573,6 +611,21 @@ impl Form {
         self.notes = v.notes;
     }
 
+    /// What the card's text cannot show about where it started (see [`FormBasis`]).
+    pub fn basis(&self) -> FormBasis {
+        FormBasis {
+            repeat: self.stored_rrule.clone(),
+            alert: match self.stored_alert {
+                CustomAlert::None => "none".into(),
+                CustomAlert::AtDue => "at-due".into(),
+                CustomAlert::One(o) => format!("{}m", o.minutes()),
+                CustomAlert::Unsupported => "unsupported".into(),
+            },
+            item_of: self.item_of,
+            declared: self.declared,
+        }
+    }
+
     /// What the card opened with.
     pub fn initial(&self) -> &FormValues {
         &self.initial
@@ -709,6 +762,74 @@ mod tests {
         assert_eq!(rebased.overlap, vec![Field::Title]);
         assert!(rebased.dropped.is_empty());
         assert_eq!(onto.title, "Buy postage");
+    }
+
+    #[test]
+    fn basis_shows_what_the_text_cannot() {
+        let mut t = task("Buy stamps");
+        t.rrule = Some("FREQ=WEEKLY;UNTIL=20261231T170000Z".into());
+        t.from_completion = true;
+        t.custom_alert = CustomAlert::One(AlertOffset::new(90).unwrap());
+        let f = Form::open(&t, Some(TaskKind::Project), NY);
+        assert_eq!(f.values().repeat, "");
+        assert_eq!(
+            f.basis(),
+            FormBasis {
+                repeat: Some("FREQ=WEEKLY;UNTIL=20261231T170000Z;FROM-COMPLETION".into()),
+                alert: "90m".into(),
+                item_of: Some(TaskKind::Project),
+                declared: TaskKind::Task,
+            }
+        );
+        t.custom_alert = CustomAlert::Unsupported;
+        assert_eq!(Form::open(&t, None, NY).basis().alert, "unsupported");
+        let new = Form::new_task(
+            NewTarget {
+                collection: "inbox".into(),
+                parent: None,
+                parent_kind: None,
+                due_today: false,
+            },
+            String::new(),
+            NY,
+        );
+        assert_eq!(new.basis().repeat, None);
+        assert_eq!(new.basis().alert, "none");
+    }
+
+    #[test]
+    fn rebase_from_reports_a_rule_changed_behind_equal_text() {
+        let mut t = task("Buy stamps");
+        let old = Form::open(&t, None, NY);
+        t.rrule = Some("FREQ=WEEKLY;UNTIL=20261231T170000Z".into());
+        let cur = Form::open(&t, None, NY);
+        assert_eq!(cur.initial(), old.initial());
+        let mut mine = cur.clone().with_initial(old.initial().clone());
+        let mut v = mine.values();
+        v.repeat = "weekly".into();
+        mine.set_values(v);
+        let (_, plain) = mine.rebase(cur.clone());
+        assert!(plain.overlap.is_empty());
+        let (onto, r) = mine.rebase_from(&old.basis(), cur);
+        assert_eq!(r.overlap, vec![Field::Repeat]);
+        assert!(r.dropped.is_empty());
+        assert_eq!(onto.repeat, "weekly");
+    }
+
+    #[test]
+    fn rebase_from_reports_an_alert_changed_behind_equal_text() {
+        let t = task("Buy stamps");
+        let cur = Form::open(&t, None, NY);
+        let mut opened = cur.basis();
+        opened.alert = "unsupported".into();
+        let mut mine = cur.clone();
+        let mut v = mine.values();
+        v.alert = "1h".into();
+        mine.set_values(v);
+        let (_, r) = mine.rebase_from(&opened, cur.clone());
+        assert_eq!(r.overlap, vec![Field::Alert]);
+        let (_, r) = mine.rebase_from(&cur.basis(), cur);
+        assert!(r.overlap.is_empty());
     }
 
     #[test]

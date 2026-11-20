@@ -1185,12 +1185,60 @@
         ],
         "type": "object"
       },
+      "FormBasis": {
+        "description": "What a form's text cannot show about where it started: the stored rule and alert exactly,\nthe parent kind that decides the fields and the declared kind. Two forms with equal starting\ntext can differ here (a rule with a timed end shows as an empty field). Opaque to clients:\nthey send it back unchanged.",
+        "properties": {
+          "alert": {
+            "description": "The stored alert: `none`, `at-due`, `<minutes>m` or `unsupported`.",
+            "type": "string"
+          },
+          "declared": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskKind"
+              }
+            ],
+            "description": "The kind the task's file declares."
+          },
+          "item_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The kind of the parent the task is an item of."
+          },
+          "repeat": {
+            "description": "The stored `RRULE` value, with `;FROM-COMPLETION` appended when it repeats from the\ncompletion date; none without a rule.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "alert",
+          "declared"
+        ],
+        "type": "object"
+      },
       "FormState": {
         "description": "An edit form's state, as the TUI card would show it.",
         "properties": {
           "alert_editable": {
             "description": "False when the task has alerts Twydo cannot write: Alert is read-only.",
             "type": "boolean"
+          },
+          "basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormBasis"
+              }
+            ],
+            "description": "What the values cannot show about where the form started; send it back as `opened`."
           },
           "fields": {
             "description": "The fields, in display order.",
@@ -1213,7 +1261,8 @@
           "fields",
           "values",
           "previews",
-          "alert_editable"
+          "alert_editable",
+          "basis"
         ],
         "type": "object"
       },
@@ -2341,6 +2390,33 @@
         ],
         "type": "object"
       },
+      "NewTaskTarget": {
+        "description": "Where a new task goes.",
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "due": {
+            "description": "Only today starts the form with a Due; any other date is ignored.",
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "description": "UID of the checklist or project the task becomes an item of.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "type": "object"
+      },
       "Notifications": {
         "additionalProperties": false,
         "description": "`[notifications]` table: desktop reminders raised by the daemon.",
@@ -2900,6 +2976,48 @@
           "by_set_pos",
           "end",
           "unknown"
+        ],
+        "type": "object"
+      },
+      "RebasedForm": {
+        "description": "What a typed form carried over a newer saved version.",
+        "properties": {
+          "basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormBasis"
+              }
+            ],
+            "description": "The new basis to send as `opened` from now on."
+          },
+          "dropped": {
+            "description": "Typed fields the saved version's form cannot take: their typing is lost.",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": "array"
+          },
+          "initial": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormValues"
+              }
+            ],
+            "description": "The new starting values to send as `initial` from now on."
+          },
+          "overwritten": {
+            "description": "Typed fields the saved version changed as well: saving replaces its value.",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "initial",
+          "basis",
+          "overwritten",
+          "dropped"
         ],
         "type": "object"
       },
@@ -3771,6 +3889,121 @@
           "uid",
           "title",
           "kind"
+        ],
+        "type": "object"
+      },
+      "TasksFormParams": {
+        "properties": {
+          "initial": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FormValues"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The values when the form was opened (or last rebased)."
+          },
+          "new": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NewTaskTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FormBasis"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The form's `basis` when it was opened (or last rebased), unchanged."
+          },
+          "uid": {
+            "description": "The task being edited; exactly one of `uid` and `new`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "values": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FormValues"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The typed values; none asks for the starting values."
+          }
+        },
+        "type": "object"
+      },
+      "TasksFormResult": {
+        "properties": {
+          "changed_since": {
+            "description": "The saved task (or a new item's parent) differs from the `initial` and `opened` the\nclient sent.",
+            "type": "boolean"
+          },
+          "epoch": {
+            "description": "The basis to submit `op` with.",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why `op` is none (`no changes`, `title must not be empty`, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "form": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormState"
+              }
+            ],
+            "description": "The form these values make: on `changed_since`, the rebased one."
+          },
+          "op": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Op"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The write, when every field reads and something would change."
+          },
+          "rebased": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RebasedForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision",
+          "form",
+          "changed_since"
         ],
         "type": "object"
       },
@@ -4983,6 +5216,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/TasksGetResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "tasks.form",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/TasksFormParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/TasksFormResult"
         }
       },
       "x-lifecycle": false

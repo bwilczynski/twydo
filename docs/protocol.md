@@ -101,6 +101,20 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   Twydo cannot write) and `alert_editable`, false when the task has alerts Twydo cannot write.
   An unknown `uid` is
   refused with error kind `invalid`. A client refetches on `data.changed` and `status.changed`.
+- `tasks.form` checks a phone's edit or new-task form with the TUI's own form code. It takes
+  `uid` (an edit) or `new` (`{collection, parent?, due?}`; only `due` equal to today starts the
+  form with Due `today`), exactly one of them, else `invalid` (`give uid or new`; an unknown
+  `uid` or `new.parent` is `invalid` `no such task`). `values` are the typed texts (none asks
+  for the starting values) and, for an edit, `initial` is the values the form was opened with.
+  It returns `epoch` and `revision` (the basis to submit `op` with), `form` (the same
+  `{fields, values, previews, alert_editable}` as `tasks.get`), `op` (the write, when every
+  field reads and something would change) or `error` (`no changes`, `title must not be empty`,
+  `due: ...`), `changed_since` and `rebased`. When `initial` differs from the task's current
+  values the typed fields are rebased onto the saved version, as the TUI does: `changed_since`
+  is true, `form` is the rebased form, and `rebased` gives the new `initial` to send from now
+  on, `overwritten` (typed fields the saved version changed too, whose typing wins) and
+  `dropped` (typed fields the saved version's form cannot take). It reads one published
+  snapshot with queued writes laid over it, never writes and keeps no state.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
 - `events.subscribe` starts notifications: `event` (with a rising `seq`: `data.changed`,

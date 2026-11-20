@@ -4,7 +4,8 @@
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use twydo_core::form::{Field, FormValues};
+use twydo_core::edit::Op;
+use twydo_core::form::{Field, FormBasis, FormValues};
 use twydo_core::model::TaskKind;
 
 use super::views::RowList;
@@ -43,6 +44,8 @@ pub struct FormState {
     pub previews: Vec<FieldPreview>,
     /// False when the task has alerts Twydo cannot write: Alert is read-only.
     pub alert_editable: bool,
+    /// What the values cannot show about where the form started; send it back as `opened`.
+    pub basis: FormBasis,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -96,4 +99,57 @@ pub struct ChildRow {
     pub has_note: bool,
     /// How many children this child has.
     pub child_count: u32,
+}
+
+/// Where a new task goes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NewTaskTarget {
+    pub collection: String,
+    /// UID of the checklist or project the task becomes an item of.
+    pub parent: Option<String>,
+    /// Only today starts the form with a Due; any other date is ignored.
+    pub due: Option<NaiveDate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TasksFormParams {
+    /// The task being edited; exactly one of `uid` and `new`.
+    pub uid: Option<String>,
+    pub new: Option<NewTaskTarget>,
+    /// The values when the form was opened (or last rebased).
+    pub initial: Option<FormValues>,
+    /// The form's `basis` when it was opened (or last rebased), unchanged.
+    pub opened: Option<FormBasis>,
+    /// The typed values; none asks for the starting values.
+    pub values: Option<FormValues>,
+}
+
+/// What a typed form carried over a newer saved version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RebasedForm {
+    /// The new starting values to send as `initial` from now on.
+    pub initial: FormValues,
+    /// The new basis to send as `opened` from now on.
+    pub basis: FormBasis,
+    /// Typed fields the saved version changed as well: saving replaces its value.
+    pub overwritten: Vec<Field>,
+    /// Typed fields the saved version's form cannot take: their typing is lost.
+    pub dropped: Vec<Field>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TasksFormResult {
+    /// The basis to submit `op` with.
+    pub epoch: String,
+    pub revision: u64,
+    /// The form these values make: on `changed_since`, the rebased one.
+    pub form: FormState,
+    /// The write, when every field reads and something would change.
+    pub op: Option<Op>,
+    /// Why `op` is none (`no changes`, `title must not be empty`, ...).
+    pub error: Option<String>,
+    /// The saved task (or a new item's parent) differs from the `initial` and `opened` the
+    /// client sent.
+    pub changed_since: bool,
+    pub rebased: Option<RebasedForm>,
 }
