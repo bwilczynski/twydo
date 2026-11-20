@@ -3,8 +3,10 @@
 
 use std::sync::Arc;
 
+use chrono::{NaiveDate, Weekday};
 use serde_json::Value;
 use twydo_core::details;
+use twydo_core::form::Form;
 use twydo_core::format::relative_date;
 use twydo_core::model::Status;
 use twydo_core::views::Snapshot;
@@ -13,7 +15,9 @@ use super::Shared;
 use super::admin::unresolved_conflict_uids;
 use super::views::{due_flags, list_color, list_name};
 use crate::protocol::rpc::{ErrorKind, RpcError};
-use crate::protocol::tasks::{ChildRow, TaskDetail, TaskParent, TasksGetParams, TasksGetResult};
+use crate::protocol::tasks::{
+    ChildRow, FieldPreview, FormState, TaskDetail, TaskParent, TasksGetParams, TasksGetResult,
+};
 use crate::protocol::views::RowList;
 
 fn internal(e: impl std::fmt::Display) -> RpcError {
@@ -23,6 +27,25 @@ fn internal(e: impl std::fmt::Display) -> RpcError {
 /// The note text, none when blank.
 fn note_of(d: &Option<String>) -> Option<String> {
     d.as_ref().filter(|n| !n.trim().is_empty()).cloned()
+}
+
+/// The edit form for the task at `idx`; an item's kind comes from its parent, as in `tdo`.
+pub(crate) fn open_form(snap: &Snapshot, idx: usize) -> Form {
+    let item_of = snap.parent(idx).map(|p| snap.tasks[p].kind);
+    Form::open(&snap.tasks[idx], item_of, snap.tz())
+}
+
+pub(crate) fn form_state(f: &Form, today: NaiveDate, work_days: &[Weekday]) -> FormState {
+    FormState {
+        fields: f.fields(),
+        values: f.values(),
+        previews: f
+            .previews(today, work_days)
+            .into_iter()
+            .map(|(field, text)| FieldPreview { field, text })
+            .collect(),
+        alert_editable: f.alert_editable(),
+    }
 }
 
 pub fn get(shared: &Arc<Shared>, p: TasksGetParams) -> Result<Value, RpcError> {
@@ -85,6 +108,11 @@ pub fn get(shared: &Arc<Shared>, p: TasksGetParams) -> Result<Value, RpcError> {
             }
         })
         .collect();
+    let form = form_state(
+        &open_form(snap, idx),
+        now.date_naive(),
+        &snap.config.work_days,
+    );
     serde_json::to_value(TasksGetResult {
         epoch: shared.epoch.clone(),
         revision,
@@ -92,6 +120,7 @@ pub fn get(shared: &Arc<Shared>, p: TasksGetParams) -> Result<Value, RpcError> {
         today: now.date_naive(),
         task,
         children,
+        form,
     })
     .map_err(internal)
 }

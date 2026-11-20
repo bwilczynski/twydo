@@ -1126,6 +1126,35 @@
         ],
         "type": "object"
       },
+      "Field": {
+        "description": "The card's fields, in Tab order.",
+        "enum": [
+          "title",
+          "list",
+          "type",
+          "due",
+          "start",
+          "repeat",
+          "alert",
+          "notes"
+        ],
+        "type": "string"
+      },
+      "FieldPreview": {
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/Field"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "text"
+        ],
+        "type": "object"
+      },
       "ForgetPreview": {
         "description": "What forgetting a list would preserve.",
         "properties": {
@@ -1153,6 +1182,81 @@
           "name",
           "tasks",
           "pending"
+        ],
+        "type": "object"
+      },
+      "FormState": {
+        "description": "An edit form's state, as the TUI card would show it.",
+        "properties": {
+          "alert_editable": {
+            "description": "False when the task has alerts Twydo cannot write: Alert is read-only.",
+            "type": "boolean"
+          },
+          "fields": {
+            "description": "The fields, in display order.",
+            "items": {
+              "$ref": "#/components/schemas/Field"
+            },
+            "type": "array"
+          },
+          "previews": {
+            "items": {
+              "$ref": "#/components/schemas/FieldPreview"
+            },
+            "type": "array"
+          },
+          "values": {
+            "$ref": "#/components/schemas/FormValues"
+          }
+        },
+        "required": [
+          "fields",
+          "values",
+          "previews",
+          "alert_editable"
+        ],
+        "type": "object"
+      },
+      "FormValues": {
+        "description": "The text of every field, as typed.",
+        "properties": {
+          "alert": {
+            "description": "Typed alert offset (`alertinput` syntax); empty for none.",
+            "type": "string"
+          },
+          "due": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "list": {
+            "description": "Collection id.",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "repeat": {
+            "description": "Typed repeat rule (`repeatinput` syntax); empty for none.",
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "list",
+          "kind",
+          "due",
+          "start",
+          "repeat",
+          "alert",
+          "notes"
         ],
         "type": "object"
       },
@@ -3693,6 +3797,14 @@
           "epoch": {
             "type": "string"
           },
+          "form": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FormState"
+              }
+            ],
+            "description": "The edit form's starting state."
+          },
           "now": {
             "description": "The daemon's clock, in the configured timezone.",
             "format": "date-time",
@@ -3717,7 +3829,8 @@
           "now",
           "today",
           "task",
-          "children"
+          "children",
+          "form"
         ],
         "type": "object"
       },
