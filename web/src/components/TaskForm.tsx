@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { Field, ViewsListItem, ViewsListResult } from "../gen/protocol";
+import type { Field, FormValues, ViewsListItem, ViewsListResult } from "../gen/protocol";
 import type { DataSource, FormOpen } from "../data";
 import { useFormState } from "../formState";
 import { ConfirmSheet } from "./ConfirmSheet";
@@ -28,7 +28,7 @@ export function TaskForm({
   lists?: ViewsListResult;
   heading: string;
   saveLabel: string;
-  onSaved: (title: string) => void;
+  onSaved: (title: string, values: FormValues) => void;
   onCancel: () => void;
 }) {
   const f = useFormState(ds, open);
@@ -47,13 +47,18 @@ export function TaskForm({
     }
   }, [values?.notes, !!answer]);
 
+  // While a save is out the form is frozen: typing then would be lost when it closes.
+  const set = (field: Field, text: string) => {
+    if (!busy) f.setField(field, text);
+  };
+
   const save = () => {
     if (!f.canSave || !answer?.op || !f.basis || !values || busy) return;
     setBusy(true);
     setRefusal("");
-    const form: FormOpen = { uid: open.uid, new: open.new, initial: f.initial, values };
+    const form: FormOpen = { uid: open.uid, new: open.new, initial: f.initial, values, opened: f.opened };
     ds.save(answer.op, f.basis, { uid: open.uid, title: values.title, form }).then(
-      () => onSaved(values.title),
+      () => onSaved(values.title, values),
       (e) => {
         setBusy(false);
         setRefusal(e instanceof Error ? e.message : String(e));
@@ -70,7 +75,7 @@ export function TaskForm({
   const text = (field: "due" | "start" | "repeat" | "alert") => {
     const date = field === "due" || field === "start";
     const label = cap(field);
-    const disabled = field === "alert" && answer && !answer.form.alert_editable;
+    const disabled = busy || (field === "alert" && answer && !answer.form.alert_editable);
     const pv = preview(field);
     return (
       <div class="field" key={field}>
@@ -82,7 +87,7 @@ export function TaskForm({
             disabled={!!disabled || !values}
             autocapitalize="off"
             autocomplete="off"
-            onInput={(e) => f.setField(field, (e.target as HTMLInputElement).value)}
+            onInput={(e) => set(field, (e.target as HTMLInputElement).value)}
           />
         </label>
         {date && (
@@ -91,6 +96,7 @@ export function TaskForm({
               type="button"
               class="cal"
               aria-label={`Pick ${label} date`}
+              disabled={busy}
               onClick={(e) => {
                 const input = (e.currentTarget as HTMLElement).nextElementSibling as HTMLInputElement;
                 if (input.showPicker) input.showPicker();
@@ -104,9 +110,10 @@ export function TaskForm({
               class="hidden-date"
               tabIndex={-1}
               aria-label={`${label} date`}
+              disabled={busy}
               onChange={(e) => {
                 const v = (e.target as HTMLInputElement).value;
-                if (v) f.setField(field, v);
+                if (v) set(field, v);
               }}
             />
           </span>
@@ -114,7 +121,7 @@ export function TaskForm({
         {field === "alert" && (
           <div class="chips">
             {CHIPS.map(([name, v]) => (
-              <button type="button" class="chip" key={name} disabled={!!disabled} onClick={() => f.setField("alert", v)}>
+              <button type="button" class="chip" key={name} disabled={!!disabled} onClick={() => set("alert", v)}>
                 {name}
               </button>
             ))}
@@ -135,14 +142,20 @@ export function TaskForm({
             aria-label="Title"
             placeholder="Title"
             value={values.title}
-            onInput={(e) => f.setField("title", (e.target as HTMLInputElement).value)}
+            disabled={busy}
+            onInput={(e) => set("title", (e.target as HTMLInputElement).value)}
           />
         );
       case "list":
         return (
           <label class="field" key={field}>
             <span class="label">List</span>
-            <select aria-label="List" value={listId} onChange={(e) => f.setField("list", (e.target as HTMLSelectElement).value)}>
+            <select
+              aria-label="List"
+              value={listId}
+              disabled={busy}
+              onChange={(e) => set("list", (e.target as HTMLSelectElement).value)}
+            >
               {!hasList && <option value={listId}>{listId}</option>}
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -164,7 +177,8 @@ export function TaskForm({
                   key={k}
                   aria-checked={values.kind === k}
                   class={values.kind === k ? "on" : ""}
-                  onClick={() => f.setField("type", k)}
+                  disabled={busy}
+                  onClick={() => set("type", k)}
                 >
                   {k}
                 </button>
@@ -181,7 +195,8 @@ export function TaskForm({
             placeholder="Notes"
             rows={3}
             value={values.notes}
-            onInput={(e) => f.setField("notes", (e.target as HTMLTextAreaElement).value)}
+            disabled={busy}
+            onInput={(e) => set("notes", (e.target as HTMLTextAreaElement).value)}
           />
         );
       default:
@@ -201,7 +216,7 @@ export function TaskForm({
         }}
       >
         <header>
-          <button type="button" onClick={() => (f.dirty ? setConfirm(true) : onCancel())}>
+          <button type="button" disabled={busy} onClick={() => !busy && (f.dirty ? setConfirm(true) : onCancel())}>
             Cancel
           </button>
           <h2>{heading}</h2>
@@ -212,7 +227,7 @@ export function TaskForm({
         {f.changed && (
           <p class="notice" role="status">
             Changed since you opened it{" "}
-            <button type="button" disabled={f.checking} onClick={f.review}>
+            <button type="button" disabled={f.checking || busy} onClick={f.review}>
               Review
             </button>
           </p>
@@ -231,7 +246,7 @@ export function TaskForm({
         {f.failed && (
           <p class="urgent" role="alert">
             Couldn't check the form{" "}
-            <button type="button" onClick={f.recheck}>
+            <button type="button" disabled={busy} onClick={f.recheck}>
               Retry
             </button>
           </p>

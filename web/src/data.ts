@@ -2,9 +2,8 @@
 import { signal, type ReadonlySignal } from "@preact/signals";
 import type {
   BasedOn,
-  CaptureTarget,
+  FormBasis,
   FormValues,
-  NewTask,
   NewTaskTarget,
   Op,
   TasksFormParams,
@@ -45,6 +44,8 @@ export interface DataSource {
    */
   fresh: ReadonlySignal<boolean>;
   refresh(v: Visible): Promise<void>;
+  /** Fetch the views list into `viewsList` without changing the visible target or `fresh`. */
+  loadViewsList(): Promise<void>;
   /**
    * The shown list view was refused as invalid (the list is gone). Its cached entry is dropped
    * and the visible target becomes "views", so this fires once. Fires for quiet refetches too. Returns an unsubscribe function.
@@ -59,7 +60,6 @@ export interface DataSource {
   /** based_on is the epoch/revision of the view displayed when called, never a newer fetch. */
   complete(uid: string): Promise<WriteResult>;
   reopen(uid: string): Promise<WriteResult>;
-  create(title: string, note: string, capture: CaptureTarget): Promise<WriteResult>;
   undo(): Promise<WriteResult>;
   /** A plain `tasks.form` call: check the values and get the form's previews and fields. */
   checkForm(p: TasksFormParams): Promise<TasksFormResult>;
@@ -68,7 +68,7 @@ export interface DataSource {
   /** Delete a task. */
   remove(uid: string, title: string): Promise<WriteResult>;
   /**
-   * A queued completion, capture or undo the daemon later refused or cancelled (`op.finished`).
+   * A queued write or undo the daemon later refused or cancelled (`op.finished`).
    * Returns an unsubscribe function.
    */
   onRefusal(cb: (refusal: Refusal) => void): () => void;
@@ -77,7 +77,17 @@ export interface DataSource {
 }
 
 /** What is needed to reopen a task form: an existing task or a new one, with its values. */
-export type FormOpen = { uid?: string; new?: NewTaskTarget; initial?: FormValues; values?: FormValues };
+/**
+ * What a task form opens with. `opened` is the daemon's opaque `form.basis` from when the form
+ * was opened (or last reviewed), sent back with every check.
+ */
+export type FormOpen = {
+  uid?: string;
+  new?: NewTaskTarget;
+  initial?: FormValues;
+  values?: FormValues;
+  opened?: FormBasis;
+};
 /** What a save reports if the daemon later refuses it; no `uid` means a new task. */
 export type SaveInfo = { uid?: string; title: string; form: FormOpen };
 
@@ -85,7 +95,6 @@ export type SaveInfo = { uid?: string; title: string; form: FormOpen };
 export type Refusal =
   | { kind: "complete"; uid: string; message: string }
   | { kind: "reopen"; uid: string; message: string }
-  | { kind: "create"; title: string; note: string; capture: CaptureTarget; message: string }
   | { kind: "add"; title: string; form: FormOpen; message: string }
   | { kind: "save"; uid: string; title: string; form: FormOpen; message: string }
   | { kind: "delete"; uid: string; title: string; message: string }
@@ -338,6 +347,10 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     viewsList,
     connection,
     fresh,
+    async loadViewsList() {
+      await sock.ready(READY_MS);
+      viewsList.value = await sock.call<ViewsListResult>("views.list", {});
+    },
     refresh(v) {
       if (!sameTarget(visible, v)) fresh.value = false; // unconfirmed until fetched
       visible = v;
@@ -358,18 +371,6 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     complete(uid) {
       const op: Op = { Complete: { uid } };
       return submit(`complete:${uid}`, "op.submit", { op }, { kind: "complete", uid });
-    },
-    create(title, note, capture) {
-      const task: NewTask = {
-        collection: capture.collection,
-        summary: title,
-        description: note === "" ? null : note,
-        kind: "Task",
-        due: capture.due ? { Date: capture.due } : null,
-      };
-      const op: Op = { Create: task };
-      const key = `create:${capture.collection}\0${capture.due ?? ""}\0${title}\0${note}`;
-      return submit(key, "op.submit", { op }, { kind: "create", title, note, capture });
     },
     undo() {
       return submit("undo", "op.undo", {}, { kind: "undo" });

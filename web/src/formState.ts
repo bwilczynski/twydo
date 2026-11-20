@@ -1,6 +1,6 @@
 // Form state for the task sheet: asks the daemon to check typed text, never judges it itself.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { BasedOn, Field, FormValues, TasksFormResult } from "./gen/protocol";
+import type { BasedOn, Field, FormBasis, FormValues, TasksFormResult } from "./gen/protocol";
 import type { DataSource, FormOpen } from "./data";
 
 /** Fields the daemon replaced or could no longer set when the user reviewed a change. */
@@ -21,6 +21,8 @@ export function useFormState(ds: DataSource, open: FormOpen, opts: { debounceMs?
   const [reviewed, setReviewed] = useState<Reviewed | undefined>();
   const valuesRef = useRef(values);
   const initialRef = useRef(initial);
+  // The daemon's basis for where this form started, carried back unread.
+  const openedRef = useRef<FormBasis | undefined>(open.opened);
   const seq = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const adopting = useRef(false);
@@ -28,9 +30,10 @@ export function useFormState(ds: DataSource, open: FormOpen, opts: { debounceMs?
   const send = useCallback(
     (vals: FormValues | undefined, init: FormValues | undefined) => {
       const mine = ++seq.current;
+      const opened = openedRef.current;
       setPending(false);
       setInFlight(true);
-      ds.checkForm({ uid: open.uid, new: open.new, initial: init, values: vals })
+      ds.checkForm({ uid: open.uid, new: open.new, initial: init, opened, values: vals })
         .then((ans) => {
           if (mine !== seq.current) return;
           setAnswer(ans);
@@ -40,6 +43,7 @@ export function useFormState(ds: DataSource, open: FormOpen, opts: { debounceMs?
             valuesRef.current = ans.form.values;
             setValues(ans.form.values);
           }
+          if (!opened && !openedRef.current) openedRef.current = ans.form.basis;
           if (!vals && !initialRef.current) {
             initialRef.current = ans.form.values;
             setInitial(ans.form.values);
@@ -86,6 +90,7 @@ export function useFormState(ds: DataSource, open: FormOpen, opts: { debounceMs?
     clearTimeout(timer.current);
     valuesRef.current = answer.form.values;
     initialRef.current = answer.rebased.initial;
+    openedRef.current = answer.rebased.basis;
     setValues(answer.form.values);
     setInitial(answer.rebased.initial);
     setReviewed({ overwritten: answer.rebased.overwritten, dropped: answer.rebased.dropped });
@@ -109,5 +114,7 @@ export function useFormState(ds: DataSource, open: FormOpen, opts: { debounceMs?
     canSave: !!answer?.op && !answer.changed_since && !inFlight && !pending && !failed,
     basis,
     initial,
+    /** The basis to send back as `opened`, e.g. in a form a refused save reopens. */
+    opened: openedRef.current,
   };
 }

@@ -67,6 +67,9 @@ export function TaskScreen({
   onBack,
   onToggle,
   onOpen,
+  onEdit,
+  onAddItem,
+  onDelete,
 }: {
   result: TasksGetResult;
   /** Target state shown for a task while its write is in flight (true = done). */
@@ -78,18 +81,27 @@ export function TaskScreen({
   /** `done` is the state the tap asks for: true completes, false reopens. */
   onToggle: (uid: string, title: string, done: boolean) => void;
   onOpen: (uid: string) => void;
+  onEdit: () => void;
+  onAddItem: () => void;
+  onDelete: () => void;
 }) {
   const { task, children } = result;
   const finished = (uid: string, completed: boolean) => ticked.get(uid) ?? completed;
   const done = finished(task.uid, task.completed);
   const open = children.filter((c) => !finished(c.uid, c.completed)).length;
+  const addable = task.kind === "Project" || task.kind === "Checklist";
   const kind = task.kind === "Task" ? "" : `${task.kind} · `;
   return (
     <>
-      <button type="button" class="back" onClick={onBack}>
-        <ChevronLeftIcon />
-        {backLabel}
-      </button>
+      <div class="task-bar">
+        <button type="button" class="back" onClick={onBack}>
+          <ChevronLeftIcon />
+          {backLabel}
+        </button>
+        <button type="button" class="edit" disabled={disabled} onClick={onEdit}>
+          Edit
+        </button>
+      </div>
       <header class={done ? "task-head done" : "task-head"}>
         <Check
           title={task.title}
@@ -148,7 +160,7 @@ export function TaskScreen({
       ))}
       {task.blocked && <p class="urgent">! {task.blocked}</p>}
       {task.conflict && <p class="urgent">This task has a sync conflict. Resolve it in tdo.</p>}
-      {children.length > 0 && (
+      {(children.length > 0 || addable) && (
         <section class="group">
           <h2>Items · {open} open</h2>
           <ul class="card">
@@ -163,6 +175,13 @@ export function TaskScreen({
                 onOpen={() => onOpen(c.uid)}
               />
             ))}
+            {addable && (
+              <li class="row add-item">
+                <button type="button" class="body" disabled={disabled} onClick={onAddItem}>
+                  + Add item
+                </button>
+              </li>
+            )}
           </ul>
         </section>
       )}
@@ -176,6 +195,9 @@ export function TaskScreen({
           </div>
         </section>
       )}
+      <button type="button" class="delete-task" disabled={disabled} onClick={onDelete}>
+        Delete task
+      </button>
     </>
   );
 }

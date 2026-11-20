@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { signal } from "@preact/signals";
 import type { DataSource, Connection, Refusal, ViewRef } from "../data";
 import type { ChildRow, TasksGetResult, ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
+import { answer, vals } from "../formFixtures";
 import { taskHash } from "../route";
 import { App } from "../App";
 
@@ -89,6 +90,7 @@ const taskResult = (
     values: { alert: "", due: "", kind: "Task", list: "c1", notes: "", repeat: "", start: "", title },
     previews: [],
     alert_editable: true,
+    basis: { repeat: "FREQ=DAILY", alert: "none", item_of: null, declared: "Task" },
   },
 });
 
@@ -128,8 +130,11 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     connection,
     fresh,
     refresh: vi.fn(async () => {}),
+    loadViewsList: vi.fn(async () => {}),
     complete: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 2, message: "ok" })),
-    create: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 2, message: "ok" })),
+    checkForm: vi.fn(async () => answer({}, vals({ title: "Water plants" }))),
+    save: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 2, message: "ok" })),
+    remove: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 3, message: "ok" })),
     undo: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 3, message: "ok" })),
     onRefusal: vi.fn((cb: (r: Refusal) => void) => {
       refusal = cb;
@@ -137,7 +142,7 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     }),
     dispose: vi.fn(),
     ...over,
-  } as unknown as DataSource & { complete: any; create: any; undo: any; reopen: any; refresh: any };
+  } as unknown as DataSource & { complete: any; checkForm: any; save: any; remove: any; undo: any; reopen: any; refresh: any; loadViewsList: any };
   return { ds, connection, fresh, inbox, bills, taskSignal };
 }
 
@@ -233,29 +238,6 @@ describe("completing", () => {
     await waitFor(() => expect(box.getAttribute("aria-checked")).toBe("false"));
   });
 
-  it("a refused queued capture offers its text back", async () => {
-    const { ds } = fake({
-      create: vi.fn(async () => ({ outcome: "queued", op_id: "o", revision: 2, message: "queued" })),
-    });
-    render(<App ds={ds} />);
-    fireEvent.click(screen.getByLabelText("New task"));
-    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Water plants" } });
-    fireEvent.input(screen.getByLabelText("Note"), { target: { value: "ferns too" } });
-    fireEvent.click(screen.getByText("Add"));
-    await screen.findByText('Added "Water plants" to Inbox');
-    refusal({
-      kind: "create",
-      title: "Water plants",
-      note: "ferns too",
-      capture: { collection: "c1", name: "Inbox", due: null },
-      message: "The list was deleted",
-    });
-    expect(await screen.findByText('Could not add "Water plants": The list was deleted')).toBeTruthy();
-    fireEvent.click(screen.getByText("Edit"));
-    expect((await screen.findByLabelText("Title") as HTMLInputElement).value).toBe("Water plants");
-    expect((screen.getByLabelText("Note") as HTMLTextAreaElement).value).toBe("ferns too");
-  });
-
   it("a refused queued undo shows a banner", async () => {
     const { ds } = fake();
     render(<App ds={ds} />);
@@ -300,33 +282,7 @@ describe("completing", () => {
 });
 
 describe("capture", () => {
-  it("new task sheet is full screen", () => {
-    const { ds } = fake();
-    render(<App ds={ds} />);
-    fireEvent.click(screen.getByLabelText("New task"));
-    const form = screen.getByRole("form", { name: "New task" });
-    expect(form.classList.contains("full")).toBe(true);
-    expect(screen.getByRole("heading", { name: "New task" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("form", { name: "New task" })).toBeNull();
-  });
-
-  it("capture from Today sends due today", async () => {
-    const { ds } = fake();
-    localStorage.setItem("twydo.tab", "today");
-    render(<App ds={ds} />);
-    fireEvent.click(screen.getByLabelText("New task"));
-    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Water plants" } });
-    fireEvent.input(screen.getByLabelText("Note"), { target: { value: "ferns" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(ds.create).toHaveBeenCalledWith("Water plants", "ferns", {
-      collection: "c1",
-      name: "Inbox",
-      due: "2026-11-17",
-    });
-    expect(await screen.findByText('Added "Water plants" to Inbox')).toBeTruthy();
-  });
-
+  // (new task from the FAB is covered under "editing")
   it("New task is disabled until the view and its capture target have arrived", () => {
     const inbox = signal<ViewsGetResult | undefined>(undefined);
     const { ds } = fake({ view: () => inbox });
@@ -337,17 +293,6 @@ describe("capture", () => {
     return waitFor(() => expect(fab.disabled).toBe(false));
   });
 
-  it("blank title cannot be added", () => {
-    const { ds } = fake();
-    render(<App ds={ds} />);
-    fireEvent.click(screen.getByLabelText("New task"));
-    const add = screen.getByRole("button", { name: "Add" }) as HTMLButtonElement;
-    expect(add.disabled).toBe(true);
-    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "   " } });
-    expect(add.disabled).toBe(true);
-    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "x" } });
-    expect(add.disabled).toBe(false);
-  });
 });
 
 describe("connection", () => {
@@ -372,21 +317,6 @@ describe("connection", () => {
 });
 
 describe("polish", () => {
-  it("failed capture keeps the sheet and draft and shows the message", async () => {
-    const { ds } = fake({
-      create: vi.fn(async () => {
-        throw new Error("No such list");
-      }),
-    });
-    render(<App ds={ds} />);
-    fireEvent.click(screen.getByLabelText("New task"));
-    fireEvent.input(screen.getByLabelText("Title"), { target: { value: "Keep me" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
-    expect(await screen.findByText("No such list")).toBeTruthy();
-    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Keep me");
-    expect((screen.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(false);
-  });
-
   it("shows a cached view while it refreshes, with no label and not dimmed", () => {
     const { ds, fresh } = fake();
     fresh.value = false;
@@ -917,5 +847,197 @@ describe("task screen", () => {
     fireEvent.click(screen.getByLabelText("Inbox", { selector: '[role="tab"]' }));
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Inbox"));
     await waitFor(() => expect(location.hash).toBe(""));
+  });
+});
+
+describe("editing", () => {
+  const openU1 = () => fireEvent.click(screen.getByText("Buy milk"));
+  const saveBtn = async (label: string) => {
+    const b = (await screen.findByRole("button", { name: label })) as HTMLButtonElement;
+    await waitFor(() => expect(b.disabled).toBe(false));
+    return b;
+  };
+  const project = (taskSignal: (u: string) => any, kids: ChildRow[] = []) => {
+    taskSignal("u1").value = taskResult("u1", "Buy milk", { kind: "Project" }, kids);
+  };
+
+  it("edit opens the form with the task's values", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("heading", { name: "Edit" })).toBeTruthy();
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Buy milk");
+    expect(ds.checkForm.mock.calls[0][0].opened).toEqual({
+      repeat: "FREQ=DAILY",
+      alert: "none",
+      item_of: null,
+      declared: "Task",
+    });
+  });
+
+  it("a save answered after its form was replaced leaves the new form open", async () => {
+    let done!: (v: unknown) => void;
+    const { ds } = fake({ save: vi.fn(() => new Promise((r) => (done = r))) });
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(await saveBtn("Save"));
+    // An earlier queued add is refused meanwhile, and its Edit opens that form instead.
+    const form = { new: { collection: "c1" }, values: vals({ title: "Earlier" }) };
+    act(() => refusal({ kind: "add", title: "Earlier", form, message: "The list was deleted" }));
+    const banner = (await screen.findByText('Could not add "Earlier": The list was deleted')).closest(".banner") as HTMLElement;
+    fireEvent.click(within(banner).getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("heading", { name: "New task" })).toBeTruthy();
+    await act(async () => done({ outcome: "applied", op_id: "o", revision: 2, message: "ok" }));
+    expect(await screen.findByText('Saved "Buy milk"')).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "New task" })).toBeTruthy();
+  });
+
+  it("saving shows the banner and refetches", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(await saveBtn("Save"));
+    expect(await screen.findByText('Saved "Buy milk"')).toBeTruthy();
+    expect(ds.save.mock.calls[0][2].uid).toBe("u1");
+    expect(screen.queryByRole("heading", { name: "Edit" })).toBeNull();
+    expect(ds.refresh).toHaveBeenLastCalledWith({ task: "u1" });
+    expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
+  });
+
+  it("add item opens the form for a new item of this task", async () => {
+    const { ds, taskSignal } = fake();
+    project(taskSignal);
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByText("+ Add item"));
+    expect(await screen.findByRole("heading", { name: "New item" })).toBeTruthy();
+    expect(ds.checkForm.mock.calls[0][0]).toMatchObject({ new: { collection: "c1", parent: "u1" } });
+    fireEvent.click(await saveBtn("Add"));
+    expect(await screen.findByText('Added "Water plants"')).toBeTruthy();
+  });
+
+  it("no add item on a plain task", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    expect(screen.queryByText("+ Add item")).toBeNull();
+  });
+
+  it("new task from the FAB uses the view's capture", async () => {
+    const { ds } = fake();
+    localStorage.setItem("twydo.tab", "today");
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByLabelText("New task"));
+    expect(await screen.findByRole("heading", { name: "New task" })).toBeTruthy();
+    expect(ds.checkForm.mock.calls[0][0]).toMatchObject({ new: { collection: "c1", due: "2026-11-17" } });
+    fireEvent.click(await saveBtn("Add"));
+    expect(await screen.findByText('Added "Water plants" to Inbox')).toBeTruthy();
+  });
+
+  it("opening the form without a views list loads it without moving the target", async () => {
+    const { ds } = fake({ viewsList: signal(undefined) });
+    render(<App ds={ds} />);
+    openU1();
+    ds.refresh.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(ds.loadViewsList).toHaveBeenCalled();
+    expect(ds.refresh).not.toHaveBeenCalledWith("views");
+  });
+
+  it("a new task whose list was changed is worded without the list name", async () => {
+    const { ds } = fake({ checkForm: vi.fn(async () => answer({}, vals({ title: "Water plants", list: "c9" }))) });
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByLabelText("New task"));
+    fireEvent.click(await saveBtn("Add"));
+    expect(await screen.findByText('Added "Water plants"')).toBeTruthy();
+  });
+
+  it("delete asks, pops and shows the banner", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    expect(screen.getByRole("dialog", { name: 'Delete "Buy milk"?' })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText('Deleted "Buy milk"')).toBeTruthy();
+    expect(ds.remove).toHaveBeenCalledWith("u1", "Buy milk");
+    await waitFor(() => expect(location.hash).not.toBe("#/task/u1"));
+    expect(screen.queryByRole("button", { name: "Delete task" })).toBeNull();
+  });
+
+  it("delete pops without the gone banner", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    taskGone("u1");
+    await screen.findByText('Deleted "Buy milk"');
+    expect(screen.queryByText("That task is gone")).toBeNull();
+  });
+
+  it("delete of a parent names its items", () => {
+    const { ds, taskSignal } = fake();
+    project(taskSignal, [child("k1", "One"), child("k2", "Two")]);
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    expect(screen.getByRole("dialog", { name: 'Delete "Buy milk" and its 2 items?' })).toBeTruthy();
+  });
+
+  it("a refused delete shows the message", async () => {
+    const { ds } = fake({
+      remove: vi.fn(async () => {
+        throw new Error("Not allowed");
+      }),
+    });
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Not allowed")).toBeTruthy();
+  });
+
+  it("a refused queued save reopens the form", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    const form = { uid: "u1", initial: vals({ title: "Buy milk" }), values: vals({ title: "Buy oat milk" }) };
+    refusal({ kind: "save", uid: "u1", title: "Buy oat milk", form, message: "The task was deleted" });
+    expect(await screen.findByText('Could not save "Buy oat milk": The task was deleted')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect((await screen.findByLabelText("Title") as HTMLInputElement).value).toBe("Buy oat milk");
+  });
+
+  it("a refused queued add reopens the form", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    const form = { new: { collection: "c1" }, values: vals({ title: "Water plants" }) };
+    refusal({ kind: "add", title: "Water plants", form, message: "The list was deleted" });
+    expect(await screen.findByText('Could not add "Water plants": The list was deleted')).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("heading", { name: "New task" })).toBeTruthy();
+  });
+
+  it("a refused queued delete shows its banner", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    refusal({ kind: "delete", uid: "u1", title: "Buy milk", message: "Gone" });
+    expect(await screen.findByText('Could not delete "Buy milk": Gone')).toBeTruthy();
+  });
+
+  it("offline disables edit, add item and delete", () => {
+    const { ds, connection, taskSignal } = fake();
+    project(taskSignal);
+    render(<App ds={ds} />);
+    openU1();
+    connection.value = "closed";
+    return waitFor(() => {
+      expect((screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByText("+ Add item") as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByRole("button", { name: "Delete task" }) as HTMLButtonElement).disabled).toBe(true);
+    });
   });
 });

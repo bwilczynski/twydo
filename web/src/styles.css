@@ -250,3 +250,13 @@ input, textarea { font: inherit; color: inherit; }
 .confirm button { padding: 12px; border-radius: 10px; background: var(--bg); color: var(--accent); font-size: 17px; }
 .confirm button.danger { color: var(--danger); }
 @media (prefers-reduced-motion: reduce) { .confirm { animation: none; } }
+
+.task-bar { display: flex; align-items: center; justify-content: space-between; }
+.task-bar .edit { color: var(--accent); min-height: 44px; padding: 0 4px; }
+.task-bar .edit:disabled { color: var(--secondary); }
+.add-item .body { color: var(--accent); }
+.delete-task {
+  display: block; width: 100%; margin: 24px 0 8px; min-height: 48px; border-radius: 12px;
+  background: var(--card, transparent); color: var(--danger); font-weight: 600;
+}
+.delete-task:disabled { opacity: 0.45; }

@@ -192,23 +192,6 @@ describe("data source", () => {
     expect(seen).toEqual([{ kind: "complete", uid: "uid-2", message: "The task changed" }]);
   });
 
-  it("a refused op.finished for a queued capture reaches onRefusal with its draft", async () => {
-    const ds = setup();
-    await opened();
-    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o9", revision: 2, message: "q" });
-    const seen: unknown[] = [];
-    ds.onRefusal((r) => seen.push(r));
-    const capture = { collection: "c1", name: "Inbox", due: null };
-    await ds.create("Water plants", "ferns", capture);
-    const rid = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
-    const finished = { type: "op.finished", seq: 9, op_id: "o9", request_id: rid };
-    FakeWebSocket.last.notify("event", { ...finished, state: { state: "refused", kind: "stale", message: "nope" } });
-    expect(seen).toEqual([{ kind: "create", title: "Water plants", note: "ferns", capture, message: "nope" }]);
-    // The entry is consumed: a repeat reports nothing.
-    FakeWebSocket.last.notify("event", { ...finished, state: { state: "refused", message: "nope" } });
-    expect(seen).toHaveLength(1);
-  });
-
   it("a cancelled op.finished for a queued undo reaches onRefusal", async () => {
     const ds = setup();
     await opened();
@@ -225,23 +208,6 @@ describe("data source", () => {
       state: { state: "cancelled", message: "gone" },
     });
     expect(seen).toEqual([{ kind: "undo", message: "gone" }]);
-  });
-
-  it("an applied (non-queued) capture is not tracked", async () => {
-    const ds = setup();
-    await opened();
-    const seen: unknown[] = [];
-    ds.onRefusal((r) => seen.push(r));
-    await ds.create("Buy milk", "", { collection: "c1", name: "Inbox", due: null });
-    const rid = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
-    FakeWebSocket.last.notify("event", {
-      type: "op.finished",
-      seq: 9,
-      op_id: "o",
-      request_id: rid,
-      state: { state: "refused", message: "late" },
-    });
-    expect(seen).toEqual([]);
   });
 
   it("retry reuses request_id", async () => {
@@ -278,30 +244,6 @@ describe("data source", () => {
     await flush();
     expect(viewsGets()).toHaveLength(n + 1);
     expect(ds.view({ view: "inbox" }).value?.revision).toBe(9);
-  });
-
-  it("create in Inbox sends no due date", async () => {
-    const ds = setup();
-    await opened();
-    await ds.create("Buy milk", "", { collection: "c1", name: "Inbox", due: null });
-    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.op).toEqual({
-      Create: { collection: "c1", summary: "Buy milk", description: null, kind: "Task", due: null },
-    });
-  });
-
-  it("today capture sends due date", async () => {
-    const ds = setup();
-    await opened();
-    await ds.create("Call back", "re: invoice", { collection: "c1", name: "Inbox", due: "2026-11-17" });
-    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.op).toEqual({
-      Create: {
-        collection: "c1",
-        summary: "Call back",
-        description: "re: invoice",
-        kind: "Task",
-        due: { Date: "2026-11-17" },
-      },
-    });
   });
 
   it("undo sends op.undo", async () => {
@@ -553,6 +495,21 @@ describe("all views", () => {
     await ds.refresh("views");
     expect(viewsLists().at(-1)!.params).toEqual({});
     expect(ds.viewsList.value?.entries).toEqual([{ heading: "Lists" }]);
+  });
+
+  it("loadViewsList fills viewsList and leaves the visible basis alone", async () => {
+    const ds = setup();
+    await opened();
+    await ds.refresh({ view: "inbox" });
+    const based = ds.view({ view: "inbox" }).value!;
+    await ds.loadViewsList();
+    expect(ds.viewsList.value?.entries).toEqual([{ heading: "Lists" }]);
+    revision = based.revision + 5; // a later fetch must not have become the visible basis
+    await ds.complete("uid-1");
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on).toEqual({
+      epoch: based.epoch,
+      revision: based.revision,
+    });
   });
 
   it("refresh_list_sends_list_param", async () => {
