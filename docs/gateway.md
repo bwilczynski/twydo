@@ -115,8 +115,15 @@ gone". Tapping a task opens its screen with its items (a checklist or subtasks);
 can be ticked and unticked there, with the same Undo banner. A new task from any view goes to
 that view's capture list, as in the desktop; the New task sheet opens full screen. Both
 `views.get` and `views.list` are in the allowlist of both roles (phone and display); so is
-`tasks.get` (one task and its children). Only the phone role may write: it may complete and
-reopen any task and capture plain tasks.
+`tasks.get` (one task and its children). `tasks.form` (the edit form's starting values and checks) is phone-only. Only the phone role may
+write: through `op.submit` it may create (any list, kind, due, start, repeat and parent), save,
+complete, reopen and delete; `edit`, `move`, `create_at`, `reorder` and `reparent` stay refused.
+The daemon's gate and write policy decide each write as for `tdo`.
+
+| Role | Methods | `op.submit` ops |
+|---|---|---|
+| `phone` | `views.get`, `views.list`, `tasks.get`, `tasks.form`, `events.subscribe`, `events.unsubscribe`, `op.submit`, `op.undo` | `create`, `save`, `complete`, `reopen`, `delete` |
+| `display` | `views.get`, `views.list`, `tasks.get`, `events.subscribe`, `events.unsubscribe` | none |
 
 Done is not paged: `views.get` returns every completed task in one result. Measured on the
 test fixture, a completed row is about 270 bytes of JSON, plus a few hundred bytes for the
