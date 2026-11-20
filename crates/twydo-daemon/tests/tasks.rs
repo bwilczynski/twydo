@@ -177,3 +177,95 @@ fn unknown_uid_is_invalid() {
         .unwrap_err();
     assert_eq!(kind(&err), ErrorKind::Invalid);
 }
+
+fn field_names(r: &TasksGetResult) -> Vec<String> {
+    r.form
+        .fields
+        .iter()
+        .map(|f| {
+            serde_json::to_value(f)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
+fn preview_of(r: &TasksGetResult, field: &str) -> Option<String> {
+    r.form
+        .previews
+        .iter()
+        .find(|p| serde_json::to_value(p.field).unwrap() == field)
+        .map(|p| p.text.clone())
+}
+
+#[test]
+fn form_block_for_a_task() {
+    let fx = Fixture::new(&[]);
+    fx.write(
+        "inbox/wk.ics",
+        &ics("wk", "Weekly", "DUE:20261118\r\nRRULE:FREQ=WEEKLY\r\n"),
+    );
+    let td = start(&fx);
+    let r = get(&td, "wk");
+    assert_eq!(
+        field_names(&r),
+        [
+            "title", "list", "type", "due", "start", "repeat", "alert", "notes"
+        ]
+    );
+    assert_eq!(r.form.values.due, "2026-11-18");
+    assert!(!r.form.values.repeat.is_empty());
+    assert!(preview_of(&r, "repeat").unwrap().starts_with('→'));
+    assert!(r.form.alert_editable);
+}
+
+#[test]
+fn form_block_for_a_checklist_item() {
+    let fx = fx();
+    let td = start(&fx);
+    let r = get(&td, "i1");
+    assert_eq!(field_names(&r), ["title", "notes"]);
+}
+
+#[test]
+fn form_block_keeps_unwritable_rule() {
+    let rule = "FREQ=MONTHLY;BYSETPOS=2;BYDAY=MO,TU";
+    assert_eq!(twydo_core::repeatinput::to_text(rule, false), None);
+    let fx = Fixture::new(&[]);
+    fx.write(
+        "inbox/kr.ics",
+        &ics(
+            "kr",
+            "Odd rule",
+            &format!("DUE:20261118\r\nRRULE:{rule}\r\n"),
+        ),
+    );
+    let td = start(&fx);
+    let r = get(&td, "kr");
+    assert_eq!(r.form.values.repeat, "");
+    assert!(preview_of(&r, "repeat").unwrap().ends_with("(kept)"));
+}
+
+#[test]
+fn form_block_alert_read_only() {
+    let fx = Fixture::new(&[]);
+    let alarm =
+        |t: &str| format!("BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:{t}\r\nEND:VALARM\r\n");
+    fx.write(
+        "inbox/two.ics",
+        &ics(
+            "two",
+            "Two alarms",
+            &format!(
+                "DUE:20261118T100000\r\n{}{}",
+                alarm("-PT15M"),
+                alarm("-PT1H")
+            ),
+        ),
+    );
+    let td = start(&fx);
+    let r = get(&td, "two");
+    assert!(!r.form.alert_editable);
+}

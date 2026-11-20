@@ -4,6 +4,7 @@
 use chrono::{DateTime, FixedOffset, NaiveDate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use twydo_core::form::{Field, FormValues};
 use twydo_core::model::TaskKind;
 
 use super::views::RowList;
@@ -23,6 +24,25 @@ pub struct TasksGetResult {
     pub task: TaskDetail,
     /// Every child: open ones in sibling order, then completed ones, newest first.
     pub children: Vec<ChildRow>,
+    /// The edit form's starting state.
+    pub form: FormState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FieldPreview {
+    pub field: Field,
+    pub text: String,
+}
+
+/// An edit form's state, as the TUI card would show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormState {
+    /// The fields, in display order.
+    pub fields: Vec<Field>,
+    pub values: FormValues,
+    pub previews: Vec<FieldPreview>,
+    /// False when the task has alerts Twydo cannot write: Alert is read-only.
+    pub alert_editable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

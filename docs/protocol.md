@@ -94,7 +94,12 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   `completed`, the `note` (none when blank) and the `parent` (`{uid, title, kind}`). `children`
   lists every child: the open ones in sibling order, then the completed ones, newest first;
   each has `uid`, `title`, `kind`, `due`, `overdue`, `due_today`, `completed`, `pending`,
-  `has_note` and `child_count`. The wording is the TUI details pane's. An unknown `uid` is
+  `has_note` and `child_count`. The wording is the TUI details pane's. `form` is the edit form's
+  starting state, as the TUI card would show it: `fields` in display order (a checklist item has
+  only `title` and `notes`), `values` (the typed texts, `kind` and `list`), `previews` (the
+  `{field, text}` lines the card shows, such as `→ Wed 18 Nov` or `… (kept)` for a repeat rule
+  Twydo cannot write) and `alert_editable`, false when the task has alerts Twydo cannot write.
+  An unknown `uid` is
   refused with error kind `invalid`. A client refetches on `data.changed` and `status.changed`.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
