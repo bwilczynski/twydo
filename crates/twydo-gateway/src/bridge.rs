@@ -1,13 +1,12 @@
 //! Pure request and event filtering between a device and the daemon: no I/O.
 
 use serde_json::{Value, json};
-use twydo_core::edit::{Due, Op};
-use twydo_core::model::TaskKind;
+use twydo_core::edit::Op;
 use twydo_daemon::client::Notification;
 use twydo_daemon::protocol::events::Event;
 use twydo_daemon::protocol::methods::{SubmitParams, UndoParams};
 use twydo_daemon::protocol::rpc::{ErrorKind, RpcError};
-use twydo_daemon::protocol::tasks::TasksGetParams;
+use twydo_daemon::protocol::tasks::{TasksFormParams, TasksGetParams};
 use twydo_daemon::protocol::views::{ViewName, ViewsGetParams};
 
 use crate::state::{Device, Role};
@@ -15,6 +14,7 @@ use crate::state::{Device, Role};
 const PHONE: &[&str] = &[
     "views.get",
     "tasks.get",
+    "tasks.form",
     "views.list",
     "events.subscribe",
     "events.unsubscribe",
@@ -57,17 +57,14 @@ fn allowed(role: Role) -> &'static [&'static str] {
 }
 
 fn phone_may_submit(op: &Op) -> bool {
-    match op {
-        Op::Create(t) => {
-            t.parent.is_none()
-                && t.repeat.is_none()
-                && t.start.is_none()
-                && t.kind == TaskKind::Task
-                && matches!(t.due, None | Some(Due::Date(_)))
-        }
-        Op::Complete { .. } | Op::Reopen { .. } => true,
-        _ => false,
-    }
+    matches!(
+        op,
+        Op::Create(_)
+            | Op::Save { .. }
+            | Op::Complete { .. }
+            | Op::Reopen { .. }
+            | Op::Delete { .. }
+    )
 }
 
 /// Take the client's `request_id` out of `obj` and return it prefixed, or an error.
@@ -118,6 +115,14 @@ pub fn inbound(
             return Ok((
                 method.to_string(),
                 serde_json::to_value(p).map_err(|_| invalid("invalid tasks.get params"))?,
+            ));
+        }
+        "tasks.form" => {
+            let p: TasksFormParams = serde_json::from_value(params.unwrap_or(Value::Null))
+                .map_err(|_| invalid("invalid tasks.form params"))?;
+            return Ok((
+                method.to_string(),
+                serde_json::to_value(p).map_err(|_| invalid("invalid tasks.form params"))?,
             ));
         }
         "views.list" | "events.subscribe" | "events.unsubscribe" => {

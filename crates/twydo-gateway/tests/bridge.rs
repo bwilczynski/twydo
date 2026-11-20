@@ -137,32 +137,37 @@ fn methods_outside_role_refused() {
 }
 
 #[test]
-fn create_with_repeat_parent_start_kind_or_timed_due_refused() {
-    for extra in [
-        json!({"parent": "u"}),
-        json!({"start": "2026-11-20"}),
-        json!({"kind": "Project"}),
-        json!({"due": {"Date": "2026-11-20"}, "repeat": repeat_json()}),
-        json!({"due": {"Time": "2026-11-20T10:00:00"}}),
-    ] {
-        assert_refused(run(Role::Phone, "op.submit", submit(task(extra))));
+fn phone_may_save_delete_and_create_anything() {
+    let ops = [
+        json!({"Save": {"uid": "u", "changes": [], "to": null}}),
+        json!({"Delete": {"uid": "u"}}),
+        json!({"Complete": {"uid": "u"}}),
+        task(json!({"due": {"Date": "2026-11-20"}})),
+        task(json!({"parent": "u"})),
+        task(json!({"repeat": repeat_json()})),
+        task(json!({"start": "2026-11-20"})),
+        task(json!({"kind": "Checklist"})),
+        task(json!({"due": {"Time": "2026-11-20T10:00:00"}})),
+    ];
+    for op in ops {
+        assert!(
+            run(Role::Phone, "op.submit", submit(op.clone())).is_ok(),
+            "{op}"
+        );
+        assert_refused(run(Role::Display, "op.submit", submit(op)));
     }
-    assert!(
-        run(
-            Role::Phone,
-            "op.submit",
-            submit(task(json!({"due": {"Date": "2026-11-20"}})))
-        )
-        .is_ok()
-    );
-    assert!(
-        run(
-            Role::Phone,
-            "op.submit",
-            submit(json!({"Complete": {"uid": "u"}}))
-        )
-        .is_ok()
-    );
+}
+
+#[test]
+fn tasks_form_phone_only() {
+    let p = || Some(json!({"uid": "u", "values": null, "x": 1}));
+    let (m, v) = run(Role::Phone, "tasks.form", p()).unwrap();
+    assert_eq!(m, "tasks.form");
+    assert!(v.get("x").is_none());
+    assert_eq!(v["uid"], "u");
+    assert_refused(run(Role::Display, "tasks.form", p()));
+    let e = run(Role::Phone, "tasks.form", Some(json!({"uid": 5}))).unwrap_err();
+    assert_eq!(e.code, REFUSED);
 }
 
 #[test]
@@ -183,13 +188,12 @@ fn phone_may_reopen() {
 }
 
 #[test]
-fn delete_move_edit_refused() {
+fn phone_refused_edit_move_create_at_reorder_reparent() {
     for op in [
-        json!({"Delete": {"uid": "u"}}),
         json!({"Edit": {"uid": "u", "changes": []}}),
+        json!({"CreateAt": {"task": task(json!({}))["Create"], "anchor": "a", "placement": "Before"}}),
         json!({"Reorder": {"uid": "u", "anchor": "a", "placement": "Before"}}),
         json!({"Move": {"uid": "u", "to": "c"}}),
-        json!({"Save": {"uid": "u", "changes": [], "to": null}}),
         json!({"Reparent": {"uid": "u", "collection": "c", "parent": null}}),
     ] {
         assert_refused(run(Role::Phone, "op.submit", submit(op)));
