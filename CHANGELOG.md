@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/bwilczynski/twydo/compare/v0.6.2...v0.6.3) - 2026-11-20
+
+### Added
+
+- *(daemon)* check a task form with tasks.form
+- *(daemon)* return the edit form with tasks.get
+- *(gateway)* let phones edit, create and delete tasks
+
 ## [0.6.2](https://github.com/bwilczynski/twydo/compare/v0.6.1...v0.6.2) - 2026-11-20
 
 ### Added
