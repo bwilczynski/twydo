@@ -19,6 +19,7 @@ pub mod sessions;
 pub mod syncjob;
 pub mod synclog;
 pub mod syncsummary;
+pub mod tasks;
 pub mod views;
 pub mod watch;
 pub mod writes;

@@ -4,7 +4,8 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
+use chrono_tz::Tz;
 use serde_json::Value;
 use twydo_core::ical::value::{IcalDateTime, Resolved};
 use twydo_core::model::{Status, Task};
@@ -62,13 +63,7 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
     let today = now.date_naive();
     let conflicts = unresolved_conflict_uids(shared).map_err(internal)?;
 
-    let list_name = |id: &str| {
-        snap.collections
-            .iter()
-            .find(|c| c.id == id)
-            .map(|c| c.display_name.clone().unwrap_or_else(|| c.id.clone()))
-            .unwrap_or_else(|| id.to_string())
-    };
+    let list_name = |id: &str| list_name(snap, id);
     let view = resolve(snap, &p)?;
     let default_capture = |due| {
         let id = default_list(snap);
@@ -142,8 +137,17 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
     serde_json::to_value(result).map_err(internal)
 }
 
+/// A list's display name, falling back to its id.
+pub(crate) fn list_name(snap: &Snapshot, id: &str) -> String {
+    snap.collections
+        .iter()
+        .find(|c| c.id == id)
+        .map(|c| c.display_name.clone().unwrap_or_else(|| c.id.clone()))
+        .unwrap_or_else(|| id.to_string())
+}
+
 /// A list's colour as `#rrggbb`.
-fn list_color(snap: &Snapshot, id: &str) -> Option<String> {
+pub(crate) fn list_color(snap: &Snapshot, id: &str) -> Option<String> {
     snap.collections
         .iter()
         .find(|c| c.id == id)
@@ -235,6 +239,24 @@ pub fn list(shared: &Arc<Shared>) -> Result<Value, RpcError> {
     .map_err(internal)
 }
 
+/// The calendar day of a date value in the clock's timezone.
+fn day_in(d: &IcalDateTime, now: DateTime<Tz>) -> NaiveDate {
+    match d.resolve(now.timezone()).0 {
+        Resolved::Date(day) => day,
+        Resolved::Instant(i) => i.with_timezone(&now.timezone()).date_naive(),
+    }
+}
+
+/// `(overdue, due_today)` for task `idx` at `now`.
+pub(crate) fn due_flags(snap: &Snapshot, idx: usize, now: DateTime<Tz>) -> (bool, bool) {
+    let t = &snap.tasks[idx];
+    let today = now.date_naive();
+    (
+        t.status == Status::Open && date_group(snap, idx, now, false) == DateGroup::Overdue,
+        t.due.as_ref().is_some_and(|d| day_in(d, now) == today),
+    )
+}
+
 fn row(
     snap: &Snapshot,
     r: &Row,
@@ -245,10 +267,8 @@ fn row(
     let t: &Task = &snap.tasks[r.task];
     let now = at.with_timezone(&snap.tz());
     let today = now.date_naive();
-    let day_of = |d: &IcalDateTime| match d.resolve(now.timezone()).0 {
-        Resolved::Date(day) => day,
-        Resolved::Instant(i) => i.with_timezone(&now.timezone()).date_naive(),
-    };
+    let (overdue, due_today) = due_flags(snap, r.task, now);
+    let day_of = |d: &IcalDateTime| day_in(d, now);
     let color = list_color(snap, &t.collection);
     ViewRow {
         uid: t.uid.clone(),
@@ -267,9 +287,8 @@ fn row(
             .as_ref()
             .filter(|s| day_of(s) > today)
             .map(|s| twydo_core::format::relative_date(s, now)),
-        overdue: t.status == Status::Open
-            && date_group(snap, r.task, now, false) == DateGroup::Overdue,
-        due_today: t.due.as_ref().is_some_and(|d| day_of(d) == today),
+        overdue,
+        due_today,
         completed: t.status != Status::Open,
         note: t.description.clone(),
         kind: t.kind,

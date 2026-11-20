@@ -2549,6 +2549,7 @@ name = "twydo-daemon"
 version = "0.6.1"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "libc",
  "notify",
  "schemars",

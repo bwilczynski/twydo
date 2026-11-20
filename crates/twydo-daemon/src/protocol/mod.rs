@@ -6,6 +6,7 @@ pub mod methods;
 pub mod reports;
 pub mod rpc;
 pub mod sync;
+pub mod tasks;
 pub mod views;
 pub mod wire;
 
