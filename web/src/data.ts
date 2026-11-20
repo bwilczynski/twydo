@@ -5,6 +5,7 @@ import type {
   CaptureTarget,
   NewTask,
   Op,
+  TasksGetResult,
   ViewsGetParams,
   ViewsGetResult,
   ViewsListResult,
@@ -14,16 +15,23 @@ import { RpcSocket } from "./rpc";
 
 /** One view as `views.get` takes it; a list also names its collection. */
 export type ViewRef = ViewsGetParams;
-/** What the screen shows: a view, or the Views tab's own list of views. */
-export type Visible = ViewRef | "views";
+/** One task screen, by task uid. */
+export type TaskRef = { task: string };
+/** What the screen shows: a view, the Views tab's own list of views, or one task. */
+export type Visible = ViewRef | "views" | TaskRef;
+export const isTask = (v: Visible): v is TaskRef => typeof v === "object" && "task" in v;
 export const viewKey = (ref: ViewRef): string => (ref.view === "list" ? `list:${ref.list}` : ref.view);
 export type Connection = "connecting" | "open" | "closed" | "unpaired";
 
-const sameTarget = (a: Visible, b: Visible): boolean =>
-  a === "views" || b === "views" ? a === b : viewKey(a) === viewKey(b);
+const sameTarget = (a: Visible, b: Visible): boolean => {
+  if (isTask(a) || isTask(b)) return isTask(a) && isTask(b) && a.task === b.task;
+  return a === "views" || b === "views" ? a === b : viewKey(a) === viewKey(b);
+};
 
 export interface DataSource {
   view(ref: ViewRef): ReadonlySignal<ViewsGetResult | undefined>;
+  /** One task and its children, once fetched. */
+  task(uid: string): ReadonlySignal<TasksGetResult | undefined>;
   /** The sidebar entries of the Views tab, once fetched. */
   viewsList: ReadonlySignal<ViewsListResult | undefined>;
   connection: ReadonlySignal<Connection>;
@@ -38,8 +46,15 @@ export interface DataSource {
    * and the visible target becomes "views", so this fires once. Fires for quiet refetches too. Returns an unsubscribe function.
    */
   onGone(cb: (ref: ViewRef) => void): () => void;
+  /**
+   * The visible task's `tasks.get` was refused as invalid (the task is gone). Its signal is
+   * cleared and the visible target is left as is; the screen pops it. Returns an unsubscribe
+   * function.
+   */
+  onTaskGone(cb: (uid: string) => void): () => void;
   /** based_on is the epoch/revision of the view displayed when called, never a newer fetch. */
   complete(uid: string): Promise<WriteResult>;
+  reopen(uid: string): Promise<WriteResult>;
   create(title: string, note: string, capture: CaptureTarget): Promise<WriteResult>;
   undo(): Promise<WriteResult>;
   /**
@@ -54,6 +69,7 @@ export interface DataSource {
 /** A queued action the daemon later refused or cancelled, with what is needed to report it. */
 export type Refusal =
   | { kind: "complete"; uid: string; message: string }
+  | { kind: "reopen"; uid: string; message: string }
   | { kind: "create"; title: string; note: string; capture: CaptureTarget; message: string }
   | { kind: "undo"; message: string };
 
@@ -98,6 +114,13 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     if (!s) views.set(key, (s = signal<ViewsGetResult | undefined>(undefined)));
     return s;
   };
+  const tasks = new Map<string, ReturnType<typeof signal<TasksGetResult | undefined>>>();
+  const taskSignal = (uid: string) => {
+    let s = tasks.get(uid);
+    if (!s) tasks.set(uid, (s = signal<TasksGetResult | undefined>(undefined)));
+    return s;
+  };
+  const taskGoneCbs = new Set<(uid: string) => void>();
   const viewsList = signal<ViewsListResult | undefined>(undefined);
   const goneCbs = new Set<(ref: ViewRef) => void>();
   const connection = signal<Connection>("connecting");
@@ -142,6 +165,20 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           const target = visible;
           if (target === "views") {
             viewsList.value = await sock.call<ViewsListResult>("views.list", {});
+          } else if (isTask(target)) {
+            try {
+              taskSignal(target.task).value = await sock.call<TasksGetResult>("tasks.get", { uid: target.task });
+            } catch (e) {
+              if ((e as { data?: { kind?: string } }).data?.kind !== "invalid") throw e;
+              taskSignal(target.task).value = undefined;
+              if (!sameTarget(target, visible)) {
+                if (again) continue;
+                return;
+              }
+              for (const cb of taskGoneCbs) cb(target.task);
+              if (again) continue;
+              throw e;
+            }
           } else {
             const params: ViewsGetParams = target.view === "list" ? { view: "list", list: target.list } : { view: target.view };
             let v: ViewsGetResult;
@@ -240,7 +277,9 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     // it (the daemon refuses stale writes). With no view displayed yet, nothing was seen, so
     // the first fetch below supplies it.
     // A views list carries no basis; the opened view's does.
-    const basis = visible === "views" ? undefined : viewSignal(visible);
+    const basisOf = (v: Visible) =>
+      v === "views" ? undefined : isTask(v) ? taskSignal(v.task) : viewSignal(v);
+    const basis = basisOf(visible);
     const shown = basis?.value;
     let basedOn: BasedOn | undefined = shown && { epoch: shown.epoch, revision: shown.revision };
     pending.set(mine.id, what);
@@ -248,7 +287,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     await sock.ready(READY_MS);
     if (method === "op.submit" && !basedOn) {
       await fetchVisible();
-      const v = visible === "views" ? undefined : viewSignal(visible).value;
+      const v = basisOf(visible)?.value;
       if (v) basedOn = { epoch: v.epoch, revision: v.revision };
     }
     const params =
@@ -277,6 +316,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
 
   return {
     view: (ref) => viewSignal(ref),
+    task: (uid) => taskSignal(uid),
     viewsList,
     connection,
     fresh,
@@ -288,6 +328,14 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     onGone(cb) {
       goneCbs.add(cb);
       return () => goneCbs.delete(cb);
+    },
+    onTaskGone(cb) {
+      taskGoneCbs.add(cb);
+      return () => taskGoneCbs.delete(cb);
+    },
+    reopen(uid) {
+      const op: Op = { Reopen: { uid } };
+      return submit(`reopen:${uid}`, "op.submit", { op }, { kind: "reopen", uid });
     },
     complete(uid) {
       const op: Op = { Complete: { uid } };

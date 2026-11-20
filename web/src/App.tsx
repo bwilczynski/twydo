@@ -144,6 +144,8 @@ export function App({ ds }: { ds: DataSource }) {
             undo: false,
             action: { label: "Edit", run: () => { setCapturing({ initial }); setBanner(undefined); } },
           });
+        } else if (r.kind === "reopen") {
+          setBanner({ id: ++bannerSeq, text: `Could not reopen: ${r.message}`, undo: false });
         } else {
           setBanner({ id: ++bannerSeq, text: `Could not undo: ${r.message}`, undo: false });
         }
