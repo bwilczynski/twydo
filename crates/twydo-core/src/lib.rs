@@ -7,6 +7,7 @@ pub mod conflicts;
 pub mod dateinput;
 pub mod details;
 pub mod edit;
+pub mod form;
 pub mod format;
 pub mod gate;
 pub mod ical;
