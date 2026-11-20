@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { viewKey, type DataSource, type ViewRef, type Visible } from "./data";
+import { useTaskStack } from "./taskStack";
 import type { ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
 import { CaptureSheet } from "./components/CaptureSheet";
-import { DetailSheet } from "./components/DetailSheet";
 import { CalendarDayIcon, ChevronLeftIcon, ListIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { SyncWarning } from "./components/SyncWarning";
 import { dayOf, TabBar, type Tab } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
+import { TaskScreen } from "./components/TaskScreen";
 import { ViewsScreen } from "./components/ViewsScreen";
 
 const TAB_KEY = "twydo.tab";
@@ -61,6 +62,14 @@ function titleOf(ref: ViewRef | undefined, view: ViewsGetResult | undefined, lis
   return entry?.name ?? "\u00a0";
 }
 
+type Tick = { target: boolean; rev: number | null };
+const without = (m: Map<string, Tick>, uid: string) => {
+  if (!m.has(uid)) return m;
+  const n = new Map(m);
+  n.delete(uid);
+  return n;
+};
+
 let bannerSeq = 0;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -70,20 +79,24 @@ export function App({ ds }: { ds: DataSource }) {
   const [open, setOpen] = useState<ViewRef | undefined>(loadOpen);
   const openRef = useRef(open);
   openRef.current = open;
-  // Rows ticked locally. The value is the revision of the write's answer (null while it is in
-  // flight): once a view that new arrives, the row's own `completed`/`pending` is trusted.
-  const [done, setDone] = useState<Map<string, number | null>>(new Map());
+  // What is on screen once every task screen is popped.
+  const rootRef = useRef<Visible>("views");
+  // Rows and tasks ticked locally: the state asked for, and the revision of the write's answer
+  // (null while in flight). Once a result that new arrives, the item's own state is trusted.
+  const [ticks, setTicks] = useState<Map<string, Tick>>(new Map());
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [writes, setWrites] = useState(0);
   const [banner, setBanner] = useState<BannerState>();
-  const [detail, setDetail] = useState<ViewRow>();
+  const tasks = useTaskStack();
+  const top = tasks.stack.at(-1);
   // The capture sheet, open or not; `initial` restores the text of a refused capture.
   const [capturing, setCapturing] = useState<{ initial?: { title: string; note: string } }>();
 
   const connection = ds.connection.value;
   // The view on screen: a tab's own, or the one opened in the Views tab (none on the list).
   const ref: ViewRef | undefined = tab === "views" ? open : { view: tab };
-  const visible: Visible = ref ?? "views";
+  rootRef.current = ref ?? "views";
+  const visible: Visible = top ? { task: top } : (ref ?? "views");
   const view = ref ? ds.view(ref).value : undefined;
   const viewsList = ds.viewsList.value;
   // Any fetch will do for the date; prefer what is on screen: the view, or the list screen.
@@ -108,33 +121,46 @@ export function App({ ds }: { ds: DataSource }) {
     [ds],
   );
 
-  const visibleKey = typeof visible === "string" ? visible : viewKey(visible);
+  // A task that is gone: one screen back, with a word about it. The visible target stays on that
+  // task until it is popped, so pop and retarget here, not on the next render.
+  useEffect(
+    () =>
+      ds.onTaskGone((uid) => {
+        const s = tasks.current();
+        if (s.at(-1) !== uid) return;
+        tasks.pop();
+        const prev = s.at(-2);
+        ds.refresh(prev ? { task: prev } : rootRef.current).catch(() => {});
+        setBanner({ id: ++bannerSeq, text: "That task is gone", undo: false });
+      }),
+    [ds],
+  );
+
+  const visibleKey = typeof visible === "string" ? visible : "task" in visible ? `task:${visible.task}` : viewKey(visible);
   useEffect(() => {
     ds.refresh(visible).catch(() => {});
   }, [visibleKey]);
 
-  // A row the view no longer has is gone for good; forget its local state.
+  // Ticks the result on screen has caught up with are dropped; so are rows a view no longer has.
+  const shown = top ? ds.task(top).value : undefined;
   useEffect(() => {
-    if (!view) return;
-    const live = new Set(view.sections.flatMap((s) => s.rows.map((r) => r.uid)));
-    setDone((d) => {
-      const next = new Map([...d].filter(([u, rev]) => live.has(u) && (rev === null || view.revision < rev)));
-      return next.size === d.size ? d : next;
+    const seen = top ? shown : view;
+    if (!seen) return;
+    const live = top ? undefined : new Set(view!.sections.flatMap((s) => s.rows.map((r) => r.uid)));
+    setTicks((m) => {
+      const next = new Map(
+        [...m].filter(([u, t]) => (!live || live.has(u)) && (t.rev === null || seen.revision < t.rev)),
+      );
+      return next.size === m.size ? m : next;
     });
-  }, [view]);
+  }, [view, shown, top]);
 
   // A queued write the daemon later refused: untick the row and say why.
   useEffect(
     () =>
       ds.onRefusal((r) => {
         if (r.kind === "complete") {
-          const { uid } = r;
-          setDone((d) => {
-            if (!d.has(uid)) return d;
-            const n = new Map(d);
-            n.delete(uid);
-            return n;
-          });
+          setTicks((t) => without(t, r.uid));
           setBanner({ id: ++bannerSeq, text: r.message, undo: false });
         } else if (r.kind === "create") {
           const initial = { title: r.title, note: r.note };
@@ -145,6 +171,7 @@ export function App({ ds }: { ds: DataSource }) {
             action: { label: "Edit", run: () => { setCapturing({ initial }); setBanner(undefined); } },
           });
         } else if (r.kind === "reopen") {
+          setTicks((t) => without(t, r.uid));
           setBanner({ id: ++bannerSeq, text: `Could not reopen: ${r.message}`, undo: false });
         } else {
           setBanner({ id: ++bannerSeq, text: `Could not undo: ${r.message}`, undo: false });
@@ -172,6 +199,8 @@ export function App({ ds }: { ds: DataSource }) {
 
   const select = (t: Tab) => {
     // Tapping the Views tab again pops back to the list (iOS convention).
+    // Any tab tap leaves the task screens; the active tab's own root shows.
+    if (tasks.current().length > 0) tasks.clear();
     if (t === "views" && tab === "views") openView(undefined);
     setTab(t);
     try {
@@ -181,32 +210,28 @@ export function App({ ds }: { ds: DataSource }) {
     }
   };
 
-  async function complete(row: ViewRow) {
-    setDone((d) => new Map(d).set(row.uid, null));
-    setBusy((b) => new Set(b).add(row.uid));
+  /** Tick or untick: complete when `target` is true, else reopen. */
+  async function toggle(uid: string, title: string, target: boolean) {
+    setTicks((m) => new Map(m).set(uid, { target, rev: null }));
+    setBusy((b) => new Set(b).add(uid));
     try {
-      const r = await track(() => ds.complete(row.uid));
-      const now = ref ? ds.view(ref).value : undefined;
-      setDone((d) => {
-        if (!d.has(row.uid)) return d;
-        const n = new Map(d);
-        // The answer's view may already have arrived.
-        if (now && now.revision >= r.revision) n.delete(row.uid);
-        else n.set(row.uid, r.revision);
-        return n;
+      const r = await track(() => (target ? ds.complete(uid) : ds.reopen(uid)));
+      const t = tasks.current().at(-1);
+      const now = t ? ds.task(t).value : ref ? ds.view(ref).value : undefined;
+      setTicks((m) => {
+        if (!m.has(uid)) return m;
+        // The answer's result may already have arrived.
+        if (now && now.revision >= r.revision) return without(m, uid);
+        return new Map(m).set(uid, { target, rev: r.revision });
       });
-      show(`Completed "${row.title}"`, true);
+      show(`${target ? "Completed" : "Reopened"} "${title}"`, true);
     } catch (e) {
-      setDone((d) => {
-        const n = new Map(d);
-        n.delete(row.uid);
-        return n;
-      });
+      setTicks((m) => without(m, uid));
       show(message(e), false);
     } finally {
       setBusy((b) => {
         const n = new Set(b);
-        n.delete(row.uid);
+        n.delete(uid);
         return n;
       });
     }
@@ -223,7 +248,7 @@ export function App({ ds }: { ds: DataSource }) {
   async function undo() {
     try {
       await track(() => ds.undo());
-      setDone(new Map());
+      setTicks(new Map());
       setBanner(undefined);
     } catch (e) {
       show(message(e), false);
@@ -231,43 +256,73 @@ export function App({ ds }: { ds: DataSource }) {
   }
 
   const offline = connection === "closed";
+  // Offline, a task never fetched has nothing to show: opening it would be a bare back button.
+  const openTask = (uid: string) => {
+    if (offline && !ds.task(uid).value) return;
+    tasks.open(uid);
+  };
   const updated = view?.now.slice(11, 16);
   const canAdd = !offline && !!view?.capture;
-  const onList = tab === "views" && !open;
+  const onList = tab === "views" && !open && !top;
   const empty = emptyKind(ref);
+
+  const viewTitle = titleOf(ref, view, viewsList).trim() || "Views";
+  const prevTitle = tasks.stack.length > 1 ? ds.task(tasks.stack.at(-2)!).value?.task.title : undefined;
+  const backLabel = prevTitle ?? viewTitle;
 
   return (
     <div class="app">
       {/* A cached view shows at once and refreshes in place; only offline dims it (spec §9.4). */}
       <main class={offline ? "screen is-offline" : "screen"}>
-        {tab === "views" && open && (
+        {top && shown && (
+          <TaskScreen
+            key={top}
+            result={shown}
+            ticked={new Map([...ticks].map(([u, t]) => [u, t.target]))}
+            busy={busy}
+            disabled={offline}
+            backLabel={backLabel}
+            onBack={tasks.pop}
+            onToggle={toggle}
+            onOpen={openTask}
+          />
+        )}
+        {top && !shown && (
+          <button type="button" class="back" onClick={tasks.pop}>
+            <ChevronLeftIcon />
+            {backLabel}
+          </button>
+        )}
+        {!top && tab === "views" && open && (
           <button type="button" class="back" onClick={() => openView(undefined)}>
             <ChevronLeftIcon />
             Views
           </button>
         )}
-        <header class="large-title">
-          <h1>{onList ? "Views" : titleOf(ref, view, viewsList)}</h1>
-          {view && <span class="count">{view.open_count}</span>}
-        </header>
-        {onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} />}
-        {!onList && view?.sync?.attention && <SyncWarning sync={view.sync} />}
+        {!top && (
+          <header class="large-title">
+            <h1>{onList ? "Views" : titleOf(ref, view, viewsList)}</h1>
+            {view && <span class="count">{view.open_count}</span>}
+          </header>
+        )}
+        {!top && onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} />}
+        {!top && !onList && view?.sync?.attention && <SyncWarning sync={view.sync} />}
         {offline && <Offline updated={updated} onRetry={() => location.reload()} />}
-        {(onList ? !viewsList : !view) && !offline && (
+        {(top ? !shown : onList ? !viewsList : !view) && !offline && (
           <div class="loading" role="status" aria-label="Loading">
             <SpinnerIcon />
           </div>
         )}
-        {view && (
+        {!top && view && (
           <TaskList
             key={visibleKey}
             view={view}
-            done={new Set(done.keys())}
+            done={new Set([...ticks].filter(([, t]) => t.target).map(([u]) => u))}
             busy={busy}
             disabled={offline}
             empty={<EmptyList kind={empty} day={dayOf(today)} canAdd={canAdd} />}
-            onToggle={complete}
-            onOpen={setDetail}
+            onToggle={(row) => toggle(row.uid, row.title, true)}
+            onOpen={(row) => openTask(row.uid)}
           />
         )}
       </main>
@@ -279,7 +334,7 @@ export function App({ ds }: { ds: DataSource }) {
           onDismiss={() => setBanner((b) => (b?.id === banner.id ? undefined : b))}
         />
       )}
-      {!offline && !onList && (
+      {!offline && !onList && !top && (
         <button
           type="button"
           class="fab"
@@ -293,7 +348,6 @@ export function App({ ds }: { ds: DataSource }) {
       {capturing && (
         <CaptureSheet initial={capturing.initial} onAdd={add} onCancel={() => setCapturing(undefined)} />
       )}
-      {detail && <DetailSheet row={detail} onClose={() => setDetail(undefined)} />}
     </div>
   );
 }

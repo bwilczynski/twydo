@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { signal } from "@preact/signals";
 import type { DataSource, Connection, Refusal, ViewRef } from "../data";
-import type { ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
+import type { ChildRow, TasksGetResult, ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
+import { taskHash } from "../route";
 import { App } from "../App";
 
 const row = (uid: string, title: string, extra: Partial<ViewRow> = {}): ViewRow => ({
@@ -45,6 +46,47 @@ const viewsListResult = (): ViewsListResult => ({
   ],
 });
 
+const child = (uid: string, title: string, extra: Partial<ChildRow> = {}): ChildRow => ({
+  uid,
+  title,
+  completed: false,
+  due_today: false,
+  overdue: false,
+  pending: false,
+  has_note: false,
+  child_count: 0,
+  kind: "Task",
+  ...extra,
+});
+
+const taskResult = (
+  uid: string,
+  title: string,
+  extra: Partial<TasksGetResult["task"]> = {},
+  children: ChildRow[] = [],
+): TasksGetResult => ({
+  epoch: "e",
+  revision: 1,
+  now: "2026-11-17T09:00:00+01:00",
+  today: "2026-11-17",
+  task: {
+    uid,
+    title,
+    kind: "Task",
+    list: { id: "c1", name: "Inbox" },
+    overdue: false,
+    due_today: false,
+    alerts: [],
+    warnings: [],
+    conflict: false,
+    completed: false,
+    pending: false,
+    ...extra,
+  },
+  children,
+});
+
+let taskGone: (uid: string) => void = () => {};
 let gone: (r: ViewRef) => void = () => {};
 let refusal: (r: Refusal) => void = () => {};
 
@@ -55,11 +97,23 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
   const today = signal<ViewsGetResult | undefined>(mkView("Today", [row("u3", "Pay the invoice")], "2026-11-17"));
   const all = signal<ViewsGetResult | undefined>(mkView("All", [row("u4", "Everything else")]));
   const bills = signal<ViewsGetResult | undefined>(mkView("Bills", [row("u5", "Pay rent")]));
+  const tasks = new Map<string, ReturnType<typeof signal<TasksGetResult | undefined>>>();
+  const taskSignal = (uid: string) => {
+    if (!tasks.has(uid)) tasks.set(uid, signal<TasksGetResult | undefined>(undefined));
+    return tasks.get(uid)!;
+  };
+  taskSignal("u1").value = taskResult("u1", "Buy milk", { note: "2%" });
   const connection = signal<Connection>("open");
   const fresh = signal(true);
   const ds = {
     view: (n: ViewRef) =>
       n.view === "today" ? today : n.view === "all" ? all : n.view === "list" ? bills : inbox,
+    task: (uid: string) => taskSignal(uid),
+    onTaskGone: vi.fn((cb: (uid: string) => void) => {
+      taskGone = cb;
+      return () => {};
+    }),
+    reopen: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 2, message: "ok" })),
     viewsList: signal(viewsListResult()),
     onGone: vi.fn((cb: (r: ViewRef) => void) => {
       gone = cb;
@@ -77,11 +131,14 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     }),
     dispose: vi.fn(),
     ...over,
-  } as unknown as DataSource & { complete: any; create: any; undo: any };
-  return { ds, connection, fresh, inbox, bills };
+  } as unknown as DataSource & { complete: any; create: any; undo: any; reopen: any; refresh: any };
+  return { ds, connection, fresh, inbox, bills, taskSignal };
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  history.replaceState(null, "", "/");
+});
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -640,5 +697,194 @@ describe("views tab", () => {
     render(<App ds={ds} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
     expect(screen.getByText("Lists")).toBeTruthy();
+  });
+});
+
+describe("task screen", () => {
+  const openU1 = () => fireEvent.click(screen.getByText("Buy milk"));
+
+  it("tapping a row pushes the task screen", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk");
+    expect(location.hash).toBe("#/task/u1");
+    expect(screen.getByRole("button", { name: "Inbox" })).toBeTruthy();
+    expect(screen.queryByLabelText("New task")).toBeNull();
+    expect(ds.refresh).toHaveBeenLastCalledWith({ task: "u1" });
+  });
+
+  it("shows every detail field", () => {
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {
+      kind: "Project",
+      due: "Today 17:00",
+      repeat: "Every week",
+      alerts: ["At due time", "10 minutes before"],
+      start: "Yesterday",
+      parent: { uid: "p1", title: "Groceries", kind: "Project" },
+      warnings: ["Unknown repeat rule"],
+      blocked: "Edits are off",
+      conflict: true,
+      list: { id: "c1", name: "Inbox", color: "#ff0000" },
+      note: "See https://example.com/milk.\nthanks",
+    });
+    render(<App ds={ds} />);
+    openU1();
+    expect(screen.getByText("Project \u00b7 Inbox")).toBeTruthy();
+    for (const t of ["Due", "Repeat", "Alert", "Start", "In"]) expect(screen.getByText(t)).toBeTruthy();
+    for (const t of ["Today 17:00", "Every week", "At due time", "10 minutes before", "Yesterday"]) {
+      expect(screen.getByText(t)).toBeTruthy();
+    }
+    expect(screen.getByRole("button", { name: "Groceries" })).toBeTruthy();
+    expect(screen.getByText("! Unknown repeat rule")).toBeTruthy();
+    expect(screen.getByText("! Edits are off")).toBeTruthy();
+    expect(screen.getByText("This task has a sync conflict. Resolve it in tdo.")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "https://example.com/milk" });
+    expect(link.getAttribute("href")).toBe("https://example.com/milk");
+    expect(link.getAttribute("rel")).toBe("noopener");
+  });
+
+  it("ticks and unticks children", async () => {
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim"), child("c2", "Whole", { completed: true })]);
+    render(<App ds={ds} />);
+    openU1();
+    expect(screen.getByText("Items \u00b7 1 open")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Complete Skim"));
+    expect(ds.complete).toHaveBeenCalledWith("c1");
+    expect(await screen.findByText('Completed "Skim"')).toBeTruthy();
+    const done = screen.getByLabelText("Reopen Whole") as HTMLButtonElement;
+    expect(done.disabled).toBe(false);
+    fireEvent.click(done);
+    expect(ds.reopen).toHaveBeenCalledWith("c2");
+    expect(await screen.findByText('Reopened "Whole"')).toBeTruthy();
+  });
+
+  it("a refused child toggle rolls back", async () => {
+    const { ds, taskSignal } = fake();
+    ds.complete.mockRejectedValueOnce(new Error("Refused: stale"));
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim")]);
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByLabelText("Complete Skim"));
+    expect(await screen.findByText("Refused: stale")).toBeTruthy();
+    expect(screen.getByLabelText("Complete Skim").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("opening a child pushes its screen; back returns to the parent", async () => {
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim")]);
+    taskSignal("c1").value = taskResult("c1", "Skim", { parent: { uid: "u1", title: "Buy milk", kind: "Task" } });
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByText("Skim"));
+    expect(location.hash).toBe("#/task/c1");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Skim");
+    // The back button is labelled with the parent's title, as is the "In" link.
+    expect(document.querySelector(".back")!.textContent).toBe("Buy milk");
+    fireEvent.click(document.querySelector(".back")!);
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk"));
+    await waitFor(() => expect(location.hash).toBe("#/task/u1"));
+  });
+
+  it("reload on a task route shows it; back goes to the tab root", async () => {
+    history.replaceState(null, "", taskHash("u1"));
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk");
+    fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Inbox"));
+    expect(location.hash).toBe("");
+  });
+
+  it("pops a task that is gone", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    taskGone("u2");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk");
+    taskGone("u1");
+    expect(await screen.findByText("That task is gone")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Inbox");
+    expect(ds.refresh).toHaveBeenLastCalledWith({ view: "inbox" });
+  });
+
+  it("offline disables the task screen", () => {
+    const { ds, connection, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim"), child("c2", "Whole", { completed: true })]);
+    render(<App ds={ds} />);
+    openU1();
+    connection.value = "closed";
+    return waitFor(() => {
+      const boxes = screen.getAllByRole("checkbox") as HTMLButtonElement[];
+      expect(boxes).toHaveLength(3);
+      expect(boxes.every((b) => b.disabled)).toBe(true);
+    });
+  });
+
+  it("offline, a task never fetched does not open; a cached one does", async () => {
+    const { ds, connection, taskSignal } = fake();
+    render(<App ds={ds} />);
+    connection.value = "closed";
+    await waitFor(() => expect(screen.getByText(/reach/i)).toBeTruthy());
+    expect(taskSignal("u2").value).toBeUndefined();
+    fireEvent.click(screen.getByText("Call the plumber"));
+    expect(location.hash).toBe("");
+    expect(screen.queryByRole("button", { name: "Inbox" })).toBeNull();
+    fireEvent.click(screen.getByText("Buy milk"));
+    expect(location.hash).toBe("#/task/u1");
+  });
+
+  it("offline, a child never fetched does not open", async () => {
+    const { ds, connection, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim")]);
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByText("Buy milk"));
+    connection.value = "closed";
+    await waitFor(() => expect((screen.getAllByRole("checkbox")[0] as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(screen.getByText("Skim"));
+    expect(location.hash).toBe("#/task/u1");
+  });
+
+  it("reload on a child screen goes back to the tab root, never past the app", async () => {
+    // Saved history state is not trusted on reload: entries before it may not be the app's.
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c1", "Skim")]);
+    taskSignal("c1").value = taskResult("c1", "Skim", { parent: { uid: "u1", title: "Buy milk", kind: "Task" } });
+    history.replaceState({ stack: ["u1", "c1"] }, "", taskHash("c1"));
+    render(<App ds={ds} />);
+    expect(document.querySelector(".back")!.textContent).toBe("Inbox");
+    fireEvent.click(document.querySelector(".back")!);
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Inbox"));
+    expect(location.hash).toBe("");
+  });
+
+  it("links in a note keep a balanced closing paren and lose a sentence one", () => {
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {
+      note: "see (https://example.com/a) and https://example.com/Foo_(bar).",
+    });
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByText("Buy milk"));
+    const hrefs = [...document.querySelectorAll(".note a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://example.com/a", "https://example.com/Foo_(bar)"]);
+  });
+
+  it("identical warnings both show", () => {
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", { warnings: ["odd", "odd"] });
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByText("Buy milk"));
+    expect(screen.getAllByText("! odd")).toHaveLength(2);
+  });
+
+  it("tapping the active tab pops to the root", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByLabelText("Inbox", { selector: '[role="tab"]' }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Inbox"));
+    await waitFor(() => expect(location.hash).toBe(""));
   });
 });
