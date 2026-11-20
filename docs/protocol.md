@@ -86,6 +86,16 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   colour) and null for Today, All, Scheduled, Done and Next 3 Days.
   `open_count` and `due_count` are the counts the TUI sidebar shows: the open tasks, and those
   due today or overdue.
+- `tasks.get` takes `{uid}` and returns one task worded for a thin client's task screen, with
+  `epoch`, `revision`, `now` and `today` as `views.get` has. `task` carries the title, the shown
+  `kind` (a plain task with items is a `project`), its `list`, relative `due` and `start` (the
+  start whenever set), `overdue`, `due_today`, the `repeat` rule in words, one line per alert in
+  `alerts`, load `warnings`, the `blocked` reason edits are off, `conflict`, `pending`,
+  `completed`, the `note` (none when blank) and the `parent` (`{uid, title, kind}`). `children`
+  lists every child: the open ones in sibling order, then the completed ones, newest first;
+  each has `uid`, `title`, `kind`, `due`, `overdue`, `due_today`, `completed`, `pending`,
+  `has_note` and `child_count`. The wording is the TUI details pane's. An unknown `uid` is
+  refused with error kind `invalid`. A client refetches on `data.changed` and `status.changed`.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.
 - `events.subscribe` starts notifications: `event` (with a rising `seq`: `data.changed`,
