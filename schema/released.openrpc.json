@@ -375,6 +375,58 @@
         ],
         "type": "object"
       },
+      "ChildRow": {
+        "properties": {
+          "child_count": {
+            "description": "How many children this child has.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "due": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_today": {
+            "type": "boolean"
+          },
+          "has_note": {
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "title",
+          "kind",
+          "overdue",
+          "due_today",
+          "completed",
+          "pending",
+          "has_note",
+          "child_count"
+        ],
+        "type": "object"
+      },
       "Config": {
         "additionalProperties": false,
         "properties": {
@@ -3480,6 +3532,117 @@
         ],
         "type": "object"
       },
+      "TaskDetail": {
+        "properties": {
+          "alerts": {
+            "description": "One line per alert, in order.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "blocked": {
+            "description": "Why edits are off for this task, if they are.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completed": {
+            "description": "The task is completed or cancelled.",
+            "type": "boolean"
+          },
+          "conflict": {
+            "description": "The task has an unresolved sync conflict.",
+            "type": "boolean"
+          },
+          "due": {
+            "description": "The due value relative to daemon time (`Yesterday`, `Today 17:00`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "due_today": {
+            "type": "boolean"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskKind"
+              }
+            ],
+            "description": "The shown kind: a plain task with items is a project."
+          },
+          "list": {
+            "$ref": "#/components/schemas/RowList"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskParent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending": {
+            "description": "A queued edit is laid over this task.",
+            "type": "boolean"
+          },
+          "repeat": {
+            "description": "The repeat rule in words.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start": {
+            "description": "The start value, shown whenever it is set.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          },
+          "warnings": {
+            "description": "Problems found when the task was loaded.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "uid",
+          "title",
+          "kind",
+          "list",
+          "overdue",
+          "due_today",
+          "alerts",
+          "warnings",
+          "conflict",
+          "completed",
+          "pending"
+        ],
+        "type": "object"
+      },
       "TaskKind": {
         "enum": [
           "Task",
@@ -3487,6 +3650,76 @@
           "Checklist"
         ],
         "type": "string"
+      },
+      "TaskParent": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TaskKind"
+          },
+          "title": {
+            "type": "string"
+          },
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "title",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "TasksGetParams": {
+        "properties": {
+          "uid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid"
+        ],
+        "type": "object"
+      },
+      "TasksGetResult": {
+        "properties": {
+          "children": {
+            "description": "Every child: open ones in sibling order, then completed ones, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/ChildRow"
+            },
+            "type": "array"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "now": {
+            "description": "The daemon's clock, in the configured timezone.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "task": {
+            "$ref": "#/components/schemas/TaskDetail"
+          },
+          "today": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "epoch",
+          "revision",
+          "now",
+          "today",
+          "task",
+          "children"
+        ],
+        "type": "object"
       },
       "Trigger": {
         "oneOf": [
@@ -4618,6 +4851,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ViewsGetResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "tasks.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/TasksGetParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/TasksGetResult"
         }
       },
       "x-lifecycle": false
