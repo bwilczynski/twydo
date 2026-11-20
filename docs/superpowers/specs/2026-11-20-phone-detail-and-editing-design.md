@@ -90,7 +90,8 @@ Two plans, shipped in order; each is releasable on its own.
   and reopen from it, the gateway allowing `tasks.get` and `reopen`, and the new-task sheet
   restyled as a full-screen bottom sheet with today's fields (title, note). This alone fixes the
   checklist problem.
-- **Plan B: editing.** The form moved into `twydo-core` (§6.2), `tasks.form` (§6.3), the edit
+- **Plan B: editing.** The form moved into `twydo-core` (§6.2), `tasks.get`'s `form` block,
+  `tasks.form` (§6.3), the edit
   form, the full new-task form, Add item, Delete, and the gateway allowing `save`, full
   `create` and `delete`.
 
@@ -122,8 +123,8 @@ Params: `{ uid }`. Result:
   each field as the TUI card shows it (`title`, `list` id, `kind`, `due`, `start`, `repeat`,
   `alert`, `notes`); `previews`, the preview lines the card shows on opening (so a kept,
   unwritable repeat rule shows `(kept)` before anything is typed); `alert_editable: false` when
-  the task has alerts Twydo cannot write. Present in Plan A already so the result shape does
-  not change in Plan B.
+  the task has alerts Twydo cannot write. Added in Plan B, with the form's move into
+  `twydo-core`, as an additive field; Plan A's result has no `form`.
 
 Completed children are ordered newest `COMPLETED` first; children without a completion time
 come last, in sibling order *(my call)*.
