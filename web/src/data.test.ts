@@ -715,6 +715,101 @@ describe("task screen", () => {
     expect(cb).toHaveBeenCalledWith({ kind: "reopen", uid: "u1", message: "no" });
   });
 
+  it("checkForm calls tasks.form", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["tasks.form"] = () => ({ epoch: "e1", revision: 3 });
+    await opened();
+    const r = await ds.checkForm({ uid: "u1" });
+    expect(r.revision).toBe(3);
+    expect(FakeWebSocket.last.calls("tasks.form")[0]!.params).toEqual({ uid: "u1" });
+  });
+
+  it("save submits the op with the given basis", async () => {
+    const ds = setup();
+    revision = 5;
+    await opened();
+    await ds.refresh({ view: "inbox" });
+    const op = { Delete: { uid: "u1" } } as never;
+    await ds.save(op, { epoch: "e1", revision: 7 }, { uid: "u1", title: "T", form: { uid: "u1" } });
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params).toMatchObject({
+      based_on: { epoch: "e1", revision: 7 },
+      op,
+    });
+  });
+
+  it("remove submits Delete", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    await ds.refresh({ task: "u1" });
+    await ds.remove("u1", "T");
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params).toMatchObject({
+      op: { Delete: { uid: "u1" } },
+    });
+  });
+
+  const finish = (state: object) => {
+    const id = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
+    FakeWebSocket.last.notify("event", { type: "op.finished", request_id: id, state });
+  };
+
+  it("a queued save refused later reports kind save with the form", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o1", revision: 2, message: "q" });
+    await opened();
+    const cb = vi.fn();
+    ds.onRefusal(cb);
+    const form = { uid: "u1", values: { title: "x" } as never };
+    await ds.save({ Delete: { uid: "u1" } } as never, { epoch: "e1", revision: 1 }, { uid: "u1", title: "x", form });
+    finish({ state: "refused", message: "no" });
+    expect(cb).toHaveBeenCalledWith({ kind: "save", uid: "u1", title: "x", form, message: "no" });
+  });
+
+  it("a queued new task refused later reports kind add", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o1", revision: 2, message: "q" });
+    await opened();
+    const cb = vi.fn();
+    ds.onRefusal(cb);
+    const form = { new: { collection: "c1" } };
+    await ds.save({ Delete: { uid: "u1" } } as never, { epoch: "e1", revision: 1 }, { title: "n", form });
+    finish({ state: "refused", message: "no" });
+    expect(cb).toHaveBeenCalledWith({ kind: "add", title: "n", form, message: "no" });
+  });
+
+  it("a queued delete refused later reports kind delete", async () => {
+    const ds = setup();
+    withTask();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o1", revision: 2, message: "q" });
+    await opened();
+    await ds.refresh({ task: "u1" });
+    const cb = vi.fn();
+    ds.onRefusal(cb);
+    await ds.remove("u1", "T");
+    finish({ state: "refused", message: "no" });
+    expect(cb).toHaveBeenCalledWith({ kind: "delete", uid: "u1", title: "T", message: "no" });
+  });
+
+  it("a retried save reuses the request id", async () => {
+    const ds = setup();
+    await opened();
+    delete FakeWebSocket.handlers["op.submit"];
+    const op = { Delete: { uid: "u1" } } as never;
+    const info = { uid: "u1", title: "T", form: { uid: "u1" } };
+    const first = ds.save(op, { epoch: "e1", revision: 1 }, info);
+    await flush();
+    FakeWebSocket.last.drop(1006, "");
+    await expect(first).rejects.toThrow();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "Applied", op_id: "o", revision: 2, message: "" });
+    await vi.advanceTimersByTimeAsync(1000);
+    FakeWebSocket.last.open();
+    await flush();
+    await ds.save(op, { epoch: "e1", revision: 1 }, info);
+    const ids = FakeWebSocket.instances.flatMap((w) => w.calls("op.submit")).map((m) => m.params.request_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+  });
+
   it("a gone task fires onTaskGone once", async () => {
     const ds = setup();
     withTask();

@@ -3,8 +3,12 @@ import { signal, type ReadonlySignal } from "@preact/signals";
 import type {
   BasedOn,
   CaptureTarget,
+  FormValues,
   NewTask,
+  NewTaskTarget,
   Op,
+  TasksFormParams,
+  TasksFormResult,
   TasksGetResult,
   ViewsGetParams,
   ViewsGetResult,
@@ -57,6 +61,12 @@ export interface DataSource {
   reopen(uid: string): Promise<WriteResult>;
   create(title: string, note: string, capture: CaptureTarget): Promise<WriteResult>;
   undo(): Promise<WriteResult>;
+  /** A plain `tasks.form` call: check the values and get the form's previews and fields. */
+  checkForm(p: TasksFormParams): Promise<TasksFormResult>;
+  /** Submit a task edit or new task on the basis `tasks.form` returned, not the visible view's. */
+  save(op: Op, basedOn: BasedOn, what: SaveInfo): Promise<WriteResult>;
+  /** Delete a task. */
+  remove(uid: string, title: string): Promise<WriteResult>;
   /**
    * A queued completion, capture or undo the daemon later refused or cancelled (`op.finished`).
    * Returns an unsubscribe function.
@@ -66,11 +76,19 @@ export interface DataSource {
   dispose(): void;
 }
 
+/** What is needed to reopen a task form: an existing task or a new one, with its values. */
+export type FormOpen = { uid?: string; new?: NewTaskTarget; initial?: FormValues; values?: FormValues };
+/** What a save reports if the daemon later refuses it; no `uid` means a new task. */
+export type SaveInfo = { uid?: string; title: string; form: FormOpen };
+
 /** A queued action the daemon later refused or cancelled, with what is needed to report it. */
 export type Refusal =
   | { kind: "complete"; uid: string; message: string }
   | { kind: "reopen"; uid: string; message: string }
   | { kind: "create"; title: string; note: string; capture: CaptureTarget; message: string }
+  | { kind: "add"; title: string; form: FormOpen; message: string }
+  | { kind: "save"; uid: string; title: string; form: FormOpen; message: string }
+  | { kind: "delete"; uid: string; title: string; message: string }
   | { kind: "undo"; message: string };
 
 type Pending = Refusal extends infer R ? (R extends Refusal ? Omit<R, "message"> : never) : never;
@@ -266,7 +284,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   // Without a session the upgrade would be refused; check first.
   void checkSession();
 
-  async function submit(key: string, method: "op.submit" | "op.undo", extra: object, what: Pending): Promise<WriteResult> {
+  async function submit(key: string, method: "op.submit" | "op.undo", extra: object, what: Pending, explicit?: BasedOn): Promise<WriteResult> {
     // Keep the id only for a retry of the same action, inside the retry window.
     if (!kept || kept.key !== key || now() - kept.at > RETRY_WINDOW_MS) {
       if (kept) pending.delete(kept.id); // an abandoned id can no longer be retried
@@ -281,7 +299,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
       v === "views" ? undefined : isTask(v) ? taskSignal(v.task) : viewSignal(v);
     const basis = basisOf(visible);
     const shown = basis?.value;
-    let basedOn: BasedOn | undefined = shown && { epoch: shown.epoch, revision: shown.revision };
+    let basedOn: BasedOn | undefined = explicit ?? (shown && { epoch: shown.epoch, revision: shown.revision });
     pending.set(mine.id, what);
     // Wait for the connection, then for data no older than this socket.
     await sock.ready(READY_MS);
@@ -355,6 +373,15 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     },
     undo() {
       return submit("undo", "op.undo", {}, { kind: "undo" });
+    },
+    checkForm: (p) => sock.call<TasksFormResult>("tasks.form", p),
+    save(op, basedOn, what) {
+      const pend = (what.uid ? { kind: "save", ...what } : { kind: "add", ...what }) as Pending;
+      return submit(`save:${JSON.stringify(op)}`, "op.submit", { op }, pend, basedOn);
+    },
+    remove(uid, title) {
+      const op: Op = { Delete: { uid } };
+      return submit(`delete:${uid}`, "op.submit", { op }, { kind: "delete", uid, title });
     },
     onRefusal(cb) {
       refusalCbs.add(cb);
