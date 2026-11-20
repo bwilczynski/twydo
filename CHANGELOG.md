@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2](https://github.com/bwilczynski/twydo/compare/v0.6.1...v0.6.2) - 2026-11-20
+
+### Added
+
+- *(daemon)* add tasks.get for one task and its children
+- *(gateway)* let devices read a task and phones reopen
+
 ## [0.6.1](https://github.com/bwilczynski/twydo/compare/v0.6.0...v0.6.1) - 2026-11-19
 
 ### Added
