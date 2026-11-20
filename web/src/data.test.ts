@@ -649,3 +649,98 @@ describe("all views", () => {
     expect(FakeWebSocket.last.calls("op.submit")[0]!.params.based_on.revision).toBe(7);
   });
 });
+
+describe("task screen", () => {
+  const task = (uid: string, revision = 1) => ({
+    epoch: "e1",
+    revision,
+    now: "2026-11-17T09:00:00+01:00",
+    today: "2026-11-17",
+    task: { uid },
+    children: [],
+  });
+  const taskGets = () => FakeWebSocket.instances.flatMap((w) => w.calls("tasks.get"));
+  const withTask = () => {
+    FakeWebSocket.handlers["tasks.get"] = (p) => task(p.uid, revision);
+  };
+
+  it("fetches tasks.get for a visible task", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    await ds.refresh({ task: "u1" });
+    expect(ds.task("u1").value).toMatchObject({ task: { uid: "u1" } });
+    expect(taskGets()[0]!.params).toEqual({ uid: "u1" });
+  });
+
+  it("a write from a task screen is based on the task result", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    revision = 9;
+    await ds.refresh({ task: "u1" });
+    await ds.complete("u1");
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params).toMatchObject({
+      based_on: { epoch: "e1", revision: 9 },
+    });
+  });
+
+  it("reopen submits Reopen", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    await ds.refresh({ task: "u1" });
+    const r = await ds.reopen("u1");
+    expect(r.outcome).toBe("Applied");
+    expect(FakeWebSocket.last.calls("op.submit")[0]!.params).toMatchObject({
+      op: { Reopen: { uid: "u1" } },
+    });
+  });
+
+  it("a refused queued reopen reaches onRefusal", async () => {
+    const ds = setup();
+    withTask();
+    FakeWebSocket.handlers["op.submit"] = () => ({ outcome: "queued", op_id: "o1", revision: 2, message: "q" });
+    await opened();
+    await ds.refresh({ task: "u1" });
+    const cb = vi.fn();
+    ds.onRefusal(cb);
+    await ds.reopen("u1");
+    const id = FakeWebSocket.last.calls("op.submit")[0]!.params.request_id;
+    FakeWebSocket.last.notify("event", {
+      type: "op.finished",
+      request_id: id,
+      state: { state: "refused", message: "no" },
+    });
+    expect(cb).toHaveBeenCalledWith({ kind: "reopen", uid: "u1", message: "no" });
+  });
+
+  it("a gone task fires onTaskGone once", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    await ds.refresh({ task: "u1" });
+    const gone = vi.fn();
+    ds.onTaskGone(gone);
+    FakeWebSocket.handlers["tasks.get"] = () => {
+      throw new FakeRpcError(-32602, "no such task", "invalid");
+    };
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    expect(gone).toHaveBeenCalledTimes(1);
+    expect(gone).toHaveBeenCalledWith("u1");
+    expect(ds.task("u1").value).toBeUndefined();
+  });
+
+  it("data.changed refetches the visible task", async () => {
+    const ds = setup();
+    withTask();
+    await opened();
+    await ds.refresh({ task: "u1" });
+    revision = 4;
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    expect(taskGets()).toHaveLength(2);
+    expect(ds.task("u1").value?.revision).toBe(4);
+  });
+});
