@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { viewKey, type DataSource, type ViewRef, type Visible } from "./data";
+import { viewKey, type DataSource, type FormOpen, type ViewRef, type Visible } from "./data";
 import { useTaskStack } from "./taskStack";
-import type { ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
+import type { FormValues, ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
-import { CaptureSheet } from "./components/CaptureSheet";
+import { ConfirmSheet } from "./components/ConfirmSheet";
 import { CalendarDayIcon, ChevronLeftIcon, ListIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { SyncWarning } from "./components/SyncWarning";
 import { dayOf, TabBar, type Tab } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
+import { TaskForm } from "./components/TaskForm";
 import { TaskScreen } from "./components/TaskScreen";
 import { ViewsScreen } from "./components/ViewsScreen";
 
@@ -70,7 +71,29 @@ const without = (m: Map<string, Tick>, uid: string) => {
   return n;
 };
 
+interface Editing {
+  /** Tells one opened form from the next, so a new one never inherits the last one's state. */
+  id: number;
+  open: FormOpen;
+  heading: string;
+  saveLabel: string;
+  saved: (title: string, values: FormValues) => string;
+}
+
+/** The form a refused add or save reopens with. */
+const reopened = (form: FormOpen): Editing =>
+  form.uid
+    ? { id: ++formSeq, open: form, heading: "Edit", saveLabel: "Save", saved: (t) => `Saved "${t}"` }
+    : {
+        id: ++formSeq,
+        open: form,
+        heading: form.new?.parent ? "New item" : "New task",
+        saveLabel: "Add",
+        saved: (t) => `Added "${t}"`,
+      };
+
 let bannerSeq = 0;
+let formSeq = 0;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function App({ ds }: { ds: DataSource }) {
@@ -89,8 +112,10 @@ export function App({ ds }: { ds: DataSource }) {
   const [banner, setBanner] = useState<BannerState>();
   const tasks = useTaskStack();
   const top = tasks.stack.at(-1);
-  // The capture sheet, open or not; `initial` restores the text of a refused capture.
-  const [capturing, setCapturing] = useState<{ initial?: { title: string; note: string } }>();
+  // The task form, open or not; `saved` words the banner once the daemon has taken the write.
+  const [editing, setEditing] = useState<Editing>();
+  // A delete awaiting its confirmation.
+  const [deleting, setDeleting] = useState<{ uid: string; title: string; items: number }>();
 
   const connection = ds.connection.value;
   // The view on screen: a tab's own, or the one opened in the Views tab (none on the list).
@@ -162,14 +187,17 @@ export function App({ ds }: { ds: DataSource }) {
         if (r.kind === "complete") {
           setTicks((t) => without(t, r.uid));
           setBanner({ id: ++bannerSeq, text: r.message, undo: false });
-        } else if (r.kind === "create") {
-          const initial = { title: r.title, note: r.note };
+        } else if (r.kind === "add" || r.kind === "save") {
+          const form = r.form;
+          const verb = r.kind === "add" ? "add" : "save";
           setBanner({
             id: ++bannerSeq,
-            text: `Could not add "${r.title}": ${r.message}`,
+            text: `Could not ${verb} "${r.title}": ${r.message}`,
             undo: false,
-            action: { label: "Edit", run: () => { setCapturing({ initial }); setBanner(undefined); } },
+            action: { label: "Edit", run: () => { setEditing(reopened(form)); setBanner(undefined); } },
           });
+        } else if (r.kind === "delete") {
+          setBanner({ id: ++bannerSeq, text: `Could not delete "${r.title}": ${r.message}`, undo: false });
         } else if (r.kind === "reopen") {
           setTicks((t) => without(t, r.uid));
           setBanner({ id: ++bannerSeq, text: `Could not reopen: ${r.message}`, undo: false });
@@ -237,12 +265,35 @@ export function App({ ds }: { ds: DataSource }) {
     }
   }
 
-  async function add(title: string, note: string) {
-    const target = view?.capture;
-    if (!target) throw new Error("There is no list to add to");
-    await track(() => ds.create(title, note, target));
-    setCapturing(undefined);
-    show(`Added "${title}" to ${target.name}`, true);
+  /** Open the form; the list picker needs the views list, which a task tab may not have fetched. */
+  function openForm(e: Omit<Editing, "id">) {
+    setEditing({ ...e, id: ++formSeq });
+    if (!ds.viewsList.value) ds.loadViewsList().catch(() => {});
+  }
+
+  const refetch = () => ds.refresh(top ? { task: top } : (ref ?? "views")).catch(() => {});
+
+  function saved(e: Editing, title: string, values: FormValues) {
+    // Only this form closes: another may have been opened while its save was out.
+    setEditing((cur) => (cur === e ? undefined : cur));
+    show(e.saved(title, values), true);
+    refetch();
+  }
+
+  async function confirmDelete() {
+    const d = deleting;
+    if (!d) return;
+    setDeleting(undefined);
+    // Pop first: the refetch of the deleted task would otherwise raise "That task is gone".
+    const prev = tasks.current().at(-2);
+    tasks.pop();
+    ds.refresh(prev ? { task: prev } : rootRef.current).catch(() => {});
+    try {
+      await track(() => ds.remove(d.uid, d.title));
+      show(`Deleted "${d.title}"`, true);
+    } catch (e) {
+      show(message(e), false);
+    }
   }
 
   async function undo() {
@@ -287,6 +338,23 @@ export function App({ ds }: { ds: DataSource }) {
             onBack={tasks.pop}
             onToggle={toggle}
             onOpen={openTask}
+            onEdit={() =>
+              openForm({
+                open: { uid: top, initial: shown.form.values, values: shown.form.values, opened: shown.form.basis },
+                heading: "Edit",
+                saveLabel: "Save",
+                saved: (t) => `Saved "${t}"`,
+              })
+            }
+            onAddItem={() =>
+              openForm({
+                open: { new: { collection: shown.task.list.id, parent: top } },
+                heading: "New item",
+                saveLabel: "Add",
+                saved: (t) => `Added "${t}"`,
+              })
+            }
+            onDelete={() => setDeleting({ uid: top, title: shown.task.title, items: shown.children.length })}
           />
         )}
         {top && !shown && (
@@ -342,13 +410,39 @@ export function App({ ds }: { ds: DataSource }) {
           class="fab"
           aria-label="New task"
           disabled={!view?.capture}
-          onClick={() => setCapturing({})}>
+          onClick={() => {
+            const c = view!.capture!;
+            openForm({
+              open: { new: { collection: c.collection, due: c.due } },
+              heading: "New task",
+              saveLabel: "Add",
+              saved: (t, v) => (v.list === c.collection ? `Added "${t}" to ${c.name}` : `Added "${t}"`),
+            });
+          }}>
           <PlusIcon />
         </button>
       )}
       <TabBar tab={tab} day={dayOf(today)} onSelect={select} />
-      {capturing && (
-        <CaptureSheet initial={capturing.initial} onAdd={add} onCancel={() => setCapturing(undefined)} />
+      {editing && (
+        <TaskForm
+          key={editing.id}
+          ds={ds}
+          open={editing.open}
+          lists={viewsList}
+          heading={editing.heading}
+          saveLabel={editing.saveLabel}
+          onSaved={(t, v) => saved(editing, t, v)}
+          onCancel={() => setEditing(undefined)}
+        />
+      )}
+      {deleting && (
+        <ConfirmSheet
+          title={deleting.items > 0 ? `Delete "${deleting.title}" and its ${deleting.items} items?` : `Delete "${deleting.title}"?`}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleting(undefined)}
+        />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/preact";
 import type { TasksFormParams, TasksFormResult } from "./gen/protocol";
 import type { DataSource } from "./data";
 import { useFormState } from "./formState";
-import { answer, vals } from "./formFixtures";
+import { answer, basis, vals } from "./formFixtures";
 
 const flush = () => act(async () => {});
 
@@ -33,6 +33,32 @@ describe("useFormState", () => {
     expect(result.current.values).toEqual(vals());
     expect(result.current.initial).toEqual(vals());
     expect(result.current.dirty).toBe(false);
+  });
+
+  it("sends the first answer's basis and starting values with every check of a new form", async () => {
+    const opened = basis({ item_of: "Project" });
+    replies.push(() => Promise.resolve({ ...answer(), form: { ...answer().form, basis: opened } }));
+    const { result } = renderHook(() => useFormState(ds, { new: { collection: "c1", parent: "p1" } }));
+    await flush();
+    expect(calls[0]!.opened).toBeUndefined();
+    expect(result.current.opened).toEqual(opened);
+    act(() => result.current.setField("title", "Item"));
+    act(() => void vi.advanceTimersByTime(250));
+    await flush();
+    expect(calls[1]!.opened).toEqual(opened);
+    expect(calls[1]!.initial).toEqual(vals());
+  });
+
+  it("an edit sends the basis it was opened with", async () => {
+    const opened = basis({ repeat: "FREQ=WEEKLY" });
+    const { result } = renderHook(() => useFormState(ds, { uid: "u1", initial: vals(), values: vals(), opened }));
+    await flush();
+    expect(calls[0]!.opened).toEqual(opened);
+    act(() => result.current.setField("title", "W"));
+    act(() => void vi.advanceTimersByTime(250));
+    await flush();
+    expect(calls[1]!.opened).toEqual(opened);
+    expect(result.current.opened).toEqual(opened);
   });
 
   it("debounces typing to one check after 250 ms", async () => {
@@ -82,7 +108,10 @@ describe("useFormState", () => {
     replies.push(() =>
       Promise.resolve(
         answer(
-          { changed_since: true, rebased: { initial: theirs, overwritten: ["title"], dropped: ["alert"] } },
+          {
+            changed_since: true,
+            rebased: { initial: theirs, basis: basis({ repeat: "FREQ=DAILY" }), overwritten: ["title"], dropped: ["alert"] },
+          },
           vals({ title: "Theirs", notes: "mine" }),
         ),
       ),
@@ -94,6 +123,7 @@ describe("useFormState", () => {
     act(() => result.current.review());
     await flush();
     expect(calls[1]!.initial).toEqual(theirs);
+    expect(calls[1]!.opened).toEqual(basis({ repeat: "FREQ=DAILY" }));
     expect(result.current.initial).toEqual(theirs);
     expect(result.current.values?.notes).toBe("mine");
     expect(result.current.reviewed).toEqual({ overwritten: ["title"], dropped: ["alert"] });

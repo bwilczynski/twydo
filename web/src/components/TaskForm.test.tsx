@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import type { DataSource } from "../data";
 import type { TasksFormResult, ViewsListResult } from "../gen/protocol";
-import { answer, vals } from "../formFixtures";
+import { answer, basis, vals } from "../formFixtures";
 import { TaskForm } from "./TaskForm";
 
 afterEach(cleanup);
@@ -25,7 +25,7 @@ function setup(ans: TasksFormResult = answer(), save = vi.fn().mockResolvedValue
   render(
     <TaskForm
       ds={ds}
-      open={{ uid: "u1", initial: vals(), values: vals() }}
+      open={{ uid: "u1", initial: vals(), values: vals(), opened: basis() }}
       lists={lists}
       heading="Edit task"
       saveLabel="Save"
@@ -95,9 +95,28 @@ describe("TaskForm", () => {
     const btn = (await screen.findByText("Save")) as HTMLButtonElement;
     await waitFor(() => expect(btn.disabled).toBe(false));
     fireEvent.click(btn);
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith("Water plants"));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith("Water plants", expect.objectContaining({ title: "Water plants" })));
     expect(save.mock.calls[0]![0]).toEqual(a.op);
     expect(save.mock.calls[0]![1]).toEqual({ epoch: "e", revision: 1 });
+    expect(save.mock.calls[0]![2].form).toEqual({ uid: "u1", initial: vals(), values: vals(), opened: basis() });
+  });
+
+  it("freezes the form while a save is out", async () => {
+    let done!: (v: unknown) => void;
+    const { onSaved, onCancel } = setup(answer(), vi.fn(() => new Promise((r) => (done = r))));
+    const btn = (await screen.findByText("Save")) as HTMLButtonElement;
+    await waitFor(() => expect(btn.disabled).toBe(false));
+    fireEvent.click(btn);
+    const controls = Array.from(document.querySelectorAll("form input, form textarea, form select, form button"));
+    expect(controls.length).toBeGreaterThan(10);
+    for (const c of controls) expect((c as HTMLInputElement).disabled, c.outerHTML).toBe(true);
+    // Typing that slips through anyway is not taken.
+    fireEvent.input(screen.getByLabelText("Notes"), { target: { value: "late typing" } });
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onCancel).not.toHaveBeenCalled();
+    await act(async () => done({}));
+    expect(onSaved).toHaveBeenCalledWith("Water plants", vals());
   });
 
   it("a refusal keeps the sheet open with the message", async () => {
