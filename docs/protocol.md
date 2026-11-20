@@ -98,22 +98,27 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   starting state, as the TUI card would show it: `fields` in display order (a checklist item has
   only `title` and `notes`), `values` (the typed texts, `kind` and `list`), `previews` (the
   `{field, text}` lines the card shows, such as `→ Wed 18 Nov` or `… (kept)` for a repeat rule
-  Twydo cannot write) and `alert_editable`, false when the task has alerts Twydo cannot write.
-  An unknown `uid` is
+  Twydo cannot write), `alert_editable`, false when the task has alerts Twydo cannot write, and
+  `basis`, what the texts cannot show about where the form started (the exact stored rule and
+  alert, the parent kind and the declared kind), opaque to clients. An unknown `uid` is
   refused with error kind `invalid`. A client refetches on `data.changed` and `status.changed`.
 - `tasks.form` checks a phone's edit or new-task form with the TUI's own form code. It takes
   `uid` (an edit) or `new` (`{collection, parent?, due?}`; only `due` equal to today starts the
   form with Due `today`), exactly one of them, else `invalid` (`give uid or new`; an unknown
   `uid` or `new.parent` is `invalid` `no such task`). `values` are the typed texts (none asks
-  for the starting values) and, for an edit, `initial` is the values the form was opened with.
+  for the starting values), `initial` is the values the form was opened with and `opened` its
+  `basis` then, sent back unchanged.
   It returns `epoch` and `revision` (the basis to submit `op` with), `form` (the same
-  `{fields, values, previews, alert_editable}` as `tasks.get`), `op` (the write, when every
+  `{fields, values, previews, alert_editable, basis}` as `tasks.get`), `op` (the write, when every
   field reads and something would change) or `error` (`no changes`, `title must not be empty`,
-  `due: ...`), `changed_since` and `rebased`. When `initial` differs from the task's current
-  values the typed fields are rebased onto the saved version, as the TUI does: `changed_since`
-  is true, `form` is the rebased form, and `rebased` gives the new `initial` to send from now
-  on, `overwritten` (typed fields the saved version changed too, whose typing wins) and
-  `dropped` (typed fields the saved version's form cannot take). It reads one published
+  `due: ...`), `changed_since` and `rebased`. When an edit's `initial` differs from the task's
+  current values, or `opened` from its current `basis` (a rule with a timed end changed behind an
+  empty Repeat, say, or a new item's parent became a checklist), the typed fields are rebased
+  onto the saved version, as the TUI does: `changed_since` is true, `form` is the rebased form,
+  and `rebased` gives the new `initial` and `basis` to send from now on, `overwritten` (typed
+  fields the saved version changed too, whose typing wins; a typed Repeat or Alert counts when
+  the stored rule or alert changed, even behind equal text) and `dropped` (typed fields the saved
+  version's form cannot take). It reads one published
   snapshot with queued writes laid over it, never writes and keeps no state.
 - `snapshot.get` returns the whole loaded vdir with a `revision`; `status.get` returns sync,
   conflict, journal and refusal state with a `status_rev`.

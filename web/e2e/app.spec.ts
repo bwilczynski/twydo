@@ -144,6 +144,70 @@ test("new task sheet slides up full screen", async ({ page }, info) => {
   await expect(page.getByRole("status")).toContainText('Added "Synthetic captured"');
 });
 
+test.describe("phone editing", () => {
+  const open = (page: Page, title: string) =>
+    page.getByRole("button", { name: new RegExp(title) }).click();
+  const save = async (page: Page, name: string) => {
+    // Save waits for the debounced form check to return the write.
+    const button = page.getByRole("button", { name, exact: true });
+    await expect(button).toBeEnabled();
+    await button.click();
+  };
+
+  test("edit a due date and a repeat", async ({ page }, info) => {
+    const title = `Synthetic edit ${info.project.name}`;
+    await open(page, title);
+    await expect(page.getByRole("heading", { name: title })).toBeVisible();
+    await page.getByRole("button", { name: "Edit" }).click();
+    const form = page.getByRole("form", { name: "Edit" });
+    await form.getByLabel("Due", { exact: true }).fill("tomorrow");
+    await expect(form).toContainText("→");
+    await form.getByLabel("Repeat").fill("weekly");
+    await expect(form).toContainText("→ Weekly");
+    await save(page, "Save");
+    await expect(page.getByRole("status")).toContainText(`Saved "${title}"`);
+    await expect(page.locator("dl.facts dt", { hasText: "Due" })).toBeVisible();
+    await expect(page.locator("dl.facts dt", { hasText: "Repeat" })).toBeVisible();
+  });
+
+  test("add an item", async ({ page }, info) => {
+    await open(page, `Synthetic trip ${info.project.name}`);
+    await page.getByRole("button", { name: "+ Add item" }).click();
+    const form = page.getByRole("form", { name: "New item" });
+    await form.getByLabel("Title").fill("Synthetic towel");
+    await save(page, "Add");
+    await expect(page.getByRole("status")).toContainText('Added "Synthetic towel"');
+    await expect(page.getByRole("checkbox", { name: "Complete Synthetic towel" })).toBeVisible();
+  });
+
+  test("delete with undo", async ({ page }, info) => {
+    const title = `Synthetic delete ${info.project.name}`;
+    const row = page.getByRole("checkbox", { name: `Complete ${title}` });
+    await open(page, title);
+    await page.getByRole("button", { name: "Delete task" }).click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await expect(page.getByRole("status")).toContainText(`Deleted "${title}"`);
+    await expect(row).toHaveCount(0);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect(row).toBeVisible();
+  });
+
+  test("create a task with a list and a due date", async ({ page }, info) => {
+    const title = `Synthetic created ${info.project.name}`;
+    await expect(page.getByRole("checkbox", { name: "Complete Synthetic task 1" })).toBeVisible();
+    await page.getByRole("button", { name: "New task" }).click();
+    const form = page.getByRole("form", { name: "New task" });
+    await form.getByLabel("Title").fill(title);
+    await form.getByLabel("List").selectOption({ label: "errands" });
+    await form.getByLabel("Due", { exact: true }).fill("today");
+    await save(page, "Add");
+    await expect(page.getByRole("status")).toContainText(`Added "${title}"`);
+    await page.getByRole("tab", { name: "Today" }).click();
+    await expect(page.getByRole("checkbox", { name: `Complete ${title}` })).toBeVisible();
+  });
+});
+
 test.describe("views tab", () => {
   // The daemon is shared with the other specs and the other colour scheme: leave it as found.
   test.afterEach(async ({ page }) => {

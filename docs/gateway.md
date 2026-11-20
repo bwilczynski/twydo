@@ -112,7 +112,23 @@ number due today and the number open. Tapping one opens that view in the same ta
 phone remembers the opened view in this browser (not on the server) and shows it again next
 time. If that list is deleted, the phone returns to the Views list and says "That list is
 gone". Tapping a task opens its screen with its items (a checklist or subtasks); items
-can be ticked and unticked there, with the same Undo banner. A new task from any view goes to
+can be ticked and unticked there, with the same Undo banner.
+
+## Editing on the phone
+
+A task's screen has **Edit** in its top bar. The form has Title, List, Type, Due, Start,
+Repeat, Alert and Notes, and each date, repeat or alert you type shows what Twydo understood
+(`→ every week`) as you type, using the same rules as the TUI form. Save turns on once the
+daemon has checked the form and found something to change. A project or checklist has **+ Add
+item**, and every task has a red **Delete task**, which asks first; both a save and a delete
+come with an Undo banner. **+** creates a task with the same form, with a list, type, dates,
+repeat, alert and notes. Saving a task someone else changed meanwhile asks you to review the
+changes first, as does adding an item whose parent's type changed. While a save is out the form
+is frozen, so nothing typed is lost when it closes.
+
+Not on the phone, by design: reordering, indent and outdent, list management, resolving a
+sync conflict, journal recovery, sync control, natural-language input and swipe gestures.
+Use `tdo` for these. A new task from any view goes to
 that view's capture list, as in the desktop; the New task sheet opens full screen. Both
 `views.get` and `views.list` are in the allowlist of both roles (phone and display); so is
 `tasks.get` (one task and its children). `tasks.form` (the edit form's starting values and checks) is phone-only. Only the phone role may
