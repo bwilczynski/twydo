@@ -6,9 +6,9 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Padding, Paragraph, Wrap};
-use twydo_core::format::{describe_alarm, relative_date};
+use twydo_core::details::{alert_lines, repeat_text};
+use twydo_core::format::relative_date;
 use twydo_core::model::Status;
-use twydo_core::model::repeat::{describe, parse_rrule};
 use twydo_core::views::{compare_items, nested_count};
 
 use twydo_core::model::TaskKind;
@@ -56,20 +56,11 @@ pub fn render(f: &mut Frame, area: Rect, app: &App) {
     if let Some(d) = &t.due {
         lines.push(field("Due", relative_date(d, app.now)));
     }
-    if let Some(raw) = &t.rrule {
-        let text = match parse_rrule(raw) {
-            Ok(r) => describe(
-                &r,
-                t.due.as_ref().map(|d| d.local_date(tz)),
-                t.from_completion,
-            ),
-            Err(_) => "unsupported rule".to_string(),
-        };
+    if let Some(text) = repeat_text(t, tz) {
         lines.push(field("Repeat", text));
     }
-    for (i, a) in t.alarms.iter().enumerate() {
-        let label = if i == 0 { "Alert" } else { "" };
-        lines.push(field(label, describe_alarm(a, t, tz)));
+    for (i, a) in alert_lines(t, tz).into_iter().enumerate() {
+        lines.push(field(if i == 0 { "Alert" } else { "" }, a));
     }
     if let Some(s) = &t.start {
         lines.push(field("Start", relative_date(s, app.now)));
