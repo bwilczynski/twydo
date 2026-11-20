@@ -26,7 +26,7 @@ use crate::protocol::methods::*;
 use crate::protocol::reports::{CheckReport, CheckReportParams, ExportResult};
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
-use crate::protocol::tasks::{TasksGetParams, TasksGetResult};
+use crate::protocol::tasks::{TasksFormParams, TasksFormResult, TasksGetParams, TasksGetResult};
 use crate::protocol::views::{ViewsGetParams, ViewsGetResult, ViewsListResult};
 use crate::protocol::wire::WireSnapshot;
 
@@ -91,6 +91,12 @@ pub const METHODS: &[MethodSpec] = &[
         false,
         of::<TasksGetParams>,
         of::<TasksGetResult>,
+    ),
+    m(
+        "tasks.form",
+        false,
+        of::<TasksFormParams>,
+        of::<TasksFormResult>,
     ),
     m("status.get", false, of::<Empty>, of::<StatusView>),
     m("op.submit", false, of::<SubmitParams>, of::<WriteResult>),

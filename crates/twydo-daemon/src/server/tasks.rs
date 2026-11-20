@@ -6,7 +6,7 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Weekday};
 use serde_json::Value;
 use twydo_core::details;
-use twydo_core::form::Form;
+use twydo_core::form::{Form, NewTarget};
 use twydo_core::format::relative_date;
 use twydo_core::model::Status;
 use twydo_core::views::Snapshot;
@@ -16,7 +16,8 @@ use super::admin::unresolved_conflict_uids;
 use super::views::{due_flags, list_color, list_name};
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::tasks::{
-    ChildRow, FieldPreview, FormState, TaskDetail, TaskParent, TasksGetParams, TasksGetResult,
+    ChildRow, FieldPreview, FormState, RebasedForm, TaskDetail, TaskParent, TasksFormParams,
+    TasksFormResult, TasksGetParams, TasksGetResult,
 };
 use crate::protocol::views::RowList;
 
@@ -45,6 +46,7 @@ pub(crate) fn form_state(f: &Form, today: NaiveDate, work_days: &[Weekday]) -> F
             .map(|(field, text)| FieldPreview { field, text })
             .collect(),
         alert_editable: f.alert_editable(),
+        basis: f.basis(),
     }
 }
 
@@ -121,6 +123,85 @@ pub fn get(shared: &Arc<Shared>, p: TasksGetParams) -> Result<Value, RpcError> {
         task,
         children,
         form,
+    })
+    .map_err(internal)
+}
+
+/// `tasks.form`: checks a typed form against the published snapshot; writes nothing and keeps
+/// no state.
+pub fn form(shared: &Arc<Shared>, p: TasksFormParams) -> Result<Value, RpcError> {
+    let invalid = |m: &str| RpcError::refused(ErrorKind::Invalid, m.to_string());
+    let (revision, published) = shared.publisher.current();
+    let snap: &Snapshot = &published.snap;
+    let tz = snap.tz();
+    let today = shared.clock.now().with_timezone(&tz).date_naive();
+    let find = |uid: &str| {
+        snap.tasks
+            .iter()
+            .position(|t| t.uid == uid)
+            .ok_or_else(|| invalid("no such task"))
+    };
+    let cur = match (&p.uid, p.new) {
+        (Some(uid), None) => open_form(snap, find(uid)?),
+        (None, Some(new)) => {
+            let parent_kind = match &new.parent {
+                Some(uid) => Some(snap.tasks[find(uid)?].kind),
+                None => None,
+            };
+            Form::new_task(
+                NewTarget {
+                    collection: new.collection,
+                    parent: new.parent,
+                    parent_kind,
+                    due_today: new.due == Some(today),
+                },
+                String::new(),
+                tz,
+            )
+        }
+        _ => return Err(invalid("give uid or new")),
+    };
+    // Changed since the client opened the form: its starting text, or what the text cannot
+    // show (a stored rule or alert, a new item's parent kind). A new task's starting text is
+    // the client's own, so only its basis counts.
+    let text_changed = cur.uid.is_some() && p.initial.as_ref().is_some_and(|i| i != cur.initial());
+    let basis_changed = p.opened.as_ref().is_some_and(|o| *o != cur.basis());
+    let (form, changed_since, rebased) = if text_changed || basis_changed {
+        let initial = p.initial.unwrap_or_else(|| cur.initial().clone());
+        let opened = p.opened.unwrap_or_else(|| cur.basis());
+        // The client's typing over what it opened; [`Form::rebase_from`] carries it onto the
+        // current form, dropping fields that form no longer has.
+        let mut mine = cur.clone().with_initial(initial);
+        if let Some(v) = p.values {
+            mine.set_values(v);
+        }
+        let (form, r) = mine.rebase_from(&opened, cur);
+        let rebased = RebasedForm {
+            initial: form.initial().clone(),
+            basis: form.basis(),
+            overwritten: r.overlap,
+            dropped: r.dropped,
+        };
+        (form, true, Some(rebased))
+    } else {
+        let mut cur = cur;
+        if let Some(v) = p.values {
+            cur.set_values(v);
+        }
+        (cur, false, None)
+    };
+    let (op, error) = match form.save(today, &snap.config.work_days) {
+        Ok(op) => (Some(op), None),
+        Err(e) => (None, Some(e)),
+    };
+    serde_json::to_value(TasksFormResult {
+        epoch: shared.epoch.clone(),
+        revision,
+        form: form_state(&form, today, &snap.config.work_days),
+        op,
+        error,
+        changed_since,
+        rebased,
     })
     .map_err(internal)
 }
