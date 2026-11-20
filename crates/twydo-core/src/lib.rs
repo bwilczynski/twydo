@@ -5,6 +5,7 @@ pub mod compat;
 pub mod config;
 pub mod conflicts;
 pub mod dateinput;
+pub mod details;
 pub mod edit;
 pub mod format;
 pub mod gate;

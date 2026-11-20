@@ -42,10 +42,7 @@ pub(super) fn glyph(app: &App, idx: usize) -> &'static str {
 
 /// The type a row shows: its own, except that a plain task with items shows as a project.
 pub(super) fn shown_kind(app: &App, idx: usize) -> TaskKind {
-    match app.snapshot.tasks[idx].kind {
-        TaskKind::Task if !app.snapshot.children(idx).is_empty() => TaskKind::Project,
-        k => k,
-    }
+    twydo_core::details::shown_kind(&app.snapshot, idx)
 }
 
 /// The type mark after the status glyph; blank for a plain task.
