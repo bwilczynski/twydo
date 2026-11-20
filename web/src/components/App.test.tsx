@@ -772,6 +772,20 @@ describe("task screen", () => {
     expect(await screen.findByText('Reopened "Whole"')).toBeTruthy();
   });
 
+  it("a toggled child stays locked until a result as new as its write arrives", async () => {
+    // A second tap before the refetch would be planned against the displayed result, in which
+    // the child is still in its old state, and refused ("task is already completed").
+    const { ds, taskSignal } = fake();
+    taskSignal("u1").value = taskResult("u1", "Buy milk", {}, [child("c2", "Whole", { completed: true })]);
+    render(<App ds={ds} />);
+    openU1();
+    fireEvent.click(screen.getByLabelText("Reopen Whole"));
+    expect(await screen.findByText('Reopened "Whole"')).toBeTruthy();
+    expect((screen.getByLabelText("Complete Whole") as HTMLButtonElement).disabled).toBe(true);
+    taskSignal("u1").value = { ...taskResult("u1", "Buy milk", {}, [child("c2", "Whole")]), revision: 2 };
+    await waitFor(() => expect((screen.getByLabelText("Complete Whole") as HTMLButtonElement).disabled).toBe(false));
+  });
+
   it("a refused child toggle rolls back", async () => {
     const { ds, taskSignal } = fake();
     ds.complete.mockRejectedValueOnce(new Error("Refused: stale"));

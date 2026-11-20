@@ -279,7 +279,9 @@ export function App({ ds }: { ds: DataSource }) {
             key={top}
             result={shown}
             ticked={new Map([...ticks].map(([u, t]) => [u, t.target]))}
-            busy={busy}
+            // A tick stays locked until a result as new as its write arrives: a second write
+            // would be planned against the displayed result, where it has not happened yet.
+            busy={new Set([...busy, ...ticks.keys()])}
             disabled={offline}
             backLabel={backLabel}
             onBack={tasks.pop}
