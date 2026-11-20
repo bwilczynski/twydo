@@ -84,6 +84,12 @@ const taskResult = (
     ...extra,
   },
   children,
+  form: {
+    fields: [],
+    values: { alert: "", due: "", kind: "Task", list: "c1", notes: "", repeat: "", start: "", title },
+    previews: [],
+    alert_editable: true,
+  },
 });
 
 let taskGone: (uid: string) => void = () => {};
