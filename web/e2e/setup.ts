@@ -164,6 +164,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const vdir = join(root, "vdir");
   mkdirSync(join(vdir, "inbox"), { recursive: true });
   mkdirSync(join(vdir, "work"), { recursive: true });
+  mkdirSync(join(vdir, "errands"), { recursive: true });
   mkdirSync(join(root, "config/twydo"), { recursive: true });
   mkdirSync(join(sockDir, "run"), { recursive: true, mode: 0o700 });
 
@@ -182,6 +183,23 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     writeFileSync(
       join(vdir, "inbox", `${uid}.ics`),
       ics(uid, title, undefined, "RELATED-TO;RELTYPE=PARENT:chk1"),
+    );
+  }
+  // Seeds the editing specs change, one set per colour scheme: the daemon is shared by both.
+  for (const tag of ["light", "dark"]) {
+    writeFileSync(
+      join(vdir, "inbox", `e-${tag}.ics`),
+      ics(
+        `e-${tag}`,
+        `Synthetic edit ${tag}`,
+        undefined,
+        'X-2DOAPP-METADATA:<2Do Meta>{"DisplayOrder":1}</2Do Meta>',
+      ),
+    );
+    writeFileSync(join(vdir, "inbox", `d-${tag}.ics`), ics(`d-${tag}`, `Synthetic delete ${tag}`));
+    writeFileSync(
+      join(vdir, "inbox", `t-${tag}.ics`),
+      ics(`t-${tag}`, `Synthetic trip ${tag}`, undefined, "X-2DOAPP-METADATA:@tasktype:checklist"),
     );
   }
   writeFileSync(join(vdir, "work", "w1.ics"), ics("w1", "Synthetic due today", t));
