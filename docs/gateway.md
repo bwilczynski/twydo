@@ -1,8 +1,8 @@
 # The phone gateway
 
 `tdo gateway` serves a small web app for your phone and talks to the daemon for it. You add
-the app to the home screen and capture, complete and undo tasks from anywhere. It is a client
-of the daemon like the TUI: it never reads your configuration or your vdir, and the daemon
+the app to the home screen and capture, complete, reopen and undo tasks, and open a task's
+screen, from anywhere. It is a client of the daemon like the TUI: it never reads your configuration or your vdir, and the daemon
 never opens a network port. The design is in
 [the MVP spec](superpowers/specs/2026-11-17-phone-companion-mvp-design.md).
 
@@ -111,7 +111,9 @@ number due today and the number open. Tapping one opens that view in the same ta
 **Views** button above the title to go back; tapping the Views tab again also goes back. The
 phone remembers the opened view in this browser (not on the server) and shows it again next
 time. If that list is deleted, the phone returns to the Views list and says "That list is
-gone". A new task from any view goes to that view's capture list, as in the desktop. Both
+gone". Tapping a task opens its screen with its items (a checklist or subtasks); items
+can be ticked and unticked there, with the same Undo banner. A new task from any view goes to
+that view's capture list, as in the desktop; the New task sheet opens full screen. Both
 `views.get` and `views.list` are in the allowlist of both roles (phone and display); so is
 `tasks.get` (one task and its children). Only the phone role may write: it may complete and
 reopen any task and capture plain tasks.

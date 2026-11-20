@@ -294,6 +294,17 @@ describe("completing", () => {
 });
 
 describe("capture", () => {
+  it("new task sheet is full screen", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByLabelText("New task"));
+    const form = screen.getByRole("form", { name: "New task" });
+    expect(form.classList.contains("full")).toBe(true);
+    expect(screen.getByRole("heading", { name: "New task" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("form", { name: "New task" })).toBeNull();
+  });
+
   it("capture from Today sends due today", async () => {
     const { ds } = fake();
     localStorage.setItem("twydo.tab", "today");

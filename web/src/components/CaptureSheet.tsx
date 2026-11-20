@@ -19,51 +19,49 @@ export function CaptureSheet({
   useEffect(() => ref.current?.focus(), []);
   const ok = title.trim() !== "";
   return (
-    <div class="scrim" onClick={onCancel}>
-      <form
-        class="sheet"
-        aria-label="New task"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!ok || busy) return;
-          setBusy(true);
-          setError("");
-          onAdd(title.trim(), note).catch((err) => {
-            setBusy(false);
-            setError(err instanceof Error ? err.message : String(err));
-          });
-        }}
-      >
-        <header>
-          <button type="button" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="submit" class="strong" disabled={!ok || busy}>
-            Add
-          </button>
-        </header>
-        <input
-          ref={ref}
-          aria-label="Title"
-          placeholder="Title"
-          value={title}
-          autofocus
-          onInput={(e) => setTitle((e.target as HTMLInputElement).value)}
-        />
-        {error && (
-          <p class="urgent" role="alert">
-            {error}
-          </p>
-        )}
-        <textarea
-          aria-label="Note"
-          placeholder="Note"
-          rows={4}
-          value={note}
-          onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
-        />
-      </form>
-    </div>
+    <form
+      class="sheet full"
+      aria-label="New task"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ok || busy) return;
+        setBusy(true);
+        setError("");
+        onAdd(title.trim(), note).catch((err) => {
+          setBusy(false);
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      }}
+    >
+      <header>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <h2>New task</h2>
+        <button type="submit" class="strong" disabled={!ok || busy}>
+          Add
+        </button>
+      </header>
+      <input
+        ref={ref}
+        aria-label="Title"
+        placeholder="Title"
+        value={title}
+        autofocus
+        onInput={(e) => setTitle((e.target as HTMLInputElement).value)}
+      />
+      {error && (
+        <p class="urgent" role="alert">
+          {error}
+        </p>
+      )}
+      <textarea
+        aria-label="Note"
+        placeholder="Note"
+        rows={4}
+        value={note}
+        onInput={(e) => setNote((e.target as HTMLTextAreaElement).value)}
+      />
+    </form>
   );
 }
