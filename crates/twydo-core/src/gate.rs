@@ -189,6 +189,12 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         }
     }
 
+    // A start time, or an edit of a start that has one, needs the start-time evidence on top
+    // of its own field contract (`set-start/phone-encodings`).
+    if touches_start_time(snap, target, op) {
+        require(m, mode, ContractId::SetStartTime)?;
+    }
+
     if let (Some(i), Op::Move { to, .. }) = (target, op) {
         return relocate::check(snap, m, mode, i, to, checker.relationships());
     }
@@ -1118,6 +1124,24 @@ fn known_list(snap: &Snapshot, id: &str) -> Result<(), Blocked> {
     }
 }
 
+/// Whether `op` writes a start with a time, or changes the start of a task whose start has one.
+fn touches_start_time(snap: &Snapshot, target: Option<usize>, op: &Op) -> bool {
+    let timed = |s: &Option<Due>| matches!(s, Some(Due::Time(_)));
+    match op {
+        Op::Create(n) => timed(&n.start),
+        Op::Edit { changes, .. } => changes.iter().any(|c| match c {
+            Change::Start(s) => {
+                timed(s)
+                    || target.is_some_and(|i| {
+                        matches!(snap.tasks[i].start, Some(IcalDateTime::Floating(_)))
+                    })
+            }
+            _ => false,
+        }),
+        _ => false,
+    }
+}
+
 fn require(m: &Matrix, mode: WriteMode, id: ContractId) -> Result<(), Blocked> {
     m.require(id, mode)
         .map_err(|error| Blocked(error.to_string()))
@@ -1425,6 +1449,11 @@ fn captured_from_completion_edit(
             .start
             .as_ref()
             .is_none_or(|s| matches!(s, IcalDateTime::Date(_)))
+        // Start times were captured on due-anchored repeats only; the edits above need a
+        // date-only start afterwards too.
+        || changes
+            .iter()
+            .any(|c| matches!(c, Change::Start(Some(Due::Time(_)))))
         || t.alarms.len() > 1
         || t.alarms
             .iter()
@@ -1665,15 +1694,16 @@ fn recurring_complete_shape(t: &Task, m: &Matrix, today: NaiveDate) -> Result<()
     if (timed || has_start || !t.alarms.is_empty()) && !offsets {
         return blocked(START_OFFSETS);
     }
-    // 2Do writes `StartDate` as a UTC midnight after 1970 (H9).
-    if meta
-        .as_ref()
-        .and_then(|m| m.get_i64("StartDate"))
-        .is_some_and(|n| n <= 0 || n % 86_400 != 0)
-    {
+    // 2Do writes `StartDate` after 1970: a UTC midnight for a date (H9), the wall-clock time
+    // read as UTC for a start time (`set-start/phone-encodings`).
+    let start_secs = meta.as_ref().and_then(|m| m.get_i64("StartDate"));
+    if start_secs.is_some_and(|n| n <= 0) {
         return blocked(
             "completing a repeating task with an unusual start date is not verified yet",
         );
+    }
+    if start_secs.is_some_and(|n| n % 86_400 != 0) && !passes(ContractId::CompleteStartTime) {
+        return blocked("completing a repeating task with a start time is not verified yet");
     }
     if t.alarms
         .iter()

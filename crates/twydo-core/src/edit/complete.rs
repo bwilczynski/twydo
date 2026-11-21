@@ -16,7 +16,7 @@
 //! `uid` naming the task (a project) is rewritten to the copy's UID. Anything else is
 //! refused rather than guessed, so a repeating obligation is never advanced wrongly.
 
-use chrono::{DateTime, Datelike, Days, Months, NaiveDate, NaiveTime, Utc, Weekday};
+use chrono::{DateTime, Datelike, Days, Months, NaiveDate, Utc, Weekday};
 
 use super::repeat::twodo_codes;
 use super::{
@@ -523,14 +523,15 @@ pub fn complete_recurring(
     }
     let start = match meta.get_i64("StartDate") {
         None => None,
-        Some(secs) if secs <= 0 || secs % 86_400 != 0 => {
+        Some(secs) if secs <= 0 => {
             return Err(unsupported(
                 "completing a repeat with an unusual start date is not verified",
             ));
         }
+        // The wall-clock start read as UTC; a date-only start is its midnight.
         Some(secs) => Some(
             DateTime::from_timestamp(secs, 0)
-                .map(|t| t.date_naive())
+                .map(|t| t.naive_utc())
                 .ok_or_else(|| unsupported("2Do start date is out of range"))?,
         ),
     };
@@ -547,18 +548,16 @@ pub fn complete_recurring(
         _ => IcalDateTime::Date(next_date),
     };
 
-    // JSON `StartDate` (UTC midnight, H9) moves by as many days as the due date did, not by
-    // one interval: a yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start
-    // 2027-02-13 -> 2028-02-14 (`complete/mixed-families/phone-complete/list1`).
+    // JSON `StartDate` moves by as many days as the due date did, not by one interval: a
+    // yearly due 2027-03-01 -> 2028-03-01 (366 days) took its start 2027-02-13 -> 2028-02-14
+    // (`complete/mixed-families/phone-complete/list1`). A start time is kept
+    // (`set-start/phone-encodings`, S7/S8).
     let mut live_meta = meta.clone();
     if let Some(start) = start {
         let next_start = start
             .checked_add_signed(next_date - due_date)
             .ok_or_else(|| unsupported("next start date is out of range"))?;
-        live_meta.set_i64(
-            "StartDate",
-            next_start.and_time(NaiveTime::MIN).and_utc().timestamp(),
-        );
+        live_meta.set_i64("StartDate", next_start.and_utc().timestamp());
     }
     // The codes as 2Do writes them: the phone rewrites an older -1 for "last" to 6 when it
     // completes (session C, `LF`); every other code is already this one.

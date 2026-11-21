@@ -454,8 +454,8 @@ fn unusual_start_date_blocked() {
     let s = snap();
     let m = with_offsets();
     let i = idx(&s, "gate-monthly-start");
-    // 0, negative, and not on a UTC midnight.
-    for secs in ["0", "-86400", "1762563600"] {
+    // 0 and negative. A value off a UTC midnight is a start time (`gate_start.rs`).
+    for secs in ["0", "-86400"] {
         let mut bad = s.clone();
         let raw = bad.tasks[i].meta.raw.clone().unwrap();
         let changed = raw.replace(
