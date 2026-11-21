@@ -506,7 +506,11 @@ fn corrupt_manifest_warns_and_sync_completes() {
     assert!(p.synced(&id));
     let json: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
-    assert_eq!(json["c1"].as_array().map(Vec::len), Some(3), "{json}");
+    assert_eq!(
+        json["lists"]["c1"].as_array().map(Vec::len),
+        Some(3),
+        "{json}"
+    );
     let (code, err) = p.tdo_sync();
     assert_eq!(code, 0, "{err}");
     assert!(!err.contains("manifest"), "{err}");

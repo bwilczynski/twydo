@@ -306,10 +306,12 @@ fn one_pass(
     let journal = Journal::open(state)?;
     let pending = journal.pending()?;
     // The evidence is consumed before vdirsyncer runs: read into memory (past that point an
-    // error would skip reconciliation), then removed from disk, so a run that does not reach
-    // its update in step 5 (killed, failed, or unable to save) leaves none behind. The copy
-    // in memory, which predates this run, decides this run's auto-force. An unreadable or
-    // unremovable manifest is no evidence (nothing is auto-forced).
+    // error would skip reconciliation), then cut down on disk to the held records, so a run
+    // that does not reach its update in step 5 (killed, failed, or unable to save) leaves
+    // only those behind: vdirsyncer transfers nothing in a list emptied on the server, and a
+    // lost record of one could never come back (issue #159). The copy in memory, which
+    // predates this run, decides this run's auto-force. An unreadable or unremovable
+    // manifest is no evidence (nothing is auto-forced).
     let mut manifest = match Manifest::load(state) {
         Ok(m) => m,
         Err(e) => {
@@ -320,7 +322,14 @@ fn one_pass(
             Manifest::default()
         }
     };
-    if let Err(e) = remove_durable(&Manifest::path(state))
+    let held = manifest.held_only();
+    let consumed = if held == Manifest::default() {
+        remove_durable(&Manifest::path(state))
+    } else {
+        held.save(state)
+            .or_else(|_| remove_durable(&Manifest::path(state)))
+    };
+    if let Err(e) = consumed
         && manifest != Manifest::default()
     {
         report.warnings.push(format!(
@@ -447,6 +456,19 @@ fn one_pass(
     // Lists whose forced second pass ran; reported as applied only once the pass left them Ok.
     let mut second_pass = Vec::new();
     if !both.is_empty() && matches!(ran.outcome, Outcome::Exited(_)) {
+        // The forced pass replaces the first pass's report on these lists, so a forced pass
+        // that fails would leave no sign that the server emptied them: hold their records
+        // now, in memory and on disk (the pass may be killed), or they could never be
+        // applied automatically again (issue #159).
+        if !auto.remote.is_empty() {
+            manifest.held.extend(auto.remote.iter().cloned());
+            if let Err(e) = manifest.held_only().save(state) {
+                report.warnings.push(format!(
+                    "sync/manifest.json could not be written ({e}); a list emptied on the \
+                     server may not be applied automatically if this sync is interrupted"
+                ));
+            }
+        }
         let second = vds.sync(&both, &control)?;
         merge_forced(&mut out, parse(PAIR, &second.stderr), &both);
         ran.outcome = second.outcome;

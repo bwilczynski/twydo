@@ -2,8 +2,12 @@
 //! (`<coll>/<file>.ics`) as of the last run in which that collection counted. It is the
 //! evidence the runner needs before it forces an emptied list on its own: only when the
 //! journal removed every one of those files did Twydo empty the list.
+//!
+//! A list emptied on the server is never synced cleanly again until it is applied, so its
+//! record could never be rebuilt once lost: the manifest marks it `held` and keeps it
+//! through failed and killed runs until a run syncs the list again.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -12,9 +16,26 @@ use super::status::CollState;
 use crate::store::fsio::write_atomic;
 use crate::store::journal::Entry;
 
-/// Collection id → its files, sorted.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Manifest(pub BTreeMap<String, Vec<String>>);
+pub struct Manifest {
+    /// Collection id → its files, sorted.
+    pub lists: BTreeMap<String, Vec<String>>,
+    /// Lists emptied on the server whose record is kept until a run syncs them again.
+    pub held: BTreeSet<String>,
+}
+
+/// The file format: `{"lists": {...}, "held": [...]}`, or the plain map of `lists` that
+/// earlier versions wrote (nothing held).
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum OnDisk {
+    Current {
+        lists: BTreeMap<String, Vec<String>>,
+        #[serde(default)]
+        held: BTreeSet<String>,
+    },
+    Plain(BTreeMap<String, Vec<String>>),
+}
 
 impl Manifest {
     /// `<state>/sync/manifest.json`.
@@ -26,9 +47,14 @@ impl Manifest {
     pub fn load(state: &Path) -> io::Result<Manifest> {
         let path = Manifest::path(state);
         match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map(Manifest)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)),
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(OnDisk::Current { lists, held }) => Ok(Manifest { lists, held }),
+                Ok(OnDisk::Plain(lists)) => Ok(Manifest {
+                    lists,
+                    held: BTreeSet::new(),
+                }),
+                Err(e) => Err(io::Error::new(io::ErrorKind::InvalidData, e)),
+            },
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Manifest::default()),
             Err(e) => Err(e),
         }
@@ -37,7 +63,11 @@ impl Manifest {
     /// Writes `<state>/sync/manifest.json` atomically as pretty JSON.
     pub fn save(&self, state: &Path) -> io::Result<()> {
         fs::create_dir_all(state.join("sync"))?;
-        let mut json = serde_json::to_string_pretty(&self.0).map_err(io::Error::other)?;
+        let on_disk = OnDisk::Current {
+            lists: self.lists.clone(),
+            held: self.held.clone(),
+        };
+        let mut json = serde_json::to_string_pretty(&on_disk).map_err(io::Error::other)?;
         json.push('\n');
         write_atomic(&Manifest::path(state), json.as_bytes())
     }
@@ -74,16 +104,37 @@ impl Manifest {
                 Err(e) => return Err(e),
             }
             files.sort();
-            self.0.insert(coll.to_string(), files);
+            self.lists.insert(coll.to_string(), files);
         }
         Ok(())
     }
 
+    /// Only the held records: what a run keeps on disk while vdirsyncer runs, so that a run
+    /// that never reaches its update loses every record but those.
+    pub fn held_only(&self) -> Manifest {
+        Manifest {
+            lists: self
+                .lists
+                .iter()
+                .filter(|(c, _)| self.held.contains(*c))
+                .map(|(c, f)| (c.clone(), f.clone()))
+                .collect(),
+            held: self.held.clone(),
+        }
+    }
+
     /// Brings the manifest up to date after a run that reached vdirsyncer, from the run's
-    /// collection `states`. When the run's reach is unknown (`uncertain`: it timed out or
-    /// printed errors of its own), every entry is dropped except those of `EmptiedLocal`
-    /// collections. Otherwise `Ok` and `Conflict` collections are re-listed and `Error`
-    /// ones dropped: a failed run may have downloaded tasks the old listing lacks.
+    /// collection `states`.
+    ///
+    /// A record is held while its list stays emptied on the server: from a run that reports
+    /// it `EmptiedRemote` until a run reports it `Ok` or `Conflict`, through errors, failed
+    /// and killed runs. vdirsyncer transfers nothing in an emptied list, and whatever a run
+    /// that got further downloads into it is a file the record lacks, which holds the list.
+    ///
+    /// Otherwise, when the run's reach is unknown (`uncertain`: it timed out or printed
+    /// errors of its own), every entry is dropped except those of `EmptiedLocal`
+    /// collections. When it is known, `Ok` and `Conflict` collections are re-listed and
+    /// `Error` ones dropped: a failed run may have downloaded tasks the old listing lacks.
     /// `EmptiedLocal` and `EmptiedRemote` keep their entry: vdirsyncer stops on an emptied
     /// collection before it transfers anything in it.
     pub fn update(
@@ -92,14 +143,25 @@ impl Manifest {
         states: &BTreeMap<String, CollState>,
         uncertain: bool,
     ) -> io::Result<()> {
+        self.held = self
+            .lists
+            .keys()
+            .filter(|c| match states.get(*c) {
+                Some(CollState::EmptiedRemote) => true,
+                Some(CollState::Ok | CollState::Conflict) => false,
+                _ => self.held.contains(*c),
+            })
+            .cloned()
+            .collect();
         if uncertain {
-            self.0
-                .retain(|c, _| states.get(c) == Some(&CollState::EmptiedLocal));
+            let held = &self.held;
+            self.lists
+                .retain(|c, _| held.contains(c) || states.get(c) == Some(&CollState::EmptiedLocal));
             return Ok(());
         }
         for (c, s) in states {
-            if matches!(s, CollState::Error { .. }) {
-                self.0.remove(c);
+            if matches!(s, CollState::Error { .. }) && !self.held.contains(c) {
+                self.lists.remove(c);
             }
         }
         self.refresh(
@@ -116,7 +178,7 @@ impl Manifest {
     /// for it, and the last pending write to each of them removed it. No entry for the
     /// collection means no evidence.
     pub fn emptied_by(&self, coll: &str, pending: &[Entry]) -> bool {
-        let Some(files) = self.0.get(coll) else {
+        let Some(files) = self.lists.get(coll) else {
             return false;
         };
         !files.is_empty()
@@ -134,7 +196,7 @@ impl Manifest {
     /// the manifest has no entry for `coll`. A file the manifest lacks is a task that was
     /// never synced: emptying the list on the server would lose it.
     pub fn covers_local(&self, vdir: &Path, coll: &str) -> io::Result<Option<bool>> {
-        let Some(files) = self.0.get(coll) else {
+        let Some(files) = self.lists.get(coll) else {
             return Ok(None);
         };
         if !plain_name(coll) {
@@ -201,7 +263,8 @@ mod tests {
 
     fn manifest(files: &[&str]) -> Manifest {
         let mut m = Manifest::default();
-        m.0.insert("c1".into(), files.iter().map(|f| f.to_string()).collect());
+        m.lists
+            .insert("c1".into(), files.iter().map(|f| f.to_string()).collect());
         m
     }
 
@@ -247,7 +310,7 @@ mod tests {
         fs::write(vdir.join("ok/n.ics"), "x").unwrap();
         let mut m = Manifest::default();
         for c in ["ok", "err", "el", "er", "other"] {
-            m.0.insert(c.into(), vec![format!("{c}/a.ics")]);
+            m.lists.insert(c.into(), vec![format!("{c}/a.ics")]);
         }
         let states: BTreeMap<String, CollState> = [
             ("ok", CollState::Ok),
@@ -266,13 +329,96 @@ mod tests {
         let mut clean = m.clone();
         clean.update(&vdir, &states, false).unwrap();
         assert_eq!(
-            clean.0.keys().collect::<Vec<_>>(),
+            clean.lists.keys().collect::<Vec<_>>(),
             ["el", "er", "ok", "other"]
         );
-        assert_eq!(clean.0["ok"], vec!["ok/n.ics".to_string()]);
-        assert_eq!(clean.0["el"], vec!["el/a.ics".to_string()]);
+        assert_eq!(clean.lists["ok"], vec!["ok/n.ics".to_string()]);
+        assert_eq!(clean.lists["el"], vec!["el/a.ics".to_string()]);
         m.update(&vdir, &states, true).unwrap();
-        assert_eq!(m.0.keys().collect::<Vec<_>>(), ["el"]);
+        assert_eq!(m.lists.keys().collect::<Vec<_>>(), ["el", "er"]);
+    }
+
+    fn states(list: &[(&str, CollState)]) -> BTreeMap<String, CollState> {
+        list.iter()
+            .map(|(c, s)| (c.to_string(), s.clone()))
+            .collect()
+    }
+
+    /// Issue #159: a list emptied on the server keeps its record through every run that
+    /// does not sync it again, or it could never be applied automatically.
+    #[test]
+    fn record_of_a_list_emptied_on_the_server_is_held_until_it_syncs() {
+        let dir = tempfile::tempdir().unwrap();
+        let vdir = dir.path().join("vdir");
+        fs::create_dir_all(vdir.join("er")).unwrap();
+        fs::write(vdir.join("er/new.ics"), "x").unwrap();
+        let mut m = Manifest::default();
+        m.lists.insert("er".into(), vec!["er/a.ics".into()]);
+        m.lists.insert("ok".into(), vec!["ok/a.ics".into()]);
+        let record = vec!["er/a.ics".to_string()];
+        let error = CollState::Error {
+            message: "x".into(),
+        };
+
+        m.update(&vdir, &states(&[("er", CollState::EmptiedRemote)]), false)
+            .unwrap();
+        assert_eq!(m.held, BTreeSet::from(["er".to_string()]));
+        // Uncertain runs: one that reported it emptied, one that never reached it.
+        m.update(&vdir, &states(&[("er", CollState::EmptiedRemote)]), true)
+            .unwrap();
+        m.update(&vdir, &states(&[]), true).unwrap();
+        // An error in it, in a run that is otherwise clean, and in an uncertain one.
+        m.update(&vdir, &states(&[("er", error.clone())]), false)
+            .unwrap();
+        m.update(&vdir, &states(&[("er", error)]), true).unwrap();
+        assert_eq!(m.lists.keys().collect::<Vec<_>>(), ["er"]);
+        assert_eq!(m.lists["er"], record);
+        assert_eq!(m.held, BTreeSet::from(["er".to_string()]));
+
+        m.update(&vdir, &states(&[("er", CollState::Ok)]), false)
+            .unwrap();
+        assert_eq!(m.lists["er"], vec!["er/new.ics".to_string()]);
+        assert!(m.held.is_empty());
+    }
+
+    #[test]
+    fn emptied_on_the_server_without_a_record_holds_nothing() {
+        let mut m = Manifest::default();
+        m.update(
+            Path::new("/nonexistent"),
+            &states(&[("er", CollState::EmptiedRemote)]),
+            false,
+        )
+        .unwrap();
+        assert_eq!(m, Manifest::default());
+    }
+
+    #[test]
+    fn held_only_keeps_held_records() {
+        let mut m = manifest(&["c1/a.ics"]);
+        m.lists.insert("c2".into(), vec!["c2/a.ics".into()]);
+        m.held.insert("c2".into());
+        let held = m.held_only();
+        assert_eq!(held.lists.keys().collect::<Vec<_>>(), ["c2"]);
+        assert_eq!(held.held, m.held);
+    }
+
+    #[test]
+    fn held_round_trips_and_the_plain_format_still_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = manifest(&["c1/a.ics"]);
+        m.held.insert("c1".into());
+        m.save(dir.path()).unwrap();
+        assert_eq!(Manifest::load(dir.path()).unwrap(), m);
+        fs::write(
+            Manifest::path(dir.path()),
+            r#"{"c1": ["c1/a.ics"], "lists": []}"#,
+        )
+        .unwrap();
+        let plain = Manifest::load(dir.path()).unwrap();
+        assert_eq!(plain.lists["c1"], vec!["c1/a.ics".to_string()]);
+        assert_eq!(plain.lists["lists"], Vec::<String>::new());
+        assert!(plain.held.is_empty());
     }
 
     #[test]
@@ -285,15 +431,15 @@ mod tests {
         fs::write(vdir.join("c1/.a.ics.tmp"), "x").unwrap();
         fs::write(vdir.join("c1/displayname"), "x").unwrap();
         let mut m = Manifest::default();
-        m.0.insert("old".into(), vec!["old/z.ics".into()]);
+        m.lists.insert("old".into(), vec!["old/z.ics".into()]);
         m.refresh(&vdir, ["c1", "gone", "../x"]).unwrap();
         assert_eq!(
-            m.0["c1"],
+            m.lists["c1"],
             vec!["c1/a.ics".to_string(), "c1/b.ics".to_string()]
         );
-        assert_eq!(m.0["gone"], Vec::<String>::new());
-        assert!(!m.0.contains_key("../x"));
-        assert_eq!(m.0["old"], vec!["old/z.ics".to_string()]);
+        assert_eq!(m.lists["gone"], Vec::<String>::new());
+        assert!(!m.lists.contains_key("../x"));
+        assert_eq!(m.lists["old"], vec!["old/z.ics".to_string()]);
         let state = dir.path().join("state");
         m.save(&state).unwrap();
         assert_eq!(Manifest::load(&state).unwrap(), m);
