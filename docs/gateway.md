@@ -112,7 +112,8 @@ number due today and the number open. Tapping one opens that view in the same ta
 phone remembers the opened view in this browser (not on the server) and shows it again next
 time. If that list is deleted, the phone returns to the Views list and says "That list is
 gone". Tapping a task opens its screen with its items (a checklist or subtasks); items
-can be ticked and unticked there, with the same Undo banner.
+can be ticked and unticked there, with the same Undo banner. A done task or item shows a grey
+tick in an unfilled circle and a grey, struck-through title.
 
 ## Editing on the phone
 
