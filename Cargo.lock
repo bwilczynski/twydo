@@ -2269,7 +2269,7 @@ dependencies = [
 
 [[package]]
 name = "tdo"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2522,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-core"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -2546,7 +2546,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-daemon"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -2565,7 +2565,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-gateway"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -2585,7 +2585,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-testdav"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "serde_json",
  "tempfile",
@@ -2593,7 +2593,7 @@ dependencies = [
 
 [[package]]
 name = "twydo-web"
-version = "0.6.3"
+version = "0.7.0"
 
 [[package]]
 name = "typenum"
