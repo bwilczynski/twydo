@@ -1,4 +1,4 @@
-//! Embeds the Vite build output (`web/dist`) into the gateway binary.
+//! Embeds the Vite build output (`web/dist`) for the gateway binary.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -50,7 +50,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TWYDO_REQUIRE_WEB");
     println!("cargo:rerun-if-changed=build.rs");
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let dist = manifest.join("../../web/dist");
+    let dist = manifest.join("dist");
     println!("cargo:rerun-if-changed={}", dist.display());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 

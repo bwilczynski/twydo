@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 twydo-core = { path = "../twydo-core" }
 twydo-daemon = { path = "../twydo-daemon" }
+twydo-web = { path = "../../web" }
 base64 = "0.23.1"
 chrono = { version = "0.4.45", features = ["serde"] }
 getrandom = "0.4.3"

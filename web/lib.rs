@@ -1,4 +1,5 @@
-//! The web app, embedded at compile time from `web/dist` by `build.rs`.
+//! The web app, embedded at compile time from `web/dist` by `build.rs`. The gateway serves
+//! it as `twydo_gateway::assets`.
 
 pub struct Asset {
     pub path: &'static str,

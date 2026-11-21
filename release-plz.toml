@@ -20,7 +20,7 @@ release_commits = "^(feat|fix)"
 [[package]]
 name = "tdo"
 changelog_path = "./CHANGELOG.md"
-changelog_include = ["twydo-core", "twydo-daemon", "twydo-gateway"]
+changelog_include = ["twydo-core", "twydo-daemon", "twydo-gateway", "twydo-web"]
 
 [[package]]
 name = "twydo-core"
@@ -43,6 +43,16 @@ changelog_update = false
 name = "twydo-gateway"
 git_tag_enable = false
 changelog_update = false
+
+# The web app (web/): a package only so that web commits count as releasable changes and reach
+# tdo's changelog; release-plz ignores paths outside every package. Released like
+# twydo-gateway, and needs the never-created tag name (see twydo-daemon) until the first
+# release tag that contains it.
+[[package]]
+name = "twydo-web"
+git_tag_enable = false
+changelog_update = false
+git_tag_name = "twydo-web-v{{ version }}"
 
 # Test support only: never released, tagged or put in a changelog.
 [[package]]
