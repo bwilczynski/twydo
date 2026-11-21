@@ -247,6 +247,14 @@ fn day_in(d: &IcalDateTime, now: DateTime<Tz>) -> NaiveDate {
     }
 }
 
+/// Whether a start is still ahead at `now`: a later day for a date, a later moment for a time.
+fn start_ahead(d: &IcalDateTime, now: DateTime<Tz>) -> bool {
+    match d.resolve(now.timezone()).0 {
+        Resolved::Date(day) => day > now.date_naive(),
+        Resolved::Instant(i) => i > now.with_timezone(&Utc),
+    }
+}
+
 /// `(overdue, due_today)` for task `idx` at `now`.
 pub(crate) fn due_flags(snap: &Snapshot, idx: usize, now: DateTime<Tz>) -> (bool, bool) {
     let t = &snap.tasks[idx];
@@ -266,9 +274,7 @@ fn row(
 ) -> ViewRow {
     let t: &Task = &snap.tasks[r.task];
     let now = at.with_timezone(&snap.tz());
-    let today = now.date_naive();
     let (overdue, due_today) = due_flags(snap, r.task, now);
-    let day_of = |d: &IcalDateTime| day_in(d, now);
     let color = list_color(snap, &t.collection);
     ViewRow {
         uid: t.uid.clone(),
@@ -285,7 +291,7 @@ fn row(
         start: t
             .start
             .as_ref()
-            .filter(|s| day_of(s) > today)
+            .filter(|s| start_ahead(s, now))
             .map(|s| twydo_core::format::relative_date(s, now)),
         overdue,
         due_today,

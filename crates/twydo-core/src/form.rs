@@ -485,9 +485,6 @@ impl Form {
 
     fn parsed_start(&self, today: NaiveDate) -> Result<Option<Due>, String> {
         let d = dateinput::parse(&self.start, today).map_err(|e| format!("start: {e}"))?;
-        if d.is_some_and(|d| d.time.is_some()) {
-            return Err("start: start dates have no time".into());
-        }
         Ok(d.map(|d| d.due()))
     }
 

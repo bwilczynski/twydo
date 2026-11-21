@@ -77,7 +77,7 @@ pub enum OpCommand {
         /// YYYY-MM-DD or YYYY-MM-DDTHH:MM
         #[arg(long, value_name = "DATE")]
         due: Option<String>,
-        /// YYYY-MM-DD
+        /// YYYY-MM-DD or YYYY-MM-DDTHH:MM
         #[arg(long, value_name = "DATE")]
         start: Option<String>,
         /// Type of the new task
@@ -170,7 +170,7 @@ pub struct EditArgs {
     due: Option<String>,
     #[arg(long)]
     clear_due: bool,
-    /// YYYY-MM-DD
+    /// YYYY-MM-DD or YYYY-MM-DDTHH:MM
     #[arg(long, value_name = "DATE", conflicts_with = "clear_start")]
     start: Option<String>,
     #[arg(long)]
@@ -248,11 +248,20 @@ fn parse_date(s: &str) -> Result<NaiveDate, Failure> {
 }
 
 fn parse_due(s: &str) -> Result<Due, Failure> {
+    parse_when(s, "due")
+}
+
+fn parse_start(s: &str) -> Result<Due, Failure> {
+    parse_when(s, "start")
+}
+
+/// `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`, for the field named `what` in the error.
+fn parse_when(s: &str, what: &str) -> Result<Due, Failure> {
     if s.contains('T') {
         match NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M") {
             Ok(t) => Ok(Due::Time(t)),
             Err(_) => usage(format!(
-                "invalid due {s:?}; expected YYYY-MM-DD or YYYY-MM-DDTHH:MM"
+                "invalid {what} {s:?}; expected YYYY-MM-DD or YYYY-MM-DDTHH:MM"
             )),
         }
     } else {
@@ -295,7 +304,7 @@ fn edit_changes(
         changes.push(Change::Due(None));
     }
     if let Some(d) = &a.start {
-        changes.push(Change::Start(Some(Due::Date(parse_date(d)?))));
+        changes.push(Change::Start(Some(parse_start(d)?)));
     } else if a.clear_start {
         changes.push(Change::Start(None));
     }
@@ -546,7 +555,7 @@ fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
             Op::Create(NewTask {
                 description: notes,
                 due,
-                start: start.as_deref().map(parse_date).transpose()?.map(Due::Date),
+                start: start.as_deref().map(parse_start).transpose()?,
                 kind: kind.into(),
                 parent,
                 repeat,
