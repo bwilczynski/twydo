@@ -241,7 +241,7 @@ Every uploaded task carried it. Keys seen:
 
 | Key | Meaning |
 |---|---|
-| `StartDate` | start date, epoch seconds at **UTC midnight** of the start day; key absent = no start. Present on exactly the tasks with a `.tod` `startdatetime` |
+| `StartDate` | start, epoch seconds of the local wall-clock start read as UTC: **UTC midnight** of the start day for a date-only start, the time of day for a timed one (start 25 Nov 10:00 = `2026-11-25T10:00:00Z`, also across daylight saving; no other key or `DTSTART` change) [obs: 2026-11-21 start-time round]; key absent = no start. Present on exactly the tasks with a `.tod` `startdatetime` |
 | `TaskType` | `.tod` `tasktype`: 0 task, 1 checklist, 2 project |
 | `IsStarred` | 0/1 |
 | `RecurrenceFrom` | seen 0 and 1 only; assumed to follow `.tod` `recurrence` (2 = from completion) [inf] |
