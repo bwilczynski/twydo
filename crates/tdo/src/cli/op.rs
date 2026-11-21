@@ -295,7 +295,7 @@ fn edit_changes(
         changes.push(Change::Due(None));
     }
     if let Some(d) = &a.start {
-        changes.push(Change::Start(Some(parse_date(d)?)));
+        changes.push(Change::Start(Some(Due::Date(parse_date(d)?))));
     } else if a.clear_start {
         changes.push(Change::Start(None));
     }
@@ -546,7 +546,7 @@ fn run_inner(target: &Target, cmd: OpCommand) -> Result<(), Failure> {
             Op::Create(NewTask {
                 description: notes,
                 due,
-                start: start.as_deref().map(parse_date).transpose()?,
+                start: start.as_deref().map(parse_date).transpose()?.map(Due::Date),
                 kind: kind.into(),
                 parent,
                 repeat,

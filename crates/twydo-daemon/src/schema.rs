@@ -744,6 +744,6 @@ mod tests {
 
     #[test]
     fn info_version_is_the_protocol_generation() {
-        assert_eq!(document()["info"]["version"], json!("3"));
+        assert_eq!(document()["info"]["version"], json!("4"));
     }
 }
