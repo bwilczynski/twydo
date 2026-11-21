@@ -619,3 +619,16 @@ fn views_list_colors() {
     let today = it.iter().find(|i| i.view.view == ViewName::Today).unwrap();
     assert_eq!(today.color, None);
 }
+
+/// A start later today is still ahead: the row says when, with its time.
+#[test]
+fn row_shows_a_start_later_today_with_its_time() {
+    let fx = fx();
+    fx.write(
+        "inbox/tyre.ics",
+        &ics("tyre", "Change tyres", "DTSTART:20261117T150000\r\n"),
+    );
+    let td = start(&fx, |_| {});
+    let v = get(&td, "inbox");
+    assert_eq!(row(&v, "tyre").start.as_deref(), Some("Today 15:00"));
+}

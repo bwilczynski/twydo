@@ -7,6 +7,7 @@ use chrono_tz::Tz;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tdo::form::{EditForm, Field, FormAction, NO_CHANGES, NewTarget, Rebased};
 use twydo_core::edit::{Change, Due, NewTask, Op};
+use twydo_core::ical::value::IcalDateTime;
 use twydo_core::model::{Task, TaskKind};
 use twydo_core::repeatinput::{self, EXAMPLES};
 
@@ -119,11 +120,47 @@ fn bad_due_is_error() {
 }
 
 #[test]
-fn start_with_time_is_error() {
+fn timed_start_input() {
     let mut f = form("Buy stamps");
     focus(&mut f, Field::Start);
-    type_str(&mut f, "fri 5pm");
-    assert_eq!(changes(&f), Err("start: start dates have no time".into()));
+    type_str(&mut f, "fri 10am");
+    let at = NaiveDate::from_ymd_opt(2026, 11, 6)
+        .unwrap()
+        .and_time(NaiveTime::from_hms_opt(10, 0, 0).unwrap());
+    assert_eq!(changes(&f), Ok(vec![Change::Start(Some(Due::Time(at)))]));
+    assert_eq!(
+        f.preview(Field::Start, today(), &WD).as_deref(),
+        Some("→ Fri 6 Nov 10:00")
+    );
+}
+
+/// A card on a task whose start has a time.
+fn timed_start_form() -> EditForm {
+    let mut t = task("Buy stamps");
+    t.start = Some(IcalDateTime::Floating(
+        NaiveDate::from_ymd_opt(2026, 11, 6)
+            .unwrap()
+            .and_time(NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
+    ));
+    EditForm::open(&t, item_of(&t), NY)
+}
+
+/// Review focus 1: opening and saving a timed start unchanged writes nothing.
+#[test]
+fn unchanged_timed_start_writes_nothing() {
+    let f = timed_start_form();
+    assert_eq!(changes(&f), Ok(vec![]));
+    assert_eq!(
+        f.preview(Field::Start, today(), &WD).as_deref(),
+        Some("→ Fri 6 Nov 10:00")
+    );
+}
+
+/// Review focus 5: a bare date drops only the time; an empty field removes the start.
+#[test]
+fn bare_date_drops_start_time() {
+    let mut f = timed_start_form();
+    focus(&mut f, Field::Start);
     f.key(ctrl('u'));
     type_str(&mut f, "fri");
     assert_eq!(
@@ -132,6 +169,8 @@ fn start_with_time_is_error() {
             NaiveDate::from_ymd_opt(2026, 11, 6).map(Due::Date)
         )])
     );
+    f.key(ctrl('u'));
+    assert_eq!(changes(&f), Ok(vec![Change::Start(None)]));
 }
 
 #[test]

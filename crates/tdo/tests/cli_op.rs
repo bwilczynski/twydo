@@ -54,6 +54,7 @@ impl Env {
             "edit-notes.resource",
             "set-due.task",
             "set-start.task",
+            "set-start.time",
             "set-repeat.interval",
             "convert.task-project",
             "set-alert.task",
@@ -1645,4 +1646,24 @@ fn edit_rejects_bad_alert() {
     );
     let o = env.op(&["edit", TASK_A, "--alert", "15m", "--no-alert"]);
     assert_eq!(o.status.code(), Some(2), "{}", err(&o));
+}
+
+#[test]
+fn edit_sets_start_time() {
+    let env = Env::new("test");
+    let o = env.op(&["edit", TASK_A, "--start", "2026-11-25T10:00"]);
+    assert!(o.status.success(), "{}", err(&o));
+    let f = fs::read_to_string(env.vdir().join(format!("list1/{TASK_A}.ics")))
+        .unwrap()
+        .replace("\r\n ", "");
+    // 2Do's encoding: the wall-clock start read as UTC (2026-11-25T10:00:00Z).
+    assert!(f.contains("StartDate%22%3A1795600800"), "{f}");
+}
+
+#[test]
+fn edit_start_time_refused_until_verified() {
+    let env = Env::new("verified");
+    let o = env.op(&["edit", TASK_A, "--start", "2026-11-25T10:00"]);
+    assert_eq!(o.status.code(), Some(1), "{}", err(&o));
+    assert!(err(&o).contains("setting a start time"), "{}", err(&o));
 }
