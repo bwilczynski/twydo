@@ -602,8 +602,8 @@ fn start_on_day_31_moves_by_the_due_dates_days() {
 
 #[test]
 fn unusual_start_date_is_refused() {
-    // 0, negative, and not on a UTC midnight (2026-10-31 plus one hour).
-    for secs in ["0", "-86400", "1793408400"] {
+    // 0 and negative. A value off a UTC midnight is a start time (`set-start/phone-encodings`).
+    for secs in ["0", "-86400"] {
         let s = p6_text(S).replace(
             "%22StartDate%22%3A1796083200",
             &format!("%22StartDate%22%3A{secs}"),
@@ -1771,5 +1771,35 @@ fn history_task_capability_preserves_schedule_and_series() {
         };
         assert_eq!(preserved(lines(&cal)), preserved(original));
         assert_eq!(todo(&cal).prop("STATUS").unwrap().value, "NEEDS-ACTION");
+    }
+}
+
+/// Weekly S7 (due 18:00) and S8 (date-only due), both starting 23 Nov 09:00, completed on the
+/// phone: the live start moves 7 days and keeps 09:00, the copy keeps the old start
+/// (`set-start/phone-encodings`).
+#[test]
+fn completes_weekly_timed_start_like_phone() {
+    const CASE: &str = "set-start/phone-encodings";
+    for (uid, copy, due) in [
+        (
+            "b42a79b674184d66bded898223236ed1",
+            "7f6b3ab4dbd746ba89be0c514960767c",
+            "20261130T180000",
+        ),
+        (
+            "d3afe2df1f4b47848edec337dc134f7a",
+            "77b660b62ac94910a4acd4070e50ad26",
+            "20261130",
+        ),
+    ] {
+        check_copy_and_advance(
+            CASE,
+            "phone-a-batch1/list1",
+            "phone-a-batch2/list1",
+            uid,
+            copy,
+            due,
+            &["DTSTART", "DUE", "X-2DOAPP-METADATA"],
+        );
     }
 }

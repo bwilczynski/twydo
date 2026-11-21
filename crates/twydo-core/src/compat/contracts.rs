@@ -74,6 +74,7 @@ contracts! {
     SetDueChecklist => SetDue, "set-due.recurring-checklist", "changing a recurring checklist's due date";
     SetDueItemCleanup => SetDue, "set-due.checklist-item-cleanup", "changing a checklist's date while its items have dates of their own";
     SetStartTask => SetStart, "set-start.task", "changing a start date";
+    SetStartTime => SetStart, "set-start.time", "setting a start time";
     SetAlertTask => SetAlert, "set-alert.task", "setting an alert";
     SetRepeatInterval => SetRepeat, "set-repeat.interval", "changing a repeat interval";
     SetRepeatTask => SetRepeat, "set-repeat.task", "changing a task's repeat rule";
@@ -136,6 +137,7 @@ contracts! {
     CompleteUntil => Complete, "complete.until", "completing a repeating task with an end date";
     CompleteLateMonthly => Complete, "complete.late-monthly", "completing a monthly task after a missed occurrence";
     CompleteStartOffsets => Complete, "complete.start-offsets", "completing a repeating task with a start date or alerts";
+    CompleteStartTime => Complete, "complete.start-time", "completing a repeating task with a start time";
     CompleteUndo => Complete, "complete.undo", "undoing a completion";
     SetRepeatDays => SetRepeat, "set-repeat.days", "setting a repeat every few days";
     SetRepeatWeeks => SetRepeat, "set-repeat.weeks", "setting a weekly repeat";
