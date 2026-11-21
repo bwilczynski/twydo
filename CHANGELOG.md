@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/bwilczynski/twydo/compare/v0.6.3...v0.7.0) - 2026-11-21
+
+### Added
+
+- *(tui)* type a start time in the start field
+- *(core)* [**breaking**] start times in start edits and new tasks
+- *(gate)* admit start times behind set-start.time
+- *(core)* read start times from 2do metadata
+- *(web)* slide pushed screens in and out
+
+### Fixed
+
+- *(sync)* hold the record of a list emptied on the server
+- *(web)* strike through done items instead of dimming them ([#155](https://github.com/bwilczynski/twydo/pull/155))
+
 ## [0.6.3](https://github.com/bwilczynski/twydo/compare/v0.6.2...v0.6.3) - 2026-11-20
 
 ### Added
