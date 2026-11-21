@@ -102,6 +102,13 @@ in and rows that are gone (a completed task, for example) slide out. Only a lost
 dims the list, under "Can't reach Twydo". An empty list shows its icon, "Nothing here" and, when
 a task can be added, a hint to tap **+**.
 
+Opening a view from Views or a task's screen slides the new screen in from the right, as on
+iOS; going back slides it away again. On a task screen that holds for the browser's back too;
+a view opened from Views adds no history entry, so only its **Views** button goes back to the
+list. The tab bar and **+** stay put. Switching tabs, and tapping a tab to leave its pushed screens, change
+the screen at once. With reduced motion turned on, or in a browser without view transitions,
+every screen change is instant; Safari's own swipe back keeps its own animation.
+
 ## Views
 
 The app has three tabs: Inbox, Today and Views. Views lists what the desktop sidebar shows,
