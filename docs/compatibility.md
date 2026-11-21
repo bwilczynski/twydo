@@ -260,6 +260,8 @@ The newly enabled operations are:
 
 | Matrix case / operation | Verified scope |
 |---|---|
+| `set-start.time` | Set, change, drop the time of or remove a start time on a task with no due, a date-only due or a timed due; stored as 2Do does. Not on a task that repeats from completion (not captured) ([evidence](reference/evidence.md)) |
+| `complete.start-time` | Complete a repeating task whose start has a time: the start moves by the due's days and keeps its time, as on the phone |
 | `set-alert.task` | Set, change or remove one 2Do alert before the due date/time, or remove the automatic one, on an open task, project or project item (not a checklist), timed or date-only, with or without a start date or repeat; the alert replaces the automatic one, as on the phone. From-completion tasks take it only in a save without date changes ([evidence](reference/evidence.md)) |
 | `set-repeat.task` | Set, remove or change between plain due-anchored daily/weekly/monthly/yearly rules, without ends or weekday selectors |
 | `set-repeat.task` | Same scope; existing interval encodings are preserved |

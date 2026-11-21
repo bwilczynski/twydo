@@ -63,9 +63,10 @@ or a checklist). A checklist's items have no dates, repeat or alerts of their ow
 
 - **Due date**: date-only (`Fri`) or with a time (`Fri 10:00`). A date-only task becomes overdue
   the day after its due date; a timed one, once its time has passed.
-- **Start date**: the day you plan to start. A task whose start date is still in the future is
-  shown in **Scheduled** and the **Future** section of All and its list until that day
-  comes. It stays out of Today and Next 3 Days until it starts. Start dates have no time.
+- **Start date**: when you plan to start, date-only (`Wed`) or with a time (`Wed 10:00`). A task
+  whose start is still ahead is shown in **Scheduled** and the **Future** section of All and its
+  list until that day, or that time, comes. It stays out of Today and Next 3 Days until it
+  starts, then shows as In Progress. Typing a bare date on a timed start drops only the time.
 - A **checklist item** has no dates of its own; date keys and the form's Due and Start are refused
   on an item. Some items still carry an old copy of the checklist's date (2Do gives items a copy
   when the checklist already had a date when they were added). When the checklist gets a new

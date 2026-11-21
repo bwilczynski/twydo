@@ -316,7 +316,8 @@ Due and Start take:
 | `2026-11-20` | that date |
 | a time after any of these, or alone (today) | `5pm`, `930a`, `9:30 pm`, `14:30`, `noon`, `midnight` |
 
-A bare number such as `9` is rejected as ambiguous. Start dates take no time. The text beside
+A bare number such as `9` is rejected as ambiguous. Start takes the same input as Due, time
+included; a bare date drops a start's time. The text beside
 each date shows how it was read (`→ Fri 6 Nov 10:00`).
 
 Repeat takes a rule, then any modifiers:

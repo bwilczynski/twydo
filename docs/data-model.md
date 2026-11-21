@@ -91,7 +91,7 @@ The keys Twydo reads or writes:
 | Key | Meaning |
 |---|---|
 | `TaskType` | 0 task, 1 checklist, 2 project |
-| `StartDate` | The start date, as epoch seconds at UTC midnight of the start day. Absent: no start date |
+| `StartDate` | The start, as epoch seconds of the local wall-clock start read as UTC: a date-only start is UTC midnight of its day, start 25 Nov 10:00 is `2026-11-25T10:00:00Z` whatever the zone or season. Absent: no start |
 | `parentuid` | On an item: the parent's JSON `uid` when present; otherwise its CalDAV UID. `RELATED-TO` always uses the CalDAV UID |
 | `uid` | On a checklist or project: its parent identity, which may differ from its CalDAV UID after a phone conversion |
 | `RUID` | The repeat series a task belongs to: on a live repeating task its own UID (or empty), on a completed history copy the UID of the task it was copied from |

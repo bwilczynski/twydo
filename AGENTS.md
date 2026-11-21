@@ -46,7 +46,10 @@ against the real server. It needs the user's explicit approval, and must pass be
 The phone companion MVP (issue #39, [design](docs/superpowers/specs/2026-11-17-phone-companion-mvp-design.md),
 [plan](docs/superpowers/plans/2026-11-17-phone-companion-mvp.md)) is implemented: `views.get` in
 the daemon, `tdo gateway` and the web app in `web/`, with Inbox and Today. Web Push is not built,
-and the app has not been checked on the user's phone against real data. Next: write-queue plan 3
+and the app has not been checked on the user's phone against real data. Start times (issue #98,
+[design](docs/superpowers/specs/2026-11-21-start-time-design.md),
+[plan](docs/superpowers/plans/2026-11-21-start-time.md)) are implemented and phone-verified
+(protocol generation 4). Next: write-queue plan 3
 (rebasing inside the daemon, re-planning with `store::plan`).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.
@@ -54,7 +57,7 @@ language input. Read the current plan and as-is documentation before choosing ne
 ## Device and data boundaries
 
 No new phone/server rounds are authorized by this handoff. Plan 8 batch 1, RF/RA, item deletion
-and both item-reordering/insertion rounds and the alerts round are complete; do not repeat them. Saved phone ranks
+and both item-reordering/insertion rounds, the alerts round and the start-time round are complete; do not repeat them. Saved phone ranks
 require **Manually**. Preserve the synthetic lists/families and private backups/session state
 outside git. Do not change accounts, global write mode or other data. Any further device scope
 needs a bounded unresolved question and fresh approval; ask before production 2Do, NAS or iPhone
