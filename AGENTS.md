@@ -86,6 +86,8 @@ access. Existing captures and local preservation tests should be reused first.
 - Code lives in this repository as a Cargo workspace at the root:
   - `crates/twydo-core/`: core library (data model, storage, views)
   - `crates/tdo/`: the `tdo` binary (CLI and TUI)
+  - `web/`: the phone web app (TypeScript in `web/src/`); also the `twydo-web` Cargo package,
+    whose `build.rs` embeds `web/dist` for the gateway, so that release-plz releases web commits
   - `compat/`: the phase-0 compatibility matrix (`matrix.toml`)
   - `contrib/`: example configuration for external tools (vdirsyncer, systemd, launchd)
   - `tools/`: helper scripts (tests in `tools/tests/`)
