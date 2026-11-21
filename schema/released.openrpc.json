@@ -208,13 +208,16 @@
           },
           {
             "additionalProperties": false,
-            "description": "`None` removes the start date.",
+            "description": "`None` removes the start. A `Due::Time` start is a floating local time, as for due.",
             "properties": {
               "Start": {
-                "format": "date",
-                "type": [
-                  "string",
-                  "null"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Due"
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               }
             },
@@ -2373,10 +2376,13 @@
             "description": "Needs a due date (checked when the task is built)."
           },
           "start": {
-            "format": "date",
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Due"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "summary": {
@@ -5027,7 +5033,7 @@
   },
   "info": {
     "title": "tdo",
-    "version": "3"
+    "version": "4"
   },
   "methods": [
     {
@@ -5963,5 +5969,5 @@
       }
     }
   },
-  "x-protocol": 3
+  "x-protocol": 4
 }
