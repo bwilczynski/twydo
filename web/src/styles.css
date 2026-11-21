@@ -260,3 +260,24 @@ input, textarea { font: inherit; color: inherit; }
   background: var(--card, transparent); color: var(--danger); font-weight: 600;
 }
 .delete-task:disabled { opacity: 0.45; }
+
+/* Pushing and popping screens (navigate.ts): the new screen slides in from the right over the
+   old, which drifts left; back reverses it. The bars keep their own snapshots and stay put. */
+.tabbar { view-transition-name: tabbar; }
+.fab { view-transition-name: fab; }
+.banner { view-transition-name: banner; }
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 350ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
+  mix-blend-mode: normal;
+}
+:root[data-nav="forward"]::view-transition-old(root) { animation-name: nav-under-out; }
+:root[data-nav="forward"]::view-transition-new(root) { animation-name: nav-over-in; }
+:root[data-nav="back"]::view-transition-old(root) { animation-name: nav-over-out; z-index: 1; }
+:root[data-nav="back"]::view-transition-new(root) { animation-name: nav-under-in; }
+@keyframes nav-over-in { from { transform: translateX(100%); } }
+@keyframes nav-over-out { to { transform: translateX(100%); } }
+@keyframes nav-under-out { to { transform: translateX(-30%); filter: brightness(0.9); } }
+@keyframes nav-under-in { from { transform: translateX(-30%); filter: brightness(0.9); } }

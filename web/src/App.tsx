@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { viewKey, type DataSource, type FormOpen, type ViewRef, type Visible } from "./data";
+import { committed, navigate } from "./navigate";
 import { useTaskStack } from "./taskStack";
 import type { FormValues, ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
@@ -102,6 +103,8 @@ export function App({ ds }: { ds: DataSource }) {
   const [open, setOpen] = useState<ViewRef | undefined>(loadOpen);
   const openRef = useRef(open);
   openRef.current = open;
+  // The view the last openView asked for, which a slide renders once its snapshot is taken.
+  const wantOpen = useRef(open);
   // What is on screen once every task screen is popped.
   const rootRef = useRef<Visible>("views");
   // Rows and tasks ticked locally: the state asked for, and the revision of the write's answer
@@ -116,6 +119,9 @@ export function App({ ds }: { ds: DataSource }) {
   const [editing, setEditing] = useState<Editing>();
   // A delete awaiting its confirmation.
   const [deleting, setDeleting] = useState<{ uid: string; title: string; items: number }>();
+
+  // A pushed or popped screen is in the DOM: the slide can take its snapshot.
+  useLayoutEffect(committed);
 
   const connection = ds.connection.value;
   // The view on screen: a tab's own, or the one opened in the Views tab (none on the list).
@@ -139,6 +145,7 @@ export function App({ ds }: { ds: DataSource }) {
         const o = openRef.current;
         if (!o || viewKey(o) !== viewKey(gone)) return;
         openRef.current = undefined;
+        wantOpen.current = undefined;
         setOpen(undefined);
         saveOpen(undefined);
         setBanner({ id: ++bannerSeq, text: "That list is gone", undo: false });
@@ -220,16 +227,19 @@ export function App({ ds }: { ds: DataSource }) {
     }
   };
 
-  const openView = (r: ViewRef | undefined) => {
-    setOpen(r);
+  /** Push a view in the Views tab, or pop back to the list; a tab re-tap passes no `slide`. */
+  const openView = (r: ViewRef | undefined, slide = true) => {
     saveOpen(r);
+    wantOpen.current = r;
+    if (slide) navigate(r ? "forward" : "back", () => setOpen(wantOpen.current));
+    else setOpen(r);
   };
 
   const select = (t: Tab) => {
     // Tapping the Views tab again pops back to the list (iOS convention).
     // Any tab tap leaves the task screens; the active tab's own root shows.
     if (tasks.current().length > 0) tasks.clear();
-    if (t === "views" && tab === "views") openView(undefined);
+    if (t === "views" && tab === "views") openView(undefined, false);
     setTab(t);
     try {
       localStorage.setItem(TAB_KEY, t);
