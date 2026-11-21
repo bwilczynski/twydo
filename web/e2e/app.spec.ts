@@ -144,6 +144,49 @@ test("new task sheet slides up full screen", async ({ page }, info) => {
   await expect(page.getByRole("status")).toContainText('Added "Synthetic captured"');
 });
 
+/**
+ * Records each screen slide (#157) as its direction and the heading on screen when the browser
+ * has taken the outgoing snapshot, which must still be the screen being left. Null in a browser
+ * without view transitions.
+ */
+async function recordSlides(page: Page): Promise<(() => Promise<string[]>) | null> {
+  const has = await page.evaluate(() => {
+    const d = document as Document & { startViewTransition?: (f: () => unknown) => unknown };
+    const start = d.startViewTransition;
+    if (!start) return false;
+    const w = window as unknown as { slides: string[] };
+    w.slides = [];
+    d.startViewTransition = (f) => {
+      const dir = document.documentElement.dataset.nav ?? "";
+      return start.call(d, () => {
+        w.slides.push(`${dir}:${document.querySelector("h1")?.textContent ?? ""}`);
+        return f();
+      });
+    };
+    return true;
+  });
+  return has ? () => page.evaluate(() => (window as unknown as { slides: string[] }).slides) : null;
+}
+
+test("a task screen slides in and back out", async ({ page }, info) => {
+  const title = `Synthetic trip ${info.project.name}`;
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  const slides = await recordSlides(page);
+  await page.getByRole("button", { name: new RegExp(title) }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.getByRole("button", { name: "Inbox" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  // The browser's own back slides the same way.
+  await page.getByRole("button", { name: new RegExp(title) }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  if (slides) {
+    const pair = ["forward:inbox", `back:${title}`];
+    await expect.poll(slides).toEqual([...pair, ...pair]);
+  }
+});
+
 test.describe("phone editing", () => {
   const open = (page: Page, title: string) =>
     page.getByRole("button", { name: new RegExp(title) }).click();
@@ -226,6 +269,7 @@ test.describe("views tab", () => {
     // The list's two tasks are due today: one count for due, one for open.
     await expect(work().locator(".view-due")).toHaveText("2");
     await expect(work().locator(".view-total")).toHaveText("2");
+    const slides = await recordSlides(page);
     await work().click();
     await expect(page.getByRole("heading", { name: "work" })).toBeVisible();
 
@@ -236,6 +280,7 @@ test.describe("views tab", () => {
     await expect(page.getByRole("heading", { name: "Views" })).toBeVisible();
     await expect(work().locator(".view-due")).toHaveText("1");
     await expect(work().locator(".view-total")).toHaveText("1");
+    if (slides) expect(await slides()).toEqual(["forward:Views", "back:work"]);
   });
 });
 
