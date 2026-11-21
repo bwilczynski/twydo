@@ -1247,7 +1247,7 @@ fn manifest_after(fake: &str, timeout: Option<u64>) -> Vec<String> {
     }
     let mut m = Manifest::default();
     for c in ["c1", "c2", "c3"] {
-        m.0.insert(c.into(), vec![format!("{c}/a.ics")]);
+        m.lists.insert(c.into(), vec![format!("{c}/a.ics")]);
     }
     m.save(&fx.state()).unwrap();
     let r = run(&fx.cfg, &manual(), now()).unwrap();
@@ -1257,7 +1257,11 @@ fn manifest_after(fake: &str, timeout: Option<u64>) -> Vec<String> {
         Some(&CollState::EmptiedLocal),
         "{r:?}"
     );
-    Manifest::load(&fx.state()).unwrap().0.into_keys().collect()
+    Manifest::load(&fx.state())
+        .unwrap()
+        .lists
+        .into_keys()
+        .collect()
 }
 
 #[test]
@@ -1306,7 +1310,7 @@ fn run_failing_after_vdirsyncer_leaves_no_manifest() {
         cat_fixture("emptied-local.txt")
     ));
     let mut m = Manifest::default();
-    m.0.insert("c1".into(), vec!["c1/a.ics".into()]);
+    m.lists.insert("c1".into(), vec!["c1/a.ics".into()]);
     m.save(&fx.state()).unwrap();
     assert!(run(&fx.cfg, &manual(), now()).is_err());
     assert!(
@@ -2199,6 +2203,59 @@ fn forced_pass_that_fails_is_not_reported_applied() {
     ));
 }
 
+/// Runs a list emptied on the server through an automatic force whose pass runs
+/// `forced_pass` (in the fake's shell), then checks that the record survived and that a later
+/// sync applies the list (issue #159).
+fn record_survives_a_failed_automatic_force(forced_pass: &str, timeout: Option<u64>) {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let calls = fx.path("calls");
+    write_script(
+        Path::new(&fx.cfg.sync.as_ref().unwrap().command),
+        &format!(
+            "echo \"$*\" >> '{calls}'\n\
+             if [ \"$2\" = --force-delete ]; then {forced_pass}; \
+             else {empty}; fi\nexit 0",
+            calls = calls.display(),
+            empty = cat_fixture("emptied-remote.txt"),
+        ),
+    );
+    if let Some(t) = timeout {
+        fx.sync_mut().timeout_secs = t;
+    }
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(forced(&calls));
+    assert!(r.auto_forced.is_empty(), "{r:?}");
+    assert!(matches!(
+        r.collections.get("c1"),
+        Some(CollState::Error { .. })
+    ));
+    let m = Manifest::load(&fx.state()).unwrap();
+    assert!(m.held.contains("c1"), "{m:?}");
+    assert!(m.lists.contains_key("c1"), "{m:?}");
+
+    fx.sync_mut().timeout_secs = 60;
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(forced(&calls));
+    assert_eq!(r.auto_forced_remote, ["c1"]);
+    assert_eq!(r.collections.get("c1"), Some(&CollState::Ok));
+}
+
+#[test]
+fn record_survives_an_automatic_force_that_fails() {
+    record_survives_a_failed_automatic_force(
+        "echo 'Syncing twydo/c1' >&2; \
+         echo 'error: Unknown error occurred for twydo/c1: Cannot connect' >&2; exit 1",
+        None,
+    );
+}
+
+#[test]
+fn record_survives_an_automatic_force_that_times_out() {
+    record_survives_a_failed_automatic_force("echo 'Syncing twydo/c1' >&2; sleep 30", Some(1));
+}
+
 fn assert_held_remote(report: &twydo_core::sync::run::RunReport, reason: HeldReason) {
     assert_eq!(
         report.collections.get("c1"),
@@ -2253,6 +2310,56 @@ fn held_without_manifest_record() {
     let report = run(&fx.cfg, &manual(), now()).unwrap();
     assert!(!forced(&calls));
     assert_held_remote(&report, HeldReason::NoRecord);
+}
+
+/// Issue #159: a held list emptied on the server keeps its record through a failed run, a
+/// run that dies before its update and a timed-out one, and is applied once nothing local
+/// would be lost.
+#[test]
+fn held_server_emptied_list_keeps_its_record_until_applied() {
+    let mut fx = Fx::new("");
+    synced_once(&mut fx);
+    let extra = fx.cfg.vdir.join("c1/new.ics");
+    fs::copy(qa_path(&fx), &extra).unwrap();
+    let cmd = PathBuf::from(&fx.cfg.sync.as_ref().unwrap().command);
+    let emptied = cat_fixture("emptied-remote.txt");
+
+    // Held for the local-only file, in a run with an error of its own.
+    write_script(
+        &cmd,
+        &format!("{emptied}\nprintf 'Syncing twydo/c2\\nerror: Connection refused\\n' >&2\nexit 1"),
+    );
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some(), "{r:?}");
+    assert_held_remote(&r, HeldReason::LocalOnlyFiles);
+
+    // Dies after vdirsyncer, before its update.
+    let hook_log = fx.state().join("sync/hook.log");
+    write_script(
+        &cmd,
+        &format!("{emptied}\nrm -f \"$TWYDO_SYNC_HOOKLOG\"\nmkdir \"$TWYDO_SYNC_HOOKLOG\"\nexit 0"),
+    );
+    assert!(run(&fx.cfg, &manual(), now()).is_err());
+    fs::remove_dir(&hook_log).unwrap();
+
+    // Times out before it reaches the list.
+    fx.sync_mut().timeout_secs = 1;
+    write_script(&cmd, "printf 'Syncing twydo/Twydo test\\n' >&2\nsleep 30");
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(r.transient.is_some(), "{r:?}");
+    fx.sync_mut().timeout_secs = 60;
+
+    let m = Manifest::load(&fx.state()).unwrap();
+    assert!(m.held.contains("c1"), "{m:?}");
+    assert!(m.lists.contains_key("c1"), "{m:?}");
+
+    fs::remove_file(&extra).unwrap();
+    let calls = emptying_fake(&fx, "emptied-remote.txt");
+    let r = run(&fx.cfg, &manual(), now()).unwrap();
+    assert!(forced(&calls));
+    assert_eq!(r.auto_forced_remote, ["c1"]);
+    assert_eq!(r.collections.get("c1"), Some(&CollState::Ok));
+    assert!(!Manifest::load(&fx.state()).unwrap().held.contains("c1"));
 }
 
 #[test]

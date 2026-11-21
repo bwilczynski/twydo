@@ -242,9 +242,16 @@ The record of a list is only as good as the last sync that wrote it:
 - An unreadable `sync/manifest.json` counts as no record: the run goes on, warns
   `tdo: warning: sync/manifest.json is unreadable (...); emptied lists will not be applied
   automatically until the next sync rewrites it`, and rewrites the file at its end.
-- Each sync reads the record and removes the file before vdirsyncer runs, and writes it again
-  only at the end of its update. A sync that is killed, fails, or cannot write the file (it warns)
-  leaves no record, so the next one forces nothing.
+- A list emptied on the server is never synced cleanly again until it is applied, so a lost
+  record of it could never come back. Its record is therefore held: from the sync that reports
+  it emptied on the server, or that starts applying it automatically, until a sync of it
+  succeeds, it survives errors in the list, syncs that time out or print errors of their own,
+  and syncs that are killed. A list you force with `--force-delete` yourself is not held. Anything such a sync
+  downloads into the list is a file the record lacks, which keeps the list held.
+- Each sync reads the record and, before vdirsyncer runs, cuts the file down to the held
+  records; it writes the file in full again only at the end of its update. A sync that is
+  killed, fails, or cannot write the file (it warns) leaves only the held records, so the next
+  one forces nothing else.
 
 ## New lists from other devices
 
@@ -463,7 +470,7 @@ read; do not edit them while a sync runs.
 | `sync/running.json` | exists while vdirsyncer runs (and after a killed daemon, until the next daemon start reaps it): `runner_pid`, `runner_start`, `child_pgid` (vdirsyncer's process group, `null` between calls), `child_start`, `started` |
 | `sync/last_stop` | when the last stop was asked for (RFC 3339); a run begun before it does not start vdirsyncer |
 | `sync/stop` | the daemon's request to stop the running sync (`sync.stop`, or a shutdown during a sync) and to start none meanwhile; the requester withdraws it once its save is done, and one older than 30 s is stale and ignored |
-| `sync/manifest.json` | per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; the evidence for forcing a list Twydo emptied |
+| `sync/manifest.json` | `lists`: per list, the task files (`<list>/<file>.ics`) the vdir held after the last sync in which the list counted; `held`: the lists emptied on the server whose record is kept until they sync again; the evidence for forcing an emptied list |
 | `sync/hook.log` | one JSON line per hook call of the current run; the runner sets `TWYDO_SYNC_HOOKLOG` (and `TWYDO_SYNC_VDIR`) for vdirsyncer |
 | `conflicts/<id>/conflict.json` | the record: `uid`, `collection`, `path`, `kind`, `held`, `vdir_holds`, `detected`, `state`, `choice`, `resolved` |
 | `conflicts/<id>/local.ics`, `remote.ics` | the two versions as plain `.ics`; a missing file means that side deleted the task |
