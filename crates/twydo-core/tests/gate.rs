@@ -176,7 +176,7 @@ fn checklist_item_with_date_is_refused() {
             ..item("gate-checklist")
         },
         NewTask {
-            start: Some(date(2026, 11, 9)),
+            start: Some(Due::Date(date(2026, 11, 9))),
             ..item("gate-checklist")
         },
         NewTask {
@@ -1783,7 +1783,7 @@ mod recurring_checklist_writes {
         }
         for change in [
             Change::Due(Some(Due::Date(date(2026, 12, 29)))),
-            Change::Start(Some(date(2026, 12, 9))),
+            Change::Start(Some(Due::Date(date(2026, 12, 9)))),
             Change::RepeatInterval(2),
             Change::Kind(TaskKind::Project),
         ] {
@@ -1819,7 +1819,7 @@ mod recurring_checklist_writes {
         }
         for n in [
             NewTask {
-                start: Some(date(2026, 12, 9)),
+                start: Some(Due::Date(date(2026, 12, 9))),
                 ..parent()
             },
             NewTask {
@@ -2019,7 +2019,7 @@ mod recurring_checklist_writes {
         for changes in [
             vec![
                 Change::Due(Some(Due::Date(date(2026, 12, 11)))),
-                Change::Start(Some(date(2026, 12, 9))),
+                Change::Start(Some(Due::Date(date(2026, 12, 9)))),
             ],
             vec![
                 Change::Due(Some(Due::Date(date(2026, 12, 11)))),

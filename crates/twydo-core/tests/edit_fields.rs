@@ -302,7 +302,7 @@ fn start_edit_and_remove_match_2do() {
         "create/list1",
         "edit/list1",
         D,
-        &[Change::Start(Some(date(2026, 12, 2)))],
+        &[Change::Start(Some(Due::Date(date(2026, 12, 2))))],
         &["X-2DOAPP-METADATA"],
     );
     check(
@@ -420,8 +420,12 @@ fn start_with_token_metadata_is_unsupported() {
     let s = SYNTHETIC.replace("END:VTODO", "X-2DOAPP-METADATA:@starred\r\nEND:VTODO");
     let mut cal = parse(s.as_bytes()).unwrap();
     let before = cal.clone();
-    let err =
-        apply_changes(&mut cal, &[Change::Start(Some(date(2026, 11, 21)))], now()).unwrap_err();
+    let err = apply_changes(
+        &mut cal,
+        &[Change::Start(Some(Due::Date(date(2026, 11, 21))))],
+        now(),
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, EditError::Unsupported(m) if m == "this task's 2Do metadata format is read-only"),
         "{err:?}"
@@ -433,7 +437,12 @@ fn start_with_token_metadata_is_unsupported() {
 fn start_without_metadata_inserts_default_meta() {
     let no_start = SYNTHETIC.replace("DTSTART;VALUE=DATE:20261120\r\n", "");
     let mut cal = parse(no_start.as_bytes()).unwrap();
-    apply_changes(&mut cal, &[Change::Start(Some(date(2026, 12, 2)))], now()).unwrap();
+    apply_changes(
+        &mut cal,
+        &[Change::Start(Some(Due::Date(date(2026, 12, 2))))],
+        now(),
+    )
+    .unwrap();
     let cal = parse(&serialize(&cal)).unwrap();
     let meta = MetaJson::parse(&todo(&cal).prop("X-2DOAPP-METADATA").unwrap().value).unwrap();
     assert_eq!(meta.get_i64("StartDate"), Some(1_796_169_600));
@@ -468,7 +477,7 @@ fn start_on_task_with_own_dtstart_and_no_meta_is_unsupported() {
     let msg =
         "setting a start date on a task with its own DTSTART and no 2Do metadata is not supported";
     let no_due = SYNTHETIC.replace("DUE;VALUE=DATE:20261125\r\n", "");
-    let start = Change::Start(Some(date(2026, 11, 21)));
+    let start = Change::Start(Some(Due::Date(date(2026, 11, 21))));
     let due = Change::Due(Some(Due::Date(date(2026, 11, 28))));
     for (src, changes) in [
         (SYNTHETIC.to_string(), vec![start.clone()]),
@@ -1405,7 +1414,7 @@ mod recurrence_phone_captures {
             &mut got,
             &[
                 Change::Due(Some(edit::Due::Time(now.naive_utc()))),
-                Change::Start(Some(now.date_naive())),
+                Change::Start(Some(twydo_core::edit::Due::Date(now.date_naive()))),
             ],
             now,
         )
@@ -1486,12 +1495,12 @@ fn existing_from_completion_field_edits_match_phone() {
         (
             "phone-time-removed/list1",
             "phone-start-and-completions/list1",
-            Change::Start(Some(date(2026, 12, 7))),
+            Change::Start(Some(Due::Date(date(2026, 12, 7)))),
         ),
         (
             "phone-start-and-completions/list1",
             "phone-start-changed/list1",
-            Change::Start(Some(date(2026, 12, 8))),
+            Change::Start(Some(Due::Date(date(2026, 12, 8)))),
         ),
     ];
     for (from, to, change) in steps {

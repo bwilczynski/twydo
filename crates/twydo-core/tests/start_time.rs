@@ -4,7 +4,7 @@
 mod common;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-use twydo_core::edit::{Change, apply_changes};
+use twydo_core::edit::{Change, Due, NewTask, apply_changes, new_task};
 use twydo_core::ical::value::IcalDateTime;
 use twydo_core::ical::{Calendar, parse};
 use twydo_core::model::{Task, tasks_from_calendar};
@@ -83,5 +83,77 @@ fn title_edit_keeps_timed_start() {
     assert_eq!(
         task(&cal).start,
         Some(IcalDateTime::Floating(at("2026-11-25 10:00")))
+    );
+}
+
+/// Every property line in document order, without the two sync stamps.
+fn norm(cal: &Calendar) -> Vec<common::Line> {
+    common::lines(cal)
+        .into_iter()
+        .filter(|l| !common::is_stamp(&l.1))
+        .collect()
+}
+
+fn edited(mut cal: Calendar, change: Change) -> Calendar {
+    apply_changes(&mut cal, &[change], now()).unwrap();
+    cal
+}
+
+fn timed(s: &str) -> Option<Due> {
+    Some(Due::Time(at(s)))
+}
+
+#[test]
+fn set_start_time_matches_phone_bytes() {
+    // S3 without its start (phone batch 2) gets the start back: the phone's batch 1 bytes.
+    let got = edited(
+        phone("phone-a-batch2", S3),
+        Change::Start(timed("2026-11-25 10:00")),
+    );
+    assert_eq!(norm(&got), norm(&phone("phone-a-batch1", S3)));
+    // S9, summer time: removed and set again gives the phone's value back.
+    let cleared = edited(phone("phone-a-batch1", S9), Change::Start(None));
+    let got = edited(cleared, Change::Start(timed("2027-04-06 10:00")));
+    assert_eq!(norm(&got), norm(&phone("phone-a-batch1", S9)));
+}
+
+#[test]
+fn change_start_time_matches_phone_bytes() {
+    let got = edited(
+        phone("phone-a-batch1", S1),
+        Change::Start(timed("2026-11-25 14:30")),
+    );
+    assert_eq!(norm(&got), norm(&phone("phone-a-batch2", S1)));
+}
+
+#[test]
+fn drop_start_time_matches_phone_bytes() {
+    let got = edited(
+        phone("phone-a-batch1", S2),
+        Change::Start(Some(Due::Date(day("2026-11-25")))),
+    );
+    assert_eq!(norm(&got), norm(&phone("phone-a-batch2", S2)));
+}
+
+#[test]
+fn remove_timed_start_matches_phone_bytes() {
+    let got = edited(phone("phone-a-batch1", S3), Change::Start(None));
+    assert_eq!(norm(&got), norm(&phone("phone-a-batch2", S3)));
+}
+
+#[test]
+fn creates_task_with_start_time() {
+    let mut t = NewTask::plain("list1", "S1 start");
+    t.start = timed("2026-11-25 10:00");
+    let cal = new_task(&t, S1, None, now()).unwrap();
+    assert_eq!(
+        task(&cal).start,
+        Some(IcalDateTime::Floating(at("2026-11-25 10:00")))
+    );
+    let raw = String::from_utf8(twydo_core::ical::serialize(&cal)).unwrap();
+    assert!(
+        raw.replace("\r\n ", "")
+            .contains("StartDate%22%3A1795600800"),
+        "{raw}"
     );
 }

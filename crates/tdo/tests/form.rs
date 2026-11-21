@@ -128,7 +128,9 @@ fn start_with_time_is_error() {
     type_str(&mut f, "fri");
     assert_eq!(
         changes(&f),
-        Ok(vec![Change::Start(NaiveDate::from_ymd_opt(2026, 11, 6))])
+        Ok(vec![Change::Start(
+            NaiveDate::from_ymd_opt(2026, 11, 6).map(Due::Date)
+        )])
     );
 }
 

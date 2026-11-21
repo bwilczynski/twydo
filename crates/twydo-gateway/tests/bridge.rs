@@ -145,7 +145,8 @@ fn phone_may_save_delete_and_create_anything() {
         task(json!({"due": {"Date": "2026-11-20"}})),
         task(json!({"parent": "u"})),
         task(json!({"repeat": repeat_json()})),
-        task(json!({"start": "2026-11-20"})),
+        task(json!({"start": {"Date": "2026-11-20"}})),
+        task(json!({"start": {"Time": "2026-11-20T10:00:00"}})),
         task(json!({"kind": "Checklist"})),
         task(json!({"due": {"Time": "2026-11-20T10:00:00"}})),
     ];

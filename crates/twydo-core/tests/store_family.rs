@@ -2426,7 +2426,7 @@ fn individual_item_deletion_preserves_opaque_content_and_unexecuted_schedules() 
                 &mut cal,
                 &[
                     Change::Due(Some(Due::Time(due.and_hms_opt(9, 30, 0).unwrap()))),
-                    Change::Start(Some(due.pred_opt().unwrap())),
+                    Change::Start(Some(Due::Date(due.pred_opt().unwrap()))),
                     Change::Repeat(twydo_core::repeatinput::parse(rule, due, &[]).unwrap()),
                 ],
                 now(),

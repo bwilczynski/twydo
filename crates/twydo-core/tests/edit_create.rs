@@ -89,7 +89,7 @@ fn new_task_matches_2do_layout() {
 #[test]
 fn new_task_reads_back() {
     let mut t = nt("  Buy milk ");
-    t.start = Some(d(2026, 12, 1));
+    t.start = Some(Due::Date(d(2026, 12, 1)));
     let cal = new_task(&t, A, None, now()).unwrap();
     let cal = parse(&serialize(&cal)).unwrap();
     let tasks = tasks_from_calendar(&cal, "l", Path::new("x.ics"));

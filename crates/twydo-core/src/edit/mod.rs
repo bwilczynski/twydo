@@ -54,8 +54,8 @@ pub enum Change {
     Description(Option<String>),
     /// `None` removes the due date.
     Due(Option<Due>),
-    /// `None` removes the start date.
-    Start(Option<NaiveDate>),
+    /// `None` removes the start. A `Due::Time` start is a floating local time, as for due.
+    Start(Option<Due>),
     RepeatInterval(u32),
     /// Set the repeat rule, or `None` to remove it. A task without a due date must get one
     /// first (a `Change::Due` earlier in the same list): 2Do makes the due date today.
@@ -77,7 +77,7 @@ pub struct NewTask {
     pub summary: String,
     pub description: Option<String>,
     pub due: Option<Due>,
-    pub start: Option<NaiveDate>,
+    pub start: Option<Due>,
     pub kind: TaskKind,
     /// iCalendar UID of the checklist or project this task is an item of.
     pub parent: Option<String>,
@@ -550,11 +550,13 @@ fn has_own_dtstart(todo: &Component) -> bool {
 
 use crate::model::alert::is_auto_alarm;
 
-/// The start date lives only in `<2Do Meta>` `StartDate` (epoch seconds of UTC midnight, H9).
+/// The start lives only in `<2Do Meta>` `StartDate`: epoch seconds of the local wall-clock
+/// start read as UTC, so a date-only start is a UTC midnight (H9) and 25 Nov 10:00 is
+/// `2026-11-25T10:00:00Z` (start-time round, `set-start/phone-encodings`).
 /// A task without metadata gets 2Do's default metadata first, unless it has its own
 /// `DTSTART` (one that does not mirror `DUE`): with JSON metadata `DTSTART` becomes a mirror,
 /// and how 2Do reads that combination is not captured, so it is refused.
-fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditError> {
+fn set_start(todo: &mut Component, start: Option<Due>) -> Result<(), EditError> {
     let orig = match meta_of(todo) {
         Meta::Json(m) => Some(m),
         Meta::Absent if has_own_dtstart(todo) => {
@@ -569,10 +571,11 @@ fn set_start(todo: &mut Component, start: Option<NaiveDate>) -> Result<(), EditE
     };
     let mut m = orig.clone().unwrap_or_else(default_task_meta);
     match start {
-        Some(d) => m.set_i64(
+        Some(Due::Date(d)) => m.set_i64(
             "StartDate",
             d.and_time(chrono::NaiveTime::MIN).and_utc().timestamp(),
         ),
+        Some(Due::Time(t)) => m.set_i64("StartDate", t.and_utc().timestamp()),
         None => m.remove("StartDate"),
     }
     write_meta(todo, orig.as_ref(), &m);
