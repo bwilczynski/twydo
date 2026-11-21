@@ -104,8 +104,9 @@ pub fn parse_metadata(raw: &str) -> Metadata {
 /// `<2Do Meta>%7B...%7D</2Do Meta>`: percent-decode the body and read it as a JSON object.
 /// Mapped fields (observed in 2Do 3.91 CalDAV uploads):
 /// - `TaskType` 1 / 2 -> `tasktype` `checklist` / `project` (0 = task, no token);
-/// - `StartDate` epoch seconds -> `startdate` `YYYY-MM-DD`. Every value seen is a UTC
-///   midnight naming the start day, so only the UTC date is taken;
+/// - `StartDate` epoch seconds -> `startdate` `YYYY-MM-DD`, plus `starttime` `HH:MM` when it is
+///   not a UTC midnight. 2Do writes the local wall-clock start read as UTC: start 25 Nov 10:00
+///   is `2026-11-25T10:00:00Z`, whatever the zone or season (start-time round, 2026-11-21);
 /// - `IsStarred` 1 -> `starred`;
 /// - `RecurrenceFrom` 2 -> `repeatfromcompletion` (same enum as the `.tod` `recurrence`
 ///   field, where 2 = from completion; not yet seen in a CalDAV upload).
@@ -147,14 +148,18 @@ fn parse_json_metadata(raw: &str) -> Metadata {
     if let Some(k) = kind {
         t.insert("tasktype".into(), Some(k.into()));
     }
-    if let Some(day) = int("StartDate")
+    if let Some(start) = int("StartDate")
         .filter(|&n| n > 0)
         .and_then(|n| DateTime::from_timestamp(n, 0))
     {
         t.insert(
             "startdate".into(),
-            Some(day.date_naive().format("%Y-%m-%d").to_string()),
+            Some(start.date_naive().format("%Y-%m-%d").to_string()),
         );
+        let time = start.time();
+        if time != chrono::NaiveTime::MIN {
+            t.insert("starttime".into(), Some(time.format("%H:%M").to_string()));
+        }
     }
     if int("IsStarred") == Some(1) {
         t.insert("starred".into(), None);

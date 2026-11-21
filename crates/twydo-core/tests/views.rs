@@ -82,6 +82,11 @@ impl TaskBuilder {
         self.0.start = Some(IcalDateTime::Date(date(d)));
         self
     }
+    /// A start with a time, as 2Do writes it: floating local wall time.
+    fn start_at(mut self, t: &str) -> Self {
+        self.0.start = Some(IcalDateTime::Floating(local(t)));
+        self
+    }
     fn completed_at(mut self, t: &str) -> Self {
         self.0.status = Status::Completed;
         self.0.completed = Some(ny(t));
@@ -460,6 +465,30 @@ fn calendar_days_across_dst() {
         date_group(&s, idx(&s, "mon-2330"), now, false),
         DateGroup::Tomorrow
     );
+}
+
+#[test]
+fn timed_start_moves_to_in_progress_at_its_time() {
+    let s = snapshot(
+        vec![
+            TaskBuilder::new("tyre", "inbox")
+                .start_at("2026-11-04 10:00")
+                .build(),
+        ],
+        &[],
+    );
+    let at = |t: &str| New_York.from_local_datetime(&local(t)).unwrap();
+    let before = at("2026-11-04 09:59");
+    assert!(uids(&s, &build_view(&s, &View::Today, before, &no_expand())).is_empty());
+    let r = build_view(&s, &View::Scheduled, before, &no_expand());
+    assert_eq!(uids(&s, &r), vec!["tyre"]);
+
+    let r = build_view(&s, &View::Today, now(), &no_expand());
+    assert_eq!(
+        flat(&s, &r),
+        vec![(DateGroup::InProgress, "tyre".to_string(), 0)]
+    );
+    assert!(uids(&s, &build_view(&s, &View::Scheduled, now(), &no_expand())).is_empty());
 }
 
 #[test]

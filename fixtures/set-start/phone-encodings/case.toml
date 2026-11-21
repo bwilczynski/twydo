@@ -1,0 +1,36 @@
+claim = "2Do stores a start time as the local wall-clock time written as a UTC epoch in <2Do Meta> StartDate, whatever the due; dropping the time writes UTC midnight, removing the start drops the key, and completing a weekly repeat moves the start by the due's days and keeps its time."
+origin = "device"
+observed = "Phone-created S1-S3 start 2026-11-25 10:00 (no due, date-only due, timed due) all carry StartDate 1795600800 (2026-11-25T10:00Z) and no other change; S9 start 2027-04-06 10:00 (summer time) carries 2027-04-06T10:00Z. S1 to 14:30 gives 14:30Z, S2 time removed gives 00:00Z, S3 start removed drops StartDate. Weekly S7 (due 18:00) and S8 (date-only due), start 09:00, completed: the live tasks start 2026-11-30T09:00Z, the completed copies keep 2026-11-23T09:00Z. DTSTART mirrors DUE throughout."
+tests = ["crates/twydo-core/tests/start_time.rs::reads_phone_start_times"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-21 start-time round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."phone-a-before"]
+path = "phone-a-before"
+collections = ["list1"]
+members = []
+action = "Empty Twydo test list before the phone sets start times"
+device = "iphone"
+captured_at = "2026-11-21T16:14:10.214168+00:00"
+
+[states."phone-a-batch1"]
+path = "phone-a-batch1"
+collections = ["list1"]
+members = ["list1/0907b521c5fd473193319a18076365c2.ics", "list1/0f8195e0cd3947e4809d1b5d5015525a.ics", "list1/41d4356a9ba54e9c972655340f050c6d.ics", "list1/b42a79b674184d66bded898223236ed1.ics", "list1/d3afe2df1f4b47848edec337dc134f7a.ics", "list1/d9ae60e7b31b4ff8b4d4249b5499cb59.ics"]
+action = "Phone batch 1: S1-S3 start 11-25 10:00 (no due, date due, timed due), S7/S8 weekly start 11-23 09:00 (timed, date due), S9 start 2027-04-06 10:00"
+device = "iphone"
+captured_at = "2026-11-21T16:24:16.583130+00:00"
+
+[states."phone-a-batch2"]
+path = "phone-a-batch2"
+collections = ["list1"]
+members = ["list1/0907b521c5fd473193319a18076365c2.ics", "list1/0f8195e0cd3947e4809d1b5d5015525a.ics", "list1/41d4356a9ba54e9c972655340f050c6d.ics", "list1/77b660b62ac94910a4acd4070e50ad26.ics", "list1/7f6b3ab4dbd746ba89be0c514960767c.ics", "list1/b42a79b674184d66bded898223236ed1.ics", "list1/d3afe2df1f4b47848edec337dc134f7a.ics", "list1/d9ae60e7b31b4ff8b4d4249b5499cb59.ics"]
+action = "Phone batch 2: S1 start time to 14:30, S2 start time removed (date kept), S3 start removed, weekly S7 and S8 completed on 2026-11-21"
+device = "iphone"
+captured_at = "2026-11-21T16:30:15.082599+00:00"
