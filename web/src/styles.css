@@ -62,12 +62,13 @@ input, textarea { font: inherit; color: inherit; }
   border: 2px solid var(--secondary); position: relative;
 }
 .check::before { content: ""; position: absolute; inset: -10px; }
-.row.done .check, .task-head.done .check { background: var(--accent); border-color: var(--accent); }
+/* A done check is a plain grey tick in its ring, with no fill. */
 .row.done .check::after, .task-head.done .check::after {
   content: ""; position: absolute; left: 6px; top: 2px; width: 5px; height: 10px;
-  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  border: solid var(--secondary); border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
-.row.done .body { opacity: 0.45; }
+/* A done title is struck through, not dimmed. */
+.row.done .title, .task-head.done h1 { text-decoration: line-through; color: var(--secondary); }
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
 .title { overflow-wrap: anywhere; }
 .sub { font-size: 13px; color: var(--secondary); }
@@ -202,7 +203,6 @@ input, textarea { font: inherit; color: inherit; }
 
 .task-head { display: flex; align-items: center; gap: 12px; margin: 8px 4px 4px; }
 .task-head h1 { flex: 1; min-width: 0; font-size: 28px; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
-.task-head.done h1 { opacity: 0.45; }
 .task-meta { display: flex; align-items: center; gap: 6px; margin: 0 4px 12px; color: var(--secondary); }
 .list-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0 4px 12px; }
