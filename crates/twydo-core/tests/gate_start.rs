@@ -31,6 +31,14 @@ fn now() -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+/// The embedded matrix with both start-time contracts held back, as before phase B.
+fn unverified() -> Matrix {
+    let mut m = Matrix::embedded().clone();
+    common::set_contract(&mut m, ContractId::SetStartTime, Verdict::Unverified);
+    common::set_contract(&mut m, ContractId::CompleteStartTime, Verdict::Unverified);
+    m
+}
+
 fn passing() -> Matrix {
     let mut m = Matrix::embedded().clone();
     common::set_contract(&mut m, ContractId::SetStartTime, Verdict::Pass);
@@ -59,7 +67,8 @@ fn reason(r: Result<(), twydo_core::gate::Blocked>) -> String {
 fn set_start_time_needs_its_contract() {
     let env = common::Env::new(WriteMode::Verified, BATCH2);
     let s = env.snap();
-    let shipping = Matrix::embedded();
+    let held = unverified();
+    let shipping = &held;
     let go = |m: &Matrix, op: &Op| check(&s, m, WriteMode::Verified, op, today());
 
     // A new time on a task without a start (S3), and a changed time (S1).
@@ -137,13 +146,7 @@ fn complete_timed_start_needs_its_contract() {
     let s = env.snap();
     let op = Op::Complete { uid: S7.into() };
     assert_eq!(
-        reason(check(
-            &s,
-            Matrix::embedded(),
-            WriteMode::Verified,
-            &op,
-            today()
-        )),
+        reason(check(&s, &unverified(), WriteMode::Verified, &op, today())),
         COMPLETE_TIME
     );
     assert!(check(&s, &passing(), WriteMode::Verified, &op, today()).is_ok());
@@ -168,4 +171,20 @@ fn non_zero_start_day_delay_stays_refused() {
         )),
         "completing a repeating task with a start-day delay is not verified yet"
     );
+}
+
+/// After phase B the shipped matrix admits start times.
+#[test]
+fn shipped_matrix_admits_start_times() {
+    let env = common::Env::new(WriteMode::Verified, BATCH1);
+    let s = env.snap();
+    for op in [
+        start(S1, timed("2026-11-25 16:00")),
+        Op::Complete { uid: S7.into() },
+    ] {
+        assert!(
+            check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_ok(),
+            "{op:?}"
+        );
+    }
 }

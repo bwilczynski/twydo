@@ -157,3 +157,37 @@ fn creates_task_with_start_time() {
         "{raw}"
     );
 }
+
+/// Phase B (`set-start/twydo-roundtrip`): what Twydo wrote is what the phone kept, through a
+/// phone rename of T1.
+#[test]
+fn twydo_written_start_times_survive_the_phone() {
+    const B: &str = "set-start/twydo-roundtrip";
+    let read = |state: &str, uid: &str| {
+        let cal = parse(&common::fixture(B, &format!("{state}/list1"), uid)).unwrap();
+        task(&cal)
+    };
+    let t1 = "da7ef453bbe04034ab0e84658c3f9df9";
+    let checked = read("phone-checked", t1);
+    assert_eq!(checked.summary, "T1 start edited");
+    assert_eq!(
+        checked.start,
+        Some(IcalDateTime::Floating(at("2026-11-26 14:30")))
+    );
+    assert_eq!(
+        read("phone-checked", "cfa12a72f7ec472eaea808d6db4b9d4d").start,
+        Some(IcalDateTime::Floating(at("2027-04-07 10:00")))
+    );
+    assert_eq!(
+        read("phone-checked", "b76aa7721123490181828dd5d2ad6a2c").start,
+        Some(IcalDateTime::Date(day("2026-11-26")))
+    );
+    assert_eq!(
+        read("phone-checked", "64dcaa5937f4431db8ca5f30fd801750").start,
+        None
+    );
+    assert_eq!(
+        read("phone-checked", "0b4beb48c4a648dc889e859852b1cca6").start,
+        Some(IcalDateTime::Floating(at("2026-11-30 09:00")))
+    );
+}

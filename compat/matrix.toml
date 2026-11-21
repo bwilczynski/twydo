@@ -46,9 +46,9 @@ evidence = ["complete/standalone-lifecycle", "reopen/undo"]
 [[contract]]
 id = "set-start.time"
 iphone_baseline = "pass"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["set-start/phone-encodings"]
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["set-start/phone-encodings", "set-start/twydo-roundtrip"]
 
 [[contract]]
 id = "set-alert.task"
@@ -503,9 +503,9 @@ evidence = ["complete/family-lifecycle", "complete/mixed-families"]
 [[contract]]
 id = "complete.start-time"
 iphone_baseline = "pass"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = ["set-start/phone-encodings"]
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["set-start/phone-encodings", "set-start/twydo-roundtrip"]
 
 [[contract]]
 id = "complete.undo"

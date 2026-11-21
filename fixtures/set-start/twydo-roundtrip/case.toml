@@ -1,0 +1,37 @@
+claim = "2Do on the iPhone reads Twydo-written start times at the right day and time, without a due, with a date-only due or a timed due, after a time is dropped or the start removed, and after Twydo completes a weekly repeat; a phone rewrite keeps the start time."
+origin = "device"
+observed = "Twydo created T1-T3 start 2026-11-26 10:00 (no due, date-only due, timed due), T4 start 2027-04-07 10:00 and weekly T5 start 11-23 09:00 due 18:00; then set T1 to 14:30, dropped T2's time, removed T3's start and completed T5. The phone showed T1 26 Nov 14:30, T2 26 Nov with no time, T3 no start, T4 7 Apr 2027 10:00, T5 30 Nov 09:00 with the completed copy at 23 Nov 09:00. A phone rename of T1 kept StartDate 2026-11-26T14:30Z."
+supports = ["complete.start-time"]
+tests = ["crates/twydo-core/tests/start_time.rs::twydo_written_start_times_survive_the_phone"]
+
+[provenance]
+source_revision = "7b019dbda34cbe074075196bb52fc193667e0e1a"
+source_path = "private staging of the 2026-11-21 start-time round, phase B (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); Twydo daemon built from the source revision"
+server_version = "unknown"
+
+[states."twydo-set"]
+path = "twydo-set"
+collections = ["list1"]
+members = ["list1/0b4beb48c4a648dc889e859852b1cca6.ics", "list1/64dcaa5937f4431db8ca5f30fd801750.ics", "list1/b76aa7721123490181828dd5d2ad6a2c.ics", "list1/cfa12a72f7ec472eaea808d6db4b9d4d.ics", "list1/da7ef453bbe04034ab0e84658c3f9df9.ics"]
+action = "Twydo creates T1-T3 start 2026-11-26 10:00 (no due, date-only due 11-28, timed due 11-28 18:00), T4 start 2027-04-07 10:00, weekly T5 start 11-23 09:00 due 18:00"
+device = "twydo"
+captured_at = "2026-11-21T17:52:41.313892+00:00"
+
+[states."twydo-changed"]
+path = "twydo-changed"
+collections = ["list1"]
+members = ["list1/0b4beb48c4a648dc889e859852b1cca6.ics", "list1/64dcaa5937f4431db8ca5f30fd801750.ics", "list1/b76aa7721123490181828dd5d2ad6a2c.ics", "list1/cfa12a72f7ec472eaea808d6db4b9d4d.ics", "list1/da7ef453bbe04034ab0e84658c3f9df9.ics", "list1/e92ad2e1cec34bd4a6d8a5152aa248dd.ics"]
+action = "Twydo: T1 start time to 14:30, T2 start time removed (date kept), T3 start removed, weekly T5 completed"
+device = "twydo"
+captured_at = "2026-11-21T17:52:57.854560+00:00"
+
+[states."phone-checked"]
+path = "phone-checked"
+collections = ["list1"]
+members = ["list1/0b4beb48c4a648dc889e859852b1cca6.ics", "list1/64dcaa5937f4431db8ca5f30fd801750.ics", "list1/b76aa7721123490181828dd5d2ad6a2c.ics", "list1/cfa12a72f7ec472eaea808d6db4b9d4d.ics", "list1/da7ef453bbe04034ab0e84658c3f9df9.ics", "list1/e92ad2e1cec34bd4a6d8a5152aa248dd.ics"]
+action = "Phone shows T1 26 Nov 14:30, T2 26 Nov no time, T3 no start, T4 7 Apr 2027 10:00, T5 30 Nov 09:00 (copy 23 Nov 09:00); T1 renamed to 'T1 start edited' on the phone"
+device = "iphone"
+captured_at = "2026-11-21T17:56:29.753127+00:00"
