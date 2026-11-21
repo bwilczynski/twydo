@@ -2580,6 +2580,7 @@ dependencies = [
  "tungstenite",
  "twydo-core",
  "twydo-daemon",
+ "twydo-web",
 ]
 
 [[package]]
@@ -2589,6 +2590,10 @@ dependencies = [
  "serde_json",
  "tempfile",
 ]
+
+[[package]]
+name = "twydo-web"
+version = "0.6.3"
 
 [[package]]
 name = "typenum"

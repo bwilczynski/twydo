@@ -1,0 +1,16 @@
+# The web app as a workspace package, so that release-plz counts commits under web/ as
+# changes to a released package (and puts them in tdo's changelog). The Rust side only
+# embeds the Vite build output (dist/) for the gateway; the app itself is TypeScript in src/.
+[package]
+name = "twydo-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The Twydo phone web app, embedded for the tdo gateway"
+publish = false
+build = "build.rs"
+
+[lib]
+path = "lib.rs"
