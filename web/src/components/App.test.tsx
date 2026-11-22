@@ -6,6 +6,7 @@ import type { ChildRow, TasksGetResult, ViewsGetResult, ViewsListResult, ViewRow
 import { answer, vals } from "../formFixtures";
 import { taskHash } from "../route";
 import { App } from "../App";
+import type { Push, PushState } from "../push";
 
 const row = (uid: string, title: string, extra: Partial<ViewRow> = {}): ViewRow => ({
   uid,
@@ -1039,5 +1040,138 @@ describe("editing", () => {
       expect((screen.getByText("+ Add item") as HTMLButtonElement).disabled).toBe(true);
       expect((screen.getByRole("button", { name: "Delete task" }) as HTMLButtonElement).disabled).toBe(true);
     });
+  });
+});
+
+describe("reminders", () => {
+  const fakePush = (initial: PushState = "off") => {
+    const state = signal<PushState>(initial);
+    const error = signal(false);
+    const push = {
+      state,
+      error,
+      enable: vi.fn(async () => {
+        state.value = "on";
+      }),
+      disable: vi.fn(async () => {
+        state.value = "off";
+      }),
+      resync: vi.fn(async () => {}),
+    };
+    return { push: push as unknown as Push, state, error, enable: push.enable, disable: push.disable, resync: push.resync };
+  };
+  const sw = new EventTarget();
+  const deliver = (data: unknown) => act(() => void sw.dispatchEvent(new MessageEvent("message", { data })));
+
+  beforeEach(() => {
+    Object.defineProperty(navigator, "serviceWorker", { value: sw, configurable: true });
+  });
+  afterEach(() => {
+    delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+  });
+
+  it("reminders_banner_shows_the_error", () => {
+    const { ds } = fake();
+    const inbox = ds.view({ view: "inbox" }) as unknown as { value: ViewsGetResult };
+    inbox.value = { ...inbox.value, reminders: { error: "The push service rejected us" } };
+    render(<App ds={ds} />);
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Reminders are failing");
+    expect(alert.textContent).toContain("The push service rejected us");
+  });
+
+  it("open_message_pushes_task_without_reload", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    deliver({ type: "open", uid: "u1" });
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk"));
+    expect(location.hash).toBe("#/task/u1");
+  });
+
+  it("digest_message_with_open_task_goes_to_today", async () => {
+    history.replaceState(null, "", taskHash("u1"));
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Buy milk");
+    deliver({ type: "open" });
+    await waitFor(() => expect(screen.queryByRole("heading", { level: 1 })?.textContent).not.toBe("Buy milk"));
+    expect(screen.getByRole("tab", { name: "Today" }).getAttribute("aria-selected")).toBe("true");
+    cleanup();
+    history.replaceState(null, "", "/");
+    render(<App ds={ds} />);
+    deliver({ type: "open" });
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Today" }).getAttribute("aria-selected")).toBe("true"));
+  });
+
+  const openForm = async () => {
+    history.replaceState(null, "", taskHash("u1"));
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const title = (await screen.findByLabelText("Title")) as HTMLInputElement;
+    fireEvent.input(title, { target: { value: "Typed text" } });
+    expect(title.value).toBe("Typed text");
+    return title;
+  };
+
+  it("digest_message_with_the_form_open_keeps_it", async () => {
+    const title = await openForm();
+    deliver({ type: "open" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Typed text");
+    expect(screen.getByLabelText("Title")).toBe(title);
+  });
+
+  it("uid_message_with_the_form_open_pushes_no_screen", async () => {
+    await openForm();
+    deliver({ type: "open", uid: "u2" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Typed text");
+    expect(location.hash).toBe(taskHash("u1"));
+  });
+
+  it("today_hash_selects_today", () => {
+    history.replaceState(null, "", "/#/today");
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("tab", { name: "Today" }).getAttribute("aria-selected")).toBe("true");
+    expect(location.hash).toBe("");
+  });
+
+  it("reminders_row_toggles", async () => {
+    const { ds } = fake();
+    const p = fakePush("off");
+    render(<App ds={ds} push={p.push} />);
+    expect(p.resync).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    const sw1 = screen.getByRole("switch", { name: "Reminders" });
+    expect(sw1.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(sw1);
+    expect(p.enable).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Reminders" }).getAttribute("aria-checked")).toBe("true"));
+    fireEvent.click(screen.getByRole("switch", { name: "Reminders" }));
+    expect(p.disable).toHaveBeenCalled();
+  });
+
+  it("reminders_row_shows_the_turn_off_error", () => {
+    const { ds } = fake();
+    const p = fakePush("on");
+    render(<App ds={ds} push={p.push} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    expect(screen.queryByText("Could not turn reminders off; try again")).toBeNull();
+    act(() => void (p.error.value = true));
+    expect(screen.getByText("Could not turn reminders off; try again")).toBeTruthy();
+  });
+
+  it("reminders_row_explains_install_and_denied_and_hides_unsupported", () => {
+    const { ds } = fake();
+    const p = fakePush("install");
+    render(<App ds={ds} push={p.push} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    expect(screen.getByText("Add Twydo to your Home Screen to get reminders")).toBeTruthy();
+    act(() => void (p.state.value = "denied"));
+    expect(screen.getByText("Allow notifications for Twydo in Settings")).toBeTruthy();
+    act(() => void (p.state.value = "unsupported"));
+    expect(screen.queryByText("Reminders")).toBeNull();
   });
 });

@@ -45,8 +45,11 @@ rename and recolour it, preview its deletion, delete it, run one discovery) has 
 against the real server. It needs the user's explicit approval, and must pass before release.
 The phone companion MVP (issue #39, [design](docs/superpowers/specs/2026-11-17-phone-companion-mvp-design.md),
 [plan](docs/superpowers/plans/2026-11-17-phone-companion-mvp.md)) is implemented: `views.get` in
-the daemon, `tdo gateway` and the web app in `web/`, with Inbox and Today. Web Push is implemented (`tdo gateway push` as the
-notifier command, [design](docs/superpowers/specs/2026-11-22-web-push-design.md)), but the app has not been checked on the user's phone against real data. Start times (issue #98,
+the daemon, `tdo gateway` and the web app in `web/`, with Inbox and Today. Web Push reminders are
+implemented ([design](docs/superpowers/specs/2026-11-22-web-push-design.md),
+[plan](docs/superpowers/plans/2026-11-22-web-push.md)): `tdo gateway push` as the server's notifier
+command and a Reminders switch in the app's Views tab; neither the app nor push has been checked on
+the user's phone against real data. Start times (issue #98,
 [design](docs/superpowers/specs/2026-11-21-start-time-design.md),
 [plan](docs/superpowers/plans/2026-11-21-start-time.md)) are implemented and phone-verified
 (protocol generation 4). Next: write-queue plan 3

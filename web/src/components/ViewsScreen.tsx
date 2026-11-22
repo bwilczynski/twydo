@@ -1,5 +1,6 @@
 import type { ViewsListItem, ViewsListResult } from "../gen/protocol";
 import type { ViewRef } from "../data";
+import type { Push } from "../push";
 import { CalendarDayIcon, ChevronRightIcon, ListIcon, MailboxIcon } from "./Icons";
 
 const isItem = (e: ViewsListResult["entries"][number]): e is ViewsListItem => "view" in e;
@@ -22,10 +23,12 @@ export function ViewsScreen({
   list,
   day = "",
   onOpen,
+  push,
 }: {
   list: ViewsListResult;
   day?: string | number;
   onOpen: (ref: ViewRef) => void;
+  push?: Push;
 }) {
   // Consecutive items between headings form one card.
   const groups: { heading?: string; items: ViewsListItem[] }[] = [{ items: [] }];
@@ -59,6 +62,40 @@ export function ViewsScreen({
             </ul>
           </section>
         ))}
+      {push && <RemindersRow push={push} />}
     </>
+  );
+}
+
+/** The Reminders switch (spec §8.2); hidden where push cannot work at all. */
+function RemindersRow({ push }: { push: Push }) {
+  const state = push.state.value;
+  if (state === "unsupported") return null;
+  const hint =
+    state === "install"
+      ? "Add Twydo to your Home Screen to get reminders"
+      : state === "denied"
+        ? "Allow notifications for Twydo in Settings"
+        : undefined;
+  const on = state === "on";
+  return (
+    <section class="group">
+      <ul class="card">
+        <li class="reminders-row">
+          <span class="view-name">Reminders</span>
+          <button
+            type="button"
+            role="switch"
+            class="switch"
+            aria-label="Reminders"
+            aria-checked={on}
+            disabled={hint !== undefined || state === "busy"}
+            onClick={() => void (on ? push.disable() : push.enable())}
+          />
+        </li>
+      </ul>
+      {hint && <p class="reminders-hint">{hint}</p>}
+      {push.error.value && <p class="reminders-hint">Could not turn reminders off; try again</p>}
+    </section>
   );
 }
