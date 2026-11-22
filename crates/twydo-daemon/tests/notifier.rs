@@ -343,6 +343,44 @@ fn configured_command_wins() {
     });
 }
 
+fn env_probe_command(out: &std::path::Path) -> Vec<String> {
+    vec![
+        "sh".into(),
+        "-c".into(),
+        "printf \"%s|%s\" \"$TWYDO_REMINDER_KEY\" \"${TWYDO_REMINDER_UID-unset}\" > \"$0\"".into(),
+        out.display().to_string(),
+    ]
+}
+
+#[test]
+fn command_gets_the_reminder_key_and_uid() {
+    let fx = fx();
+    let out = fx.vdir().parent().unwrap().join("env-out");
+    let clock = FakeClock::at(t(4, 0, 0));
+    let sink = Arc::new(RecordingSink::default());
+    let mut cfg = config(&fx);
+    cfg.notifications.command = Some(env_probe_command(&out));
+    let td = start_cfg(&fx, cfg, &clock, Some(&sink), |_| {});
+    move_to(&td, &clock, t(5, 0, 0));
+    until("the command never ran", || {
+        fs::read_to_string(&out).is_ok_and(|s| !s.is_empty())
+    });
+    assert_eq!(fs::read_to_string(&out).unwrap(), format!("{KEY}|u1"));
+}
+
+#[test]
+fn notify_test_passes_the_test_key_without_uid() {
+    let fx = fx();
+    let out = fx.vdir().parent().unwrap().join("env-out");
+    let clock = FakeClock::at(t(4, 0, 0));
+    let sink = Arc::new(RecordingSink::default());
+    let mut cfg = config(&fx);
+    cfg.notifications.command = Some(env_probe_command(&out));
+    let td = start_cfg(&fx, cfg, &clock, Some(&sink), |_| {});
+    notify_test(&td.client()).unwrap();
+    assert_eq!(fs::read_to_string(&out).unwrap(), "test|unset");
+}
+
 #[test]
 fn corrupt_state_file_starts_empty() {
     let fx = fx();

@@ -92,15 +92,20 @@ impl Sink for PlatformSink {
     #[cfg(target_os = "macos")]
     fn deliver(&self, d: &Delivery) -> Result<(), String> {
         if on_path("terminal-notifier") {
-            run("terminal-notifier", &terminal_notifier_args(d), TIMEOUT)
+            run(
+                "terminal-notifier",
+                &terminal_notifier_args(d),
+                &[],
+                TIMEOUT,
+            )
         } else {
-            run("osascript", &osascript_args(d), TIMEOUT)
+            run("osascript", &osascript_args(d), &[], TIMEOUT)
         }
     }
 
     #[cfg(not(target_os = "macos"))]
     fn deliver(&self, d: &Delivery) -> Result<(), String> {
-        run("notify-send", &linux_args(d), TIMEOUT)
+        run("notify-send", &linux_args(d), &[], TIMEOUT)
     }
 }
 
@@ -113,16 +118,32 @@ impl Sink for CommandSink {
         let mut args = rest.to_vec();
         args.push(d.title.clone());
         args.push(d.body.clone());
-        run(program, &args, self.timeout)
+        let envs = [
+            ("TWYDO_REMINDER_KEY", Some(d.key.as_str())),
+            ("TWYDO_REMINDER_UID", d.uid.as_deref()),
+        ];
+        run(program, &args, &envs, self.timeout)
     }
 }
 
 /// Runs `program args` without a shell, stdin/stdout null, in its own process group; kills
 /// the group at `timeout`. Err: cannot start, non-zero exit (with the first stderr line), or
-/// timed out.
-pub fn run(program: &str, args: &[String], timeout: Duration) -> Result<(), String> {
-    let mut child = Command::new(program)
-        .args(args)
+/// timed out. `envs` entries set (`Some`) or remove (`None`) a variable in the child.
+pub fn run(
+    program: &str,
+    args: &[String],
+    envs: &[(&str, Option<&str>)],
+    timeout: Duration,
+) -> Result<(), String> {
+    let mut command = Command::new(program);
+    command.args(args);
+    for (k, v) in envs {
+        match v {
+            Some(v) => command.env(k, v),
+            None => command.env_remove(k),
+        };
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -252,6 +273,7 @@ mod tests {
         let e = run(
             "sh",
             &["-c".into(), "echo boom >&2; exit 3".into()],
+            &[],
             TIMEOUT,
         )
         .unwrap_err();
@@ -264,6 +286,7 @@ mod tests {
         let e = run(
             "sh",
             &["-c".into(), "sleep 30 >&2 & echo boom >&2; exit 3".into()],
+            &[],
             Duration::from_millis(500),
         )
         .unwrap_err();
@@ -273,14 +296,14 @@ mod tests {
 
     #[test]
     fn run_reports_missing_program() {
-        let e = run("twydo-no-such-program", &[], TIMEOUT).unwrap_err();
+        let e = run("twydo-no-such-program", &[], &[], TIMEOUT).unwrap_err();
         assert!(e.contains("cannot start"), "{e}");
     }
 
     #[test]
     fn run_kills_a_hung_command() {
         let t = Instant::now();
-        let e = run("sleep", &["30".into()], Duration::from_millis(200)).unwrap_err();
+        let e = run("sleep", &["30".into()], &[], Duration::from_millis(200)).unwrap_err();
         assert!(e.contains("timed out"), "{e}");
         assert!(t.elapsed() < Duration::from_secs(2));
     }
