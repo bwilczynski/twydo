@@ -454,3 +454,228 @@ fn serve_creates_no_vapid_key_when_insecure() {
             .is_none()
     );
 }
+
+// --- push routes ---
+
+fn send(addr: SocketAddr, method: &str, path: &str, extra: &str, body: &str) -> Resp {
+    raw(
+        addr,
+        format!(
+            "{method} {path} HTTP/1.1\r\nHost: x\r\n{extra}Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .as_bytes(),
+    )
+}
+
+fn auth(key: &str) -> String {
+    format!("Authorization: Bearer {key}\r\n")
+}
+
+fn cookie(key: &str) -> String {
+    format!("Cookie: twydo_device={key}\r\n")
+}
+
+fn with_origin(key: &str) -> String {
+    format!("{}Origin: {ORIGIN}\r\n", cookie(key))
+}
+
+/// A subscription body whose `p256dh` is a real P-256 point (the server's own VAPID key).
+fn sub_body(s: &Srv, endpoint: &str) -> String {
+    let p256dh = s.store.vapid().unwrap().expect("key").key.public_b64();
+    serde_json::json!({
+        "endpoint": endpoint,
+        "expirationTime": null,
+        "keys": { "p256dh": p256dh, "auth": "AAAAAAAAAAAAAAAAAAAAAA" }
+    })
+    .to_string()
+}
+
+const ENDPOINT: &str = "https://push.example.test/send/abc";
+
+fn started() -> Srv {
+    let s = start(false, None);
+    wait_started(&s);
+    s
+}
+
+#[test]
+fn push_key_needs_a_device() {
+    let s = started();
+    assert_eq!(get(s.addr, "/push/key", "").status, 401);
+}
+
+#[test]
+fn push_key_returns_the_vapid_public_key() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let r = get(s.addr, "/push/key", &auth(&key));
+    assert_eq!(r.status, 200);
+    let v: serde_json::Value = serde_json::from_str(&r.body).unwrap();
+    let want = s.store.vapid().unwrap().unwrap().key.public_b64();
+    assert_eq!(v["key"], want);
+}
+
+#[test]
+fn put_subscription_stores_it() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let r = send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &with_origin(&key),
+        &sub_body(&s, ENDPOINT),
+    );
+    assert_eq!(r.status, 204);
+    assert_eq!(r.body, "");
+    let subs = s.store.subscriptions().unwrap();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].1.endpoint, ENDPOINT);
+}
+
+#[test]
+fn put_without_origin_is_refused() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let r = send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &cookie(&key),
+        &sub_body(&s, ENDPOINT),
+    );
+    assert_eq!(r.status, 403);
+    assert!(s.store.subscriptions().unwrap().is_empty());
+}
+
+#[test]
+fn put_with_foreign_origin_is_refused() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let r = send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &format!("{}Origin: https://evil.example.test\r\n", cookie(&key)),
+        &sub_body(&s, ENDPOINT),
+    );
+    assert_eq!(r.status, 403);
+}
+
+#[test]
+fn put_rejects_http_endpoint() {
+    let s = started();
+    let (key, _) = pair(&s);
+    for ep in [
+        "http://push.example.test/x".to_owned(),
+        format!("https://push.example.test/{}", "a".repeat(2048)),
+    ] {
+        let r = send(
+            s.addr,
+            "PUT",
+            "/push/subscription",
+            &with_origin(&key),
+            &sub_body(&s, &ep),
+        );
+        assert_eq!(r.status, 400, "{}", &ep[..20]);
+    }
+}
+
+#[test]
+fn put_rejects_bad_keys() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let good = s.store.vapid().unwrap().unwrap().key.public_b64();
+    let cases = [
+        ("AAAA", "AAAAAAAAAAAAAAAAAAAAAA"),
+        (good.as_str(), "AAAA"),
+        (good.as_str(), "not base64!"),
+        ("", ""),
+    ];
+    for (p256dh, authk) in cases {
+        let body = serde_json::json!({
+            "endpoint": ENDPOINT, "keys": { "p256dh": p256dh, "auth": authk }
+        })
+        .to_string();
+        let r = send(
+            s.addr,
+            "PUT",
+            "/push/subscription",
+            &with_origin(&key),
+            &body,
+        );
+        assert_eq!(r.status, 400, "{p256dh} / {authk}");
+    }
+    let r = send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &with_origin(&key),
+        "{}",
+    );
+    assert_eq!(r.status, 400);
+    assert!(s.store.subscriptions().unwrap().is_empty());
+}
+
+#[test]
+fn display_role_is_forbidden() {
+    let s = started();
+    let code = s.store.new_code("Wall", Role::Display, Utc::now()).unwrap();
+    let (_, key) = s.store.redeem(&code, Utc::now()).unwrap();
+    assert_eq!(get(s.addr, "/push/key", &auth(&key)).status, 403);
+    let r = send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &with_origin(&key),
+        &sub_body(&s, ENDPOINT),
+    );
+    assert_eq!(r.status, 403);
+    let r = send(
+        s.addr,
+        "DELETE",
+        "/push/subscription",
+        &with_origin(&key),
+        "",
+    );
+    assert_eq!(r.status, 403);
+}
+
+#[test]
+fn delete_clears_it() {
+    let s = started();
+    let (key, _) = pair(&s);
+    let h = with_origin(&key);
+    send(
+        s.addr,
+        "PUT",
+        "/push/subscription",
+        &h,
+        &sub_body(&s, ENDPOINT),
+    );
+    assert_eq!(s.store.subscriptions().unwrap().len(), 1);
+    let r = send(s.addr, "DELETE", "/push/subscription", &h, "");
+    assert_eq!(r.status, 204);
+    assert_eq!(r.body, "");
+    assert!(s.store.subscriptions().unwrap().is_empty());
+    let r = send(s.addr, "DELETE", "/push/subscription", &cookie(&key), "");
+    assert_eq!(r.status, 403, "delete also needs an origin");
+}
+
+#[test]
+fn insecure_has_no_push_routes() {
+    let s = start(true, None);
+    wait_started(&s);
+    let (key, _) = pair(&s);
+    let h = auth(&key);
+    assert_eq!(get(s.addr, "/push/key", &h).status, 404);
+    assert_eq!(
+        send(s.addr, "PUT", "/push/subscription", &h, "{}").status,
+        404
+    );
+    assert_eq!(
+        send(s.addr, "DELETE", "/push/subscription", &h, "").status,
+        404
+    );
+}
