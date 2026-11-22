@@ -1,6 +1,7 @@
 //! `tdo gateway`: serve the phone app over HTTP and WebSocket, and manage paired devices.
 //! The gateway is a daemon client like any other; it never reads the configuration or data.
 
+use std::ffi::OsString;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -10,6 +11,8 @@ use clap::{Subcommand, ValueEnum};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::methods::HelloResult;
 use twydo_gateway::http::{ServeOptions, normalize_origin};
+use twydo_gateway::push::crypto::Payload;
+use twydo_gateway::push::send::{PushOptions, push};
 use twydo_gateway::state::{Role, StateError, Store};
 use twydo_gateway::{Connector, serve};
 
@@ -49,6 +52,35 @@ pub enum GatewayCommand {
     Devices,
     /// Revoke a paired device
     Revoke { name: String },
+    /// Send one reminder to every phone with reminders on (the notifier's command)
+    #[command(hide = true)]
+    Push {
+        title: String,
+        body: String,
+        /// Extra trusted CA certificates (PEM), for tests
+        #[arg(long, hide = true, value_name = "PATH")]
+        ca_file: Option<PathBuf>,
+    },
+}
+
+/// The notifier appends a reminder's title and body verbatim as the last two arguments of
+/// `tdo gateway push`, and either may start with `-` or even spell a flag. Mark them as
+/// positional with `--` so clap takes them as text whatever they say.
+pub fn separate_push_text(args: Vec<OsString>) -> Vec<OsString> {
+    let Some(gateway) = args.iter().skip(1).position(|a| a == "gateway") else {
+        return args;
+    };
+    let after = gateway + 2;
+    let Some(push) = args[after..].iter().position(|a| a == "push") else {
+        return args;
+    };
+    let push = after + push;
+    if args.len() < push + 3 || args[push + 1..args.len() - 2].iter().any(|a| a == "--") {
+        return args;
+    }
+    let mut args = args;
+    args.insert(args.len() - 2, OsString::from("--"));
+    args
 }
 
 struct DaemonConnector(Target);
@@ -143,6 +175,44 @@ pub fn run(state_dir: Option<&Path>, target: &Target, command: GatewayCommand) -
             }
             Err(e) => error(e, EXIT_ERROR),
         },
+        GatewayCommand::Push {
+            title,
+            body,
+            ca_file,
+        } => {
+            let store = match Store::open(&dir) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("tdo: {e}");
+                    return EXIT_ERROR;
+                }
+            };
+            let payload = Payload {
+                title,
+                body,
+                key: std::env::var("TWYDO_REMINDER_KEY").unwrap_or_else(|_| "unknown".into()),
+                uid: std::env::var("TWYDO_REMINDER_UID")
+                    .ok()
+                    .filter(|u| !u.is_empty()),
+            };
+            let opts = PushOptions {
+                ca_file,
+                ..PushOptions::default()
+            };
+            // The daemon keeps only the first stderr line of a failed command: the verdict
+            // goes first, the per-phone log lines after it.
+            let mut log = Vec::new();
+            let result = push(&store, &payload, &opts, Utc::now(), &mut log);
+            let code = match &result {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("tdo: {e}");
+                    EXIT_ERROR
+                }
+            };
+            eprint!("{}", String::from_utf8_lossy(&log));
+            code
+        }
         GatewayCommand::Revoke { name } => {
             let store = match Store::open(&dir) {
                 Ok(s) => s,
@@ -156,6 +226,35 @@ pub fn run(state_dir: Option<&Path>, target: &Target, command: GatewayCommand) -
                 Err(StateError::NoSuchDevice) => error(format!("no device named {name}"), 1),
                 Err(e) => error(e, EXIT_ERROR),
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(a: &[&str]) -> Vec<OsString> {
+        a.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn separates_the_last_two_arguments_of_push() {
+        assert_eq!(
+            separate_push_text(v(&["tdo", "gateway", "push", "--ca-file", "c", "-a", "-b"])),
+            v(&["tdo", "gateway", "push", "--ca-file", "c", "--", "-a", "-b"])
+        );
+    }
+
+    #[test]
+    fn leaves_other_commands_and_short_push_alone() {
+        for a in [
+            v(&["tdo", "gateway", "serve"]),
+            v(&["tdo", "push", "a", "b"]),
+            v(&["tdo", "gateway", "push", "--help"]),
+            v(&["tdo", "gateway", "push", "--", "a", "b", "c"]),
+        ] {
+            assert_eq!(separate_push_text(a.clone()), a);
         }
     }
 }

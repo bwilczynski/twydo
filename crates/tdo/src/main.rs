@@ -113,7 +113,9 @@ enum Switch {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(cli::gateway::separate_push_text(
+        std::env::args_os().collect(),
+    ));
     let result = match cli.command.unwrap_or(Command::Tui) {
         Command::Tui => {
             let config = twydo_core::config::Config::path();

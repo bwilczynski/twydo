@@ -153,6 +153,31 @@ Done is not paged: `views.get` returns every completed task in one result. Measu
 test fixture, a completed row is about 270 bytes of JSON, plus a few hundred bytes for the
 rest of the result, so a few thousand completed tasks come to roughly a megabyte per fetch.
 
+## Reminders
+
+The phone can receive the daemon's reminders as Web Push notifications. The daemon runs the
+`[notifications] command` for each reminder; point it at the gateway in the server's
+`config.toml`:
+
+```toml
+[notifications]
+command = ["tdo", "gateway", "push"]
+```
+
+Requirements and steps:
+
+- Push needs an HTTPS origin: the gateway must run with `--origin https://...`, not
+  `--insecure`. The first start with an origin creates the push key.
+- On an iPhone, iOS 16.4 or later, and the app added to the Home Screen.
+- The daemon must find `tdo` on its `PATH`. `push` resolves the gateway state directory like
+  `serve` does (`--state-dir`, `TWYDO_GATEWAY_STATE`, `$XDG_STATE_HOME/twydo/gateway`), so the
+  daemon needs the same environment as the gateway; the Docker image already shares it.
+- `tdo gateway revoke` also removes that phone's push subscription.
+- Turn reminders on in the Views tab on the phone.
+- Check the path with `tdo notify test` (in Docker: `docker compose exec twydo tdo notify test`).
+- A failed push shows as a banner on the phone, and the daemon retries with a backoff.
+- Turn 2Do's own notifications off only after a test reminder has arrived.
+
 ## The sync warning
 
 When the daemon's sync needs attention (the server unreachable, a failing sync, a list that

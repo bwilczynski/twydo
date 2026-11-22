@@ -48,6 +48,12 @@ pub fn tdo_bin(socket: &Path, xdg_config: &Path, xdg_state: &Path) -> Command {
     c
 }
 
+/// The built binary's path, for a notifier command that never reaches a daemon
+/// (`tdo gateway push`); every other use goes through [`tdo_bin`].
+pub fn tdo_path() -> &'static str {
+    env!("CARGO_BIN_EXE_tdo")
+}
+
 /// A spawned process, killed and reaped on drop.
 pub struct Proc(pub Child);
 
