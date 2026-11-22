@@ -393,6 +393,9 @@ pub fn serve_with_limits(
     limits: Limits,
 ) -> io::Result<()> {
     let store = Store::open(&opts.state_dir).map_err(io::Error::other)?;
+    if let (Some(origin), false) = (&opts.origin, opts.insecure) {
+        store.ensure_vapid(origin).map_err(io::Error::other)?;
+    }
     let ctx = Arc::new(Ctx {
         connector,
         opts,
