@@ -7,7 +7,9 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((ks) =>
+        Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+      )
       .then(() => self.clients.claim()),
   );
 });
@@ -44,4 +46,46 @@ self.addEventListener("fetch", (e) => {
         .catch(() => caches.match("/").then((hit) => hit || Response.error())),
     );
   }
+});
+
+// Web Push: show the reminder; a tap focuses the app on its task (or Today for the digest).
+self.addEventListener("push", (e) => {
+  let p;
+  try {
+    p = e.data.json();
+  } catch {
+    e.waitUntil(self.registration.showNotification("Twydo reminder", {}));
+    return;
+  }
+  // Every push must show a notification (iOS revokes push otherwise), whatever the payload.
+  const o = p && typeof p === "object" ? p : {};
+  const text = (v) => (typeof v === "string" && v ? v : undefined);
+  const opts = { renotify: false, data: {} };
+  if (typeof o.body === "string") opts.body = o.body;
+  if (text(o.key)) opts.tag = o.key;
+  if (text(o.uid)) opts.data.uid = o.uid;
+  e.waitUntil(
+    self.registration.showNotification(text(o.title) || "Twydo reminder", opts),
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const uid = e.notification.data && e.notification.data.uid;
+  const target = uid ? "/#/task/" + encodeURIComponent(uid) : "/#/today";
+  e.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((all) => {
+        const client = all.find((c) => c.type === "window");
+        if (!client) return self.clients.openWindow(target);
+        // A rejected focus (the browser may refuse) must not lose the navigation.
+        return Promise.resolve()
+          .then(() => client.focus())
+          .catch(() => {})
+          .then(() =>
+            client.postMessage(uid ? { type: "open", uid } : { type: "open" }),
+          );
+      }),
+  );
 });
