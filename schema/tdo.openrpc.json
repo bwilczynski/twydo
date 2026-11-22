@@ -3082,6 +3082,18 @@
         ],
         "type": "object"
       },
+      "RemindersSummary": {
+        "description": "The notifier's failure, for a phone to show as a warning.",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
       "RepeatSpec": {
         "description": "A repeat rule plus 2Do's \"from completion\" flag (which is not part of the RRULE).",
         "properties": {
@@ -4383,6 +4395,17 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemindersSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the notifier cannot deliver reminders; absent while it can."
           },
           "revision": {
             "format": "uint64",

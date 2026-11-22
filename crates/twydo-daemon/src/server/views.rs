@@ -19,8 +19,8 @@ use super::admin::unresolved_conflict_uids;
 use super::syncsummary::summary;
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::views::{
-    CaptureTarget, RowList, RowParent, SectionKey, ViewName, ViewRow, ViewSection, ViewsEntry,
-    ViewsGetParams, ViewsGetResult, ViewsListItem, ViewsListResult,
+    CaptureTarget, RemindersSummary, RowList, RowParent, SectionKey, ViewName, ViewRow,
+    ViewSection, ViewsEntry, ViewsGetParams, ViewsGetResult, ViewsListItem, ViewsListResult,
 };
 
 /// Check the params and map them to a core view.
@@ -119,6 +119,11 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         })
         .collect();
 
+    let status = shared.publisher.status();
+    let reminders = status
+        .as_ref()
+        .and_then(|s| s.notifier_error.clone())
+        .map(|error| RemindersSummary { error });
     let result = ViewsGetResult {
         epoch: shared.epoch.clone(),
         revision,
@@ -128,11 +133,12 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         open_count: counts(snap, &view, now).total,
         capture,
         sections,
-        sync: shared.publisher.status().and_then(|s| {
+        sync: status.and_then(|s| {
             let conflicts = s.conflicts;
             s.sync
                 .map(|v| summary(&v, conflicts, now.fixed_offset(), &list_name))
         }),
+        reminders,
     };
     serde_json::to_value(result).map_err(internal)
 }
