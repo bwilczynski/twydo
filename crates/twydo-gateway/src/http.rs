@@ -15,7 +15,7 @@ use serde_json::json;
 
 use crate::Connector;
 use crate::assets::{self, ASSETS};
-use crate::state::{Device, Store};
+use crate::state::{Device, Role, Store, Subscription};
 
 pub const MAX_HEAD: usize = 16 * 1024;
 pub const MAX_BODY: usize = 4 * 1024;
@@ -470,6 +470,7 @@ fn route(req: &Request, ctx: &Ctx) -> Response {
     match (req.method.as_str(), req.path.as_str()) {
         ("POST", "/pair") => pair(req, ctx),
         ("GET", "/session") => session(req, ctx),
+        (_, path) if path == "/push" || path.starts_with("/push/") => push(req, ctx),
         ("GET" | "HEAD", _) => static_asset(req, ctx),
         _ => Response::error(405, "Method Not Allowed", "method not allowed"),
     }
@@ -505,6 +506,76 @@ fn session(req: &Request, ctx: &Ctx) -> Response {
         Ok(d) => Response::json(200, "OK", json!({ "device": d.name, "role": d.role })),
         Err(r) => r,
     }
+}
+
+const MAX_ENDPOINT: usize = 2048;
+
+/// The push routes: the VAPID public key and this phone's subscription.
+fn push(req: &Request, ctx: &Ctx) -> Response {
+    let not_found = || Response::error(404, "Not Found", "not found");
+    if ctx.opts.insecure {
+        return not_found();
+    }
+    let write = matches!(req.path.as_str(), "/push/subscription");
+    let device = match require_device(req, ctx, write) {
+        Ok(d) => d,
+        Err(r) => return r,
+    };
+    if device.role != Role::Phone {
+        return Response::error(403, "Forbidden", "push is for phones");
+    }
+    let fail = |m: &str| Response::error(500, "Internal Server Error", m);
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/push/key") => match ctx.store.vapid() {
+            Ok(Some(v)) => Response::json(200, "OK", json!({ "key": v.key.public_b64() })),
+            Ok(None) => not_found(),
+            Err(_) => fail("push key unavailable"),
+        },
+        ("PUT", "/push/subscription") => match parse_subscription(&req.body) {
+            Ok(sub) => match ctx.store.set_subscription(&device.id, sub) {
+                Ok(()) => Response::new(204, "No Content"),
+                Err(_) => fail("could not save the subscription"),
+            },
+            Err(m) => Response::error(400, "Bad Request", m),
+        },
+        ("DELETE", "/push/subscription") => match ctx.store.clear_subscription(&device.id) {
+            Ok(()) => Response::new(204, "No Content"),
+            Err(_) => fail("could not clear the subscription"),
+        },
+        ("GET" | "HEAD", _) => not_found(),
+        _ => Response::error(405, "Method Not Allowed", "method not allowed"),
+    }
+}
+
+/// Decode base64url with or without padding.
+fn b64url(s: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    URL_SAFE_NO_PAD.decode(s.trim_end_matches('=')).ok()
+}
+
+fn parse_subscription(body: &[u8]) -> Result<Subscription, &'static str> {
+    let v: serde_json::Value =
+        serde_json::from_slice(body).map_err(|_| "expected a push subscription")?;
+    let endpoint = v["endpoint"].as_str().ok_or("missing endpoint")?;
+    if !endpoint.starts_with("https://") || endpoint.len() > MAX_ENDPOINT {
+        return Err("endpoint must be an https URL of at most 2048 bytes");
+    }
+    let p256dh = v["keys"]["p256dh"].as_str().ok_or("missing keys.p256dh")?;
+    let auth = v["keys"]["auth"].as_str().ok_or("missing keys.auth")?;
+    let point = b64url(p256dh).ok_or("keys.p256dh is not base64url")?;
+    if point.len() != 65 || p256::PublicKey::from_sec1_bytes(&point).is_err() {
+        return Err("keys.p256dh is not an uncompressed P-256 point");
+    }
+    if b64url(auth).is_none_or(|a| a.len() != 16) {
+        return Err("keys.auth must be 16 bytes");
+    }
+    Ok(Subscription {
+        endpoint: endpoint.to_owned(),
+        p256dh: p256dh.to_owned(),
+        auth: auth.to_owned(),
+        saved_at: Utc::now(),
+    })
 }
 
 /// Check a `/ws` request: who it is (401), where it comes from (403), and that it really is
