@@ -2914,6 +2914,8 @@ dependencies = [
  "httparse",
  "libc",
  "p256",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2922,7 +2924,9 @@ dependencies = [
  "tungstenite",
  "twydo-core",
  "twydo-daemon",
+ "twydo-gateway",
  "twydo-web",
+ "ureq",
 ]
 
 [[package]]
