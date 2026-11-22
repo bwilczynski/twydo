@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/bwilczynski/twydo/compare/v0.7.0...v0.7.1) - 2026-11-22
+
+### Added
+
+- *(gateway)* add the push command for the notifier
+- *(daemon)* report reminder failures in views.get
+- *(daemon)* pass the reminder key and uid to the notification command
+- *(gateway)* send reminders to push services
+- *(gateway)* let a phone register its push subscription
+- *(gateway)* keep a vapid key and push subscriptions
+- *(gateway)* encrypt web push messages and sign vapid tokens
+- *(web)* turn reminders on from the views tab
+- *(web)* show pushed reminders and open their task
+
 ## [0.7.0](https://github.com/bwilczynski/twydo/compare/v0.6.3...v0.7.0) - 2026-11-21
 
 ### Added
