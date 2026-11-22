@@ -2,6 +2,8 @@ pub mod bridge;
 pub mod http;
 pub mod push;
 pub mod state;
+#[cfg(feature = "test-support")]
+pub mod testing;
 pub mod ws;
 
 use twydo_daemon::client::Client;
