@@ -411,6 +411,42 @@ fn sync_summary_reports_failure() {
     assert_eq!(sync.headline, "Sync failing");
 }
 
+#[test]
+fn reminders_absent_without_notifier_error() {
+    let fx = fx();
+    let td = start(&fx, |_| {});
+    assert_eq!(get(&td, "today").reminders, None);
+}
+
+#[test]
+fn reminders_carry_the_notifier_error() {
+    let fx = Fixture::new(&[]);
+    fx.write_reminder("inbox/r1.ics", "r1", "Ping", "20261117T090000");
+    let sink = std::sync::Arc::new(common::RecordingSink::default());
+    sink.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    let mut cfg = fx.config();
+    cfg.timezone = Some("UTC".into());
+    cfg.morning_time = chrono::NaiveTime::from_hms_opt(23, 0, 0).unwrap();
+    let s2 = std::sync::Arc::clone(&sink);
+    let td = TestDaemon::start_cfg(&fx, cfg, move |o| {
+        o.clock = morning();
+        o.notify = Some(s2 as std::sync::Arc<dyn twydo_daemon::server::notifier::Sink>);
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let reminders = loop {
+        if let Some(r) = get(&td, "inbox").reminders {
+            break r;
+        }
+        assert!(std::time::Instant::now() < deadline, "no reminders summary");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(!reminders.error.is_empty());
+    assert!(!reminders.error.contains("Ping"), "never names a title");
+    let status: twydo_daemon::protocol::methods::StatusView =
+        td.client().call("status.get", empty()).unwrap();
+    assert_eq!(Some(reminders.error), status.notifier_error);
+}
+
 fn get_ref(td: &TestDaemon, params: serde_json::Value) -> ViewsGetResult {
     td.client().call("views.get", params).unwrap()
 }

@@ -68,6 +68,8 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   (at most 300 characters) and `last_success`. `attention` is true when sync needs a person: a
   failing sync, failed list discovery, a list emptied and not applied (with the
   `tdo sync --force-delete` command), conflicts or automatic sync off. It informs only.
+  `reminders` (`{error}`) is present while the notifier cannot deliver; `error` is the daemon's
+  `notifier_error` text, and a phone shows it as a warning.
   `view` is `inbox`, `today`, `all`, `scheduled`, `done`, `next_3_days` or `list`; the set is
   open, so a client treats an unknown value it receives as unknown. `list` names one list by
   its collection id in `list`, which is required for `list` and refused (error kind `invalid`)

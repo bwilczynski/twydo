@@ -83,6 +83,15 @@ pub struct ViewsGetResult {
     /// What sync needs from a person; absent when sync is not configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncSummary>,
+    /// Why the notifier cannot deliver reminders; absent while it can.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reminders: Option<RemindersSummary>,
+}
+
+/// The notifier's failure, for a phone to show as a warning.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RemindersSummary {
+    pub error: String,
 }
 
 /// A short, phone-sized account of sync, built from the same status the TUI status line reads.
