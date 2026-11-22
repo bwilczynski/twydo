@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use std::os::unix::fs::PermissionsExt;
-use twydo_gateway::state::{Role, StateError, Store};
+use twydo_gateway::state::{Role, StateError, Store, Subscription};
 
 fn now() -> DateTime<Utc> {
     "2026-11-17T10:00:00Z".parse().unwrap()
@@ -191,4 +191,117 @@ fn wrong_attempt_charges_every_pending_code() {
     // B was charged four times too: one more wrong attempt voids it.
     assert!(s.redeem("0000-0000", now()).is_err());
     assert!(matches!(s.redeem(&b, now()), Err(StateError::CodeInvalid)));
+}
+
+fn sub(endpoint: &str) -> Subscription {
+    Subscription {
+        endpoint: endpoint.into(),
+        p256dh: "pk".into(),
+        auth: "au".into(),
+        saved_at: now(),
+    }
+}
+
+fn paired(s: &Store, name: &str) -> String {
+    let code = s.new_code(name, Role::Phone, now()).unwrap();
+    s.redeem(&code, now()).unwrap().0.id
+}
+
+#[test]
+fn vapid_is_created_once_and_never_rotated() {
+    let (_d, s) = store();
+    assert!(s.vapid().unwrap().is_none());
+    let a = s.ensure_vapid("https://a.example").unwrap();
+    let b = s.ensure_vapid("https://b.example").unwrap();
+    assert_eq!(a.key.public_b64(), b.key.public_b64());
+    assert_eq!(b.subject, "https://b.example");
+    let v = s.vapid().unwrap().unwrap();
+    assert_eq!(v.key.public_b64(), a.key.public_b64());
+    assert_eq!(v.subject, "https://b.example");
+}
+
+#[test]
+fn corrupt_vapid_key_is_an_error() {
+    let (d, s) = store();
+    std::fs::write(
+        d.path().join("gw/devices.json"),
+        r#"{"vapid":{"key":"AAAA","subject":"x"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(s.vapid(), Err(StateError::CorruptKey)));
+    assert!(matches!(s.ensure_vapid("x"), Err(StateError::CorruptKey)));
+}
+
+#[test]
+fn subscription_round_trip() {
+    let (_d, s) = store();
+    let id = paired(&s, "Pixel");
+    paired(&s, "Other");
+    s.set_subscription(&id, sub("https://push.example/1"))
+        .unwrap();
+    let all = s.subscriptions().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].0.id, id);
+    assert_eq!(all[0].1, sub("https://push.example/1"));
+    s.clear_subscription(&id).unwrap();
+    assert!(s.subscriptions().unwrap().is_empty());
+    assert!(matches!(
+        s.set_subscription("nope", sub("https://x")),
+        Err(StateError::NoSuchDevice)
+    ));
+}
+
+#[test]
+fn revoke_drops_the_subscription() {
+    let (_d, s) = store();
+    let id = paired(&s, "Pixel");
+    s.set_subscription(&id, sub("https://push.example/1"))
+        .unwrap();
+    s.revoke("Pixel").unwrap();
+    assert!(s.subscriptions().unwrap().is_empty());
+}
+
+#[test]
+fn remove_dead_keeps_a_newer_subscription() {
+    let (_d, s) = store();
+    let id = paired(&s, "Pixel");
+    s.set_subscription(&id, sub("https://push.example/A"))
+        .unwrap();
+    s.set_subscription(&id, sub("https://push.example/B"))
+        .unwrap();
+    s.remove_dead(&id, "https://push.example/A").unwrap();
+    assert_eq!(
+        s.subscriptions().unwrap()[0].1.endpoint,
+        "https://push.example/B"
+    );
+    s.remove_dead(&id, "https://push.example/B").unwrap();
+    assert!(s.subscriptions().unwrap().is_empty());
+}
+
+#[test]
+fn old_devices_json_loads() {
+    let (d, s) = store();
+    std::fs::write(
+        d.path().join("gw/devices.json"),
+        r#"{"devices":[{"id":"abcd1234","name":"Old","role":"phone",
+        "paired_at":"2026-11-01T00:00:00Z","last_seen":null,"session":null,
+        "key_sha256":"00"}],"codes":[]}"#,
+    )
+    .unwrap();
+    assert_eq!(s.devices().unwrap().len(), 1);
+    assert!(s.vapid().unwrap().is_none());
+    assert!(s.subscriptions().unwrap().is_empty());
+}
+
+#[test]
+fn push_state_files_stay_0600() {
+    let (d, s) = store();
+    let id = paired(&s, "Pixel");
+    s.ensure_vapid("https://a.example").unwrap();
+    s.set_subscription(&id, sub("https://push.example/1"))
+        .unwrap();
+    for f in ["devices.json", "devices.lock"] {
+        let m = std::fs::metadata(d.path().join("gw").join(f)).unwrap();
+        assert_eq!(m.permissions().mode() & 0o777, 0o600, "{f}");
+    }
 }

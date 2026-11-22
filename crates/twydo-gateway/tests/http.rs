@@ -425,3 +425,32 @@ fn assets_dir_overrides_embedded() {
     assert_eq!(get(s.addr, "/../../etc/passwd.txt", "").status, 404);
     let _ = &s.dir;
 }
+
+/// A served request proves startup (including `ensure_vapid`) is done.
+fn wait_started(s: &Srv) {
+    raw(
+        s.addr,
+        b"GET /healthz HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    );
+}
+
+#[test]
+fn serve_creates_the_vapid_key_with_an_origin() {
+    let s = start(false, None);
+    wait_started(&s);
+    let v = Store::open(&s.dir.join("gw")).unwrap().vapid().unwrap();
+    assert_eq!(v.expect("key created").subject, ORIGIN);
+}
+
+#[test]
+fn serve_creates_no_vapid_key_when_insecure() {
+    let s = start(true, None);
+    wait_started(&s);
+    assert!(
+        Store::open(&s.dir.join("gw"))
+            .unwrap()
+            .vapid()
+            .unwrap()
+            .is_none()
+    );
+}

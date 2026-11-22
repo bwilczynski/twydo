@@ -15,6 +15,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::push::crypto::VapidKey;
+
 const ALPHABET: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const CODE_TTL_MINUTES: i64 = 10;
 const ATTEMPTS: u8 = 5;
@@ -51,6 +53,44 @@ pub enum StateError {
     Io(#[from] std::io::Error),
     #[error("corrupt device state: {0}")]
     Corrupt(#[from] serde_json::Error),
+    #[error("corrupt device state: the stored VAPID key is invalid")]
+    CorruptKey,
+}
+
+/// A browser push subscription (`PushSubscription.toJSON()` fields, base64url as sent).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Subscription {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+    pub saved_at: DateTime<Utc>,
+}
+
+/// The gateway's VAPID identity: one key pair, never rotated, and the `sub` claim.
+pub struct Vapid {
+    pub key: VapidKey,
+    pub subject: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredVapid {
+    key: String,
+    subject: String,
+}
+
+impl StoredVapid {
+    fn load(&self) -> Result<Vapid, StateError> {
+        let bytes = URL_SAFE_NO_PAD
+            .decode(&self.key)
+            .ok()
+            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+            .ok_or(StateError::CorruptKey)?;
+        let key = VapidKey::from_bytes(&bytes).ok_or(StateError::CorruptKey)?;
+        Ok(Vapid {
+            key,
+            subject: self.subject.clone(),
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -58,6 +98,8 @@ struct Record {
     #[serde(flatten)]
     device: Device,
     key_sha256: String,
+    #[serde(default)]
+    push: Option<Subscription>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -75,6 +117,8 @@ struct Data {
     devices: Vec<Record>,
     #[serde(default)]
     codes: Vec<Code>,
+    #[serde(default)]
+    vapid: Option<StoredVapid>,
 }
 
 pub struct Store {
@@ -261,6 +305,7 @@ impl Store {
                 d.devices.push(Record {
                     device: device.clone(),
                     key_sha256: sha_hex(&key),
+                    push: None,
                 });
                 (Ok((device, key)), true)
             } else {
@@ -319,6 +364,105 @@ impl Store {
                 (Ok(()), true)
             }
             None => (Err(StateError::NoSuchDevice), false),
+        })
+    }
+
+    /// The VAPID identity, created on first call. A different `subject` replaces only the
+    /// subject; the key is never rotated (that would invalidate every subscription).
+    pub fn ensure_vapid(&self, subject: &str) -> Result<Vapid, StateError> {
+        self.modify(|d| match &mut d.vapid {
+            Some(v) => {
+                let loaded = match v.load() {
+                    Ok(l) => l,
+                    Err(e) => return (Err(e), false),
+                };
+                let changed = v.subject != subject;
+                v.subject = subject.to_owned();
+                (
+                    Ok(Vapid {
+                        key: loaded.key,
+                        subject: subject.to_owned(),
+                    }),
+                    changed,
+                )
+            }
+            None => {
+                let key = VapidKey::generate();
+                d.vapid = Some(StoredVapid {
+                    key: URL_SAFE_NO_PAD.encode(key.to_bytes()),
+                    subject: subject.to_owned(),
+                });
+                (
+                    Ok(Vapid {
+                        key,
+                        subject: subject.to_owned(),
+                    }),
+                    true,
+                )
+            }
+        })
+    }
+
+    /// The stored VAPID identity, if one was created. Read-only.
+    pub fn vapid(&self) -> Result<Option<Vapid>, StateError> {
+        self.read()?
+            .vapid
+            .as_ref()
+            .map(StoredVapid::load)
+            .transpose()
+    }
+
+    /// Store `s` as the device's subscription, replacing any earlier one.
+    pub fn set_subscription(&self, device_id: &str, s: Subscription) -> Result<(), StateError> {
+        self.modify(
+            |d| match d.devices.iter_mut().find(|r| r.device.id == device_id) {
+                Some(r) => {
+                    r.push = Some(s);
+                    (Ok(()), true)
+                }
+                None => (Err(StateError::NoSuchDevice), false),
+            },
+        )
+    }
+
+    pub fn clear_subscription(&self, device_id: &str) -> Result<(), StateError> {
+        self.modify(
+            |d| match d.devices.iter_mut().find(|r| r.device.id == device_id) {
+                Some(r) => {
+                    let had = r.push.take().is_some();
+                    (Ok(()), had)
+                }
+                None => (Err(StateError::NoSuchDevice), false),
+            },
+        )
+    }
+
+    /// Every device that has a subscription, with it.
+    pub fn subscriptions(&self) -> Result<Vec<(Device, Subscription)>, StateError> {
+        Ok(self
+            .read()?
+            .devices
+            .into_iter()
+            .filter_map(|r| r.push.map(|s| (r.device, s)))
+            .collect())
+    }
+
+    /// Drop the device's subscription only if it is still the one for `endpoint`, so a
+    /// subscription saved while a push was in flight survives.
+    pub fn remove_dead(&self, device_id: &str, endpoint: &str) -> Result<(), StateError> {
+        self.modify(|d| {
+            let hit = d
+                .devices
+                .iter_mut()
+                .find(|r| r.device.id == device_id)
+                .filter(|r| r.push.as_ref().is_some_and(|p| p.endpoint == endpoint));
+            match hit {
+                Some(r) => {
+                    r.push = None;
+                    (Ok(()), true)
+                }
+                None => (Ok(()), false),
+            }
         })
     }
 }
