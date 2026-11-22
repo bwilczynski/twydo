@@ -26,5 +26,6 @@ shell-words = "1"
 toml_edit = "0.25"
 
 [dev-dependencies]
+twydo-gateway = { path = "../twydo-gateway", features = ["test-support"] }
 twydo-testdav = { path = "../twydo-testdav" }
 tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }

@@ -552,3 +552,15 @@ same admission rules used for writes. It does not rescan and reparse the entire
 collection for every reported task. A reload or post-edit snapshot gets a fresh
 checker; no permission or source facts are cached across snapshot changes.
 Live commit, queue, recovery and inverse file guards are unchanged.
+
+## Reminders on the phone
+
+The notifier lives in the daemon and has no network code. For each reminder it runs the
+configured `[notifications] command`, with the title and body as the last two arguments and
+`TWYDO_REMINDER_KEY` and `TWYDO_REMINDER_UID` in the environment. Configured as
+`tdo gateway push`, that command opens the gateway's state directory, encrypts the message
+(RFC 8291) for every stored phone subscription, signs it with the gateway's VAPID key
+(RFC 8292) and posts it to each push service within 8 seconds. A non-zero exit puts the first
+stderr line in the daemon's notifier error, which `views.get` reports to the phone as a
+banner; the notifier retries with a backoff. Subscriptions the push service reports gone are
+dropped from the state.
