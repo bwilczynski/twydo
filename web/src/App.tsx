@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { viewKey, type DataSource, type FormOpen, type ViewRef, type Visible } from "./data";
 import { committed, navigate } from "./navigate";
+import type { Push } from "./push";
+import { TODAY_HASH } from "./route";
 import { useTaskStack } from "./taskStack";
 import type { FormValues, ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
@@ -8,6 +10,7 @@ import { ConfirmSheet } from "./components/ConfirmSheet";
 import { CalendarDayIcon, ChevronLeftIcon, ListIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
+import { RemindersWarning } from "./components/RemindersWarning";
 import { SyncWarning } from "./components/SyncWarning";
 import { dayOf, TabBar, type Tab } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
@@ -20,6 +23,11 @@ const OPEN_KEY = "twydo.open";
 const VIEWS: string[] = ["inbox", "today", "all", "scheduled", "done", "next_3_days", "list"];
 
 function loadTab(): Tab {
+  // A notification's cold open: the digest names no task (spec §8.2).
+  if (location.hash === TODAY_HASH) {
+    history.replaceState(null, "", location.pathname + location.search);
+    return "today";
+  }
   try {
     const t = localStorage.getItem(TAB_KEY);
     return t === "today" || t === "views" ? t : "inbox";
@@ -97,7 +105,7 @@ let bannerSeq = 0;
 let formSeq = 0;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function App({ ds }: { ds: DataSource }) {
+export function App({ ds, push }: { ds: DataSource; push?: Push }) {
   const [tab, setTab] = useState<Tab>(loadTab);
   // The view pushed inside the Views tab; none on the list screen.
   const [open, setOpen] = useState<ViewRef | undefined>(loadOpen);
@@ -117,8 +125,33 @@ export function App({ ds }: { ds: DataSource }) {
   const top = tasks.stack.at(-1);
   // The task form, open or not; `saved` words the banner once the daemon has taken the write.
   const [editing, setEditing] = useState<Editing>();
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   // A delete awaiting its confirmation.
   const [deleting, setDeleting] = useState<{ uid: string; title: string; items: number }>();
+
+  // Re-register the browser's subscription with the server on every start.
+  useEffect(() => void push?.resync(), []);
+
+  // A tapped notification reaches a window that is already open as a message from the worker.
+  const selectRef = useRef<(t: Tab) => void>(() => {});
+  useEffect(() => {
+    const sw = navigator.serviceWorker;
+    if (!sw) return;
+    const onMessage = (e: Event) => {
+      const data = (e as MessageEvent).data as { type?: string; uid?: string } | undefined;
+      if (data?.type !== "open") return;
+      // An open form keeps its typed text: the window is only brought forward.
+      if (editingRef.current) return;
+      if (data.uid) {
+        if (tasks.current().at(-1) !== data.uid) tasks.open(data.uid);
+      } else {
+        selectRef.current("today");
+      }
+    };
+    sw.addEventListener("message", onMessage);
+    return () => sw.removeEventListener("message", onMessage);
+  }, []);
 
   // A pushed or popped screen is in the DOM: the slide can take its snapshot.
   useLayoutEffect(committed);
@@ -235,6 +268,7 @@ export function App({ ds }: { ds: DataSource }) {
     else setOpen(r);
   };
 
+  selectRef.current = (t) => select(t);
   const select = (t: Tab) => {
     // Tapping the Views tab again pops back to the list (iOS convention).
     // Any tab tap leaves the task screens; the active tab's own root shows.
@@ -385,8 +419,9 @@ export function App({ ds }: { ds: DataSource }) {
             {view && <span class="count">{view.open_count}</span>}
           </header>
         )}
-        {!top && onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} />}
+        {!top && onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} push={push} />}
         {!top && !onList && view?.sync?.attention && <SyncWarning sync={view.sync} />}
+        {!top && !onList && view?.reminders && <RemindersWarning reminders={view.reminders} />}
         {offline && <Offline updated={updated} onRetry={() => location.reload()} />}
         {(top ? !shown : onList ? !viewsList : !view) && !offline && (
           <div class="loading" role="status" aria-label="Loading">

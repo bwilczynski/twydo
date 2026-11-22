@@ -184,6 +184,23 @@ input, textarea { font: inherit; color: inherit; }
   color: var(--secondary);
 }
 
+.reminders-row {
+  display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px;
+}
+.reminders-row .view-name { flex: 1; }
+.switch {
+  position: relative; width: 51px; height: 31px; border-radius: 16px; flex: none;
+  background: var(--separator); transition: background 0.2s;
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+  border-radius: 50%; background: #fff; transition: transform 0.2s;
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); }
+.switch:disabled { opacity: 0.5; }
+.reminders-hint { margin: 6px 14px 0; font-size: 13px; color: var(--secondary); }
+
 .back {
   display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -6px;
   color: var(--accent); min-height: 44px;
