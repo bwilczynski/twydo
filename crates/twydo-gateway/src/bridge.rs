@@ -16,6 +16,7 @@ const PHONE: &[&str] = &[
     "tasks.get",
     "tasks.form",
     "views.list",
+    "settings.get",
     "events.subscribe",
     "events.unsubscribe",
     "op.submit",
@@ -125,7 +126,7 @@ pub fn inbound(
                 serde_json::to_value(p).map_err(|_| invalid("invalid tasks.form params"))?,
             ));
         }
-        "views.list" | "events.subscribe" | "events.unsubscribe" => {
+        "views.list" | "settings.get" | "events.subscribe" | "events.unsubscribe" => {
             return Ok((method.to_string(), json!({})));
         }
         _ => {}
