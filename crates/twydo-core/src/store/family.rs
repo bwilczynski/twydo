@@ -54,103 +54,19 @@ struct Child {
 }
 
 impl Planner<'_> {
-    /// Keep the text capability's structural dependencies through recovery and undo.
-    pub(super) fn text_edit_head(&self, snap: &Snapshot, op: &Op) -> Option<usize> {
-        let (uid, changes) = match op {
-            Op::Edit { uid, changes }
-            | Op::Save {
-                uid,
-                changes,
-                to: None,
-            } => (uid, changes),
-            _ => return None,
-        };
-        if changes.is_empty()
-            || !changes
-                .iter()
-                .all(|c| matches!(c, Change::Summary(_) | Change::Description(_)))
-        {
-            return None;
-        }
-        let idx = snap.find(uid)?;
-        Some(snap.parent(idx).unwrap_or(idx))
-    }
-
-    /// Membership for edits, completion, reopening and moves. Creation, deletion and
-    /// ordering declare their own dependencies; reparenting uses multiple guards.
-    pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
-        let uid = match op {
-            Op::Reparent { .. }
-            | Op::Reorder { .. }
-            | Op::CreateAt { .. }
-            | Op::Create(_)
-            | Op::Delete { .. } => return Ok(None),
-            Op::Complete { uid }
-            | Op::Reopen { uid }
-            | Op::Move { uid, .. }
-            | Op::Edit { uid, .. } => uid,
-            // A save's move rescans the whole family, which covers its edit; without one, its
-            // edit may.
-            Op::Save { uid, changes, to } => {
-                let part = match to {
-                    Some(to) => Op::Move {
-                        uid: uid.clone(),
-                        to: to.clone(),
-                    },
-                    None => Op::Edit {
-                        uid: uid.clone(),
-                        changes: changes.clone(),
-                    },
-                };
-                return self.family_of(snap, &part);
-            }
-        };
-        let Some(idx) = snap.find(uid) else {
-            return Ok(None);
-        };
-        let text_head = self.text_edit_head(snap, op);
-        let idx = text_head.unwrap_or(idx);
-        // Any task may have gained an item since the snapshot, even one that had none (an
-        // empty checklist or project, or a plain task). An edit matters for a checklist's
-        // dates, which its items follow, and for a change of type, which the gate allows or
-        // refuses by the items the task has.
-        if let Op::Edit { changes, .. } = op {
-            let dates = changes.iter().any(|c| {
-                matches!(
-                    c,
-                    Change::Due(_)
-                        | Change::Start(_)
-                        | Change::RepeatInterval(_)
-                        | Change::Repeat(_)
-                )
-            });
-            let kind = changes.iter().any(|c| matches!(c, Change::Kind(_)));
-            if text_head.is_none()
-                && !kind
-                && (snap.tasks[idx].kind != TaskKind::Checklist || !dates)
-            {
-                return Ok(None);
-            }
-        }
+    /// Membership of the head as loaded, before a write or recurring history copy.
+    pub(super) fn loaded_family(&self, snap: &Snapshot, idx: usize) -> Result<Family, WriteError> {
         let mut loaded = BTreeSet::new();
-        for &i in std::iter::once(&idx).chain(snap.children(idx)) {
+        for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
             loaded.insert(self.rel(&snap.tasks[i].path)?);
         }
-        Ok(Some(Family {
-            collection: snap.tasks[idx].collection.clone(),
-            parent_uid: snap.tasks[idx].uid.clone(),
+        let head = &snap.tasks[idx];
+        Ok(Family {
+            collection: head.collection.clone(),
+            parent_uid: head.uid.clone(),
             loaded,
-            parent_aliases: if text_head.is_some() {
-                // New owners or hidden descendants of any held member make the
-                // text contract stale, just as a new child of the head does.
-                std::iter::once(idx)
-                    .chain(snap.children(idx).iter().copied())
-                    .flat_map(|i| crate::gate::relationships::aliases(&snap.tasks[i]))
-                    .collect()
-            } else {
-                crate::gate::relationships::aliases(&snap.tasks[idx])
-            },
-        }))
+            parent_aliases: crate::gate::relationships::aliases(head),
+        })
     }
 
     /// Persist both source and destination membership for queue, recovery and inverses.
@@ -280,7 +196,7 @@ impl Planner<'_> {
             writes.push(c.target.update(&cal)?);
         }
         Ok(Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "complete",
             uids,
             writes,
@@ -312,7 +228,7 @@ impl Planner<'_> {
             writes.push(c.target.update(&cal)?);
         }
         Ok(Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "reopen",
             uids,
             writes,
@@ -357,7 +273,7 @@ impl Planner<'_> {
         writes.push(p.remove());
         writes.extend(children.into_iter().map(|c| c.target.remove()));
         Ok(Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "move",
             uids,
             writes,
@@ -392,7 +308,7 @@ impl Planner<'_> {
             writes.push(child.target.update(&cal)?);
         }
         Ok(Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "edit",
             uids,
             writes,
@@ -414,7 +330,7 @@ impl Planner<'_> {
             writes.push(c.target.remove());
         }
         Ok(Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "delete",
             uids,
             writes,
@@ -480,7 +396,7 @@ fn plan_recurring_complete(
     }
     writes.extend(updates);
     Ok(Plan {
-        durable_family: None,
+        reads: Default::default(),
         kind: "complete",
         uids,
         writes,

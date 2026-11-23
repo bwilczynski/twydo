@@ -18,8 +18,8 @@ use crate::edit::{
 };
 use crate::gate::{self, Blocked};
 use crate::ical::{self, Calendar};
-use crate::model::Task;
 use crate::model::meta_edit::MetaJson;
+use crate::model::{Task, TaskKind};
 use crate::views::Snapshot;
 
 /// The write policy an operation is gated and planned under.
@@ -54,74 +54,19 @@ pub(super) fn plan_in(
     let planner = Planner { vdir, policy };
     planner.gate(snap, op, today)?;
     let mut plan = planner.plan(snap, op, now)?;
-    let mut holds = std::mem::take(&mut plan.holds);
-    let text_head = planner.text_edit_head(snap, op);
-    if let Some(head) = text_head {
-        for i in std::iter::once(head).chain(snap.children(head).iter().copied()) {
-            let hold = planner.target(snap, &snap.tasks[i].uid)?.hold();
-            if !plan.writes.iter().any(|w| w.path == hold.0) && !holds.iter().any(|h| h.0 == hold.0)
-            {
-                holds.push(hold);
-            }
-        }
-    }
-    let recurring_item_edit = match op {
-        Op::Edit { uid, .. } | Op::Save { uid, .. } => snap
-            .find(uid)
-            .and_then(|i| snap.parent(i))
-            .is_some_and(|p| {
-                snap.tasks[p].kind == crate::model::TaskKind::Checklist
-                    && snap.tasks[p].rrule.is_some()
-            }),
-        _ => false,
-    };
-    let checklist_schedule = match op {
-        Op::Edit { uid, changes } | Op::Save { uid, changes, .. } => {
-            snap.find(uid)
-                .is_some_and(|i| snap.tasks[i].kind == crate::model::TaskKind::Checklist)
-                && changes.iter().any(|c| {
-                    matches!(
-                        c,
-                        Change::Due(_)
-                            | Change::Start(_)
-                            | Change::RepeatInterval(_)
-                            | Change::Repeat(_)
-                    )
-                })
-        }
-        _ => false,
-    };
-    if checklist_schedule {
-        let uid = match op {
-            Op::Edit { uid, .. } | Op::Save { uid, .. } => uid,
-            _ => unreachable!(),
-        };
-        let i = snap.find(uid).expect("gate checked target");
-        for &c in snap.children(i) {
-            let hold = planner.target(snap, &snap.tasks[c].uid)?.hold();
-            if !plan.writes.iter().any(|w| w.path == hold.0) && !holds.iter().any(|h| h.0 == hold.0)
-            {
-                holds.push(hold);
-            }
-        }
-    }
-    let declared_family = plan.durable_family.is_some();
-    let durable_holds = declared_family
-        || text_head.is_some()
-        || checklist_schedule
-        || recurring_item_edit
-        || matches!(op, Op::Reopen { .. } | Op::Reparent { .. });
-    let mut family = match plan.durable_family.take() {
-        Some(family) => Some(family),
-        None => planner.family_of(snap, op)?,
-    };
-    let relocating = matches!(op, Op::Move { .. } | Op::Save { to: Some(_), .. });
-    if relocating && let Some(family) = family.as_mut() {
-        // Recovery may find our own create already on disk. It is a known member,
-        // while any additional sibling must still make the snapshot stale.
-        family
+    let holds = std::mem::take(&mut plan.holds);
+    let mut family = plan.reads.family.take();
+    if let Op::Move { uid, .. }
+    | Op::Save {
+        uid, to: Some(_), ..
+    } = op
+    {
+        let idx = snap.find(uid).expect("gate checked move target");
+        let mut source = planner.loaded_family(snap, idx)?;
+        source
             .loaded
             .extend(plan.writes.iter().map(|w| w.path.clone()));
+        family = Some(source);
     }
     let families = planner.relocation_families(snap, op, &plan, family.as_ref())?;
     let entry = Entry {
@@ -135,19 +80,13 @@ pub(super) fn plan_in(
         from_queue: None,
         request: None,
         synced: None,
-        holds: if durable_holds {
-            holds.clone()
-        } else {
-            Vec::new()
+        holds: match plan.reads.journal {
+            JournalReads::None => Vec::new(),
+            JournalReads::Holds | JournalReads::FamilyAndHolds => holds.clone(),
         },
-        family: if declared_family
-            || text_head.is_some()
-            || checklist_schedule
-            || matches!(op, Op::Reopen { .. })
-        {
-            family.clone()
-        } else {
-            None
+        family: match plan.reads.journal {
+            JournalReads::FamilyAndHolds => family.clone(),
+            JournalReads::None | JournalReads::Holds => None,
         },
         families: families.clone(),
         writes: plan.writes,
@@ -166,11 +105,24 @@ pub(super) struct Planner<'a> {
     pub policy: Policy<'a>,
 }
 
+/// Which read dependencies survive the initial commit for recovery and inverses.
+#[derive(Default)]
+pub(super) enum JournalReads {
+    #[default]
+    None,
+    Holds,
+    FamilyAndHolds,
+}
+
+#[derive(Default)]
+pub(super) struct PlanReads {
+    pub(super) family: Option<FamilyGuard>,
+    pub(super) journal: JournalReads,
+}
+
 /// The parts of a journal entry an operation produces.
 pub(super) struct Plan {
-    /// When supplied by the planner, preserve this membership and all its byte holds
-    /// through queueing, journal recovery and inverses.
-    pub(super) durable_family: Option<FamilyGuard>,
+    pub(super) reads: PlanReads,
     pub(super) kind: &'static str,
     pub(super) uids: Vec<String>,
     pub(super) writes: Vec<Write>,
@@ -180,6 +132,16 @@ pub(super) struct Plan {
 }
 
 impl Plan {
+    fn one(kind: &'static str, uid: &str, write: Write) -> Plan {
+        Plan {
+            reads: Default::default(),
+            kind,
+            uids: vec![uid.to_owned()],
+            writes: vec![write],
+            holds: Vec::new(),
+        }
+    }
+
     /// For an operation whose holds and writes together cover one complete family.
     /// Including a created path lets replay recognize an already-applied creation.
     pub(super) fn with_family_guard(mut self, head: &Task) -> Self {
@@ -189,7 +151,8 @@ impl Plan {
             .map(|(path, _)| path.clone())
             .chain(self.writes.iter().map(|w| w.path.clone()))
             .collect();
-        self.durable_family = Some(FamilyGuard {
+        self.reads.journal = JournalReads::FamilyAndHolds;
+        self.reads.family = Some(FamilyGuard {
             collection: head.collection.clone(),
             parent_uid: head.uid.clone(),
             parent_aliases: crate::gate::relationships::aliases(head),
@@ -299,6 +262,126 @@ impl Planner<'_> {
         })
     }
 
+    fn complete_leaf(
+        &self,
+        snap: &Snapshot,
+        uid: &str,
+        t: Target,
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        Ok(if t.repeats {
+            // 2Do's copy-and-advance: the history copy first, then the live task.
+            // The last occurrence of an ending series has no copy.
+            let copy_uid = new_uid();
+            let today = now.with_timezone(&snap.tz()).date_naive();
+            match complete_recurring(&t.cal, now, today, &copy_uid)? {
+                (live, Some(copy)) => {
+                    let copy = create(&t.collection, &copy_uid, &copy)?;
+                    Plan {
+                        reads: Default::default(),
+                        kind: "complete",
+                        uids: vec![uid.to_owned(), copy_uid],
+                        writes: vec![copy, t.update(&live)?],
+                        holds: Vec::new(),
+                    }
+                }
+                (live, None) => Plan::one("complete", uid, t.update(&live)?),
+            }
+        } else {
+            let mut cal = t.cal.clone();
+            complete_one_time(&mut cal, now)?;
+            Plan::one("complete", uid, t.update(&cal)?)
+        })
+    }
+
+    fn edit_fields(
+        &self,
+        snap: &Snapshot,
+        idx: usize,
+        changes: &[Change],
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        let uid = &snap.tasks[idx].uid;
+        let target = self.target(snap, uid)?;
+        if crate::gate::checklist_date_changes(snap, idx, changes) {
+            return self.plan_checklist_date(snap, idx, target, changes, now);
+        }
+        let mut cal = target.cal.clone();
+        apply_changes(&mut cal, changes, now)?;
+        let mut plan = Plan::one("edit", uid, target.update(&cal)?);
+        if let Some(parent) = snap.parent(idx) {
+            let parent = &snap.tasks[parent];
+            if parent.kind == TaskKind::Checklist && parent.rrule.is_some() {
+                plan.holds.push(self.target(snap, &parent.uid)?.hold());
+                plan.reads.journal = JournalReads::Holds;
+            }
+        }
+        Ok(plan)
+    }
+
+    fn hold_unwritten_members(
+        &self,
+        snap: &Snapshot,
+        head: usize,
+        plan: &mut Plan,
+    ) -> Result<(), WriteError> {
+        for i in std::iter::once(head).chain(snap.children(head).iter().copied()) {
+            let member = &snap.tasks[i];
+            let path = self.rel(&member.path)?;
+            if !plan.writes.iter().any(|w| w.path == path)
+                && !plan.holds.iter().any(|(held, _)| *held == path)
+            {
+                plan.holds.push(self.target(snap, &member.uid)?.hold());
+            }
+        }
+        Ok(())
+    }
+
+    fn checklist_schedule(task: &Task, changes: &[Change]) -> bool {
+        task.kind == TaskKind::Checklist
+            && changes.iter().any(|c| {
+                matches!(
+                    c,
+                    Change::Due(_)
+                        | Change::Start(_)
+                        | Change::RepeatInterval(_)
+                        | Change::Repeat(_)
+                )
+            })
+    }
+
+    fn plan_edit(
+        &self,
+        snap: &Snapshot,
+        uid: &str,
+        changes: &[Change],
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        let idx = snap.find(uid).expect("gate checked edit target");
+        let mut plan = self.edit_fields(snap, idx, changes, now)?;
+        if crate::edit::text_only(changes) {
+            let head = snap.parent(idx).unwrap_or(idx);
+            self.hold_unwritten_members(snap, head, &mut plan)?;
+            let mut family = self.loaded_family(snap, head)?;
+            // Text admission also checks for hidden descendants and duplicate identities of siblings.
+            for &child in snap.children(head) {
+                family
+                    .parent_aliases
+                    .extend(crate::gate::relationships::aliases(&snap.tasks[child]));
+            }
+            plan.reads = PlanReads {
+                family: Some(family),
+                journal: JournalReads::FamilyAndHolds,
+            };
+        } else if Self::checklist_schedule(&snap.tasks[idx], changes) {
+            self.hold_unwritten_members(snap, idx, &mut plan)?;
+            plan = plan.with_family_guard(&snap.tasks[idx]);
+        } else if changes.iter().any(|c| matches!(c, Change::Kind(_))) {
+            plan.reads.family = Some(self.loaded_family(snap, idx)?);
+        }
+        Ok(plan)
+    }
+
     /// A save (kind "save"): the edit's writes, then the move's, planned on the edited files.
     /// A path written twice keeps the first `before` and the last `after`, at its later place
     /// (a move creates the copy before it removes the source). Either part may be empty.
@@ -310,20 +393,23 @@ impl Planner<'_> {
         to: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Plan, WriteError> {
+        let Some(to) = to else {
+            let mut edit = self.plan_edit(snap, uid, changes, now)?;
+            edit.kind = "save";
+            return Ok(edit);
+        };
+        let idx = snap.find(uid).expect("gate checked save target");
         let mut plan = Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: "save",
             uids: Vec::new(),
             writes: Vec::new(),
             holds: Vec::new(),
         };
         let mut edited = snap.clone();
-        if !changes.is_empty() || to.is_none() {
-            let edit = Op::Edit {
-                uid: uid.to_string(),
-                changes: changes.to_vec(),
-            };
-            let part = self.plan(snap, &edit, now)?;
+        if !changes.is_empty() {
+            let part = self.edit_fields(snap, idx, changes, now)?;
+            plan.reads.journal = part.reads.journal;
             for w in &part.writes {
                 if let Some(after) = &w.after {
                     edited.set_source(&self.vdir.join(&w.path), after.clone().into_bytes());
@@ -333,9 +419,6 @@ impl Planner<'_> {
             plan.writes = part.writes;
             plan.holds = part.holds;
         }
-        let Some(to) = to else {
-            return Ok(plan);
-        };
         let mv = Op::Move {
             uid: uid.to_string(),
             to: to.to_string(),
@@ -362,6 +445,10 @@ impl Planner<'_> {
         let writes = &plan.writes;
         plan.holds
             .retain(|(rel, _)| writes.iter().all(|w| &w.path != rel));
+        if Self::checklist_schedule(&snap.tasks[idx], changes) {
+            self.hold_unwritten_members(snap, idx, &mut plan)?;
+            plan.reads.journal = JournalReads::FamilyAndHolds;
+        }
         Ok(plan)
     }
 
@@ -371,13 +458,6 @@ impl Planner<'_> {
         op: &Op,
         now: DateTime<Utc>,
     ) -> Result<Plan, WriteError> {
-        let one = |kind, uid: &String, w| Plan {
-            durable_family: None,
-            kind,
-            uids: vec![uid.clone()],
-            writes: vec![w],
-            holds: Vec::new(),
-        };
         // A checklist or project with children: the op acts on the whole family.
         let parent = |uid: &str| snap.find(uid).filter(|&i| !snap.children(i).is_empty());
         Ok(match op {
@@ -431,7 +511,7 @@ impl Planner<'_> {
                     prop.set_value(&meta.encode());
                 }
                 let w = create(&n.collection, &uid, &cal)?;
-                let mut plan = one("create", &uid, w);
+                let mut plan = Plan::one("create", &uid, w);
                 if let Some(idx) = parent_idx {
                     for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
                         plan.holds
@@ -441,70 +521,36 @@ impl Planner<'_> {
                 }
                 plan
             }
-            Op::Edit { uid, changes }
-                if let Some(i) = parent(uid)
-                    && crate::gate::checklist_date_change(snap, i, op) =>
-            {
-                self.plan_checklist_date(snap, i, self.target(snap, uid)?, changes, now)?
-            }
-            Op::Edit { uid, changes } => {
-                let t = self.target(snap, uid)?;
-                let mut cal = t.cal.clone();
-                apply_changes(&mut cal, changes, now)?;
-                let mut plan = one("edit", uid, t.update(&cal)?);
-                if let Some(p) = snap.find(uid).and_then(|i| snap.parent(i))
-                    && snap.tasks[p].kind == crate::model::TaskKind::Checklist
-                    && snap.tasks[p].rrule.is_some()
-                {
-                    plan.holds
-                        .push(self.target(snap, &snap.tasks[p].uid)?.hold());
-                }
-                plan
-            }
-            Op::Complete { uid } if let Some(i) = parent(uid) => {
-                self.plan_family_complete(snap, i, self.target(snap, uid)?, now)?
-            }
-            Op::Reopen { uid } if let Some(i) = parent(uid) => {
-                self.plan_family_reopen(snap, i, self.target(snap, uid)?, now)?
-            }
-            Op::Delete { uid } if let Some(i) = parent(uid) => {
-                self.plan_family_delete(snap, i, self.target(snap, uid)?)?
-            }
+            Op::Edit { uid, changes } => self.plan_edit(snap, uid, changes, now)?,
             Op::Complete { uid } => {
-                let t = self.target(snap, uid)?;
-                if t.repeats {
-                    // 2Do's copy-and-advance: the history copy first, then the live task.
-                    // The last occurrence of an ending series has no copy.
-                    let copy_uid = new_uid();
-                    let today = now.with_timezone(&snap.tz()).date_naive();
-                    match complete_recurring(&t.cal, now, today, &copy_uid)? {
-                        (live, Some(copy)) => {
-                            let copy = create(&t.collection, &copy_uid, &copy)?;
-                            Plan {
-                                durable_family: None,
-                                kind: "complete",
-                                uids: vec![uid.clone(), copy_uid],
-                                writes: vec![copy, t.update(&live)?],
-                                holds: Vec::new(),
-                            }
-                        }
-                        (live, None) => one("complete", uid, t.update(&live)?),
-                    }
+                let target = self.target(snap, uid)?;
+                let idx = snap.find(uid).expect("target exists");
+                let mut plan = if snap.children(idx).is_empty() {
+                    self.complete_leaf(snap, uid, target, now)?
                 } else {
-                    let mut cal = t.cal.clone();
-                    complete_one_time(&mut cal, now)?;
-                    one("complete", uid, t.update(&cal)?)
-                }
+                    self.plan_family_complete(snap, idx, target, now)?
+                };
+                plan.reads.family = Some(self.loaded_family(snap, idx)?);
+                plan
             }
             Op::Reopen { uid } => {
                 let t = self.target(snap, uid)?;
-                let mut cal = t.cal.clone();
-                if t.repeats {
-                    reopen_ended_until(&mut cal, now)?;
+                let idx = snap.find(uid).expect("target exists");
+                let plan = if snap.children(idx).is_empty() {
+                    let mut cal = t.cal.clone();
+                    if t.repeats {
+                        reopen_ended_until(&mut cal, now)?;
+                    } else {
+                        reopen_one_time(&mut cal, now)?;
+                    }
+                    Plan::one("reopen", uid, t.update(&cal)?)
                 } else {
-                    reopen_one_time(&mut cal, now)?;
-                }
-                one("reopen", uid, t.update(&cal)?)
+                    self.plan_family_reopen(snap, idx, t, now)?
+                };
+                plan.with_family_guard(&snap.tasks[idx])
+            }
+            Op::Delete { uid } if let Some(i) = parent(uid) => {
+                self.plan_family_delete(snap, i, self.target(snap, uid)?)?
             }
             Op::Reparent {
                 uid,
@@ -523,7 +569,7 @@ impl Planner<'_> {
                 let new = new_uid();
                 let copy = create(to, &new, &moved_copy(&t.cal, &new, None, now)?)?;
                 Plan {
-                    durable_family: None,
+                    reads: Default::default(),
                     kind: "move",
                     uids: vec![uid.clone(), new],
                     writes: vec![copy, t.remove()],
@@ -535,7 +581,7 @@ impl Planner<'_> {
             }
             Op::Delete { uid } => {
                 let t = self.target(snap, uid)?;
-                let mut plan = one("delete", uid, t.remove());
+                let mut plan = Plan::one("delete", uid, t.remove());
                 let idx = snap.find(uid).expect("target exists");
                 let head = snap.parent(idx).unwrap_or(idx);
                 if head != idx {

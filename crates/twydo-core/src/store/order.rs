@@ -92,7 +92,7 @@ impl Planner<'_> {
             .collect();
         uids.insert(at, uid.clone());
         let mut plan = Plan {
-            durable_family: None,
+            reads: Default::default(),
             kind: if fresh.is_some() { "insert" } else { "reorder" },
             uids: vec![uid.clone()],
             writes: Vec::new(),
