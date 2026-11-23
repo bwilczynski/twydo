@@ -3604,3 +3604,158 @@ fn reopening_a_cancelled_monthly_task_needs_its_repeating_contract() {
          (reopen.repeating-calendar: twydo_to_iphone)"
     );
 }
+
+/// The shipped matrix with the repeat round's candidate rows passing: what the branch daemon
+/// writes with during the round, and what the rows become when their shapes match.
+fn candidate() -> Matrix {
+    use twydo_core::compat::{ContractId as C, Verdict};
+    let mut m = Matrix::embedded().clone();
+    for id in [
+        C::SetRepeatProject,
+        C::SetRepeatChecklistInterval,
+        C::CompleteRecurringProjectFromCompletion,
+        C::CreateRecurringChecklistVariant,
+        C::CompleteRecurringChecklistVariant,
+        C::SetRepeatFromCompletionStart,
+    ] {
+        common::set_contract(&mut m, id, Verdict::Pass);
+    }
+    m
+}
+
+/// Session B's `RP` with `rrule` (none for a plain project) and its completion anchor.
+fn rp_with(rrule: Option<&str>, from_completion: bool) -> (tempfile::TempDir, Snapshot) {
+    let (tmp, mut s) = session_snap();
+    let i = idx(&s, RP);
+    s.tasks[i].rrule = rrule.map(str::to_owned);
+    s.tasks[i].from_completion = from_completion;
+    (tmp, s)
+}
+
+mod project_repeat_round {
+    use super::*;
+
+    const PROJECT_FC_END: &str =
+        "completing a recurring project that ends or repeats from completion is not verified yet";
+
+    #[test]
+    fn project_repeat_transitions_follow_the_captured_table() {
+        for (old, fc, new, allowed) in [
+            (Some("FREQ=MONTHLY"), false, Some("3m after done"), true),
+            (
+                Some("FREQ=MONTHLY;INTERVAL=3"),
+                true,
+                Some("2m after done"),
+                true,
+            ),
+            (Some("FREQ=MONTHLY;INTERVAL=3"), true, None, true),
+            (None, false, Some("monthly after done"), true),
+            (Some("FREQ=MONTHLY"), false, Some("weekly"), true),
+            (
+                Some("FREQ=MONTHLY;INTERVAL=3"),
+                true,
+                Some("monthly"),
+                false,
+            ),
+            (Some("FREQ=WEEKLY"), false, Some("2w after done"), false),
+            (
+                Some("FREQ=MONTHLY"),
+                false,
+                Some("monthly after done until 2027-06-01"),
+                false,
+            ),
+        ] {
+            let (_tmp, s) = rp_with(old, fc);
+            let op = edit(RP, vec![Change::Repeat(new.map(repeat))]);
+            let ctx = format!("{old:?} fc={fc} -> {new:?}");
+            assert_eq!(
+                check(&s, &candidate(), WriteMode::Verified, &op, today()).is_ok(),
+                allowed,
+                "{ctx}"
+            );
+            let shipped = check(&s, Matrix::embedded(), WriteMode::Verified, &op, today());
+            assert!(shipped.is_err(), "shipped matrix admits {ctx}");
+        }
+    }
+
+    #[test]
+    fn project_repeat_mixed_save_with_refused_rule_refuses_whole_save() {
+        let (_tmp, s) = rp_with(Some("FREQ=WEEKLY"), false);
+        let op = Op::Save {
+            uid: RP.into(),
+            changes: vec![
+                Change::Summary("RP renamed".into()),
+                Change::Repeat(Some(repeat("2w after done"))),
+            ],
+            to: None,
+        };
+        assert!(check(&s, &candidate(), WriteMode::Verified, &op, today()).is_err());
+    }
+
+    #[test]
+    fn after_done_project_completion_needs_its_contract() {
+        let (_tmp, s) = rp_with(Some("FREQ=MONTHLY;INTERVAL=3"), true);
+        assert_eq!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &complete(RP),
+                today()
+            ),
+            blocked(PROJECT_FC_END)
+        );
+        assert_eq!(
+            check(
+                &s,
+                &candidate(),
+                WriteMode::Verified,
+                &complete(RP),
+                today()
+            ),
+            Ok(())
+        );
+        let (_tmp, s) = rp_with(Some("FREQ=MONTHLY;COUNT=3"), true);
+        for m in [Matrix::embedded(), &candidate()] {
+            assert_eq!(
+                check(&s, m, WriteMode::Verified, &complete(RP), today()),
+                blocked(PROJECT_FC_END)
+            );
+        }
+    }
+
+    #[test]
+    fn after_done_project_with_cancelled_item_refuses_completion() {
+        let (_tmp, mut s) = rp_with(Some("FREQ=MONTHLY;INTERVAL=3"), true);
+        let i = idx(&s, RP);
+        let child = s.children(i)[0];
+        s.tasks[child].status = twydo_core::model::Status::Cancelled;
+        assert_eq!(
+            check(
+                &s,
+                &candidate(),
+                WriteMode::Verified,
+                &complete(RP),
+                today()
+            ),
+            blocked("completing a recurring project with cancelled items is not verified yet")
+        );
+    }
+}
+
+mod project_ending_boundaries {
+    use super::*;
+
+    /// Projects that end were not captured: no project repeat edit may write an end.
+    #[test]
+    fn project_repeat_refuses_ending_rules() {
+        for text in ["monthly 3 times", "monthly until 2027-06-01"] {
+            let (_tmp, s) = rp_with(Some("FREQ=MONTHLY"), false);
+            let op = edit(RP, vec![Change::Repeat(Some(repeat(text)))]);
+            assert!(
+                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err(),
+                "{text}"
+            );
+        }
+    }
+}

@@ -344,6 +344,19 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         plain_repeat_transition(&snap.tasks[i], changes)?;
     }
 
+    // Projects that end were not captured (repeat round non-goal): never write one.
+    if let Op::Edit { changes, .. } = op
+        && after
+            .unwrap_or(cases)
+            .family
+            .is_some_and(|f| matches!(f, "project" | "recurring-project"))
+        && new_repeat(changes)
+            .flatten()
+            .is_some_and(|r| r.rule.end != End::Never)
+    {
+        return blocked("a project repeat that ends is not verified yet");
+    }
+
     let repeat_only = reshaped
         && matches!(op, Op::Edit { changes, .. } if changes.iter().all(|c| matches!(c, Change::Repeat(_))));
     operation_contracts(m, mode, cases, after, op, reshaped)?;
@@ -385,7 +398,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 .flatten()
                 .is_some_and(|r| r.from_completion))
     {
-        captured_from_completion_edit(snap, i, changes)?;
+        captured_from_completion_edit(snap, m, mode, i, changes)?;
     }
 
     let Some(i) = target else {
@@ -419,11 +432,27 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 .as_deref()
                 .and_then(|r| parse_rrule(r).ok())
                 .is_some_and(|r| r.end != End::Never);
+            // An after-done project without an end was captured in the repeat round.
+            let after_done_project = cases.family == Some("recurring-project")
+                && task.from_completion
+                && !ends
+                && require(m, mode, ContractId::CompleteRecurringProjectFromCompletion).is_ok();
+            if after_done_project
+                && snap
+                    .children(i)
+                    .iter()
+                    .any(|&c| snap.tasks[c].status == Status::Cancelled)
+            {
+                return blocked(
+                    "completing a recurring project with cancelled items is not verified yet",
+                );
+            }
             if matches!(
                 cases.family,
                 Some("recurring-project" | "recurring-checklist")
             ) && task.rrule.is_some()
                 && (ends || task.from_completion)
+                && !after_done_project
             {
                 return blocked(if cases.family == Some("recurring-checklist") {
                     "completing a recurring checklist that ends or repeats from completion is not verified yet"
@@ -1402,6 +1431,8 @@ fn captured_automatic_alarm(snap: &Snapshot, t: &Task) -> bool {
 /// families, endings or combinations that were never captured.
 fn captured_from_completion_edit(
     snap: &Snapshot,
+    m: &Matrix,
+    mode: WriteMode,
     i: usize,
     changes: &[Change],
 ) -> Result<(), Blocked> {
@@ -1440,10 +1471,17 @@ fn captured_from_completion_edit(
             "setting completion recurrence on a plain task linked to another series is not verified yet",
         );
     }
-    if t.kind != TaskKind::Task
+    // A top-level flat project takes the same rules (the repeat round's P1/P2); its items
+    // keep their own fields, as for any project repeat change.
+    let project = t.kind == TaskKind::Project && declared_kind(t) == TaskKind::Project;
+    if project {
+        require(m, mode, ContractId::SetRepeatProject)?;
+    }
+    if !(t.kind == TaskKind::Task || project)
         || t.status != Status::Open
         || snap.parent(i).is_some()
-        || !snap.children(i).is_empty()
+        || (!project && !snap.children(i).is_empty())
+        || snap.children(i).iter().any(|&c| !snap.children(c).is_empty())
         || !match t.due {
             Some(IcalDateTime::Date(d)) => d.day() <= 28,
             Some(IcalDateTime::Floating(d)) => d.day() <= 28,
