@@ -514,6 +514,23 @@ reloads and tells every client, and the TUI fetches the new snapshot. Once a min
 its clock on, so "today" and the date groups stay current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.
 
+### How long edit and lifecycle checks last
+
+A prepared operation carries the read dependencies that the writer must check before
+commit, including when it drains the queue. The planner also declares which of those
+checks go into the journal for crash recovery, undo and redo.
+
+| Operation | Checks before commit | Checks retained in the journal |
+|---|---|---|
+| Complete | Check the target's loaded family membership and hold the bytes of members read but left untouched. Recurring history copies are new writes. | The writes retain their before/after bytes. The membership and read-only byte checks end at commit. |
+| Reopen | Check the target's loaded family membership and the bytes of members left untouched. | Keep both membership and byte holds. |
+| Edit only title or notes | Check the family head and its children, including their identity aliases. Hold unwritten members. | Keep both membership and byte holds. |
+| Edit a checklist schedule | Check the checklist and its children. Hold the children whose files stay as loaded. | Keep both membership and byte holds. |
+| Change task type | Check the loaded membership because admission depends on the children present. | For a type change alone, the membership check ends at commit. |
+
+An edit to an item in a recurring checklist also keeps its parent byte hold. A save
+without a move uses the same plan as the underlying edit and records it as one save.
+
 ### Family dependencies for task creation and deletion
 
 The create, delete and ordering planners use the same rule for a single family:
