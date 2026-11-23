@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/bwilczynski/twydo/compare/v0.7.2...v0.7.3) - 2026-11-23
+
+### Added
+
+- *(gate)* admit checklist repeat variants behind contracts
+- *(gate)* admit project repeat changes behind the project contract
+- *(compat)* add unverified contracts for repeat variants
+- *(gate)* allow after-done edits at any interval
+
 ## [0.7.2](https://github.com/bwilczynski/twydo/compare/v0.7.1...v0.7.2) - 2026-11-23
 
 ### Added
