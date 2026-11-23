@@ -518,9 +518,17 @@ stop the rest from loading.
 
 Reordering and anchored insertion use one family journal entry, submitted through the same
 write queue as other edits. They rank the resulting complete sibling sequence with shared
-`DisplayOrder` integers, changing only differing ranks. Parent and unchanged sibling bytes
-and family membership are durable dependencies, checked on commit, queue drain, recovery
-and undo. Queued moves are visible in the overlay and subsequent moves plan against it.
+`DisplayOrder` integers, changing only differing ranks. Queued moves are visible in the
+overlay and subsequent moves plan against it.
+
+The [ordering planner](../crates/twydo-core/src/store/order.rs) records the exact bytes
+of the parent and each sibling whose rank stays the same. Together with the paths it
+writes, these paths form the family membership guard. An anchored insertion includes
+the new child's path, so recovery after a partial write recognizes that child while
+still detecting an unexpected sibling. The planner marks the guard and byte checks as
+durable. The queue item and journal entry both carry them through commit, queue drain,
+recovery and undo.
+
 The ordering gate validates family structure and editable JSON, then checks the verified
 DisplayOrder operation by declared parent kind. It does not classify recurrence, dates,
 alarms or completion state: they are preserved fields. Anchored insertion separately
