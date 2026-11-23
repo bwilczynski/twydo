@@ -6,6 +6,7 @@ import type {
   FormValues,
   NewTaskTarget,
   Op,
+  SettingsGetResult,
   TasksFormParams,
   TasksFormResult,
   TasksGetResult,
@@ -16,19 +17,22 @@ import type {
 } from "./gen/protocol";
 import { RpcSocket } from "./rpc";
 
+// JSON-RPC: the daemon does not have the method.
+const METHOD_NOT_FOUND = -32601;
+
 /** One view as `views.get` takes it; a list also names its collection. */
 export type ViewRef = ViewsGetParams;
 /** One task screen, by task uid. */
 export type TaskRef = { task: string };
 /** What the screen shows: a view, the Views tab's own list of views, or one task. */
-export type Visible = ViewRef | "views" | TaskRef;
+export type Visible = ViewRef | "views" | "settings" | TaskRef;
 export const isTask = (v: Visible): v is TaskRef => typeof v === "object" && "task" in v;
 export const viewKey = (ref: ViewRef): string => (ref.view === "list" ? `list:${ref.list}` : ref.view);
 export type Connection = "connecting" | "open" | "closed" | "unpaired";
 
 const sameTarget = (a: Visible, b: Visible): boolean => {
   if (isTask(a) || isTask(b)) return isTask(a) && isTask(b) && a.task === b.task;
-  return a === "views" || b === "views" ? a === b : viewKey(a) === viewKey(b);
+  return typeof a === "string" || typeof b === "string" ? a === b : viewKey(a) === viewKey(b);
 };
 
 export interface DataSource {
@@ -42,6 +46,8 @@ export interface DataSource {
    * also when the count is unchanged: a push may have changed the badge meanwhile.
    */
   onTodayCount(cb: (n: number) => void): () => void;
+  /** The Settings screen's daemon details, once fetched; null when the daemon has no `settings.get`. */
+  settings: ReadonlySignal<SettingsGetResult | null | undefined>;
   connection: ReadonlySignal<Connection>;
   /**
    * True only while the visible view was fetched successfully on the current open socket; false
@@ -178,6 +184,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     const t = ticket();
     setList(await sock.call<ViewsListResult>("views.list", {}), t);
   };
+  const settings = signal<SettingsGetResult | null | undefined>(undefined);
   const goneCbs = new Set<(ref: ViewRef) => void>();
   const connection = signal<Connection>("connecting");
   let visible: Visible = { view: "inbox" };
@@ -221,6 +228,14 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           const target = visible;
           if (target === "views") {
             await fetchList();
+          } else if (target === "settings") {
+            try {
+              settings.value = await sock.call<SettingsGetResult>("settings.get", {});
+            } catch (e) {
+              // A daemon older than the Settings screen: show what the phone itself knows.
+              if ((e as { code?: number }).code !== METHOD_NOT_FOUND) throw e;
+              settings.value = null;
+            }
           } else if (isTask(target)) {
             try {
               taskSignal(target.task).value = await sock.call<TasksGetResult>("tasks.get", { uid: target.task });
@@ -260,7 +275,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           }
           // The badge needs Today's count whichever screen is shown; Today and the views list
           // carry it themselves. Not awaited: a failure costs only the badge.
-          if (target !== "views" && (isTask(target) || target.view !== "today")) {
+          if (typeof target === "string" ? target !== "views" : isTask(target) || target.view !== "today") {
             fetchList().catch(() => {});
           }
           // Only the visible view's own fetch makes it fresh; another view's does not.
@@ -341,7 +356,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     // the first fetch below supplies it.
     // A views list carries no basis; the opened view's does.
     const basisOf = (v: Visible) =>
-      v === "views" ? undefined : isTask(v) ? taskSignal(v.task) : viewSignal(v);
+      typeof v === "string" ? undefined : isTask(v) ? taskSignal(v.task) : viewSignal(v);
     const basis = basisOf(visible);
     const shown = basis?.value;
     let basedOn: BasedOn | undefined = explicit ?? (shown && { epoch: shown.epoch, revision: shown.revision });
@@ -385,6 +400,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
       countCbs.add(cb);
       return () => countCbs.delete(cb);
     },
+    settings,
     connection,
     fresh,
     async loadViewsList() {

@@ -732,6 +732,60 @@ describe("all views", () => {
     expect(ds.view(ref).value).toBeUndefined();
   });
 
+  const settingsResult = { version: "0.7.1", protocol: 4, server: "dav.example.net" };
+
+  it("refresh_settings_fetches_settings_get", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["settings.get"] = () => settingsResult;
+    await opened();
+    expect(ds.settings.value).toBeUndefined();
+    await ds.refresh("settings");
+    expect(FakeWebSocket.last.calls("settings.get").at(-1)!.params).toEqual({});
+    expect(ds.settings.value).toEqual(settingsResult);
+  });
+
+  it("refresh_settings_also_fetches_todays_count_for_the_badge", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["settings.get"] = () => settingsResult;
+    await opened();
+    const before = FakeWebSocket.last.calls("views.list").length;
+    await ds.refresh("settings");
+    await flush();
+    expect(FakeWebSocket.last.calls("views.list").length).toBe(before + 1);
+  });
+
+  it("settings_is_null_when_the_daemon_lacks_the_method", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["settings.get"] = () => {
+      throw new FakeRpcError(-32601, "method not found: settings.get");
+    };
+    await opened();
+    await ds.refresh("settings");
+    expect(ds.settings.value).toBeNull();
+  });
+
+  it("settings_refusal_of_another_kind_rejects", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["settings.get"] = () => {
+      throw new FakeRpcError(-32000, "the daemon is shutting down", "unavailable");
+    };
+    await opened();
+    await expect(ds.refresh("settings")).rejects.toBeTruthy();
+    expect(ds.settings.value).toBeUndefined();
+  });
+
+  it("fresh_is_false_after_leaving_settings_until_views_list_answers", async () => {
+    const ds = setup();
+    FakeWebSocket.handlers["settings.get"] = () => settingsResult;
+    await opened();
+    await ds.refresh("settings");
+    expect(ds.fresh.value).toBe(true);
+    const p = ds.refresh("views");
+    expect(ds.fresh.value).toBe(false);
+    await p;
+    expect(ds.fresh.value).toBe(true);
+  });
+
   it("fresh_is_false_after_refresh_views_until_views_list_answers", async () => {
     const ds = setup();
     await opened();

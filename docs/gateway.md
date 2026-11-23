@@ -122,6 +122,22 @@ gone". Tapping a task opens its screen with its items (a checklist or subtasks);
 can be ticked and unticked there, with the same Undo banner. A done task or item shows a grey
 tick in an unfilled circle and a grey, struck-through title.
 
+## Settings
+
+The gear at the top right of the Views list opens Settings, in the same tab, with a **Views**
+button to go back; the phone remembers it like an opened view. It shows:
+
+- **Reminders**: the switch that turns push reminders on and off for this phone, with a hint
+  when the app is not on the Home Screen or notifications are not allowed.
+- **Sync**: the daemon's sync headline and detail (shown whether or not anything needs
+  attention), when it last synced (phone time), the CalDAV server's host (never the username,
+  path or password), and the notifier's error while reminders are failing. Without `[sync]` it
+  says "Sync is not configured".
+- **About**: the daemon's version and protocol generation, from `settings.get`. A daemon too
+  old to answer it shows "Daemon info unavailable" instead of Sync and About.
+
+The sync and reminders warnings also stay on the task views.
+
 ## Editing on the phone
 
 A task's screen has **Edit** in its top bar. The form has Title, List, Type, Due, Start,
@@ -174,7 +190,7 @@ Requirements and steps:
   `serve` does (`--state-dir`, `TWYDO_GATEWAY_STATE`, `$XDG_STATE_HOME/twydo/gateway`), so the
   daemon needs the same environment as the gateway; the Docker image already shares it.
 - `tdo gateway revoke` also removes that phone's push subscription.
-- Turn reminders on in the Views tab on the phone.
+- Turn reminders on in Settings on the phone (the gear on the Views list).
 - Check the path with `tdo notify test` (in Docker: `docker compose exec twydo tdo notify test`).
 - A failed push shows as a banner on the phone, and the daemon retries with a backoff.
 - Turn 2Do's own notifications off only after a test reminder has arrived.
