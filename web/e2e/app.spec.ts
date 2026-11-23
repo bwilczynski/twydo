@@ -284,6 +284,18 @@ test.describe("views tab", () => {
   });
 });
 
+test("settings opens from the views screen", async ({ page }) => {
+  await page.getByRole("tab", { name: "Views" }).click();
+  await expect(page.getByRole("heading", { name: "Views" })).toBeVisible();
+  await page.getByRole("button", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  const about = page.locator("section", { has: page.getByRole("heading", { name: "About" }) });
+  await expect(about.getByText(/^\d+\.\d+\.\d+/)).toBeVisible();
+  await expect(about.getByText("Protocol")).toBeVisible();
+  await page.getByRole("button", { name: "Views" }).click();
+  await expect(page.getByRole("heading", { name: "Views" })).toBeVisible();
+});
+
 // Last: it stops the daemon, and restarts it for whatever runs next.
 test("daemon stopped shows offline state", async ({ page }) => {
   test.setTimeout(60_000);

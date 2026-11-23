@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/preact";
 import { signal } from "@preact/signals";
 import type { DataSource, Connection, Refusal, ViewRef } from "../data";
-import type { ChildRow, TasksGetResult, ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
+import type { ChildRow, SettingsGetResult, TasksGetResult, ViewsGetResult, ViewsListResult, ViewRow } from "../gen/protocol";
 import { answer, vals } from "../formFixtures";
 import { taskHash } from "../route";
 import { App } from "../App";
@@ -48,6 +48,16 @@ const viewsListResult = (): ViewsListResult => ({
   ],
 });
 
+const settingsResult = (): SettingsGetResult => ({
+  version: "0.7.1",
+  protocol: 4,
+  server: "dav.example.net",
+  sync: { attention: false, headline: "Synced", last_success: "2026-11-17T08:42:00Z" },
+});
+const openSettings = () => {
+  fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+};
 const child = (uid: string, title: string, extra: Partial<ChildRow> = {}): ChildRow => ({
   uid,
   title,
@@ -124,6 +134,7 @@ function fake(over: Partial<Record<string, unknown>> = {}) {
     }),
     reopen: vi.fn(async () => ({ outcome: "applied", op_id: "o", revision: 2, message: "ok" })),
     viewsList: signal(viewsListResult()),
+    settings: signal<SettingsGetResult | null | undefined>(settingsResult()),
     onGone: vi.fn((cb: (r: ViewRef) => void) => {
       gone = cb;
       return () => {};
@@ -1143,7 +1154,7 @@ describe("reminders", () => {
     const p = fakePush("off");
     render(<App ds={ds} push={p.push} />);
     expect(p.resync).toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    openSettings();
     const sw1 = screen.getByRole("switch", { name: "Reminders" });
     expect(sw1.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(sw1);
@@ -1157,7 +1168,7 @@ describe("reminders", () => {
     const { ds } = fake();
     const p = fakePush("on");
     render(<App ds={ds} push={p.push} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    openSettings();
     expect(screen.queryByText("Could not turn reminders off; try again")).toBeNull();
     act(() => void (p.error.value = true));
     expect(screen.getByText("Could not turn reminders off; try again")).toBeTruthy();
@@ -1167,11 +1178,96 @@ describe("reminders", () => {
     const { ds } = fake();
     const p = fakePush("install");
     render(<App ds={ds} push={p.push} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    openSettings();
     expect(screen.getByText("Add Twydo to your Home Screen to get reminders")).toBeTruthy();
     act(() => void (p.state.value = "denied"));
     expect(screen.getByText("Allow notifications for Twydo in Settings")).toBeTruthy();
     act(() => void (p.state.value = "unsupported"));
     expect(screen.queryByText("Reminders")).toBeNull();
+  });
+});
+
+describe("settings", () => {
+  const settingsOf = (ds: DataSource) => ds.settings as unknown as { value: SettingsGetResult | null | undefined };
+
+  it("views_screen_has_a_gear_not_the_reminders_switch", () => {
+    const { ds } = fake();
+    render(<App ds={ds} push={{ state: signal("off"), error: signal(false), resync: vi.fn() } as unknown as Push} />);
+    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Reminders" })).toBeNull();
+  });
+
+  it("gear_opens_settings", () => {
+    const { ds } = fake();
+    render(<App ds={ds} push={{ state: signal("off"), error: signal(false), resync: vi.fn() } as unknown as Push} />);
+    openSettings();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
+    expect(screen.getByRole("button", { name: "Views" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Reminders" })).toBeTruthy();
+    expect(screen.getByText("dav.example.net")).toBeTruthy();
+    expect(screen.getByText("0.7.1")).toBeTruthy();
+    expect(screen.getByText("Synced")).toBeTruthy();
+    expect(ds.refresh).toHaveBeenLastCalledWith("settings");
+  });
+
+  it("settings_without_sync_has_no_server_row", () => {
+    const { ds } = fake();
+    settingsOf(ds).value = { version: "0.7.1", protocol: 4 };
+    render(<App ds={ds} />);
+    openSettings();
+    expect(screen.queryByText("Server")).toBeNull();
+    expect(screen.getByText("Sync is not configured")).toBeTruthy();
+  });
+
+  it("settings_shows_the_reminders_failure", () => {
+    const { ds } = fake();
+    settingsOf(ds).value = { ...settingsResult(), reminders: { error: "The push service rejected us" } };
+    render(<App ds={ds} />);
+    openSettings();
+    expect(screen.getByText("The push service rejected us")).toBeTruthy();
+  });
+
+  it("settings_on_an_older_daemon", () => {
+    const { ds } = fake();
+    settingsOf(ds).value = null;
+    render(<App ds={ds} push={{ state: signal("off"), error: signal(false), resync: vi.fn() } as unknown as Push} />);
+    openSettings();
+    expect(screen.getByRole("switch", { name: "Reminders" })).toBeTruthy();
+    expect(screen.getByText("Daemon info unavailable")).toBeTruthy();
+    expect(screen.queryByText("About")).toBeNull();
+  });
+
+  it("settings_survive_a_reload", () => {
+    const { ds } = fake();
+    const r = render(<App ds={ds} />);
+    openSettings();
+    r.unmount();
+    render(<App ds={ds} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Settings");
+  });
+
+  it("views_tab_retap_leaves_settings", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openSettings();
+    fireEvent.click(screen.getByRole("tab", { name: "Views" }));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views");
+    expect(screen.getByText("Bills")).toBeTruthy();
+  });
+
+  it("settings_back_returns_to_views", async () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Views" }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Views"));
+  });
+
+  it("settings_shows_no_fab", () => {
+    const { ds } = fake();
+    render(<App ds={ds} />);
+    openSettings();
+    expect(screen.queryByRole("button", { name: "New task" })).toBeNull();
   });
 });

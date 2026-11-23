@@ -7,10 +7,11 @@ import { useTaskStack } from "./taskStack";
 import type { FormValues, ViewRow, ViewsGetResult, ViewsListItem, ViewsListResult } from "./gen/protocol";
 import { Banner, type BannerState } from "./components/Banner";
 import { ConfirmSheet } from "./components/ConfirmSheet";
-import { CalendarDayIcon, ChevronLeftIcon, ListIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
+import { CalendarDayIcon, ChevronLeftIcon, GearIcon, ListIcon, MailboxIcon, PlusIcon, SpinnerIcon } from "./components/Icons";
 import { Offline } from "./components/Offline";
 import { Pairing } from "./components/Pairing";
 import { RemindersWarning } from "./components/RemindersWarning";
+import { SettingsScreen } from "./components/SettingsScreen";
 import { SyncWarning } from "./components/SyncWarning";
 import { dayOf, TabBar, type Tab } from "./components/TabBar";
 import { TaskList } from "./components/TaskList";
@@ -36,11 +37,15 @@ function loadTab(): Tab {
   }
 }
 
+/** What the Views tab pushes over its list: a view, or the Settings screen. */
+type Opened = ViewRef | "settings";
+
 /** The view open in the Views tab; malformed or missing storage means none. */
-function loadOpen(): ViewRef | undefined {
+function loadOpen(): Opened | undefined {
   try {
     const raw = localStorage.getItem(OPEN_KEY);
     const v = raw ? JSON.parse(raw) : undefined;
+    if (v === "settings") return v;
     if (!v || typeof v !== "object" || typeof v.view !== "string" || !VIEWS.includes(v.view)) return undefined;
     // A list names its collection; no other view does.
     return (v.view === "list") === (typeof v.list === "string") ? v : undefined;
@@ -49,7 +54,7 @@ function loadOpen(): ViewRef | undefined {
   }
 }
 
-function saveOpen(ref: ViewRef | undefined) {
+function saveOpen(ref: Opened | undefined) {
   try {
     if (ref) localStorage.setItem(OPEN_KEY, JSON.stringify(ref));
     else localStorage.removeItem(OPEN_KEY);
@@ -108,7 +113,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function App({ ds, push }: { ds: DataSource; push?: Push }) {
   const [tab, setTab] = useState<Tab>(loadTab);
   // The view pushed inside the Views tab; none on the list screen.
-  const [open, setOpen] = useState<ViewRef | undefined>(loadOpen);
+  const [open, setOpen] = useState<Opened | undefined>(loadOpen);
   const openRef = useRef(open);
   openRef.current = open;
   // The view the last openView asked for, which a slide renders once its snapshot is taken.
@@ -158,9 +163,10 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
 
   const connection = ds.connection.value;
   // The view on screen: a tab's own, or the one opened in the Views tab (none on the list).
-  const ref: ViewRef | undefined = tab === "views" ? open : { view: tab };
-  rootRef.current = ref ?? "views";
-  const visible: Visible = top ? { task: top } : (ref ?? "views");
+  const onSettings = tab === "views" && open === "settings";
+  const ref: ViewRef | undefined = tab === "views" ? (open === "settings" ? undefined : open) : { view: tab };
+  rootRef.current = onSettings ? "settings" : (ref ?? "views");
+  const visible: Visible = top ? { task: top } : rootRef.current;
   const view = ref ? ds.view(ref).value : undefined;
   const viewsList = ds.viewsList.value;
   // Any fetch will do for the date; prefer what is on screen: the view, or the list screen.
@@ -176,7 +182,7 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
     () =>
       ds.onGone((gone) => {
         const o = openRef.current;
-        if (!o || viewKey(o) !== viewKey(gone)) return;
+        if (!o || o === "settings" || viewKey(o) !== viewKey(gone)) return;
         openRef.current = undefined;
         wantOpen.current = undefined;
         setOpen(undefined);
@@ -261,7 +267,7 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
   };
 
   /** Push a view in the Views tab, or pop back to the list; a tab re-tap passes no `slide`. */
-  const openView = (r: ViewRef | undefined, slide = true) => {
+  const openView = (r: Opened | undefined, slide = true) => {
     saveOpen(r);
     wantOpen.current = r;
     if (slide) navigate(r ? "forward" : "back", () => setOpen(wantOpen.current));
@@ -315,7 +321,7 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
     if (!ds.viewsList.value) ds.loadViewsList().catch(() => {});
   }
 
-  const refetch = () => ds.refresh(top ? { task: top } : (ref ?? "views")).catch(() => {});
+  const refetch = () => ds.refresh(top ? { task: top } : rootRef.current).catch(() => {});
 
   function saved(e: Editing, title: string, values: FormValues) {
     // Only this form closes: another may have been opened while its save was out.
@@ -415,15 +421,21 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
         )}
         {!top && (
           <header class="large-title">
-            <h1>{onList ? "Views" : titleOf(ref, view, viewsList)}</h1>
+            <h1>{onList ? "Views" : onSettings ? "Settings" : titleOf(ref, view, viewsList)}</h1>
             {view && <span class="count">{view.open_count}</span>}
+            {onList && (
+              <button type="button" class="icon-button" aria-label="Settings" onClick={() => openView("settings")}>
+                <GearIcon />
+              </button>
+            )}
           </header>
         )}
-        {!top && onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} push={push} />}
+        {!top && onList && viewsList && <ViewsScreen list={viewsList} day={dayOf(today)} onOpen={(r) => openView(r)} />}
+        {!top && onSettings && <SettingsScreen settings={ds.settings.value} push={push} />}
         {!top && !onList && view?.sync?.attention && <SyncWarning sync={view.sync} />}
         {!top && !onList && view?.reminders && <RemindersWarning reminders={view.reminders} />}
         {offline && <Offline updated={updated} onRetry={() => location.reload()} />}
-        {(top ? !shown : onList ? !viewsList : !view) && !offline && (
+        {(top ? !shown : onList ? !viewsList : onSettings ? ds.settings.value === undefined : !view) && !offline && (
           <div class="loading" role="status" aria-label="Loading">
             <SpinnerIcon />
           </div>
@@ -449,7 +461,7 @@ export function App({ ds, push }: { ds: DataSource; push?: Push }) {
           onDismiss={() => setBanner((b) => (b?.id === banner.id ? undefined : b))}
         />
       )}
-      {!offline && !onList && !top && (
+      {!offline && !onList && !onSettings && !top && (
         <button
           type="button"
           class="fab"

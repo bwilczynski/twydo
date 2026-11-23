@@ -46,6 +46,10 @@ input, textarea { font: inherit; color: inherit; }
 .large-title { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 4px 8px; }
 .large-title h1 { font-size: 34px; font-weight: 700; margin: 0; }
 .count { color: var(--secondary); font-size: 20px; }
+.large-title .icon-button {
+  align-self: center; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; margin-right: -10px; color: var(--accent);
+}
 .group h2 {
   font-size: 13px; text-transform: uppercase; color: var(--secondary);
   font-weight: 400; margin: 20px 16px 6px;
@@ -199,6 +203,15 @@ input, textarea { font: inherit; color: inherit; }
 .switch[aria-checked="true"] { background: var(--accent); }
 .switch[aria-checked="true"]::after { transform: translateX(20px); }
 .switch:disabled { opacity: 0.5; }
+.settings-row {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 14px;
+  border-bottom: 0.5px solid var(--separator);
+}
+.settings-row:last-child { border-bottom: 0; }
+.settings-value { color: var(--secondary); text-align: right; overflow-wrap: anywhere; }
+.settings-status { flex-direction: column; align-items: flex-start; gap: 0; }
+.settings-status p { margin: 4px 0 0; font-size: 15px; color: var(--secondary); }
+.settings-headline.attention { color: var(--danger); font-weight: 600; }
 .reminders-hint { margin: 6px 14px 0; font-size: 13px; color: var(--secondary); }
 
 .back {
