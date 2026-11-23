@@ -458,7 +458,10 @@ fn queued_insert_and_reorder_recover_partial_application_idempotently() {
         assert_eq!(prepared.family.as_ref(), Some(family));
         assert_eq!(prepared.holds, e.holds);
         assert_eq!(family.parent_uid, p);
-        let before = env.files();
+        let before: std::collections::BTreeMap<_, _> = std::iter::once(&p)
+            .chain(&k)
+            .map(|uid| (format!("list1/{uid}.ics"), fs::read(env.file(uid)).unwrap()))
+            .collect();
         let mut members: std::collections::BTreeSet<_> = before.keys().cloned().collect();
         if insert {
             members.insert(format!("list1/{}.ics", e.uids[0]));
@@ -497,6 +500,51 @@ fn queued_insert_and_reorder_recover_partial_application_idempotently() {
             );
         }
     }
+}
+
+#[test]
+fn partial_insert_recovery_refuses_an_unexpected_sibling_before_writing_ranks() {
+    use twydo_core::store::journal::{Journal, recover};
+    use twydo_core::store::plan::{Policy, plan};
+
+    let (env, _, parent, children) = setup(TaskKind::Checklist);
+    let policy = Policy {
+        matrix: Matrix::embedded(),
+        mode: WriteMode::Verified,
+    };
+    let insert = Op::CreateAt {
+        task: NewTask {
+            parent: Some(parent),
+            ..NewTask::plain("list1", "Inserted")
+        },
+        anchor: children[0].clone(),
+        placement: Placement::Before,
+    };
+    let entry = plan(&env.snap(), &insert, policy, now()).unwrap().entry;
+    let (created, pending) = entry.writes.split_first().unwrap();
+    assert!(created.before.is_none() && !pending.is_empty());
+    Journal::open(&env.state).unwrap().prepare(&entry).unwrap();
+    fs::write(
+        env.vdir.join(&created.path),
+        created.after.as_ref().unwrap(),
+    )
+    .unwrap();
+
+    let child = &children[0];
+    let newcomer = fs::read_to_string(env.file(child))
+        .unwrap()
+        .replace(child, "unexpected-sibling");
+    fs::write(env.file("unexpected-sibling"), newcomer).unwrap();
+    let before = env.files();
+    let report = recover(&env.vdir, &env.state).unwrap();
+    assert!(report.resumed.is_empty());
+    assert_eq!(report.stuck.len(), 1);
+    assert_eq!(report.stuck[0].0, entry.id);
+    assert!(
+        report.stuck[0].1.contains("unexpected-sibling"),
+        "{report:?}"
+    );
+    assert_eq!(env.files(), before);
 }
 
 #[test]
