@@ -76,7 +76,7 @@ interval 1, plus monthly interval 1 → 2. Creating the same rules is already ad
   for field edits), no end, start, custom alert or delay.
 - The captured anchor transitions keep their table, with interval ignored on both sides (so an
   edit may change anchor and interval at once). Admitted (old → new) pairs: none → monthly after
-  done; monthly due ↔ monthly after done; monthly after done → weekly after done; weekly after
+  done; monthly due → monthly after done; monthly after done → weekly after done; weekly after
   done → weekly due; monthly or weekly after done → none; and any after-done rule → the same
   frequency after done with another interval. Pairs not listed (for example weekly due → weekly
   after done) stay refused; they change where the next date comes from, which only the RF/RA

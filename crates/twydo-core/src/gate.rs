@@ -1405,7 +1405,7 @@ fn captured_from_completion_edit(
     i: usize,
     changes: &[Change],
 ) -> Result<(), Blocked> {
-    const REASON: &str = "from-completion edits are verified only for captured standalone monthly fields, interval 1 to 2, or plain monthly/weekly anchor changes without an end";
+    const REASON: &str = "from-completion edits are verified only for standalone monthly/weekly rules without an end, within the captured anchor changes";
     let t = &snap.tasks[i];
     let refuse = || blocked(REASON);
     let old = t
@@ -1414,7 +1414,13 @@ fn captured_from_completion_edit(
         .map(parse_rrule)
         .transpose()
         .map_err(|_| Blocked(REASON.into()))?;
-    let plain = |r: &RRule| r.end == End::Never && plain_rule(r, &[Freq::Monthly, Freq::Weekly]);
+    // The interval is one encoded field, verified on its own (`set-repeat.interval`) and
+    // already written by creation; only the shape around it needs the RF/RA captures.
+    let plain = |r: &RRule| {
+        let mut shape = r.clone();
+        shape.interval = 1;
+        r.end == End::Never && plain_rule(&shape, &[Freq::Monthly, Freq::Weekly])
+    };
     let due_ok = |d: &Due| match d {
         Due::Date(d) => d.day() <= 28,
         Due::Time(d) => d.day() <= 28,
@@ -1471,45 +1477,17 @@ fn captured_from_completion_edit(
         && meta.get_i64("StartDate").is_none()
         && meta.get_i64("duetime").is_none();
     if changes.iter().all(|c| matches!(c, Change::Repeat(_))) {
-        // The edit card represents an interval-only change with a full Repeat spec.
-        // The CLI uses RepeatInterval; both write the same captured recurrence fields.
-        let interval_two = old
-            .as_ref()
-            .is_some_and(|r| r.freq == Freq::Monthly && plain(r))
-            && t.from_completion
-            && new_repeat(changes).flatten().is_some_and(|r| {
-                let mut rule = r.rule.clone();
-                rule.interval = 1;
-                r.from_completion
-                    && r.rule.interval == 2
-                    && rule.freq == Freq::Monthly
-                    && plain(&rule)
-            });
-        if date_only && interval_two {
-            return Ok(());
-        }
         if !date_only
             || !old.as_ref().is_none_or(plain)
             || !new_repeat(changes).flatten().is_none_or(|r| plain(&r.rule))
         {
             return refuse();
         }
-        // Each change involving completion anchoring needs its own phone twin.
-        // The direct task covers setting and removing monthly completion recurrence;
-        // the anchor task covers monthly due -> completion -> weekly completion -> due.
         let before = old.as_ref().map(|r| (r.freq, t.from_completion));
         let after = new_repeat(changes)
             .flatten()
             .map(|r| (r.rule.freq, r.from_completion));
-        return if before == after
-            || matches!(
-                (before, after),
-                (None, Some((Freq::Monthly, true)))
-                    | (Some((Freq::Monthly, false)), Some((Freq::Monthly, true)))
-                    | (Some((Freq::Monthly, true)), Some((Freq::Weekly, true)))
-                    | (Some((Freq::Weekly, true)), Some((Freq::Weekly, false)))
-                    | (Some((Freq::Monthly, true)), None)
-            ) {
+        return if fc_transition_ok(before, after) {
             Ok(())
         } else {
             refuse()
@@ -1518,7 +1496,7 @@ fn captured_from_completion_edit(
     let Some(old) = old else {
         return refuse();
     };
-    if !t.from_completion || old.freq != Freq::Monthly || !plain(&old) {
+    if !t.from_completion || !plain(&old) {
         return refuse();
     }
     if changes
@@ -1528,7 +1506,7 @@ fn captured_from_completion_edit(
         return if date_only
             && changes
                 .iter()
-                .all(|c| matches!(c, Change::RepeatInterval(2)))
+                .all(|c| matches!(c, Change::RepeatInterval(_)))
         {
             Ok(())
         } else {
@@ -1541,7 +1519,30 @@ fn captured_from_completion_edit(
     {
         return refuse();
     }
+    // Field edits (due, start) were captured on monthly interval-1 rules only; the repeat
+    // round does not change that.
+    if old.freq != Freq::Monthly || old.interval != 1 {
+        return refuse();
+    }
     Ok(())
+}
+
+/// The completion-anchor changes the RF/RA phone twins captured, as `(frequency, from
+/// completion)` before and after; the interval is ignored on both sides. The direct task
+/// covers setting and removing monthly completion recurrence; the anchor task covers monthly
+/// due -> completion -> weekly completion -> due. A same-frequency after-done change only
+/// changes the interval.
+fn fc_transition_ok(before: Option<(Freq, bool)>, after: Option<(Freq, bool)>) -> bool {
+    use Freq::{Monthly, Weekly};
+    before == after
+        || matches!(
+            (before, after),
+            (None, Some((Monthly, true)))
+                | (Some((Monthly, false)), Some((Monthly, true)))
+                | (Some((Monthly, true)), Some((Weekly, true)))
+                | (Some((Weekly, true)), Some((Weekly, false)))
+                | (Some((Monthly | Weekly, true)), None)
+        )
 }
 
 /// C29 creation/text/item operations have their own shape boundary. The existing
