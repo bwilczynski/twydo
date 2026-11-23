@@ -20,6 +20,7 @@ fn payload() -> Payload {
         body: "Secret body".into(),
         key: "inbox:abc".into(),
         uid: Some("uid-1".into()),
+        badge: None,
     }
 }
 

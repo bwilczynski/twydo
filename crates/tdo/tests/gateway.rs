@@ -314,6 +314,7 @@ fn daemon_reminder_reaches_the_fake_push_service() {
     );
     assert_eq!(payload["uid"], "u1", "{payload}");
     assert!(payload["body"].as_str().is_some());
+    assert!(payload["badge"].as_u64().is_some(), "{payload}");
     let key = payload["key"].as_str().unwrap().to_string();
     wait_for("notifier.json", || {
         fs::read_to_string(env.state().join("notifier.json")).is_ok_and(|s| s.contains(&key))

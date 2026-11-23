@@ -98,6 +98,8 @@ pub struct Payload {
     pub body: String,
     pub key: String,
     pub uid: Option<String>,
+    /// Today's open count, for the app's icon badge.
+    pub badge: Option<u64>,
 }
 
 fn json(title: &str, body: &str, p: &Payload) -> Vec<u8> {
@@ -107,6 +109,9 @@ fn json(title: &str, body: &str, p: &Payload) -> Vec<u8> {
     map.insert("key".into(), p.key.as_str().into());
     if let Some(uid) = &p.uid {
         map.insert("uid".into(), uid.as_str().into());
+    }
+    if let Some(n) = p.badge {
+        map.insert("badge".into(), n.into());
     }
     serde_json::to_vec(&map).expect("a JSON object serialises")
 }
@@ -306,6 +311,7 @@ mod tests {
             body: "Due now".into(),
             key: "k1".into(),
             uid: uid.map(str::to_string),
+            badge: None,
         }
     }
 
@@ -348,6 +354,7 @@ mod tests {
             body: "ż".repeat(2000),
             key: "k".into(),
             uid: Some("u".into()),
+            badge: None,
         };
         let out = padded(&p);
         assert_eq!(out.len(), 1024);
@@ -357,12 +364,46 @@ mod tests {
     }
 
     #[test]
+    fn badge_in_payload() {
+        let p = Payload {
+            badge: Some(3),
+            ..sample(None)
+        };
+        let out = padded(&p);
+        assert_eq!(
+            std::str::from_utf8(unpad(&out)).unwrap(),
+            r#"{"title":"Buy milk","body":"Due now","key":"k1","badge":3}"#
+        );
+    }
+
+    #[test]
+    fn no_badge_no_field() {
+        let v: serde_json::Value = serde_json::from_slice(unpad(&padded(&sample(None)))).unwrap();
+        assert!(v.get("badge").is_none());
+    }
+
+    #[test]
+    fn long_body_keeps_badge() {
+        let p = Payload {
+            body: "b".repeat(3000),
+            badge: Some(3),
+            ..sample(Some("u1"))
+        };
+        let out = padded(&p);
+        assert_eq!(out.len(), 1024);
+        let v: serde_json::Value = serde_json::from_slice(unpad(&out)).unwrap();
+        assert!(v["body"].as_str().unwrap().ends_with('…'));
+        assert_eq!(v["badge"], 3);
+    }
+
+    #[test]
     fn payload_cuts_title_only_after_body() {
         let p = Payload {
             title: "t".repeat(2000),
             body: "b".into(),
             key: "k".into(),
             uid: None,
+            badge: None,
         };
         let out = padded(&p);
         let v: serde_json::Value = serde_json::from_slice(unpad(&out)).unwrap();
