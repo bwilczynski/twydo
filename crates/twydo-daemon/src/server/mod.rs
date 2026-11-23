@@ -16,6 +16,7 @@ pub mod replay;
 pub mod reports;
 pub mod schedule;
 pub mod sessions;
+pub mod settings;
 pub mod syncjob;
 pub mod synclog;
 pub mod syncsummary;

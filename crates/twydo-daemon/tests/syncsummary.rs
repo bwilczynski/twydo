@@ -163,3 +163,64 @@ fn detail_is_capped() {
     assert_eq!(d.chars().count(), 300);
     assert!(d.ends_with('…'));
 }
+
+#[test]
+fn failure_detail_never_carries_credentials_or_paths() {
+    let mut s = well();
+    s.last_error = Some(
+        "error: Unexpected status 401 for https://alice:s3cret@dav.example.net/private/dav/ (see \
+         http://dav.example.net:8080/cal/alice/)."
+            .into(),
+    );
+    let detail = run(&s, 0).detail.unwrap();
+    for secret in ["alice", "s3cret", "/private", "/cal"] {
+        assert!(!detail.contains(secret), "{secret} in {detail}");
+    }
+    assert!(detail.contains("dav.example.net"), "{detail}");
+    assert!(detail.contains("dav.example.net:8080"), "{detail}");
+}
+
+#[test]
+fn discovery_detail_never_carries_credentials_or_paths() {
+    let mut s = well();
+    s.discovery_error = Some("cannot list https://bob@dav.example.net/home/bob/".into());
+    let detail = run(&s, 0).detail.unwrap();
+    assert!(!detail.contains("bob"), "{detail}");
+    assert!(detail.contains("dav.example.net"), "{detail}");
+}
+
+#[test]
+fn detail_redaction_survives_parentheses_and_apostrophes() {
+    for (err, secrets) in [
+        (
+            "failure https://alice:s3(cret@dav.example.net/private/dav/",
+            &["alice", "s3(cret", "/private"][..],
+        ),
+        (
+            "failure https://dav.example.net/cal/private(alice)/tasks/",
+            &["alice", "/tasks", "/cal"][..],
+        ),
+        (
+            "failure https://o'neil:pw@dav.example.net/o'neil/",
+            &["neil", "pw@"][..],
+        ),
+        ("(see https://dav.example.net/cal/x)", &["/cal"][..]),
+    ] {
+        let mut s = well();
+        s.last_error = Some(err.into());
+        let detail = run(&s, 0).detail.unwrap();
+        for secret in secrets {
+            assert!(!detail.contains(secret), "{secret} in {detail}");
+        }
+        assert!(detail.contains("dav.example.net"), "{detail}");
+    }
+}
+
+#[test]
+fn detail_redaction_fails_closed_on_an_odd_host() {
+    let mut s = well();
+    s.last_error = Some("failure https://dav.example.net%2Fprivate%2Falice/x".into());
+    let detail = run(&s, 0).detail.unwrap();
+    assert!(!detail.contains("alice"), "{detail}");
+    assert!(detail.contains("the server"), "{detail}");
+}

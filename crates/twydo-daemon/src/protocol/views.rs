@@ -88,6 +88,25 @@ pub struct ViewsGetResult {
     pub reminders: Option<RemindersSummary>,
 }
 
+/// `settings.get`: what a phone's Settings screen shows about its daemon.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SettingsGetResult {
+    /// The daemon's version.
+    pub version: String,
+    /// The protocol generation.
+    pub protocol: u32,
+    /// The CalDAV server's host, with the port when it is not the scheme's default; never the
+    /// username or path. Absent when sync is not configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    /// As in `views.get`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncSummary>,
+    /// As in `views.get`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reminders: Option<RemindersSummary>,
+}
+
 /// The notifier's failure, for a phone to show as a warning.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RemindersSummary {
