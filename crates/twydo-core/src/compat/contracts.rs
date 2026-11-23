@@ -138,6 +138,10 @@ contracts! {
     CompleteLateMonthly => Complete, "complete.late-monthly", "completing a monthly task after a missed occurrence";
     CompleteStartOffsets => Complete, "complete.start-offsets", "completing a repeating task with a start date or alerts";
     CompleteStartTime => Complete, "complete.start-time", "completing a repeating task with a start time";
+    CompleteRecurringProjectFromCompletion => Complete, "complete.recurring-project-from-completion", "completing a recurring project that repeats from completion";
+    CreateRecurringChecklistVariant => Create, "create.recurring-checklist-variant", "creating or converting a weekly, interval or ending recurring checklist";
+    CompleteRecurringChecklistVariant => Complete, "complete.recurring-checklist-variant", "completing a weekly, interval, after-done or ending recurring checklist";
+    SetRepeatFromCompletionStart => SetRepeat, "set-repeat.from-completion-start", "repeating from completion a task with a start date";
     CompleteUndo => Complete, "complete.undo", "undoing a completion";
     SetRepeatDays => SetRepeat, "set-repeat.days", "setting a repeat every few days";
     SetRepeatWeeks => SetRepeat, "set-repeat.weeks", "setting a weekly repeat";

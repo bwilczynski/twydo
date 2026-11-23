@@ -633,3 +633,35 @@ twydo_to_iphone = "pass"
 iphone_to_twydo = "pass"
 evidence = ["complete/standalone-lifecycle", "create/family-roundtrip"]
 notes = "Reasserts the known TaskType encoding and stamps; structural and identity checks still apply."
+
+[[contract]]
+id = "complete.recurring-project-from-completion"
+iphone_baseline = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+
+[[contract]]
+id = "create.recurring-checklist-variant"
+iphone_baseline = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+
+[[contract]]
+id = "complete.recurring-checklist-variant"
+iphone_baseline = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+
+[[contract]]
+id = "set-repeat.from-completion-start"
+iphone_baseline = "unverified"
+twydo_to_iphone = "unverified"
+iphone_to_twydo = "unverified"
+evidence = []
+notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
