@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2](https://github.com/bwilczynski/twydo/compare/v0.7.1...v0.7.2) - 2026-11-23
+
+### Added
+
+- *(gateway)* send today's open count with each push
+- *(daemon)* pass today's open count to the notification command
+- *(daemon)* add settings.get for the phone's settings screen
+- *(gateway)* let phones read settings.get
+- *(web)* move reminders into a settings screen
+- *(web)* new app icon
+- *(web)* keep the app badge at today's open count
+- *(web)* set the app badge from reminder pushes
+
 ## [0.7.1](https://github.com/bwilczynski/twydo/compare/v0.7.0...v0.7.1) - 2026-11-22
 
 ### Added
