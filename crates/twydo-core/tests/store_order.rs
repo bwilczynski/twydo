@@ -454,8 +454,26 @@ fn queued_insert_and_reorder_recover_partial_application_idempotently() {
             panic!()
         };
         let mut e = prepared.entry;
-        assert!(e.family.is_some());
-        assert!(!e.holds.is_empty());
+        let family = e.family.as_ref().unwrap();
+        assert_eq!(prepared.family.as_ref(), Some(family));
+        assert_eq!(prepared.holds, e.holds);
+        assert_eq!(family.parent_uid, p);
+        let before = env.files();
+        let mut members: std::collections::BTreeSet<_> = before.keys().cloned().collect();
+        if insert {
+            members.insert(format!("list1/{}.ics", e.uids[0]));
+        }
+        assert_eq!(family.loaded, members);
+        let expected_holds: std::collections::BTreeMap<_, _> = before
+            .into_iter()
+            .filter(|(path, _)| !e.writes.iter().any(|w| &w.path == path))
+            .collect();
+        let actual_holds = e
+            .holds
+            .iter()
+            .map(|(path, bytes)| (path.clone(), bytes.as_bytes().to_vec()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(actual_holds, expected_holds);
         e.stage = Stage::Prepared;
         Journal::open(&env.state).unwrap().prepare(&e).unwrap();
         let w = &e.writes[0];
