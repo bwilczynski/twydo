@@ -1,0 +1,19 @@
+<!-- Twydo app icon source. Render:
+     for s in 180:apple-touch-icon 192:icon-192 512:icon-512; do
+       rsvg-convert -w ${s%%:*} -h ${s%%:*} -b '#0060df' web/icons/icon.svg -o web/public/icons/${s#*:}.png
+     done
+     Full-bleed and opaque: iOS and Android round the corners themselves. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b9bff"/>
+      <stop offset="1" stop-color="#0060df"/>
+    </linearGradient>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#002a66" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#tile)"/>
+  <path d="M300 540 L450 690 L740 360" fill="none" stroke="#ffffff" stroke-width="116"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#lift)"/>
+</svg>
