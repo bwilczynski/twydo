@@ -69,29 +69,30 @@ impl Planner<'_> {
                 }
             }
         }
+        let created = create(collection, &new, &cal)?;
+        let families = self.reparent_families(snap, i, p, &created.path, &new, collection)?;
         Ok(Plan {
             reads: PlanReads {
+                families,
                 journal: JournalReads::Holds,
                 ..Default::default()
             },
             kind: "reparent",
-            uids: vec![uid.into(), new.clone()],
-            writes: vec![create(collection, &new, &cal)?, target.remove()],
+            uids: vec![uid.into(), new],
+            writes: vec![created, target.remove()],
             holds,
         })
     }
 
-    pub(super) fn reparent_families(
+    fn reparent_families(
         &self,
         snap: &Snapshot,
-        uid: &str,
-        parent: Option<&str>,
-        plan: &Plan,
+        i: usize,
+        destination: Option<usize>,
+        created: &str,
+        new: &str,
+        collection: &str,
     ) -> Result<Vec<FamilyGuard>, WriteError> {
-        let i = snap.find(uid).unwrap();
-        let destination = parent.and_then(|p| snap.find(p));
-        let created = &plan.writes[0];
-        let new = &plan.uids[1];
         let mut guards = Vec::new();
         let mut seen = BTreeSet::new();
         for p in snap
@@ -103,32 +104,22 @@ impl Planner<'_> {
             if !seen.insert(p) {
                 continue;
             }
-            let mut loaded = BTreeSet::new();
-            for n in std::iter::once(p).chain(snap.children(p).iter().copied()) {
-                loaded.insert(self.rel(&snap.tasks[n].path)?);
-            }
-            // The old and new leaf share any retained internal identity. Both
-            // paths belong to this operation, including during partial recovery.
+            let mut guard = self.loaded_family(snap, p)?;
             if Some(p) == destination || p == i {
-                loaded.insert(created.path.clone());
+                guard.loaded.insert(created.to_owned());
             }
-            guards.push(FamilyGuard {
-                collection: snap.tasks[p].collection.clone(),
-                parent_uid: snap.tasks[p].uid.clone(),
-                parent_aliases: crate::gate::relationships::aliases(&snap.tasks[p]),
-                loaded,
-            });
+            guards.push(guard);
         }
         guards.push(FamilyGuard {
-            collection: created.path.split('/').next().unwrap().into(),
-            parent_uid: new.clone(),
+            collection: collection.into(),
+            parent_uid: new.into(),
             parent_aliases: {
                 let mut aliases = crate::gate::relationships::aliases(&snap.tasks[i]);
-                aliases.remove(uid);
-                aliases.insert(new.clone());
+                aliases.remove(&snap.tasks[i].uid);
+                aliases.insert(new.into());
                 aliases
             },
-            loaded: BTreeSet::from([self.rel(&snap.tasks[i].path)?, created.path.clone()]),
+            loaded: BTreeSet::from([self.rel(&snap.tasks[i].path)?, created.to_owned()]),
         });
         Ok(guards)
     }

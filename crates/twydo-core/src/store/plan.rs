@@ -53,22 +53,13 @@ pub(super) fn plan_in(
     let today = now.with_timezone(&snap.tz()).date_naive();
     let planner = Planner { vdir, policy };
     planner.gate(snap, op, today)?;
-    let mut plan = planner.plan(snap, op, now)?;
-    let holds = std::mem::take(&mut plan.holds);
-    let mut family = plan.reads.family.take();
-    if let Op::Move { uid, .. }
-    | Op::Save {
-        uid, to: Some(_), ..
-    } = op
-    {
-        let idx = snap.find(uid).expect("gate checked move target");
-        let mut source = planner.loaded_family(snap, idx)?;
-        source
-            .loaded
-            .extend(plan.writes.iter().map(|w| w.path.clone()));
-        family = Some(source);
-    }
-    let families = planner.relocation_families(snap, op, &plan, family.as_ref())?;
+    let plan = planner.plan(snap, op, now)?;
+    let holds = plan.holds;
+    let PlanReads {
+        family,
+        families,
+        journal,
+    } = plan.reads;
     let entry = Entry {
         format: FORMAT,
         id: new_op_id(now),
@@ -80,11 +71,11 @@ pub(super) fn plan_in(
         from_queue: None,
         request: None,
         synced: None,
-        holds: match plan.reads.journal {
+        holds: match journal {
             JournalReads::None => Vec::new(),
             JournalReads::Holds | JournalReads::FamilyAndHolds => holds.clone(),
         },
-        family: match plan.reads.journal {
+        family: match journal {
             JournalReads::FamilyAndHolds => family.clone(),
             JournalReads::None | JournalReads::Holds => None,
         },
@@ -117,6 +108,7 @@ pub(super) enum JournalReads {
 #[derive(Default)]
 pub(super) struct PlanReads {
     pub(super) family: Option<FamilyGuard>,
+    pub(super) families: Vec<FamilyGuard>,
     pub(super) journal: JournalReads,
 }
 
@@ -372,6 +364,7 @@ impl Planner<'_> {
             plan.reads = PlanReads {
                 family: Some(family),
                 journal: JournalReads::FamilyAndHolds,
+                ..Default::default()
             };
         } else if Self::checklist_schedule(&snap.tasks[idx], changes) {
             self.hold_unwritten_members(snap, idx, &mut plan)?;
@@ -380,6 +373,32 @@ impl Planner<'_> {
             plan.reads.family = Some(self.loaded_family(snap, idx)?);
         }
         Ok(plan)
+    }
+
+    fn move_writes(
+        &self,
+        snap: &Snapshot,
+        idx: usize,
+        to: &str,
+        new_head: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Plan, WriteError> {
+        let uid = &snap.tasks[idx].uid;
+        let target = self.target(snap, uid)?;
+        if target.collection == to {
+            return Err(EditError::Unsupported(format!("task is already in {to}")).into());
+        }
+        if !snap.children(idx).is_empty() {
+            return self.plan_family_move(snap, idx, target, to, new_head, now);
+        }
+        let copy = create(to, new_head, &moved_copy(&target.cal, new_head, None, now)?)?;
+        Ok(Plan {
+            reads: Default::default(),
+            kind: "move",
+            uids: vec![uid.clone(), new_head.into()],
+            writes: vec![copy, target.remove()],
+            holds: Vec::new(),
+        })
     }
 
     /// A save (kind "save"): the edit's writes, then the move's, planned on the edited files.
@@ -419,11 +438,8 @@ impl Planner<'_> {
             plan.writes = part.writes;
             plan.holds = part.holds;
         }
-        let mv = Op::Move {
-            uid: uid.to_string(),
-            to: to.to_string(),
-        };
-        let part = self.plan(&edited, &mv, now)?;
+        let new_head = new_uid();
+        let part = self.move_writes(&edited, idx, to, &new_head, now)?;
         for w in part.writes {
             match plan.writes.iter().position(|e| e.path == w.path) {
                 Some(k) => {
@@ -449,7 +465,7 @@ impl Planner<'_> {
             self.hold_unwritten_members(snap, idx, &mut plan)?;
             plan.reads.journal = JournalReads::FamilyAndHolds;
         }
-        Ok(plan)
+        self.with_move_guards(snap, idx, to, new_head, plan)
     }
 
     pub(super) fn plan(
@@ -558,23 +574,10 @@ impl Planner<'_> {
                 parent,
             } => self.plan_reparent(snap, uid, collection, parent.as_deref(), now)?,
             Op::Move { uid, to } => {
-                // H5 as captured: a new resource under a new UID, then the source removed.
-                let t = self.target(snap, uid)?;
-                if &t.collection == to {
-                    return Err(EditError::Unsupported(format!("task is already in {to}")).into());
-                }
-                if let Some(i) = parent(uid) {
-                    return self.plan_family_move(snap, i, t, to, now);
-                }
-                let new = new_uid();
-                let copy = create(to, &new, &moved_copy(&t.cal, &new, None, now)?)?;
-                Plan {
-                    reads: Default::default(),
-                    kind: "move",
-                    uids: vec![uid.clone(), new],
-                    writes: vec![copy, t.remove()],
-                    holds: Vec::new(),
-                }
+                let idx = snap.find(uid).expect("gate checked move target");
+                let new_head = new_uid();
+                let plan = self.move_writes(snap, idx, to, &new_head, now)?;
+                self.with_move_guards(snap, idx, to, new_head, plan)?
             }
             Op::Save { uid, changes, to } => {
                 self.plan_save(snap, uid, changes, to.as_deref(), now)?
