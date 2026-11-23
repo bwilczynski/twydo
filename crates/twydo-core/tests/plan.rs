@@ -6,7 +6,7 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use twydo_core::compat::Matrix;
 use twydo_core::config::WriteMode;
-use twydo_core::edit::{Change, Op};
+use twydo_core::edit::{Change, NewTask, Op};
 use twydo_core::gate;
 use twydo_core::store::WriteError;
 use twydo_core::store::plan::{Policy, plan};
@@ -118,4 +118,99 @@ fn plan_matches_store_prepare() {
     let journal = env.journal();
     assert_eq!(journal.len(), 1);
     assert_eq!(journal[0].writes, prepared.entry.writes);
+}
+
+#[test]
+fn create_and_delete_declare_exact_queue_and_journal_dependencies() {
+    use std::collections::BTreeSet;
+
+    let env = Env::new(WriteMode::Verified, "insert/project-items/created/list1");
+    let snap = env.snap();
+    let parent = "5def84c9a3234ad3bd16e9f3ecd76225";
+    let parent_idx = snap.find(parent).unwrap();
+    let members: Vec<_> = std::iter::once(&parent_idx)
+        .chain(snap.children(parent_idx))
+        .map(|&i| &snap.tasks[i])
+        .collect();
+    let child = &members[1].uid;
+    let policy = Policy {
+        matrix: Matrix::embedded(),
+        mode: WriteMode::Verified,
+    };
+    let new = NewTask::plain("list1", "Synthetic task");
+    let standalone = plan(&snap, &Op::Create(new.clone()), policy, now()).unwrap();
+    assert!(standalone.family.is_none() && standalone.entry.family.is_none());
+    assert!(standalone.holds.is_empty() && standalone.entry.holds.is_empty());
+    assert!(standalone.families.is_empty() && standalone.entry.families.is_empty());
+
+    let append = Op::Create(NewTask {
+        parent: Some(parent.into()),
+        ..new
+    });
+    for (op, held) in [
+        (append, members.clone()),
+        (
+            Op::Delete { uid: child.clone() },
+            members
+                .iter()
+                .copied()
+                .filter(|t| t.uid != *child)
+                .collect(),
+        ),
+        (Op::Delete { uid: parent.into() }, Vec::new()),
+    ] {
+        let prepared = plan(&snap, &op, policy, now()).unwrap();
+        let entry = &prepared.entry;
+        assert_eq!(prepared.family, entry.family);
+        assert_eq!(prepared.holds, entry.holds);
+        assert!(prepared.families.is_empty() && entry.families.is_empty());
+        let family = entry.family.as_ref().unwrap();
+        assert_eq!(family.collection, "list1");
+        assert_eq!(family.parent_uid, parent);
+        assert!(family.parent_aliases.contains(parent));
+        let mut paths: BTreeSet<_> = members
+            .iter()
+            .map(|t| format!("list1/{}.ics", t.uid))
+            .collect();
+        if matches!(op, Op::Create(_)) {
+            paths.insert(format!("list1/{}.ics", entry.uids[0]));
+        }
+        assert_eq!(family.loaded, paths);
+        let expected: BTreeSet<_> = held
+            .iter()
+            .map(|t| {
+                (
+                    format!("list1/{}.ics", t.uid),
+                    std::fs::read_to_string(&t.path).unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            entry.holds.iter().cloned().collect::<BTreeSet<_>>(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn deleting_a_standalone_task_guards_against_its_first_child() {
+    let env = Env::new(WriteMode::Verified, FIXTURE);
+    let prepared = plan(
+        &env.snap(),
+        &Op::Delete { uid: A.into() },
+        Policy {
+            matrix: Matrix::embedded(),
+            mode: WriteMode::Verified,
+        },
+        now(),
+    )
+    .unwrap();
+    assert_eq!(prepared.family, prepared.entry.family);
+    let family = prepared.family.unwrap();
+    assert_eq!(family.parent_uid, A);
+    assert_eq!(
+        family.loaded,
+        std::collections::BTreeSet::from([format!("list1/{A}.ics")])
+    );
+    assert!(prepared.holds.is_empty() && prepared.entry.holds.is_empty());
 }
