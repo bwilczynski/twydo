@@ -80,17 +80,14 @@ impl Planner<'_> {
     /// complete, reopen, move and delete, a checklist's date change and a change of type
     /// (also as part of a save); `None` otherwise.
     pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
-        if matches!(op, Op::Reparent { .. }) {
-            return Ok(None);
-        }
         let uid = match op {
-            Op::Reparent { .. } => unreachable!(),
+            Op::Reparent { .. } | Op::Reorder { .. } | Op::CreateAt { .. } => return Ok(None),
             Op::Complete { uid }
             | Op::Reopen { uid }
             | Op::Move { uid, .. }
             | Op::Delete { uid } => uid,
-            Op::Edit { uid, .. } | Op::Reorder { uid, .. } => uid,
-            Op::Create(task) | Op::CreateAt { task, .. } => match &task.parent {
+            Op::Edit { uid, .. } => uid,
+            Op::Create(task) => match &task.parent {
                 Some(parent) => parent,
                 None => return Ok(None),
             },
@@ -117,7 +114,7 @@ impl Planner<'_> {
         let text_head = self.text_edit_head(snap, op);
         let idx = if let Some(head) = text_head {
             head
-        } else if matches!(op, Op::Delete { .. } | Op::Reorder { .. }) {
+        } else if matches!(op, Op::Delete { .. }) {
             snap.parent(idx).unwrap_or(idx)
         } else {
             idx
@@ -292,6 +289,7 @@ impl Planner<'_> {
             writes.push(c.target.update(&cal)?);
         }
         Ok(Plan {
+            durable_family: None,
             kind: "complete",
             uids,
             writes,
@@ -323,6 +321,7 @@ impl Planner<'_> {
             writes.push(c.target.update(&cal)?);
         }
         Ok(Plan {
+            durable_family: None,
             kind: "reopen",
             uids,
             writes,
@@ -367,6 +366,7 @@ impl Planner<'_> {
         writes.push(p.remove());
         writes.extend(children.into_iter().map(|c| c.target.remove()));
         Ok(Plan {
+            durable_family: None,
             kind: "move",
             uids,
             writes,
@@ -401,6 +401,7 @@ impl Planner<'_> {
             writes.push(child.target.update(&cal)?);
         }
         Ok(Plan {
+            durable_family: None,
             kind: "edit",
             uids,
             writes,
@@ -422,6 +423,7 @@ impl Planner<'_> {
             writes.push(c.target.remove());
         }
         Ok(Plan {
+            durable_family: None,
             kind: "delete",
             uids,
             writes,
@@ -486,6 +488,7 @@ fn plan_recurring_complete(
     }
     writes.extend(updates);
     Ok(Plan {
+        durable_family: None,
         kind: "complete",
         uids,
         writes,

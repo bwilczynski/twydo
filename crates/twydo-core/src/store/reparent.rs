@@ -70,6 +70,7 @@ impl Planner<'_> {
             }
         }
         Ok(Plan {
+            durable_family: None,
             kind: "reparent",
             uids: vec![uid.into(), new.clone()],
             writes: vec![create(collection, &new, &cal)?, target.remove()],

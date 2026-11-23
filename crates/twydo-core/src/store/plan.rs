@@ -7,7 +7,7 @@ use std::path::{Component, Path};
 
 use chrono::{DateTime, Utc};
 
-use super::journal::{Entry, FORMAT, Stage, Write, new_op_id};
+use super::journal::{Entry, FORMAT, FamilyGuard, Stage, Write, new_op_id};
 use super::queue::Prepared;
 use super::{WriteError, io_error, parent_json_uid};
 use crate::compat::Matrix;
@@ -65,17 +65,13 @@ pub(super) fn plan_in(
         }
     }
     let member_parent = match op {
-        Op::Create(n) | Op::CreateAt { task: n, .. } => {
-            n.parent.as_deref().and_then(|uid| snap.find(uid))
+        Op::Create(n) => n.parent.as_deref().and_then(|uid| snap.find(uid)),
+        Op::Edit { uid, .. } | Op::Save { uid, .. } | Op::Delete { uid } => {
+            snap.find(uid).and_then(|i| snap.parent(i))
         }
-        Op::Edit { uid, .. }
-        | Op::Save { uid, .. }
-        | Op::Delete { uid }
-        | Op::Reorder { uid, .. } => snap.find(uid).and_then(|i| snap.parent(i)),
         _ => None,
     };
-    let creating_item =
-        matches!(op, Op::Create(_) | Op::CreateAt { .. }) && member_parent.is_some();
+    let creating_item = matches!(op, Op::Create(_)) && member_parent.is_some();
     let checklist_schedule = match op {
         Op::Edit { uid, changes } | Op::Save { uid, changes, .. } => {
             snap.find(uid)
@@ -106,7 +102,9 @@ pub(super) fn plan_in(
             }
         }
     }
-    let durable_holds = text_head.is_some()
+    let declared_family = plan.durable_family.is_some();
+    let durable_holds = declared_family
+        || text_head.is_some()
         || checklist_schedule
         || matches!(
             op,
@@ -114,11 +112,14 @@ pub(super) fn plan_in(
         )
         || member_parent.is_some_and(|p| {
             creating_item
-                || matches!(op, Op::Reorder { .. } | Op::Delete { .. })
+                || matches!(op, Op::Delete { .. })
                 || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
                     && snap.tasks[p].rrule.is_some())
         });
-    let mut family = planner.family_of(snap, op)?;
+    let mut family = match plan.durable_family.take() {
+        Some(family) => Some(family),
+        None => planner.family_of(snap, op)?,
+    };
     let relocating = matches!(op, Op::Move { .. } | Op::Save { to: Some(_), .. });
     if (creating_item || relocating)
         && let Some(family) = family.as_mut()
@@ -146,17 +147,12 @@ pub(super) fn plan_in(
         } else {
             Vec::new()
         },
-        family: if text_head.is_some()
+        family: if declared_family
+            || text_head.is_some()
             || checklist_schedule
             || (durable_holds
-                && matches!(
-                    op,
-                    Op::Create(_)
-                        | Op::CreateAt { .. }
-                        | Op::Reorder { .. }
-                        | Op::Delete { .. }
-                        | Op::Reopen { .. }
-                )) {
+                && matches!(op, Op::Create(_) | Op::Delete { .. } | Op::Reopen { .. }))
+        {
             family.clone()
         } else {
             None
@@ -180,6 +176,9 @@ pub(super) struct Planner<'a> {
 
 /// The parts of a journal entry an operation produces.
 pub(super) struct Plan {
+    /// When supplied by the planner, preserve this membership and all its byte holds
+    /// through queueing, journal recovery and inverses.
+    pub(super) durable_family: Option<FamilyGuard>,
     pub(super) kind: &'static str,
     pub(super) uids: Vec<String>,
     pub(super) writes: Vec<Write>,
@@ -300,6 +299,7 @@ impl Planner<'_> {
         now: DateTime<Utc>,
     ) -> Result<Plan, WriteError> {
         let mut plan = Plan {
+            durable_family: None,
             kind: "save",
             uids: Vec::new(),
             writes: Vec::new(),
@@ -360,6 +360,7 @@ impl Planner<'_> {
         now: DateTime<Utc>,
     ) -> Result<Plan, WriteError> {
         let one = |kind, uid: &String, w| Plan {
+            durable_family: None,
             kind,
             uids: vec![uid.clone()],
             writes: vec![w],
@@ -470,6 +471,7 @@ impl Planner<'_> {
                         (live, Some(copy)) => {
                             let copy = create(&t.collection, &copy_uid, &copy)?;
                             Plan {
+                                durable_family: None,
                                 kind: "complete",
                                 uids: vec![uid.clone(), copy_uid],
                                 writes: vec![copy, t.update(&live)?],
@@ -511,6 +513,7 @@ impl Planner<'_> {
                 let new = new_uid();
                 let copy = create(to, &new, &moved_copy(&t.cal, &new, None, now)?)?;
                 Plan {
+                    durable_family: None,
                     kind: "move",
                     uids: vec![uid.clone(), new],
                     writes: vec![copy, t.remove()],
