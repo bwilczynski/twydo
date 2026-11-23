@@ -80,11 +80,11 @@ evidence = ["complete/checklist-and-until"]
 
 [[contract]]
 id = "set-repeat.project"
-iphone_baseline = "unverified"
+iphone_baseline = "pass"
 twydo_to_iphone = "pass"
-iphone_to_twydo = "unverified"
-evidence = ["set-repeat/encoding-roundtrip"]
-notes = "Phone-originated project repeat changes remain unverified."
+iphone_to_twydo = "pass"
+evidence = ["set-repeat/encoding-roundtrip", "set-repeat/project-roundtrip"]
+notes = "Repeat round 2026-11-23: phone and Twydo project repeat changes, including after completion."
 
 [[contract]]
 id = "set-repeat.recurring-project-item"
@@ -96,11 +96,11 @@ notes = "Membership and independently recurring child repeat changes remain unve
 
 [[contract]]
 id = "set-repeat.checklist-interval"
-iphone_baseline = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Candidate only; requires all three affirmative observations even in test mode."
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/checklist-variants"]
+notes = "Repeat round 2026-11-23: every-2-weeks checklist created and completed both ways; interval edits write the same fields."
 
 [[contract]]
 id = "create.task"
@@ -636,32 +636,32 @@ notes = "Reasserts the known TaskType encoding and stamps; structural and identi
 
 [[contract]]
 id = "complete.recurring-project-from-completion"
-iphone_baseline = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/project-from-completion"]
+notes = "Repeat round 2026-11-23: after-done project twins completed on the phone and in Twydo match."
 
 [[contract]]
 id = "create.recurring-checklist-variant"
-iphone_baseline = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/checklist-variants"]
+notes = "Repeat round 2026-11-23: weekly/interval/after-done/until checklists, created and converted by Twydo, shown by the phone."
 
 [[contract]]
 id = "complete.recurring-checklist-variant"
-iphone_baseline = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/checklist-variants"]
+notes = "Repeat round 2026-11-23: checklist variant twins completed on the phone and in Twydo match."
 
 [[contract]]
 id = "set-repeat.from-completion-start"
-iphone_baseline = "unverified"
-twydo_to_iphone = "unverified"
-iphone_to_twydo = "unverified"
-evidence = []
-notes = "Candidate for the 2026-11-23 repeat round (docs/superpowers/specs/2026-11-23-repeat-unblock-design.md)."
+iphone_baseline = "pass"
+twydo_to_iphone = "pass"
+iphone_to_twydo = "pass"
+evidence = ["complete/from-completion-start"]
+notes = "Repeat round 2026-11-23: after-done task with a date-only start, completion twins match."

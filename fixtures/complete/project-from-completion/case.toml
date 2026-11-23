@@ -1,0 +1,45 @@
+claim = "Completing a project that repeats every 3 months after completion advances it from the completion day, copies the family and reopens its items, identically on the phone and in Twydo."
+origin = "device"
+observed = "Phone completed P1a and Twydo completed twin P1b on 2026-11-23: live due 2027-02-23, a completed copy of the project and both items, live items reopened. Field-by-field equal apart from identities and stamps; the phone showed P1b like P1a."
+supports = ["complete.recurring-project-from-completion"]
+tests = ["crates/twydo-core/tests/repeat_round.rs::twin_p1_after_done_project_matches_the_phone", "crates/twydo-core/tests/gate.rs::after_done_project_completion_needs_its_contract"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-23 repeat round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."twydo-seeded"]
+path = "twydo-seeded"
+collections = ["list1"]
+members = ["list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Twydo seeded P1a/b, P2, C1a/b-C3a/b, T1a/b with items via seed.sh"
+device = "twydo"
+captured_at = "2026-11-23T19:47:34.565632+00:00"
+
+[states."phone-completed"]
+path = "phone-completed"
+collections = ["list1"]
+members = ["list1/445897cd8a924697a817796f316cad98.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/8b35a41e9d174ba2ae141a254c33a1ee.ics", "list1/8e6abd2fba99473f84c89765deed37a3.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Phone completed P1a, C1a, C2a, C3a, T1a on 2026-11-23"
+device = "iphone"
+captured_at = "2026-11-23T19:59:06.236529+00:00"
+
+[states."twydo-completed"]
+path = "twydo-completed"
+collections = ["list1"]
+members = ["list1/445897cd8a924697a817796f316cad98.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/68f8ea9daf7041ff81a062e72f5900ee.ics", "list1/8196902e55074aeda7972d36718a3a08.ics", "list1/8b35a41e9d174ba2ae141a254c33a1ee.ics", "list1/8e6abd2fba99473f84c89765deed37a3.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/d177108fe6564fe6be449ce1ab3a4e26.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Twydo completed P1b, C1b, C2b, C3b, T1b (--all) on 2026-11-23"
+device = "twydo"
+captured_at = "2026-11-23T19:59:24.716517+00:00"
+
+[states."phone-checked"]
+path = "phone-checked"
+collections = ["list1"]
+members = ["list1/445897cd8a924697a817796f316cad98.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/68f8ea9daf7041ff81a062e72f5900ee.ics", "list1/8196902e55074aeda7972d36718a3a08.ics", "list1/8b35a41e9d174ba2ae141a254c33a1ee.ics", "list1/8e6abd2fba99473f84c89765deed37a3.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/d177108fe6564fe6be449ce1ab3a4e26.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Phone inspected P1b, C1b, C2b, C3b, T1b: each matches its a twin (user)"
+device = "iphone"
+captured_at = "2026-11-23T20:02:01.495774+00:00"

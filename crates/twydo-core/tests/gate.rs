@@ -613,7 +613,7 @@ fn no_new_item_under_a_closed_parent() {
 #[test]
 fn embedded_verified_keeps_uncaptured_repeat_contexts_refused() {
     let s = snap();
-    let m = Matrix::embedded();
+    let m = &crate::pre_round();
     let due = Change::Due(Some(Due::Date(date(2026, 11, 10))));
     let at = |op: &Op| check(&s, m, WriteMode::Verified, op, today());
     for (uid, text) in [
@@ -837,7 +837,7 @@ const RP: &str = "c3e14351e7f745b4a713b0c5e64bb8fd";
 #[test]
 fn embedded_verified_refuses_completing_a_recurring_project_with_an_end_or_from_completion() {
     let (tmp, s) = session_snap();
-    let m = Matrix::embedded();
+    let m = &crate::pre_round();
     assert_eq!(
         check(&s, m, WriteMode::Verified, &complete(RP), today()),
         Ok(())
@@ -1065,7 +1065,7 @@ mod recurrence_phone_captures {
             .unwrap()
             .0
             .clone();
-        let mut matrix = Matrix::embedded().clone();
+        let mut matrix = crate::pre_round();
         matrix
             .contract
             .iter_mut()
@@ -1170,8 +1170,9 @@ mod verified_recurrence_shapes {
             )],
         }
     }
+    // The boundaries pinned here predate the repeat round, which widened checklist rules.
     fn promoted() -> Matrix {
-        Matrix::embedded().clone()
+        crate::pre_round()
     }
 
     #[test]
@@ -1440,7 +1441,7 @@ mod verified_recurrence_shapes {
         assert!(
             gate::check(
                 &snap,
-                Matrix::embedded(),
+                &crate::pre_round(),
                 WriteMode::Verified,
                 &Op::Complete { uid: FC.into() },
                 now().date_naive()
@@ -1466,7 +1467,7 @@ mod verified_recurrence_shapes {
             assert!(
                 gate::check(
                     &snap,
-                    Matrix::embedded(),
+                    &crate::pre_round(),
                     WriteMode::Verified,
                     &Op::Reopen {
                         uid: history.into()
@@ -1484,7 +1485,7 @@ mod verified_recurrence_shapes {
         assert!(
             gate::check(
                 &family.snap(),
-                Matrix::embedded(),
+                &crate::pre_round(),
                 WriteMode::Verified,
                 &Op::Reopen {
                     uid: "14b5a37a52224e8c959b5002e2275fc9".into()
@@ -1770,7 +1771,7 @@ mod recurring_checklist_writes {
     fn verified_checklist_rows_allow_only_captured_creation_and_text_conversion() {
         let e = env("phone-create-convert/list1");
         let s = e.snap();
-        let m = Matrix::embedded().clone();
+        let m = crate::pre_round();
         for op in [
             Op::Create(parent()),
             Op::Create(NewTask {
@@ -2085,7 +2086,7 @@ mod recurring_checklist_writes {
             "complete/checklist-and-until/first-phone-actions/list1",
         );
         let s = e.snap();
-        let mut candidate = Matrix::embedded().clone();
+        let mut candidate = crate::pre_round();
         let row = candidate
             .contract
             .iter_mut()
@@ -2116,11 +2117,11 @@ mod recurring_checklist_writes {
         );
         // The shipping matrix has no interval evidence and refuses both representations.
         assert!(
-            check(&s, Matrix::embedded(), WriteMode::Verified, &cli, today()).is_err(),
+            check(&s, &crate::pre_round(), WriteMode::Verified, &cli, today()).is_err(),
             "shipping CLI interval"
         );
         assert!(
-            check(&s, Matrix::embedded(), WriteMode::Verified, &card, today()).is_err(),
+            check(&s, &crate::pre_round(), WriteMode::Verified, &card, today()).is_err(),
             "shipping card interval"
         );
 
@@ -2170,7 +2171,7 @@ mod recurring_checklist_writes {
             "complete/checklist-and-until/first-phone-actions/list1",
         );
         let s = e.snap();
-        let mut candidate = Matrix::embedded().clone();
+        let mut candidate = crate::pre_round();
         let row = candidate
             .contract
             .iter_mut()
@@ -2208,7 +2209,7 @@ mod recurring_checklist_writes {
         assert_eq!(
             check(
                 &s,
-                Matrix::embedded(),
+                &crate::pre_round(),
                 WriteMode::Verified,
                 &weekly,
                 today()
@@ -2219,7 +2220,7 @@ mod recurring_checklist_writes {
             assert!(
                 check(
                     &s,
-                    Matrix::embedded(),
+                    &crate::pre_round(),
                     mode,
                     &edit(FC, vec![Change::RepeatInterval(2)]),
                     today()
@@ -3623,6 +3624,24 @@ fn candidate() -> Matrix {
     m
 }
 
+/// The shipped matrix as it was before the repeat round: its six rows unverified. Tests of
+/// the boundaries the round moved keep their pre-round statement on this matrix.
+fn pre_round() -> Matrix {
+    use twydo_core::compat::{ContractId as C, Verdict};
+    let mut m = Matrix::embedded().clone();
+    for id in [
+        C::SetRepeatProject,
+        C::SetRepeatChecklistInterval,
+        C::CompleteRecurringProjectFromCompletion,
+        C::CreateRecurringChecklistVariant,
+        C::CompleteRecurringChecklistVariant,
+        C::SetRepeatFromCompletionStart,
+    ] {
+        common::set_contract(&mut m, id, Verdict::Unverified);
+    }
+    m
+}
+
 /// Session B's `RP` with `rrule` (none for a plain project) and its completion anchor.
 fn rp_with(rrule: Option<&str>, from_completion: bool) -> (tempfile::TempDir, Snapshot) {
     let (tmp, mut s) = session_snap();
@@ -3673,7 +3692,7 @@ mod project_repeat_round {
                 allowed,
                 "{ctx}"
             );
-            let shipped = check(&s, Matrix::embedded(), WriteMode::Verified, &op, today());
+            let shipped = check(&s, &crate::pre_round(), WriteMode::Verified, &op, today());
             assert!(shipped.is_err(), "shipped matrix admits {ctx}");
         }
     }
@@ -3698,7 +3717,7 @@ mod project_repeat_round {
         assert_eq!(
             check(
                 &s,
-                Matrix::embedded(),
+                &crate::pre_round(),
                 WriteMode::Verified,
                 &complete(RP),
                 today()
@@ -3716,7 +3735,7 @@ mod project_repeat_round {
             Ok(())
         );
         let (_tmp, s) = rp_with(Some("FREQ=MONTHLY;COUNT=3"), true);
-        for m in [Matrix::embedded(), &candidate()] {
+        for m in [&crate::pre_round(), &candidate()] {
             assert_eq!(
                 check(&s, m, WriteMode::Verified, &complete(RP), today()),
                 blocked(PROJECT_FC_END)
@@ -3841,7 +3860,7 @@ mod checklist_variant_round {
                 "{text} day {day}"
             );
             assert_eq!(
-                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_ok(),
+                check(&s, &crate::pre_round(), WriteMode::Verified, &op, today()).is_ok(),
                 text == "monthly",
                 "shipped {text} day {day}"
             );
@@ -3854,7 +3873,7 @@ mod checklist_variant_round {
             check(&s, &candidate(), WriteMode::Verified, &op, today()),
             Ok(())
         );
-        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+        assert!(check(&s, &crate::pre_round(), WriteMode::Verified, &op, today()).is_err());
     }
 
     #[test]
@@ -3873,7 +3892,7 @@ mod checklist_variant_round {
                 "{rrule}"
             );
             assert!(
-                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err(),
+                check(&s, &crate::pre_round(), WriteMode::Verified, &op, today()).is_err(),
                 "shipped {rrule}"
             );
             let p = idx(&s, FC);
@@ -3891,7 +3910,7 @@ mod checklist_variant_round {
         let mut s = family_env().snap();
         reshaped(&mut s, FC, "FREQ=WEEKLY;INTERVAL=2", false);
         let op = edit(FC, vec![Change::RepeatInterval(3)]);
-        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+        assert!(check(&s, &crate::pre_round(), WriteMode::Verified, &op, today()).is_err());
         assert_eq!(
             check(&s, &candidate(), WriteMode::Verified, &op, today()),
             Ok(())
@@ -3916,7 +3935,7 @@ mod checklist_variant_round {
             "twydo-p8-c29-d",
             vec![Change::Repeat(Some(repeat("3m after done")))],
         );
-        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+        assert!(check(&s, &crate::pre_round(), WriteMode::Verified, &op, today()).is_err());
         assert_eq!(
             check(&s, &candidate(), WriteMode::Verified, &op, today()),
             Ok(())
@@ -3925,7 +3944,7 @@ mod checklist_variant_round {
             date(2026, 12, 7).and_hms_opt(9, 0, 0).unwrap(),
         ));
         set_meta(&mut s.tasks[i], &[("StartDate", 1_796_634_000)]);
-        for m in [Matrix::embedded(), &candidate()] {
+        for m in [&crate::pre_round(), &candidate()] {
             assert!(check(&s, m, WriteMode::Verified, &op, today()).is_err());
         }
     }
