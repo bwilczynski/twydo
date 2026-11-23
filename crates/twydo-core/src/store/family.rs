@@ -23,7 +23,6 @@ use super::plan::{Plan, Planner, Target, create};
 use super::{WriteError, Writer};
 
 use super::journal::{FamilyGuard as Family, check_family};
-use crate::edit::Op;
 use crate::edit::{
     Change, apply_changes, complete_member, complete_one_time, complete_recurring,
     drop_member_dates, member_copy, moved_copy, new_uid, reopen_member, reopen_one_time,
@@ -70,64 +69,27 @@ impl Planner<'_> {
     }
 
     /// Persist both source and destination membership for queue, recovery and inverses.
-    pub(super) fn relocation_families(
+    pub(super) fn with_move_guards(
         &self,
         snap: &Snapshot,
-        op: &Op,
-        plan: &Plan,
-        source: Option<&Family>,
-    ) -> Result<Vec<Family>, WriteError> {
-        if let Op::Reparent { uid, parent, .. } = op {
-            return self.reparent_families(snap, uid, parent.as_deref(), plan);
-        }
-        let uid = match op {
-            Op::Move { uid, .. }
-            | Op::Save {
-                uid, to: Some(_), ..
-            } => uid,
-            _ => return Ok(Vec::new()),
-        };
-        let Some(source) = source else {
-            return Ok(Vec::new());
-        };
-        let first = plan
-            .writes
-            .iter()
-            .find(|w| w.before.is_none() && w.after.is_some())
-            .expect("a move creates its destination first");
-        let cal = ical::parse(first.after.as_ref().unwrap().as_bytes())
-            .map_err(|e| super::io_error(std::io::ErrorKind::InvalidData, e.to_string()))?;
-        let new_uid = cal
-            .root
-            .children_named("VTODO")
-            .next()
-            .unwrap()
-            .prop("UID")
-            .unwrap()
-            .value
-            .clone();
-        let collection = first.path.split('/').next().unwrap().to_string();
-        let mut loaded: BTreeSet<String> = plan
-            .writes
-            .iter()
-            .filter(|w| w.before.is_none())
-            .map(|w| w.path.clone())
-            .collect();
-        loaded.extend(source.loaded.iter().cloned());
-        let mut parent_aliases =
-            crate::gate::relationships::aliases(&snap.tasks[snap.find(uid).unwrap()]);
-        parent_aliases.remove(uid);
-        parent_aliases.insert(new_uid.clone());
-        let guards = vec![
-            source.clone(),
-            Family {
-                collection,
-                parent_uid: new_uid,
-                parent_aliases,
-                loaded,
-            },
-        ];
-        Ok(guards)
+        idx: usize,
+        to: &str,
+        new_head: String,
+        mut plan: Plan,
+    ) -> Result<Plan, WriteError> {
+        // Both guards recognize every path this move may already have written on replay.
+        let mut source = self.loaded_family(snap, idx)?;
+        source
+            .loaded
+            .extend(plan.writes.iter().map(|w| w.path.clone()));
+        let mut destination = source.clone();
+        destination.collection = to.into();
+        destination.parent_aliases.remove(&source.parent_uid);
+        destination.parent_aliases.insert(new_head.clone());
+        destination.parent_uid = new_head;
+        plan.reads.families = vec![source.clone(), destination];
+        plan.reads.family = Some(source);
+        Ok(plan)
     }
 
     fn children(&self, snap: &Snapshot, idx: usize) -> Result<Vec<Child>, WriteError> {
@@ -244,28 +206,23 @@ impl Planner<'_> {
         idx: usize,
         p: Target,
         to: &str,
+        new_parent: &str,
         now: DateTime<Utc>,
     ) -> Result<Plan, WriteError> {
-        let new_parent = new_uid();
-        let mut uids = vec![snap.tasks[idx].uid.clone(), new_parent.clone()];
+        let mut uids = vec![snap.tasks[idx].uid.clone(), new_parent.to_owned()];
         let mut writes = vec![create(
             to,
-            &new_parent,
-            &moved_copy(&p.cal, &new_parent, None, now)?,
+            new_parent,
+            &moved_copy(&p.cal, new_parent, None, now)?,
         )?];
         let children = self.children(snap, idx)?;
         let json_parent = super::parent_json_uid(snap, &snap.tasks[idx].uid)
             .filter(|u| u != &snap.tasks[idx].uid)
-            .unwrap_or_else(|| new_parent.clone());
+            .unwrap_or_else(|| new_parent.to_owned());
         for c in &children {
             let new = new_uid();
-            let copy = crate::edit::moved_member_copy(
-                &c.target.cal,
-                &new,
-                &new_parent,
-                &json_parent,
-                now,
-            )?;
+            let copy =
+                crate::edit::moved_member_copy(&c.target.cal, &new, new_parent, &json_parent, now)?;
             writes.push(create(to, &new, &copy)?);
             uids.push(c.uid.clone());
             uids.push(new);
