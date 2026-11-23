@@ -27,7 +27,7 @@ use crate::protocol::reports::{CheckReport, CheckReportParams, ExportResult};
 use crate::protocol::rpc::ErrorKind;
 use crate::protocol::sync::{SyncRunParams, SyncSetAutoParams, SyncSetAutoResult, SyncStopResult};
 use crate::protocol::tasks::{TasksFormParams, TasksFormResult, TasksGetParams, TasksGetResult};
-use crate::protocol::views::{ViewsGetParams, ViewsGetResult, ViewsListResult};
+use crate::protocol::views::{SettingsGetResult, ViewsGetParams, ViewsGetResult, ViewsListResult};
 use crate::protocol::wire::WireSnapshot;
 
 /// An empty params or result object.
@@ -86,6 +86,7 @@ pub const METHODS: &[MethodSpec] = &[
         of::<ViewsGetParams>,
         of::<ViewsGetResult>,
     ),
+    m("settings.get", false, of::<Empty>, of::<SettingsGetResult>),
     m(
         "tasks.get",
         false,

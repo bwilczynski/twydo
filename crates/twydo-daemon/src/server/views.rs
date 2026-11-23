@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde_json::Value;
 use twydo_core::ical::value::{IcalDateTime, Resolved};
@@ -19,8 +19,9 @@ use super::admin::unresolved_conflict_uids;
 use super::syncsummary::summary;
 use crate::protocol::rpc::{ErrorKind, RpcError};
 use crate::protocol::views::{
-    CaptureTarget, RemindersSummary, RowList, RowParent, SectionKey, ViewName, ViewRow,
-    ViewSection, ViewsEntry, ViewsGetParams, ViewsGetResult, ViewsListItem, ViewsListResult,
+    CaptureTarget, RemindersSummary, RowList, RowParent, SectionKey, SyncSummary, ViewName,
+    ViewRow, ViewSection, ViewsEntry, ViewsGetParams, ViewsGetResult, ViewsListItem,
+    ViewsListResult,
 };
 
 /// Check the params and map them to a core view.
@@ -119,11 +120,7 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         })
         .collect();
 
-    let status = shared.publisher.status();
-    let reminders = status
-        .as_ref()
-        .and_then(|s| s.notifier_error.clone())
-        .map(|error| RemindersSummary { error });
+    let (sync, reminders) = status_summaries(shared, snap, now.fixed_offset());
     let result = ViewsGetResult {
         epoch: shared.epoch.clone(),
         revision,
@@ -133,14 +130,29 @@ pub fn get(shared: &Arc<Shared>, p: ViewsGetParams) -> Result<Value, RpcError> {
         open_count: counts(snap, &view, now).total,
         capture,
         sections,
-        sync: status.and_then(|s| {
-            let conflicts = s.conflicts;
-            s.sync
-                .map(|v| summary(&v, conflicts, now.fixed_offset(), &list_name))
-        }),
+        sync,
         reminders,
     };
     serde_json::to_value(result).map_err(internal)
+}
+
+/// The sync and reminders summaries a phone shows, from the published status.
+pub(crate) fn status_summaries(
+    shared: &Arc<Shared>,
+    snap: &Snapshot,
+    now: DateTime<FixedOffset>,
+) -> (Option<SyncSummary>, Option<RemindersSummary>) {
+    let status = shared.publisher.status();
+    let reminders = status
+        .as_ref()
+        .and_then(|s| s.notifier_error.clone())
+        .map(|error| RemindersSummary { error });
+    let sync = status.and_then(|s| {
+        let conflicts = s.conflicts;
+        s.sync
+            .map(|v| summary(&v, conflicts, now, &|id: &str| list_name(snap, id)))
+    });
+    (sync, reminders)
 }
 
 /// A list's display name, falling back to its id.

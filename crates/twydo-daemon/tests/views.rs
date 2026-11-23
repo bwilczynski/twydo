@@ -16,8 +16,8 @@ use twydo_core::views::{
 use twydo_daemon::protocol::methods::DaemonInfo;
 use twydo_daemon::protocol::rpc::ErrorKind;
 use twydo_daemon::protocol::views::{
-    SectionKey, ViewName, ViewsEntry, ViewsGetParams, ViewsGetResult, ViewsListItem,
-    ViewsListResult,
+    SectionKey, SettingsGetResult, ViewName, ViewsEntry, ViewsGetParams, ViewsGetResult,
+    ViewsListItem, ViewsListResult,
 };
 use twydo_daemon::protocol::wire::WireSnapshot;
 use twydo_daemon::server::schedule::Clock;
@@ -667,4 +667,89 @@ fn row_shows_a_start_later_today_with_its_time() {
     let td = start(&fx, |_| {});
     let v = get(&td, "inbox");
     assert_eq!(row(&v, "tyre").start.as_deref(), Some("Today 15:00"));
+}
+
+fn settings(td: &TestDaemon) -> SettingsGetResult {
+    td.client().call("settings.get", json!({})).unwrap()
+}
+
+#[test]
+fn settings_without_sync() {
+    let fx = fx();
+    let td = start(&fx, |_| {});
+    let s = settings(&td);
+    let info: DaemonInfo = td.client().call("daemon.info", json!({})).unwrap();
+    assert_eq!(s.version, info.version);
+    assert_eq!(s.protocol, 4);
+    assert_eq!(s.server, None);
+    assert_eq!(s.sync, None);
+    assert_eq!(s.reminders, None);
+}
+
+#[test]
+fn settings_with_sync() {
+    let fx = fx();
+    let mut cfg = fx.with_sync("exit 0");
+    cfg.sync.as_mut().unwrap().url = "https://user@dav.example.net/dav/".into();
+    let status = twydo_core::sync::status::SyncStatus {
+        // Far ahead of the test clock, so no background run replaces it.
+        next_attempt: Some(Utc.with_ymd_and_hms(2026, 11, 18, 0, 0, 0).unwrap()),
+        ..Default::default()
+    };
+    status.save(&fx.state()).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |o| o.clock = morning());
+    let s = settings(&td);
+    assert_eq!(s.server.as_deref(), Some("dav.example.net"));
+    assert!(s.sync.is_some());
+    assert_eq!(s.sync, get(&td, "inbox").sync);
+}
+
+#[test]
+fn settings_carry_the_notifier_error() {
+    let fx = Fixture::new(&[]);
+    fx.write_reminder("inbox/r1.ics", "r1", "Ping", "20261117T090000");
+    let sink = std::sync::Arc::new(common::RecordingSink::default());
+    sink.fail.store(true, std::sync::atomic::Ordering::SeqCst);
+    let mut cfg = fx.config();
+    cfg.timezone = Some("UTC".into());
+    cfg.morning_time = chrono::NaiveTime::from_hms_opt(23, 0, 0).unwrap();
+    let s2 = std::sync::Arc::clone(&sink);
+    let td = TestDaemon::start_cfg(&fx, cfg, move |o| {
+        o.clock = morning();
+        o.notify = Some(s2 as std::sync::Arc<dyn twydo_daemon::server::notifier::Sink>);
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let reminders = loop {
+        if let Some(r) = settings(&td).reminders {
+            break r;
+        }
+        assert!(std::time::Instant::now() < deadline, "no reminders summary");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(!reminders.error.is_empty());
+}
+
+#[test]
+fn settings_never_carry_sync_credentials() {
+    let fx = fx();
+    let mut cfg = fx.with_sync("exit 0");
+    cfg.sync.as_mut().unwrap().url = "https://alice:s3cret@dav.example.net/private/dav/".into();
+    let status = twydo_core::sync::status::SyncStatus {
+        last_error: Some(
+            "Unexpected status 401 for https://alice:s3(cret@dav.example.net/private(alice)/dav/"
+                .into(),
+        ),
+        failures: 1,
+        // Far ahead of the test clock, so no background run replaces it.
+        next_attempt: Some(Utc.with_ymd_and_hms(2026, 11, 18, 0, 0, 0).unwrap()),
+        ..Default::default()
+    };
+    status.save(&fx.state()).unwrap();
+    let td = TestDaemon::start_cfg(&fx, cfg, |o| o.clock = morning());
+    let raw: serde_json::Value = td.client().call("settings.get", json!({})).unwrap();
+    let text = raw.to_string();
+    for secret in ["alice", "s3cret", "s3(cret", "/private", "/dav"] {
+        assert!(!text.contains(secret), "{secret} in {text}");
+    }
+    assert!(text.contains("dav.example.net"), "{text}");
 }

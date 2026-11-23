@@ -164,6 +164,7 @@ pub fn dispatch(
         }
         "views.list" => super::views::list(shared),
         "views.get" => super::views::get(shared, parse(params)?),
+        "settings.get" => super::settings::get(shared),
         "tasks.get" => super::tasks::get(shared, parse(params)?),
         "tasks.form" => super::tasks::form(shared, parse(params)?),
         "snapshot.get" => to_result(&shared.publisher.current().1.wire),

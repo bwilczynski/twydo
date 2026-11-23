@@ -65,7 +65,8 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   groups follow the daemon's clock in the configured timezone (`now`, `today`). A client that
   writes from a view sends `based_on` built from the result's `epoch` and `revision`. The result
   also carries `sync` (absent without `[sync]`): `attention`, a `headline`, an optional `detail`
-  (at most 300 characters) and `last_success`. `attention` is true when sync needs a person: a
+  (at most 300 characters; any URL in it is cut to its host, so no username, password or
+  path reaches a phone) and `last_success`. `attention` is true when sync needs a person: a
   failing sync, failed list discovery, a list emptied and not applied (with the
   `tdo sync --force-delete` command), conflicts or automatic sync off. It informs only.
   `reminders` (`{error}`) is present while the notifier cannot deliver; `error` is the daemon's
@@ -88,6 +89,10 @@ The result has `daemon` (its version), `protocol`, `epoch`, `session` and `vdir`
   colour) and null for Today, All, Scheduled, Done and Next 3 Days.
   `open_count` and `due_count` are the counts the TUI sidebar shows: the open tasks, and those
   due today or overdue.
+- `settings.get` takes no parameters and returns what a phone's Settings screen shows: the
+  daemon's `version`, the `protocol` generation, `server` (the CalDAV server's host, with the
+  port only when it is not the scheme's default; never the username, path or credentials;
+  absent without `[sync]`), and `sync` and `reminders` exactly as `views.get` carries them.
 - `tasks.get` takes `{uid}` and returns one task worded for a thin client's task screen, with
   `epoch`, `revision`, `now` and `today` as `views.get` has. `task` carries the title, the shown
   `kind` (a plain task with items is a `project`), its `list`, relative `due` and `start` (the

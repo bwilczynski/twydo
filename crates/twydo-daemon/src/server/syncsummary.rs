@@ -5,6 +5,7 @@ use chrono::{DateTime, FixedOffset};
 
 use crate::protocol::methods::{SyncView, WireCollState};
 use crate::protocol::views::SyncSummary;
+use crate::server::settings::server_host;
 
 /// Longest detail, in characters, so an error text cannot flood a phone.
 const DETAIL_MAX: usize = 300;
@@ -27,6 +28,36 @@ fn cap(text: String) -> String {
     out
 }
 
+/// Every http(s) URL in `text` cut to its host, so a raw sync error never shows a phone the
+/// CalDAV username, password or path.
+fn redact_urls(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let at = ["http://", "https://"]
+            .iter()
+            .filter_map(|p| lower[i..].find(p).map(|j| i + j))
+            .min();
+        let Some(start) = at else {
+            out.push_str(&text[i..]);
+            break;
+        };
+        out.push_str(&text[i..start]);
+        // A URL runs to whitespace or a character never legal in one: `(` and `'` are legal
+        // in userinfo and paths, so they never end it.
+        let end = text[start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '<' | '>' | '`'))
+            .map_or(text.len(), |j| start + j);
+        // Sentence punctuation after a URL stays; only the host of what precedes it is shown.
+        let url = text[start..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', '\'']);
+        out.push_str(&server_host(url).unwrap_or_else(|| "the server".into()));
+        out.push_str(&text[start + url.len()..end]);
+        i = end;
+    }
+    out
+}
+
 pub fn summary(
     sync: &SyncView,
     conflicts: usize,
@@ -36,7 +67,7 @@ pub fn summary(
     let attention = |headline: String, detail: String| SyncSummary {
         attention: true,
         headline,
-        detail: Some(cap(detail)),
+        detail: Some(cap(redact_urls(&detail))),
         last_success: sync.last_success,
     };
     let discovery_in_error = sync
