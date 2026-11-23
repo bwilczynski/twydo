@@ -208,3 +208,20 @@ The round only observes those pieces combined on a family.
 ## Left to the builder
 - Exact due dates for the seeds (day 1–28, a future date so the twins advance identically).
 - Test layout, following the existing gate and `edit_complete.rs` twin tests.
+
+## Round results
+
+The round ran on 2026-11-23 (2Do 3.8 on the iPhone, production account, synthetic "Twydo test"
+list, renamed `list1` in the fixtures). Every question passed; all six rows are `pass`.
+
+- Q1/Q2 (`set-repeat/project-roundtrip`): the phone showed Twydo-edited P1a/P1b as every 3 months
+  after completion. The phone's P2 change wrote `FREQ=MONTHLY;INTERVAL=3`, `RecurrenceValue` 3,
+  `RecurrenceFrom` 2, the same as Twydo's P1; items unchanged. Its first save set only the anchor
+  (interval still 1), an intermediate state kept as `phone-p2-anchor`.
+- Q3 (`complete/project-from-completion`): P1a (phone) and P1b (Twydo) both advanced to
+  2027-02-23 with a completed family copy and reopened items; equal field by field.
+- Q4 (`complete/checklist-variants`): C1 every 2 weeks 2026-12-03 → 2026-12-17, C2 (converted)
+  3 months after done → 2027-02-23, C3 ending on its due completed in place; twins equal.
+- Q4b (`complete/from-completion-start`): T1 due 2026-12-10, start 2026-12-07 → due 2027-02-23,
+  start 2027-02-20: the start moves by the due's days, as Twydo already did.
+- Q5: the phone showed every Twydo-completed twin like its phone-completed twin.

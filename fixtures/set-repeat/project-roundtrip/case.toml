@@ -1,0 +1,37 @@
+claim = "Changing a project's repeat to every 3 months after completion, on the phone or by a Twydo edit, writes the same encoding and keeps the project's items and links."
+origin = "device"
+observed = "Twydo edited plain monthly projects P1a/P1b to 3m after done; the phone showed them as every 3 months after completion. The phone changed plain monthly P2 first to after completion (interval still 1: RecurrenceFrom 2, RecurrenceValue 1), then to every 3 months: FREQ=MONTHLY;INTERVAL=3, RecurrenceValue 3, RecurrenceFrom 2, the same as Twydo's P1. Items unchanged."
+supports = ["set-repeat.project"]
+tests = ["crates/twydo-core/tests/repeat_round.rs::project_repeat_set_on_the_phone_reads_as_3m_after_done", "crates/twydo-core/tests/gate.rs::project_repeat_transitions_follow_the_captured_table"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-23 repeat round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."twydo-seeded"]
+path = "twydo-seeded"
+collections = ["list1"]
+members = ["list1/3ffd78c3af534f14bec0180a67236491.ics", "list1/5be4e9bdf27a448fb35d71d8255aae10.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/e4574f24ac1e4fb18bc2f1ea3fe4bbc7.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Twydo seeded P1a/b, P2, C1a/b-C3a/b, T1a/b with items via seed.sh"
+device = "twydo"
+captured_at = "2026-11-23T19:47:34.565632+00:00"
+
+[states."phone-p2-anchor"]
+path = "phone-p2-anchor"
+collections = ["list1"]
+members = ["list1/3ffd78c3af534f14bec0180a67236491.ics", "list1/5be4e9bdf27a448fb35d71d8255aae10.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/e4574f24ac1e4fb18bc2f1ea3fe4bbc7.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Phone: viewed P1a/P1b (every 3 months after completion); P2 set to from completion, interval still 1"
+device = "iphone"
+captured_at = "2026-11-23T19:57:43.552866+00:00"
+
+[states."phone-p2-and-view"]
+path = "phone-p2-and-view"
+collections = ["list1"]
+members = ["list1/3ffd78c3af534f14bec0180a67236491.ics", "list1/5be4e9bdf27a448fb35d71d8255aae10.ics", "list1/5f859941416442bf8edb0bf891520cb8.ics", "list1/c511b26ff399443eaa1801c2db191199.ics", "list1/c8a98f04b85840e6a808896916e1456b.ics", "list1/c99d955f09064717b1dfc59c39d688c4.ics", "list1/e4574f24ac1e4fb18bc2f1ea3fe4bbc7.ics", "list1/ecad991a776c42d9bb212d80176f04fc.ics", "list1/fffab9653a674abca7cbcd154d21aef3.ics"]
+action = "Phone: P2 changed to every 3 months from completion"
+device = "iphone"
+captured_at = "2026-11-23T19:57:53.723275+00:00"

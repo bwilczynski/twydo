@@ -2830,6 +2830,12 @@ fn checklist_interval_capability_cli_and_card_are_equivalent() {
         row.iphone_baseline = Verdict::Pass;
         row.twydo_to_iphone = Verdict::Pass;
         row.iphone_to_twydo = Verdict::Pass;
+        // The interval row alone; completing a variant checklist has its own row.
+        common::set_contract(
+            &mut matrix,
+            twydo_core::compat::ContractId::CompleteRecurringChecklistVariant,
+            Verdict::Unverified,
+        );
         let mut store = e.store(matrix.clone());
         let changes = if card {
             vec![Change::Repeat(

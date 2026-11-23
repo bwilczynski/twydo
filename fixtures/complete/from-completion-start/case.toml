@@ -1,0 +1,45 @@
+claim = "Completing a task that repeats every 3 months after completion with a date-only start moves the start by the due's days, keeping its gap, identically on the phone and in Twydo."
+origin = "device"
+observed = "T1a (phone) and T1b (Twydo), due 2026-12-10 with start 2026-12-07, completed on 2026-11-23: due 2027-02-23, StartDate 2027-02-20T00:00Z, a completed copy keeping the old dates. Field-by-field equal apart from identities and stamps."
+supports = ["set-repeat.from-completion-start"]
+tests = ["crates/twydo-core/tests/repeat_round.rs::twin_t1_after_done_with_start_matches_the_phone", "crates/twydo-core/tests/gate.rs::after_done_with_start_needs_its_contract"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-23 repeat round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."twydo-seeded"]
+path = "twydo-seeded"
+collections = ["list1"]
+members = ["list1/64b25f8a414840f79634d4d116c35f10.ics", "list1/d47489e33b1e4c40b46cb238f9fc98d5.ics"]
+action = "Twydo seeded P1a/b, P2, C1a/b-C3a/b, T1a/b with items via seed.sh"
+device = "twydo"
+captured_at = "2026-11-23T19:47:34.565632+00:00"
+
+[states."phone-completed"]
+path = "phone-completed"
+collections = ["list1"]
+members = ["list1/1b87dfec5894407c82bca068b51e883e.ics", "list1/64b25f8a414840f79634d4d116c35f10.ics", "list1/d47489e33b1e4c40b46cb238f9fc98d5.ics"]
+action = "Phone completed P1a, C1a, C2a, C3a, T1a on 2026-11-23"
+device = "iphone"
+captured_at = "2026-11-23T19:59:06.236529+00:00"
+
+[states."twydo-completed"]
+path = "twydo-completed"
+collections = ["list1"]
+members = ["list1/1b87dfec5894407c82bca068b51e883e.ics", "list1/64b25f8a414840f79634d4d116c35f10.ics", "list1/6e785584d32641db911308ec1ce5e839.ics", "list1/d47489e33b1e4c40b46cb238f9fc98d5.ics"]
+action = "Twydo completed P1b, C1b, C2b, C3b, T1b (--all) on 2026-11-23"
+device = "twydo"
+captured_at = "2026-11-23T19:59:24.716517+00:00"
+
+[states."phone-checked"]
+path = "phone-checked"
+collections = ["list1"]
+members = ["list1/1b87dfec5894407c82bca068b51e883e.ics", "list1/64b25f8a414840f79634d4d116c35f10.ics", "list1/6e785584d32641db911308ec1ce5e839.ics", "list1/d47489e33b1e4c40b46cb238f9fc98d5.ics"]
+action = "Phone inspected P1b, C1b, C2b, C3b, T1b: each matches its a twin (user)"
+device = "iphone"
+captured_at = "2026-11-23T20:02:01.495774+00:00"

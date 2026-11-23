@@ -1,0 +1,45 @@
+claim = "Recurring checklists that repeat every 2 weeks, every 3 months after completion (converted from a task) or monthly until their due date complete identically on the phone and in Twydo."
+origin = "device"
+observed = "Phone completed C1a, C2a, C3a and Twydo completed twins C1b, C2b, C3b on 2026-11-23: C1 2026-12-03 -> 2026-12-17, C2 2026-12-10 -> 2027-02-23 (from completion), each with a completed family copy and reopened items; C3 (UNTIL 2026-12-10) completed in place with no next occurrence. Field-by-field equal apart from identities and stamps; the phone showed every b like its a. Item insertion under a variant: in twydo-seeded Twydo added item 1 and item 2 (Op::Create with parent) under each new C1-C3 checklist and completed item 1; the phone showed those families and its completions reset them, so adding an item under these variants rests on this observation."
+supports = ["create.recurring-checklist-variant", "complete.recurring-checklist-variant", "set-repeat.checklist-interval"]
+tests = ["crates/twydo-core/tests/repeat_round.rs::twin_c1_biweekly_checklist_matches_the_phone", "crates/twydo-core/tests/repeat_round.rs::twin_c2_after_done_checklist_matches_the_phone", "crates/twydo-core/tests/repeat_round.rs::twin_c3_ending_checklist_matches_the_phone", "crates/twydo-core/tests/gate.rs::checklist_variants_admit_only_the_composed_shapes"]
+
+[provenance]
+source_revision = "unknown"
+source_path = "private staging of the 2026-11-23 repeat round (production account, synthetic Twydo test list)"
+
+[environment]
+client_version = "2Do 3.8 (PRODID); iPhone OS version unknown"
+server_version = "unknown"
+
+[states."twydo-seeded"]
+path = "twydo-seeded"
+collections = ["list1"]
+members = ["list1/129a669b6a944fb28f0f643339728907.ics", "list1/22b956864227409fa93572d800fe814f.ics", "list1/272a3f701d4147c7900e87d5a13ae72c.ics", "list1/4270bbc2d9884499a91a98b8224ab667.ics", "list1/4a1b27dd57884d568f4bf4a5d42ce10c.ics", "list1/7567022228184e51a6e26f7d0f4095c3.ics", "list1/8c395f835f0144518d97ca065bff62b2.ics", "list1/9404e7ef908043eea8a379ebc9b8fc43.ics", "list1/ad20e262e69e4a3e905112e0c027fee1.ics", "list1/b41d0a85a25f4e219d52783579bbb048.ics", "list1/b6e18ea99a694e89ac63d8ee113be031.ics", "list1/b97bcb9acff149d7b4836ae7bee8a415.ics", "list1/c5a2fac4fa7c40528ef3de34ed29cb25.ics", "list1/d86f115384654291999f4a9e4f6e157f.ics", "list1/e225e254e32d43b0be57c7ae1f13ce06.ics", "list1/e50677ef80a34e6fb2cfcaa867f35f10.ics", "list1/eff3c8a4d16542d78c987c25a27b2dca.ics", "list1/f0b80a36a0364c1f8633526c2c37fbd4.ics"]
+action = "Twydo seeded P1a/b, P2, C1a/b-C3a/b, T1a/b with items via seed.sh"
+device = "twydo"
+captured_at = "2026-11-23T19:47:34.565632+00:00"
+
+[states."phone-completed"]
+path = "phone-completed"
+collections = ["list1"]
+members = ["list1/0cebfa3fbae946b084c671d9864491f6.ics", "list1/129a669b6a944fb28f0f643339728907.ics", "list1/22b956864227409fa93572d800fe814f.ics", "list1/272a3f701d4147c7900e87d5a13ae72c.ics", "list1/4270bbc2d9884499a91a98b8224ab667.ics", "list1/4a1b27dd57884d568f4bf4a5d42ce10c.ics", "list1/6b21f2d10a7644d09d1488e5722f3dd4.ics", "list1/7567022228184e51a6e26f7d0f4095c3.ics", "list1/8257bef620af431a8ec42e49fc5b2cef.ics", "list1/82b8a3dfb9c14a53b9955bc942a90638.ics", "list1/8c395f835f0144518d97ca065bff62b2.ics", "list1/9404e7ef908043eea8a379ebc9b8fc43.ics", "list1/ad20e262e69e4a3e905112e0c027fee1.ics", "list1/b41d0a85a25f4e219d52783579bbb048.ics", "list1/b6e18ea99a694e89ac63d8ee113be031.ics", "list1/b97bcb9acff149d7b4836ae7bee8a415.ics", "list1/ba73a05b0fe749b4967da37efbd461f0.ics", "list1/c5a2fac4fa7c40528ef3de34ed29cb25.ics", "list1/d86f115384654291999f4a9e4f6e157f.ics", "list1/e0fee666f6364e92ae7bc107ecc166d2.ics", "list1/e225e254e32d43b0be57c7ae1f13ce06.ics", "list1/e50677ef80a34e6fb2cfcaa867f35f10.ics", "list1/eff3c8a4d16542d78c987c25a27b2dca.ics", "list1/f0b80a36a0364c1f8633526c2c37fbd4.ics"]
+action = "Phone completed P1a, C1a, C2a, C3a, T1a on 2026-11-23"
+device = "iphone"
+captured_at = "2026-11-23T19:59:06.236529+00:00"
+
+[states."twydo-completed"]
+path = "twydo-completed"
+collections = ["list1"]
+members = ["list1/0cebfa3fbae946b084c671d9864491f6.ics", "list1/129a669b6a944fb28f0f643339728907.ics", "list1/22b956864227409fa93572d800fe814f.ics", "list1/23e67030f97a4cca882bc59fc6059980.ics", "list1/272a3f701d4147c7900e87d5a13ae72c.ics", "list1/4270bbc2d9884499a91a98b8224ab667.ics", "list1/4a1b27dd57884d568f4bf4a5d42ce10c.ics", "list1/6b21f2d10a7644d09d1488e5722f3dd4.ics", "list1/7567022228184e51a6e26f7d0f4095c3.ics", "list1/75bb7810fc4745ccad54885989e4f877.ics", "list1/7ea9cc53609446f8a26a39a8e761c9ab.ics", "list1/8257bef620af431a8ec42e49fc5b2cef.ics", "list1/82b8a3dfb9c14a53b9955bc942a90638.ics", "list1/8c395f835f0144518d97ca065bff62b2.ics", "list1/9404e7ef908043eea8a379ebc9b8fc43.ics", "list1/ac7824ef500445028127f94d15d58efe.ics", "list1/ad20e262e69e4a3e905112e0c027fee1.ics", "list1/b41d0a85a25f4e219d52783579bbb048.ics", "list1/b6e18ea99a694e89ac63d8ee113be031.ics", "list1/b97bcb9acff149d7b4836ae7bee8a415.ics", "list1/ba73a05b0fe749b4967da37efbd461f0.ics", "list1/c27e23f0eafc4524911b287a703ced10.ics", "list1/c5a2fac4fa7c40528ef3de34ed29cb25.ics", "list1/d613d5e088864584a0065dbe28b6ef48.ics", "list1/d86f115384654291999f4a9e4f6e157f.ics", "list1/e0fee666f6364e92ae7bc107ecc166d2.ics", "list1/e225e254e32d43b0be57c7ae1f13ce06.ics", "list1/e50677ef80a34e6fb2cfcaa867f35f10.ics", "list1/eff3c8a4d16542d78c987c25a27b2dca.ics", "list1/f0b80a36a0364c1f8633526c2c37fbd4.ics"]
+action = "Twydo completed P1b, C1b, C2b, C3b, T1b (--all) on 2026-11-23"
+device = "twydo"
+captured_at = "2026-11-23T19:59:24.716517+00:00"
+
+[states."phone-checked"]
+path = "phone-checked"
+collections = ["list1"]
+members = ["list1/0cebfa3fbae946b084c671d9864491f6.ics", "list1/129a669b6a944fb28f0f643339728907.ics", "list1/22b956864227409fa93572d800fe814f.ics", "list1/23e67030f97a4cca882bc59fc6059980.ics", "list1/272a3f701d4147c7900e87d5a13ae72c.ics", "list1/4270bbc2d9884499a91a98b8224ab667.ics", "list1/4a1b27dd57884d568f4bf4a5d42ce10c.ics", "list1/6b21f2d10a7644d09d1488e5722f3dd4.ics", "list1/7567022228184e51a6e26f7d0f4095c3.ics", "list1/75bb7810fc4745ccad54885989e4f877.ics", "list1/7ea9cc53609446f8a26a39a8e761c9ab.ics", "list1/8257bef620af431a8ec42e49fc5b2cef.ics", "list1/82b8a3dfb9c14a53b9955bc942a90638.ics", "list1/8c395f835f0144518d97ca065bff62b2.ics", "list1/9404e7ef908043eea8a379ebc9b8fc43.ics", "list1/ac7824ef500445028127f94d15d58efe.ics", "list1/ad20e262e69e4a3e905112e0c027fee1.ics", "list1/b41d0a85a25f4e219d52783579bbb048.ics", "list1/b6e18ea99a694e89ac63d8ee113be031.ics", "list1/b97bcb9acff149d7b4836ae7bee8a415.ics", "list1/ba73a05b0fe749b4967da37efbd461f0.ics", "list1/c27e23f0eafc4524911b287a703ced10.ics", "list1/c5a2fac4fa7c40528ef3de34ed29cb25.ics", "list1/d613d5e088864584a0065dbe28b6ef48.ics", "list1/d86f115384654291999f4a9e4f6e157f.ics", "list1/e0fee666f6364e92ae7bc107ecc166d2.ics", "list1/e225e254e32d43b0be57c7ae1f13ce06.ics", "list1/e50677ef80a34e6fb2cfcaa867f35f10.ics", "list1/eff3c8a4d16542d78c987c25a27b2dca.ics", "list1/f0b80a36a0364c1f8633526c2c37fbd4.ics"]
+action = "Phone inspected P1b, C1b, C2b, C3b, T1b: each matches its a twin (user)"
+device = "iphone"
+captured_at = "2026-11-23T20:02:01.495774+00:00"
