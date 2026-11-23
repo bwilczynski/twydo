@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, Utc};
 
-use super::journal::FamilyGuard;
 use super::plan::{Plan, Planner, create};
 use super::{WriteError, parent_json_uid};
 use crate::edit::{Due, EditError, Op, Placement, new_task, new_uid, touch};
@@ -138,21 +137,6 @@ impl Planner<'_> {
                 plan.uids.push(member.clone());
             }
         }
-        // Each sibling either kept its bytes or received a write. Include our own new
-        // path so a recovery that finds the insertion already on disk recognizes it.
-        let loaded = plan
-            .holds
-            .iter()
-            .map(|(path, _)| path.clone())
-            .chain(plan.writes.iter().map(|w| w.path.clone()))
-            .collect();
-        let parent = &snap.tasks[p];
-        plan.durable_family = Some(FamilyGuard {
-            collection: parent.collection.clone(),
-            parent_uid: parent.uid.clone(),
-            parent_aliases: crate::gate::relationships::aliases(parent),
-            loaded,
-        });
-        Ok(plan)
+        Ok(plan.with_family_guard(&snap.tasks[p]))
     }
 }
