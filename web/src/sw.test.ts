@@ -3,8 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 
 type Handler = (e: Record<string, unknown>) => void;
 
-function load() {
+type BadgeMode = "ok" | "missing" | "throws" | "rejects";
+
+function load(badge: BadgeMode = "ok") {
   const handlers: Record<string, Handler> = {};
+  const fail = () => {
+    if (badge === "throws") throw new Error("no badge");
+    return badge === "rejects" ? Promise.reject(new Error("no badge")) : Promise.resolve();
+  };
+  const setAppBadge = vi.fn(fail);
+  const clearAppBadge = vi.fn(fail);
   const showNotification = vi.fn(() => Promise.resolve());
   const openWindow = vi.fn(() => Promise.resolve());
   const matchAll = vi.fn(() => Promise.resolve([] as unknown[]));
@@ -13,6 +21,7 @@ function load() {
     registration: { showNotification },
     clients: { matchAll, openWindow, claim: () => Promise.resolve() },
     skipWaiting: () => {},
+    navigator: badge === "missing" ? {} : { setAppBadge, clearAppBadge },
   };
   const src = swSource;
   new Function("self", "caches", "location", src)(
@@ -20,7 +29,7 @@ function load() {
     {},
     { origin: "http://x" },
   );
-  return { handlers, showNotification, openWindow, matchAll };
+  return { handlers, showNotification, openWindow, matchAll, setAppBadge, clearAppBadge };
 }
 
 async function dispatch(h: Handler, extra: Record<string, unknown>) {
@@ -78,6 +87,52 @@ describe("service worker push", () => {
       expect(opts.body).toBeUndefined();
       expect(opts.tag).toBeUndefined();
       expect((opts.data as { uid?: string }).uid).toBeUndefined();
+    }
+  });
+
+  const withBadge = (badge: unknown) => ({
+    data: { json: () => ({ title: "Call", body: "10:00", key: "k1", uid: "u1", badge }) },
+  });
+  const shown = ["Call", { body: "10:00", tag: "k1", renotify: false, data: { uid: "u1" } }];
+
+  it("push_badge_sets_count", async () => {
+    const t = load();
+    await dispatch(t.handlers.push, withBadge(4));
+    expect(t.setAppBadge).toHaveBeenCalledWith(4);
+    expect(t.clearAppBadge).not.toHaveBeenCalled();
+    expect(t.showNotification).toHaveBeenCalledWith(...shown);
+  });
+
+  it("push_badge_zero_clears", async () => {
+    const t = load();
+    await dispatch(t.handlers.push, withBadge(0));
+    expect(t.clearAppBadge).toHaveBeenCalledTimes(1);
+    expect(t.setAppBadge).not.toHaveBeenCalled();
+  });
+
+  it("push_without_badge_leaves_it", async () => {
+    for (const badge of [undefined, -1, 1.5, "3", null, Number.NaN]) {
+      const t = load();
+      await dispatch(t.handlers.push, withBadge(badge));
+      expect(t.setAppBadge).not.toHaveBeenCalled();
+      expect(t.clearAppBadge).not.toHaveBeenCalled();
+      expect(t.showNotification).toHaveBeenCalledWith(...shown);
+    }
+  });
+
+  it("push_badge_api_missing_still_shows", async () => {
+    const t = load("missing");
+    await dispatch(t.handlers.push, withBadge(4));
+    expect(t.showNotification).toHaveBeenCalledWith(...shown);
+  });
+
+  it("push_badge_api_throwing_still_shows", async () => {
+    for (const mode of ["throws", "rejects"] as const) {
+      for (const n of [4, 0]) {
+        const t = load(mode);
+        await dispatch(t.handlers.push, withBadge(n));
+        expect(t.showNotification).toHaveBeenCalledWith(...shown);
+      }
     }
   });
 

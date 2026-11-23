@@ -48,6 +48,22 @@ self.addEventListener("fetch", (e) => {
   }
 });
 
+// The icon badge: Today's open count; 0 removes it. Never rejects, never throws: a badge
+// failure must not cost the notification.
+function badge(n) {
+  if (!Number.isInteger(n) || n < 0) return Promise.resolve();
+  try {
+    const nav = self.navigator;
+    const p =
+      n === 0
+        ? nav && nav.clearAppBadge && nav.clearAppBadge()
+        : nav && nav.setAppBadge && nav.setAppBadge(n);
+    return Promise.resolve(p).catch(() => {});
+  } catch {
+    return Promise.resolve();
+  }
+}
+
 // Web Push: show the reminder; a tap focuses the app on its task (or Today for the digest).
 self.addEventListener("push", (e) => {
   let p;
@@ -65,7 +81,10 @@ self.addEventListener("push", (e) => {
   if (text(o.key)) opts.tag = o.key;
   if (text(o.uid)) opts.data.uid = o.uid;
   e.waitUntil(
-    self.registration.showNotification(text(o.title) || "Twydo reminder", opts),
+    Promise.all([
+      badge(o.badge),
+      self.registration.showNotification(text(o.title) || "Twydo reminder", opts),
+    ]),
   );
 });
 
