@@ -18,6 +18,7 @@ use crate::edit::{
 };
 use crate::gate::{self, Blocked};
 use crate::ical::{self, Calendar};
+use crate::model::Task;
 use crate::model::meta_edit::MetaJson;
 use crate::views::Snapshot;
 
@@ -64,14 +65,16 @@ pub(super) fn plan_in(
             }
         }
     }
-    let member_parent = match op {
-        Op::Create(n) => n.parent.as_deref().and_then(|uid| snap.find(uid)),
-        Op::Edit { uid, .. } | Op::Save { uid, .. } | Op::Delete { uid } => {
-            snap.find(uid).and_then(|i| snap.parent(i))
-        }
-        _ => None,
+    let recurring_item_edit = match op {
+        Op::Edit { uid, .. } | Op::Save { uid, .. } => snap
+            .find(uid)
+            .and_then(|i| snap.parent(i))
+            .is_some_and(|p| {
+                snap.tasks[p].kind == crate::model::TaskKind::Checklist
+                    && snap.tasks[p].rrule.is_some()
+            }),
+        _ => false,
     };
-    let creating_item = matches!(op, Op::Create(_)) && member_parent.is_some();
     let checklist_schedule = match op {
         Op::Edit { uid, changes } | Op::Save { uid, changes, .. } => {
             snap.find(uid)
@@ -106,24 +109,14 @@ pub(super) fn plan_in(
     let durable_holds = declared_family
         || text_head.is_some()
         || checklist_schedule
-        || matches!(
-            op,
-            Op::Delete { .. } | Op::Reopen { .. } | Op::Reparent { .. }
-        )
-        || member_parent.is_some_and(|p| {
-            creating_item
-                || matches!(op, Op::Delete { .. })
-                || (snap.tasks[p].kind == crate::model::TaskKind::Checklist
-                    && snap.tasks[p].rrule.is_some())
-        });
+        || recurring_item_edit
+        || matches!(op, Op::Reopen { .. } | Op::Reparent { .. });
     let mut family = match plan.durable_family.take() {
         Some(family) => Some(family),
         None => planner.family_of(snap, op)?,
     };
     let relocating = matches!(op, Op::Move { .. } | Op::Save { to: Some(_), .. });
-    if (creating_item || relocating)
-        && let Some(family) = family.as_mut()
-    {
+    if relocating && let Some(family) = family.as_mut() {
         // Recovery may find our own create already on disk. It is a known member,
         // while any additional sibling must still make the snapshot stale.
         family
@@ -150,8 +143,7 @@ pub(super) fn plan_in(
         family: if declared_family
             || text_head.is_some()
             || checklist_schedule
-            || (durable_holds
-                && matches!(op, Op::Create(_) | Op::Delete { .. } | Op::Reopen { .. }))
+            || matches!(op, Op::Reopen { .. })
         {
             family.clone()
         } else {
@@ -185,6 +177,26 @@ pub(super) struct Plan {
     /// Loaded files the op reads but does not write (`rel`, loaded bytes): a family member
     /// left as it is. Each must still hold its bytes when the entry is applied.
     pub(super) holds: Vec<(String, String)>,
+}
+
+impl Plan {
+    /// For an operation whose holds and writes together cover one complete family.
+    /// Including a created path lets replay recognize an already-applied creation.
+    pub(super) fn with_family_guard(mut self, head: &Task) -> Self {
+        let loaded = self
+            .holds
+            .iter()
+            .map(|(path, _)| path.clone())
+            .chain(self.writes.iter().map(|w| w.path.clone()))
+            .collect();
+        self.durable_family = Some(FamilyGuard {
+            collection: head.collection.clone(),
+            parent_uid: head.uid.clone(),
+            parent_aliases: crate::gate::relationships::aliases(head),
+            loaded,
+        });
+        self
+    }
 }
 
 /// The loaded resource an operation targets.
@@ -372,11 +384,12 @@ impl Planner<'_> {
             Op::Reorder { .. } | Op::CreateAt { .. } => self.plan_order(snap, op, now)?,
             Op::Create(n) => {
                 let uid = new_uid();
+                let parent_idx = n.parent.as_deref().and_then(|uid| snap.find(uid));
                 let parent_json_uid = n.parent.as_deref().and_then(|p| parent_json_uid(snap, p));
                 // The C29 phone baseline copies a recurring checklist's due onto a
                 // newly added item. Its dates remain inherited, not independent input.
                 let mut inherited = n.clone();
-                if let Some(p) = n.parent.as_deref().and_then(|p| snap.find(p))
+                if let Some(p) = parent_idx
                     && snap.tasks[p].kind == crate::model::TaskKind::Checklist
                     && snap.tasks[p].rrule.is_some()
                     && let Some(crate::ical::value::IcalDateTime::Date(due)) = snap.tasks[p].due
@@ -384,7 +397,7 @@ impl Planner<'_> {
                     inherited.due = Some(crate::edit::Due::Date(due));
                 }
                 let mut cal = new_task(&inherited, &uid, parent_json_uid.as_deref(), now)?;
-                if let Some(p) = n.parent.as_deref().and_then(|p| snap.find(p)) {
+                if let Some(p) = parent_idx {
                     let kids = snap.children(p);
                     let count = i64::try_from(kids.len()).map_err(|_| {
                         io_error(
@@ -419,15 +432,12 @@ impl Planner<'_> {
                 }
                 let w = create(&n.collection, &uid, &cal)?;
                 let mut plan = one("create", &uid, w);
-                // The parent the gate checked must still be as loaded: not removed, nor
-                // turned into a task that cannot have items.
-                if let Some(p) = &n.parent {
-                    plan.holds.push(self.target(snap, p)?.hold());
-                    let idx = snap.find(p).expect("parent checked by gate");
-                    for &i in snap.children(idx) {
+                if let Some(idx) = parent_idx {
+                    for i in std::iter::once(idx).chain(snap.children(idx).iter().copied()) {
                         plan.holds
                             .push(self.target(snap, &snap.tasks[i].uid)?.hold());
                     }
+                    plan = plan.with_family_guard(&snap.tasks[idx]);
                 }
                 plan
             }
@@ -526,17 +536,19 @@ impl Planner<'_> {
             Op::Delete { uid } => {
                 let t = self.target(snap, uid)?;
                 let mut plan = one("delete", uid, t.remove());
-                if let Some(p) = snap.find(uid).and_then(|i| snap.parent(i)) {
+                let idx = snap.find(uid).expect("target exists");
+                let head = snap.parent(idx).unwrap_or(idx);
+                if head != idx {
                     // Preserve the loaded parent and siblings, including their schedules
                     // and states, until deletion commits under the shared lock.
-                    for &i in std::iter::once(&p).chain(snap.children(p)) {
+                    for &i in std::iter::once(&head).chain(snap.children(head)) {
                         if snap.tasks[i].uid != *uid {
                             plan.holds
                                 .push(self.target(snap, &snap.tasks[i].uid)?.hold());
                         }
                     }
                 }
-                plan
+                plan.with_family_guard(&snap.tasks[head])
             }
         })
     }

@@ -76,21 +76,19 @@ impl Planner<'_> {
         Some(snap.parent(idx).unwrap_or(idx))
     }
 
-    /// The task `op` acts on and the items loaded with it, for the rescan under the lock: every
-    /// complete, reopen, move and delete, a checklist's date change and a change of type
-    /// (also as part of a save); `None` otherwise.
+    /// Membership for edits, completion, reopening and moves. Creation, deletion and
+    /// ordering declare their own dependencies; reparenting uses multiple guards.
     pub(super) fn family_of(&self, snap: &Snapshot, op: &Op) -> Result<Option<Family>, WriteError> {
         let uid = match op {
-            Op::Reparent { .. } | Op::Reorder { .. } | Op::CreateAt { .. } => return Ok(None),
+            Op::Reparent { .. }
+            | Op::Reorder { .. }
+            | Op::CreateAt { .. }
+            | Op::Create(_)
+            | Op::Delete { .. } => return Ok(None),
             Op::Complete { uid }
             | Op::Reopen { uid }
             | Op::Move { uid, .. }
-            | Op::Delete { uid } => uid,
-            Op::Edit { uid, .. } => uid,
-            Op::Create(task) => match &task.parent {
-                Some(parent) => parent,
-                None => return Ok(None),
-            },
+            | Op::Edit { uid, .. } => uid,
             // A save's move rescans the whole family, which covers its edit; without one, its
             // edit may.
             Op::Save { uid, changes, to } => {
@@ -110,15 +108,8 @@ impl Planner<'_> {
         let Some(idx) = snap.find(uid) else {
             return Ok(None);
         };
-        // Individual deletion also depends on the loaded parent and sibling set.
         let text_head = self.text_edit_head(snap, op);
-        let idx = if let Some(head) = text_head {
-            head
-        } else if matches!(op, Op::Delete { .. }) {
-            snap.parent(idx).unwrap_or(idx)
-        } else {
-            idx
-        };
+        let idx = text_head.unwrap_or(idx);
         // Any task may have gained an item since the snapshot, even one that had none (an
         // empty checklist or project, or a plain task). An edit matters for a checklist's
         // dates, which its items follow, and for a change of type, which the gate allows or
@@ -428,7 +419,8 @@ impl Planner<'_> {
             uids,
             writes,
             holds: Vec::new(),
-        })
+        }
+        .with_family_guard(&snap.tasks[idx]))
     }
 }
 
