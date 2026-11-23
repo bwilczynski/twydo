@@ -178,6 +178,17 @@ Requirements and steps:
 - A failed push shows as a banner on the phone, and the daemon retries with a backoff.
 - Turn 2Do's own notifications off only after a test reminder has arrived.
 
+### The icon badge
+
+The Home Screen icon shows Today's open count, the number the Views tab shows for Today; at 0
+the badge is removed. The app sets it whenever it loads data, and each reminder push (the
+morning digest included) carries the count from the daemon (`TWYDO_TODAY_OPEN`). With the app
+closed, the badge changes only when a push arrives, so it can be stale between pushes, and for
+days when nothing is pushed: a morning with nothing due sends no digest, so a count from an
+earlier day stays until the app is opened or the next reminder. iOS shows a notification for
+every push, so there are no pushes only to update the badge. The badge needs
+the same notification permission as reminders.
+
 ## The sync warning
 
 When the daemon's sync needs attention (the server unreachable, a failing sync, a list that

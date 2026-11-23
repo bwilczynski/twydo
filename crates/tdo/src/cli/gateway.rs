@@ -11,6 +11,7 @@ use clap::{Subcommand, ValueEnum};
 use twydo_daemon::client::Client;
 use twydo_daemon::protocol::methods::HelloResult;
 use twydo_gateway::http::{ServeOptions, normalize_origin};
+use twydo_gateway::push::badge_from_env;
 use twydo_gateway::push::crypto::Payload;
 use twydo_gateway::push::send::{PushOptions, push};
 use twydo_gateway::state::{Role, StateError, Store};
@@ -194,6 +195,7 @@ pub fn run(state_dir: Option<&Path>, target: &Target, command: GatewayCommand) -
                 uid: std::env::var("TWYDO_REMINDER_UID")
                     .ok()
                     .filter(|u| !u.is_empty()),
+                badge: badge_from_env(std::env::var("TWYDO_TODAY_OPEN").ok().as_deref()),
             };
             let opts = PushOptions {
                 ca_file,
