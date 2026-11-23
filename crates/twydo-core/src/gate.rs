@@ -334,7 +334,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
         && (snap.tasks[i].kind == TaskKind::Checklist
             || after.is_some_and(|a| matches!(a.family, Some("checklist" | "recurring-checklist"))))
     {
-        checklist_repeat_shape(&snap.tasks[i], changes)?;
+        checklist_repeat_shape(&snap.tasks[i], changes, m, mode)?;
     }
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
         && reshaped
@@ -389,7 +389,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
     if cases.family == Some("recurring-checklist")
         || after.is_some_and(|a| a.family == Some("recurring-checklist"))
     {
-        captured_checklist_write(snap, target, op, repeat_only)?;
+        captured_checklist_write(snap, m, mode, target, op, repeat_only)?;
     }
 
     if let (Some(i), Op::Edit { changes, .. }) = (target, op)
@@ -433,9 +433,11 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 .and_then(|r| parse_rrule(r).ok())
                 .is_some_and(|r| r.end != End::Never);
             // An after-done project without an end was captured in the repeat round.
+            // Observed with a date-only due and no start, alert or delay (P1).
             let after_done_project = cases.family == Some("recurring-project")
                 && task.from_completion
                 && !ends
+                && date_only_schedule(task)
                 && require(m, mode, ContractId::CompleteRecurringProjectFromCompletion).is_ok();
             if after_done_project
                 && snap
@@ -447,12 +449,22 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                     "completing a recurring project with cancelled items is not verified yet",
                 );
             }
+            // The repeat round's checklist variants (weekly, interval, after done, until).
+            let variant_complete = cases.family == Some("recurring-checklist")
+                && variant_checklist(
+                    snap,
+                    i,
+                    m,
+                    mode,
+                    ContractId::CompleteRecurringChecklistVariant,
+                );
             if matches!(
                 cases.family,
                 Some("recurring-project" | "recurring-checklist")
             ) && task.rrule.is_some()
                 && (ends || task.from_completion)
                 && !after_done_project
+                && !variant_complete
             {
                 return blocked(if cases.family == Some("recurring-checklist") {
                     "completing a recurring checklist that ends or repeats from completion is not verified yet"
@@ -471,6 +483,7 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 );
             }
             if cases.family == Some("recurring-checklist")
+                && !variant_complete
                 && (!captured_schedule(task)
                     || !task
                         .rrule
@@ -495,9 +508,27 @@ fn check_with(checker: &Checker<'_>, op: &Op) -> Result<(), Blocked> {
                 .and_then(|r| parse_rrule(r).ok())
                 .is_some_and(|r| matches!(r.end, End::Until(_)))
                 && !captured_until(snap, i)
+                && !variant_complete
             {
                 return blocked(
                     "until completion is verified only for top-level date-only daily/plain-monthly tasks without starts or alerts",
+                );
+            }
+            // T1 observed a date-only start; a start time on a from-completion repeat was not.
+            if task.from_completion
+                && (matches!(
+                    task.start,
+                    Some(
+                        IcalDateTime::Floating(_)
+                            | IcalDateTime::Zoned { .. }
+                            | IcalDateTime::Utc(_)
+                    )
+                ) || json_meta(task)
+                    .and_then(|m| m.get_i64("StartDate"))
+                    .is_some_and(|n| n % 86_400 != 0))
+            {
+                return blocked(
+                    "completing a task that repeats from completion with a start time is not verified yet",
                 );
             }
             schedule_contracts(m, OperationId::Complete, &class)?;
@@ -1303,15 +1334,89 @@ fn schedule_contracts(m: &Matrix, operation: OperationId, class: &str) -> Result
 /// Scheduling context observed in Plan 8 batch 1. Offset evidence from other task/family
 /// shapes must not widen the newly enabled checklist/UNTIL operations.
 fn captured_schedule(t: &Task) -> bool {
+    date_only_schedule(t) && !t.from_completion
+}
+
+/// [`captured_schedule`] without the completion anchor, which [`checklist_variant`] decides
+/// for the repeat round's checklists.
+fn date_only_schedule(t: &Task) -> bool {
     matches!(t.due, Some(IcalDateTime::Date(_)))
         && t.start.is_none()
         && t.alarms.is_empty()
-        && !t.from_completion
         && json_meta(t).is_some_and(|m| {
             m.get_i64("StartDate").is_none()
                 && m.get_i64("duetime").is_none()
                 && m.get_i64("StartDayDelay").unwrap_or(0) == 0
         })
+}
+
+/// A recurring checklist rule under the repeat round's composition rule (spec "Outcomes"):
+/// `Some(false)` for the plain monthly interval-1 shape verified before, `Some(true)` for a
+/// variant ({weekly, monthly} at any interval, due-anchored or after done, or plain monthly
+/// ending on a date-only until), `None` for anything else. The due day must be 1-28.
+fn checklist_variant(r: &RRule, from_completion: bool, due: Option<NaiveDate>) -> Option<bool> {
+    if !due.is_some_and(|d| d.day() <= 28) {
+        return None;
+    }
+    let mut shape = r.clone();
+    shape.interval = 1;
+    if !plain_rule(&shape, &[Freq::Weekly, Freq::Monthly]) {
+        return None;
+    }
+    match &r.end {
+        End::Never => Some(from_completion || r.freq != Freq::Monthly || r.interval != 1),
+        End::Until(IcalDateTime::Date(_))
+            if r.freq == Freq::Monthly && r.interval == 1 && !from_completion =>
+        {
+            Some(true)
+        }
+        _ => None,
+    }
+}
+
+/// Whether Twydo may write the variant checklist rule `r`: the variant row passes, and an
+/// interval other than 1 also needs the checklist interval row.
+fn variant_rule_writable(
+    r: &RRule,
+    from_completion: bool,
+    due: Option<NaiveDate>,
+    m: &Matrix,
+    mode: WriteMode,
+) -> bool {
+    checklist_variant(r, from_completion, due) == Some(true)
+        && require(m, mode, ContractId::CreateRecurringChecklistVariant).is_ok()
+        && (r.interval == 1 || require(m, mode, ContractId::SetRepeatChecklistInterval).is_ok())
+}
+
+/// An open date-only task or checklist whose current rule is a variant `contract` admits.
+fn variant_schedule(t: &Task, m: &Matrix, mode: WriteMode, contract: ContractId) -> bool {
+    let due = match t.due {
+        Some(IcalDateTime::Date(d)) => Some(d),
+        _ => None,
+    };
+    t.status == Status::Open
+        && date_only_schedule(t)
+        && t.rrule
+            .as_deref()
+            .and_then(|raw| parse_rrule(raw).ok())
+            .is_some_and(|r| checklist_variant(&r, t.from_completion, due) == Some(true))
+        && require(m, mode, contract).is_ok()
+}
+
+/// A top-level recognized checklist with a variant schedule (see [`variant_schedule`]).
+fn variant_checklist(
+    snap: &Snapshot,
+    i: usize,
+    m: &Matrix,
+    mode: WriteMode,
+    contract: ContractId,
+) -> bool {
+    let t = &snap.tasks[i];
+    t.kind == TaskKind::Checklist
+        && known_task_type(t)
+        && t.blocked.is_none()
+        && snap.parent(i).is_none()
+        && variant_schedule(t, m, mode, contract)
 }
 
 fn plain_rule(r: &RRule, freqs: &[Freq]) -> bool {
@@ -1471,11 +1576,28 @@ fn captured_from_completion_edit(
             "setting completion recurrence on a plain task linked to another series is not verified yet",
         );
     }
+    // Checklists have their own scheduling guards (`checklist_repeat_shape`,
+    // `captured_checklist_write`, `checklist_edit`); they need the variant row here.
+    if t.kind == TaskKind::Checklist
+        || changes
+            .iter()
+            .any(|c| matches!(c, Change::Kind(TaskKind::Checklist)))
+    {
+        return require(m, mode, ContractId::CreateRecurringChecklistVariant)
+            .map_err(|_| Blocked(REASON.into()));
+    }
     // A top-level flat project takes the same rules (the repeat round's P1/P2); its items
     // keep their own fields, as for any project repeat change.
     let project = t.kind == TaskKind::Project && declared_kind(t) == TaskKind::Project;
     if project {
         require(m, mode, ContractId::SetRepeatProject)?;
+        // The round captured project repeat changes only, not due/start edits.
+        if !changes
+            .iter()
+            .all(|c| matches!(c, Change::Repeat(_) | Change::RepeatInterval(_)))
+        {
+            return refuse();
+        }
     }
     if !(t.kind == TaskKind::Task || project)
         || t.status != Status::Open
@@ -1509,11 +1631,18 @@ fn captured_from_completion_edit(
     {
         return refuse();
     }
+    // The repeat round's T1: a standalone task may keep a date-only start.
+    let no_start = t.start.is_none() && meta.get_i64("StartDate").is_none();
+    let date_start = t.kind == TaskKind::Task
+        && matches!(t.start, Some(IcalDateTime::Date(_)))
+        && meta
+            .get_i64("StartDate")
+            .is_some_and(|n| n > 0 && n % 86_400 == 0)
+        && require(m, mode, ContractId::SetRepeatFromCompletionStart).is_ok();
     let date_only = matches!(t.due, Some(IcalDateTime::Date(_)))
-        && t.start.is_none()
         && t.alarms.is_empty()
-        && meta.get_i64("StartDate").is_none()
-        && meta.get_i64("duetime").is_none();
+        && meta.get_i64("duetime").is_none()
+        && (no_start || date_start);
     if changes.iter().all(|c| matches!(c, Change::Repeat(_))) {
         if !date_only
             || !old.as_ref().is_none_or(plain)
@@ -1623,33 +1752,53 @@ fn captured_checklist_item(snap: &Snapshot, i: usize, parent: usize) -> bool {
 
 fn captured_checklist_write(
     snap: &Snapshot,
+    m: &Matrix,
+    mode: WriteMode,
     target: Option<usize>,
     op: &Op,
     repeat_only: bool,
 ) -> Result<(), Blocked> {
+    use ContractId::CreateRecurringChecklistVariant as VARIANT;
+    let checklist_ok = |p: usize| {
+        captured_monthly_checklist(snap, p) || variant_checklist(snap, p, m, mode, VARIANT)
+    };
     let allowed = match op {
         Op::Create(n) => match n.parent.as_deref() {
-            Some(uid) => snap
-                .find(uid)
-                .is_some_and(|p| captured_monthly_checklist(snap, p)),
+            Some(uid) => snap.find(uid).is_some_and(checklist_ok),
             None => {
+                let due = match n.due {
+                    Some(Due::Date(d)) if d.day() <= 28 => Some(d),
+                    _ => None,
+                };
                 n.kind == TaskKind::Checklist
                     && n.start.is_none()
-                    && matches!(n.due, Some(Due::Date(d)) if d.day() <= 28)
+                    && due.is_some()
                     && n.repeat.as_ref().is_some_and(|r| {
-                        !r.from_completion
+                        (!r.from_completion
                             && plain_rule(&r.rule, &[Freq::Monthly])
-                            && r.rule.end == End::Never
+                            && r.rule.end == End::Never)
+                            || variant_rule_writable(&r.rule, r.from_completion, due, m, mode)
                     })
             }
         },
         Op::Edit { changes, .. } if !repeat_only => {
             let i = target.expect("an edit has a target");
             let t = &snap.tasks[i];
+            let variant = || {
+                let due = match t.due {
+                    Some(IcalDateTime::Date(d)) => Some(d),
+                    _ => None,
+                };
+                variant_schedule(t, m, mode, VARIANT)
+                    && t.rrule
+                        .as_deref()
+                        .and_then(|raw| parse_rrule(raw).ok())
+                        .is_some_and(|r| variant_rule_writable(&r, t.from_completion, due, m, mode))
+            };
             let shape = if let Some(p) = snap.parent(i) {
-                captured_monthly_checklist(snap, p) && captured_checklist_item(snap, i, p)
+                checklist_ok(p) && captured_checklist_item(snap, i, p)
             } else {
-                captured_monthly_schedule(t)
+                (captured_monthly_schedule(t) || variant())
                     && (t.kind == TaskKind::Checklist
                         || (t.kind == TaskKind::Task && snap.children(i).is_empty()))
             };
@@ -1673,14 +1822,26 @@ fn captured_checklist_write(
     }
 }
 
-fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
+fn checklist_repeat_shape(
+    t: &Task,
+    changes: &[Change],
+    m: &Matrix,
+    mode: WriteMode,
+) -> Result<(), Blocked> {
+    let due = match t.due {
+        Some(IcalDateTime::Date(d)) => Some(d),
+        _ => None,
+    };
     let valid = |r: &RRule, from_completion: bool| {
-        !from_completion
+        (!from_completion
             && plain_rule(r, &[Freq::Weekly, Freq::Monthly])
             && r.end == End::Never
-            && (r.freq != Freq::Monthly
-                || matches!(t.due, Some(IcalDateTime::Date(d)) if d.day() <= 28))
+            && (r.freq != Freq::Monthly || due.is_some_and(|d| d.day() <= 28)))
+            || variant_rule_writable(r, from_completion, due, m, mode)
     };
+    let schedule_ok = captured_schedule(t)
+        || (date_only_schedule(t)
+            && require(m, mode, ContractId::CreateRecurringChecklistVariant).is_ok());
     let old_ok = t
         .rrule
         .as_deref()
@@ -1690,7 +1851,7 @@ fn checklist_repeat_shape(t: &Task, changes: &[Change]) -> Result<(), Blocked> {
         .is_none_or(|r| valid(&r.rule, r.from_completion));
     if t.kind != TaskKind::Checklist
         || t.status != Status::Open
-        || !captured_schedule(t)
+        || !schedule_ok
         || !old_ok
         || !new_ok
         || changes

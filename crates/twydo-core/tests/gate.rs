@@ -3759,3 +3759,299 @@ mod project_ending_boundaries {
         }
     }
 }
+
+mod checklist_variant_round {
+    use super::*;
+    use crate::common::{Env, recurrence::*};
+    use twydo_core::compat::Verdict;
+    use twydo_core::ical::value::IcalDateTime;
+    use twydo_core::model::{Status, TaskKind};
+
+    fn convert_env() -> Env {
+        Env::new(
+            WriteMode::Verified,
+            &format!("{CHECKLIST_B}/phone-create-convert/list1"),
+        )
+    }
+
+    /// `FC`: a plain monthly checklist due 10 December with items.
+    fn family_env() -> Env {
+        Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        )
+    }
+
+    fn checklist(text: &str, day: u32) -> NewTask {
+        NewTask {
+            kind: TaskKind::Checklist,
+            due: Some(Due::Date(date(2026, 12, day))),
+            repeat: Some(repeat(text)),
+            ..NewTask::plain("list1", "c")
+        }
+    }
+
+    fn set_meta(t: &mut twydo_core::model::Task, pairs: &[(&str, i64)]) {
+        let mut meta = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
+        for (k, v) in pairs {
+            meta.set_i64(k, *v);
+        }
+        t.meta.raw = Some(meta.encode());
+    }
+
+    /// `uid` given `rrule` and anchor, with matching 2Do codes.
+    fn reshaped(s: &mut Snapshot, uid: &str, rrule: &str, fc: bool) {
+        let i = idx(s, uid);
+        let r = twydo_core::model::repeat::parse_rrule(rrule).unwrap();
+        s.tasks[i].rrule = Some(rrule.into());
+        s.tasks[i].from_completion = fc;
+        let kind = match r.freq {
+            twydo_core::model::repeat::Freq::Weekly => 257,
+            _ => 258,
+        };
+        set_meta(
+            &mut s.tasks[i],
+            &[
+                ("RecurrenceType", kind),
+                ("RecurrenceValue", i64::from(r.interval)),
+                ("RecurrenceFrom", if fc { 2 } else { 1 }),
+            ],
+        );
+    }
+
+    #[test]
+    fn checklist_variants_admit_only_the_composed_shapes() {
+        let s = convert_env().snap();
+        for (text, day, ok) in [
+            ("monthly", 10, true),
+            ("2w", 10, true),
+            ("monthly after done", 10, true),
+            ("3m after done", 10, true),
+            ("monthly until 2026-12-10", 10, true),
+            ("2m", 10, true),
+            ("yearly", 10, false),
+            ("3d", 10, false),
+            ("2w", 30, false),
+            ("2w until 2027-01-10", 10, false),
+        ] {
+            let op = Op::Create(checklist(text, day));
+            assert_eq!(
+                check(&s, &candidate(), WriteMode::Verified, &op, today()).is_ok(),
+                ok,
+                "{text} day {day}"
+            );
+            assert_eq!(
+                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_ok(),
+                text == "monthly",
+                "shipped {text} day {day}"
+            );
+        }
+        // C2: an after-done task converted to a checklist.
+        let mut s = convert_env().snap();
+        reshaped(&mut s, "twydo-p8-c29-d", "FREQ=MONTHLY;INTERVAL=3", true);
+        let op = edit("twydo-p8-c29-d", vec![Change::Kind(TaskKind::Checklist)]);
+        assert_eq!(
+            check(&s, &candidate(), WriteMode::Verified, &op, today()),
+            Ok(())
+        );
+        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+    }
+
+    #[test]
+    fn checklist_variant_completion_needs_its_contract() {
+        for (rrule, fc) in [
+            ("FREQ=WEEKLY;INTERVAL=2", false),
+            ("FREQ=MONTHLY;INTERVAL=3", true),
+            ("FREQ=MONTHLY;UNTIL=20261210", false),
+        ] {
+            let mut s = family_env().snap();
+            reshaped(&mut s, FC, rrule, fc);
+            let op = complete(FC);
+            assert_eq!(
+                check(&s, &candidate(), WriteMode::Verified, &op, today()),
+                Ok(()),
+                "{rrule}"
+            );
+            assert!(
+                check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err(),
+                "shipped {rrule}"
+            );
+            let p = idx(&s, FC);
+            let child = s.children(p)[0];
+            s.tasks[child].status = Status::Cancelled;
+            assert!(
+                check(&s, &candidate(), WriteMode::Verified, &op, today()).is_err(),
+                "cancelled item {rrule}"
+            );
+        }
+    }
+
+    #[test]
+    fn checklist_interval_edit_needs_the_interval_contract() {
+        let mut s = family_env().snap();
+        reshaped(&mut s, FC, "FREQ=WEEKLY;INTERVAL=2", false);
+        let op = edit(FC, vec![Change::RepeatInterval(3)]);
+        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+        assert_eq!(
+            check(&s, &candidate(), WriteMode::Verified, &op, today()),
+            Ok(())
+        );
+        let mut no_interval = candidate();
+        common::set_contract(
+            &mut no_interval,
+            twydo_core::compat::ContractId::SetRepeatChecklistInterval,
+            Verdict::Unverified,
+        );
+        assert!(check(&s, &no_interval, WriteMode::Verified, &op, today()).is_err());
+    }
+
+    #[test]
+    fn after_done_with_start_needs_its_contract() {
+        let mut s = convert_env().snap();
+        let i = idx(&s, "twydo-p8-c29-d");
+        s.tasks[i].start = Some(IcalDateTime::Date(date(2026, 12, 7)));
+        // 2026-12-07T00:00:00Z
+        set_meta(&mut s.tasks[i], &[("StartDate", 1_796_601_600)]);
+        let op = edit(
+            "twydo-p8-c29-d",
+            vec![Change::Repeat(Some(repeat("3m after done")))],
+        );
+        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+        assert_eq!(
+            check(&s, &candidate(), WriteMode::Verified, &op, today()),
+            Ok(())
+        );
+        s.tasks[i].start = Some(IcalDateTime::Floating(
+            date(2026, 12, 7).and_hms_opt(9, 0, 0).unwrap(),
+        ));
+        set_meta(&mut s.tasks[i], &[("StartDate", 1_796_634_000)]);
+        for m in [Matrix::embedded(), &candidate()] {
+            assert!(check(&s, m, WriteMode::Verified, &op, today()).is_err());
+        }
+    }
+}
+
+mod project_round_boundaries {
+    use super::*;
+    use twydo_core::ical::value::IcalDateTime;
+
+    /// The round observed after-done projects with a date-only due and no start or alert.
+    #[test]
+    fn after_done_project_completion_needs_a_date_only_schedule() {
+        let (_tmp, s0) = rp_with(Some("FREQ=MONTHLY;INTERVAL=3"), true);
+        let i = idx(&s0, RP);
+        let mut timed = s0.clone();
+        timed.tasks[i].due = Some(IcalDateTime::Floating(
+            date(2026, 12, 15).and_hms_opt(9, 0, 0).unwrap(),
+        ));
+        let mut started = s0.clone();
+        started.tasks[i].start = Some(IcalDateTime::Date(date(2026, 12, 12)));
+        for (name, s) in [("timed due", timed), ("start", started)] {
+            assert!(
+                check(
+                    &s,
+                    Matrix::embedded(),
+                    WriteMode::Verified,
+                    &complete(RP),
+                    today()
+                )
+                .is_err(),
+                "{name}"
+            );
+        }
+    }
+
+    /// Projects take repeat changes only; their due/start edits were not captured.
+    #[test]
+    fn after_done_project_refuses_due_edits() {
+        let (_tmp, s) = rp_with(Some("FREQ=MONTHLY"), true);
+        let op = edit(RP, vec![Change::Due(Some(Due::Date(date(2026, 12, 16))))]);
+        assert!(check(&s, Matrix::embedded(), WriteMode::Verified, &op, today()).is_err());
+    }
+}
+mod checklist_and_start_boundaries {
+    use super::*;
+    use crate::common::{Env, recurrence::*};
+    use twydo_core::ical::value::IcalDateTime;
+
+    fn set_meta(t: &mut twydo_core::model::Task, pairs: &[(&str, i64)]) {
+        let mut meta = MetaJson::parse(t.meta.raw.as_deref().unwrap()).unwrap();
+        for (k, v) in pairs {
+            meta.set_i64(k, *v);
+        }
+        t.meta.raw = Some(meta.encode());
+    }
+
+    /// Back from every 2 months to monthly: both shapes are admitted checklist rules.
+    #[test]
+    fn checklist_interval_can_return_to_one() {
+        let e = Env::new(
+            WriteMode::Verified,
+            "complete/checklist-and-until/first-phone-actions/list1",
+        );
+        for change in [
+            Change::RepeatInterval(1),
+            Change::Repeat(Some(repeat("monthly"))),
+        ] {
+            let mut s = e.snap();
+            let i = idx(&s, FC);
+            s.tasks[i].rrule = Some("FREQ=MONTHLY;INTERVAL=2".into());
+            set_meta(&mut s.tasks[i], &[("RecurrenceValue", 2)]);
+            let op = edit(FC, vec![change.clone()]);
+            assert_eq!(
+                check(&s, &candidate(), WriteMode::Verified, &op, today()),
+                Ok(()),
+                "{change:?}"
+            );
+        }
+    }
+
+    /// T1 covered a date-only start; a timed start on an after-done task stays refused.
+    #[test]
+    fn after_done_completion_refuses_a_timed_start() {
+        let e = Env::new(
+            WriteMode::Verified,
+            &format!("{CHECKLIST_B}/phone-create-convert/list1"),
+        );
+        let uid = "twydo-p8-c29-d";
+        let mut s = e.snap();
+        let i = idx(&s, uid);
+        s.tasks[i].rrule = Some("FREQ=MONTHLY;INTERVAL=3".into());
+        s.tasks[i].from_completion = true;
+        set_meta(
+            &mut s.tasks[i],
+            &[
+                ("RecurrenceValue", 3),
+                ("RecurrenceFrom", 2),
+                ("StartDate", 1_796_601_600),
+            ],
+        );
+        s.tasks[i].start = Some(IcalDateTime::Date(date(2026, 12, 7)));
+        assert_eq!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &complete(uid),
+                today()
+            ),
+            Ok(()),
+            "date-only start (T1)"
+        );
+        s.tasks[i].start = Some(IcalDateTime::Floating(
+            date(2026, 12, 7).and_hms_opt(9, 0, 0).unwrap(),
+        ));
+        set_meta(&mut s.tasks[i], &[("StartDate", 1_796_634_000)]);
+        assert!(
+            check(
+                &s,
+                Matrix::embedded(),
+                WriteMode::Verified,
+                &complete(uid),
+                today()
+            )
+            .is_err(),
+            "timed start"
+        );
+    }
+}

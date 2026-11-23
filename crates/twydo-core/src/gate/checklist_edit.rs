@@ -31,7 +31,14 @@ pub(super) fn check(
         return None;
     }
     Some((|| {
-        if !captured_monthly_checklist(snap, idx)
+        let variant = variant_checklist(
+            snap,
+            idx,
+            matrix,
+            mode,
+            ContractId::CreateRecurringChecklistVariant,
+        );
+        if !(captured_monthly_checklist(snap, idx) || variant)
             || !json_meta(t)
                 .as_ref()
                 .is_some_and(|m| date_only_meta(m) && m.get_i64("TaskType") == Some(1))
@@ -42,12 +49,22 @@ pub(super) fn check(
         }
         validate_source(snap, idx)?;
         validate_members(snap, idx, checker.relationships())?;
+        let Some(old_rule) = old.as_ref() else {
+            return blocked("checklist scheduling needs a readable repeat rule");
+        };
         if interval
             && !json_meta(t).is_some_and(|meta| {
                 [
-                    ("RecurrenceValue", 1),
-                    ("RecurrenceType", 258),
-                    ("RecurrenceFrom", 1),
+                    ("RecurrenceValue", i64::from(old_rule.interval)),
+                    (
+                        "RecurrenceType",
+                        if old_rule.freq == Freq::Weekly {
+                            257
+                        } else {
+                            258
+                        },
+                    ),
+                    ("RecurrenceFrom", if t.from_completion { 2 } else { 1 }),
                     ("RecurrenceEndType", 0),
                 ]
                 .iter()
@@ -58,21 +75,35 @@ pub(super) fn check(
                 "checklist interval editing needs recognized monthly recurrence metadata",
             );
         }
+        let due_date = match t.due {
+            Some(IcalDateTime::Date(d)) => Some(d),
+            _ => None,
+        };
+        // Interval 2 on the plain monthly checklist is the original candidate; any other
+        // interval, or any variant rule, needs the repeat round's variant rows.
+        let interval_ok = |n: u32| {
+            let mut rule = old_rule.clone();
+            rule.interval = n;
+            (n == 2 && !variant)
+                // Back to the verified plain monthly shape from a variant interval.
+                || (variant && checklist_variant(&rule, t.from_completion, due_date) == Some(false))
+                || variant_rule_writable(&rule, t.from_completion, due_date, matrix, mode)
+        };
         for change in changes {
             let supported = match change {
                 Change::Summary(_) | Change::Description(_) => true,
-                Change::Due(Some(Due::Date(d))) => due && !interval && d.day() <= 28,
-                Change::RepeatInterval(2) => interval && !due,
+                Change::Due(Some(Due::Date(d))) => due && !interval && d.day() <= 28 && !variant,
+                Change::RepeatInterval(n) => interval && !due && interval_ok(*n),
                 Change::Repeat(Some(spec)) => {
                     interval
                         && !due
-                        && spec.rule.interval == 2
-                        && !spec.from_completion
-                        && old.as_ref().is_some_and(|old| {
+                        && spec.from_completion == t.from_completion
+                        && interval_ok(spec.rule.interval)
+                        && {
                             let mut normalized = spec.rule.clone();
-                            normalized.interval = old.interval;
-                            normalized == *old
-                        })
+                            normalized.interval = old_rule.interval;
+                            normalized == *old_rule
+                        }
                 }
                 _ => false,
             };
