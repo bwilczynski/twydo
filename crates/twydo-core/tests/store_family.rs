@@ -4814,3 +4814,79 @@ fn undo_project_repeat_edit_restores_bytes() {
     store.undo_last(later()).unwrap();
     assert_eq!(env.files(), before);
 }
+
+const CL_FIXTURE: &str = "complete/checklist-and-until/first-phone-actions/list1";
+const CL: &str = "61ed74be3ba34212ab7476b698de1263";
+const CL_ITEMS: [&str; 3] = [
+    "08c8e54e8b8e499aaefa3384625cb66d",
+    "e872079c1c0f4eb9a8afb88f639ba8e4",
+    "c0bca22123c7449bb3c358b7779f1049",
+];
+
+/// The checklist `CL` (plain monthly, due 10 December, one item done) with `rrule` and
+/// `meta`, in test mode where every round row passes.
+fn reshaped_checklist(rrule: &str, meta: &[(&str, i64)]) -> (Env, Store) {
+    let env = Env::new(WriteMode::Test, CL_FIXTURE);
+    let store = env.store(matrix());
+    let path = env.file(CL);
+    let text = fs::read_to_string(&path)
+        .unwrap()
+        .replace("RRULE:FREQ=MONTHLY", &format!("RRULE:{rrule}"));
+    let mut cal = parse(text.as_bytes()).unwrap();
+    {
+        let t = cal.root.children_named_mut("VTODO").next().unwrap();
+        let p = t.prop_mut("X-2DOAPP-METADATA").unwrap();
+        let mut json = twydo_core::model::meta_edit::MetaJson::parse(&p.value).unwrap();
+        for (k, v) in meta {
+            json.set_i64(k, *v);
+        }
+        p.set_value(&json.encode());
+    }
+    fs::write(&path, twydo_core::ical::serialize(&cal)).unwrap();
+    (env, store)
+}
+
+/// The repeat round's C2 shape: an after-done checklist advances from the completion day and
+/// resets its items, as a monthly checklist does.
+#[test]
+fn after_done_checklist_completion_advances_from_today() {
+    let (env, mut store) = reshaped_checklist(
+        "FREQ=MONTHLY;INTERVAL=3",
+        &[("RecurrenceFrom", 2), ("RecurrenceValue", 3)],
+    );
+    let before = env.files();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: CL.into() }, now())
+        .unwrap();
+    let after = env.files();
+    assert!(after.len() > before.len(), "a completed copy of the family");
+    assert_eq!(
+        value(&todo_of(&after[&key(CL)]), "DUE").as_deref(),
+        Some("20270204")
+    );
+    for uid in CL_ITEMS {
+        assert_eq!(status(&after, uid), "NEEDS-ACTION", "{uid}");
+    }
+}
+
+/// The repeat round's C3 shape: the last occurrence of a checklist ending on its due date
+/// completes in place, without a next occurrence.
+#[test]
+fn ending_checklist_last_occurrence_completes() {
+    let (env, mut store) = reshaped_checklist(
+        "FREQ=MONTHLY;UNTIL=20261210",
+        &[
+            ("RecurrenceEndType", 1),
+            ("RecurrenceEndDate", 1_796_860_800),
+        ],
+    );
+    store
+        .apply(&env.snap(), &Op::Complete { uid: CL.into() }, now())
+        .unwrap();
+    let after = env.files();
+    assert_eq!(status(&after, CL), "COMPLETED");
+    assert_eq!(
+        value(&todo_of(&after[&key(CL)]), "DUE").as_deref(),
+        Some("20261210")
+    );
+}
