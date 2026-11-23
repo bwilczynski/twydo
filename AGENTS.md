@@ -52,7 +52,10 @@ command and a Reminders switch in the app's Views tab; neither the app nor push 
 the user's phone against real data. Start times (issue #98,
 [design](docs/superpowers/specs/2026-11-21-start-time-design.md),
 [plan](docs/superpowers/plans/2026-11-21-start-time.md)) are implemented and phone-verified
-(protocol generation 4). Next: write-queue plan 3
+(protocol generation 4). The repeat round (#172, #174, part of #29,
+[design](docs/superpowers/specs/2026-11-23-repeat-unblock-design.md),
+[plan](docs/superpowers/plans/2026-11-23-repeat-unblock.md)) ran and passed on 2026-11-23: project
+repeat changes, from-completion projects and checklist variants are verified. Next: write-queue plan 3
 (rebasing inside the daemon, re-planning with `store::plan`).
 Later features include indent/outdent, yank/paste, list management, Project View and natural
 language input. Read the current plan and as-is documentation before choosing new work.
@@ -60,7 +63,7 @@ language input. Read the current plan and as-is documentation before choosing ne
 ## Device and data boundaries
 
 No new phone/server rounds are authorized by this handoff. Plan 8 batch 1, RF/RA, item deletion
-and both item-reordering/insertion rounds, the alerts round and the start-time round are complete; do not repeat them. Saved phone ranks
+and both item-reordering/insertion rounds, the alerts round, the start-time round and the repeat round are complete; do not repeat them. Saved phone ranks
 require **Manually**. Preserve the synthetic lists/families and private backups/session state
 outside git. Do not change accounts, global write mode or other data. Any further device scope
 needs a bounded unresolved question and fresh approval; ask before production 2Do, NAS or iPhone

@@ -57,14 +57,18 @@ shapes. This list records useful unresolved questions, not permission to run the
 
 - The tested iPhone 2Do misreads last-day, Nth-workday and Nth-weekend-day encodings.
   Twydo never writes them. A missing-fifth-weekday execution observation is still absent.
-- Recurring-checklist completion remains plain monthly, date-only, day 1–28, without
-  ends or completion anchoring. Ended-series reopening remains the bounded top-level
-  date-only daily/plain-monthly UNTIL case; other endings use undo.
-- The recurring-checklist interval candidate remains refused, including test mode.
-  Other native scheduling, project/item and lifecycle combinations need their own
-  unresolved question before any additional device scope is proposed.
-- Project repeat changes, some conversions, independently recurring child creation
-  and membership changes retain their unverified boundaries. Reparenting is a candidate.
+- Recurring-checklist completion covers weekly/monthly rules at any interval, due-anchored or
+  from completion, and monthly date-only until, day 1–28, date-only, without starts, alerts or
+  cancelled items ([checklist variants](../../fixtures/complete/checklist-variants/case.toml)).
+  Yearly and count-ended checklists remain unverified. Ended-series reopening remains the
+  bounded top-level date-only daily/plain-monthly UNTIL case; other endings use undo.
+- Project repeat changes pass both ways ([project round trip](../../fixtures/set-repeat/project-roundtrip/case.toml)),
+  and from-completion projects complete as on the phone
+  ([project from completion](../../fixtures/complete/project-from-completion/case.toml)).
+  Ending projects, some conversions, independently recurring child creation and membership
+  changes retain their unverified boundaries. Reparenting is a candidate. Other native
+  scheduling, project/item and lifecycle combinations need their own unresolved question
+  before any additional device scope is proposed.
 - List creation passes both directions; a phone-created list was adopted by local-only
   discovery with its identity, name, color and tasks. Metadata edits remain refused
   in every mode: a tokenless PROPPATCH succeeded while the server reported an exclusive
@@ -75,7 +79,8 @@ shapes. This list records useful unresolved questions, not permission to run the
 - Phone archive/unarchive changed neither the captured task bytes/ETags nor the 14
   inspected collection properties. Archive remains local; no shared encoding is claimed.
 
-Plan 8 batch 1, the RF/RA phone rounds and the alerts round (2026-11-14) are complete. Item-deletion and both
+Plan 8 batch 1, the RF/RA phone rounds, the alerts round (2026-11-14) and the repeat round
+(2026-11-23) are complete. Item-deletion and both
 item-reordering/insertion rounds are complete. Do not repeat their uploads or phone
 actions. Do not delete the synthetic families/lists, change accounts or global write
 mode, or touch other data. Private session state and backups remain outside git.

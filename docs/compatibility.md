@@ -233,7 +233,7 @@ the shape restrictions below.
 | Weekly repeat | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Repeat from completion | ✅ | Monthly/weekly² | ✅ | — | ✅ | ✅ |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Recurring checklist | Monthly only³ | Text; scoped scheduling/conversion below | Monthly only¹ | — | ✅ | ✅ |
+| Recurring checklist | Weekly/monthly³ | Text; scoped scheduling/conversion below | Weekly/monthly¹ | — | ✅ | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Repeating item of a project | — | ✅ | ✅ | ✅ | — | ✅ |
@@ -300,18 +300,24 @@ parent/sibling read dependencies protect apply, undo, redo and recovery against 
 The [checklist scheduling audit](reference/evidence.md) enables a
 narrow date-only due edit by preservation generalization of Plan 6's direct checklist-date
 write and subsequent phone edit. It removes inherited item dates while preserving recurrence,
-item lifecycle and unrelated content. The separate `set-repeat.checklist-interval` row
-remains unverified and refused, including in test mode; interval 1 → 2 is tested only with an
-explicit candidate matrix and does not grant completion. Weekly/yearly creation/conversion/
-completion, other due/start/time edits, and completed-parent item creation/reopening remain unverified. A mixed card
+item lifecycle and unrelated content. The [repeat round](reference/evidence.md) (2026-11-23)
+passes `set-repeat.checklist-interval`, `create.recurring-checklist-variant` and
+`complete.recurring-checklist-variant`: weekly or monthly checklists at any interval, due-anchored
+or from completion, and monthly checklists ending on a date-only until, are created, converted,
+re-ruled and completed as the phone does (³/¹ extend to these shapes). Yearly and count-ended
+checklists, due/start/time edits on the variants, and completed-parent item creation/reopening
+remain unverified. A mixed card
 save that includes a refused field writes nothing and retains its text. Pure previously captured
 monthly/weekly repeat changes remain supported separately.
 
 Existing repeat completion support remains: daily, weekly, weekday sets, monthly including the
 29th–31st and Nth/last weekdays, yearly including February 29, from completion and count ends.
-The [Plan 7 session](reference/evidence.md) supplies those fixtures. Recurring projects
-that end or repeat from completion remain refused. Moving one item, editing existing
-weekly/interval-2 from-completion scheduling, project repeat changes and empty-project-to-checklist
+The [Plan 7 session](reference/evidence.md) supplies those fixtures. The repeat round passes
+`set-repeat.project`, `complete.recurring-project-from-completion` and
+`set-repeat.from-completion-start`: project repeat changes (including from completion),
+completing a from-completion project without cancelled items, and setting completion recurrence
+on a task with a date-only start. Recurring projects that end remain refused. Moving one item,
+due/start edits on weekly or interval-2+ from-completion tasks and empty-project-to-checklist
 conversion remain unverified. Absolute, multiple and after-due alerts stay read-only. The [audit](superpowers/plans/2026-11-04-plan-8-editing-completeness.md)
 tracks the remaining combinations; this batch does not certify the entire TUI surface.
 
