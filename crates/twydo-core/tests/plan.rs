@@ -214,3 +214,101 @@ fn deleting_a_standalone_task_guards_against_its_first_child() {
     );
     assert!(prepared.holds.is_empty() && prepared.entry.holds.is_empty());
 }
+
+#[test]
+fn completion_and_reopening_have_different_journal_dependencies() {
+    use std::collections::BTreeSet;
+    let policy = Policy {
+        matrix: Matrix::embedded(),
+        mode: WriteMode::Verified,
+    };
+    let members: BTreeSet<_> = K_MEMBERS.map(|uid| format!("list1/{uid}.ics")).into();
+    for (state, op) in [
+        ("complete-child", Op::Complete { uid: K.into() }),
+        ("complete-parent", Op::Reopen { uid: K.into() }),
+    ] {
+        let env = Env::new(
+            WriteMode::Verified,
+            &format!("complete/family-lifecycle/{state}/list1"),
+        );
+        let p = plan(&env.snap(), &op, policy, now()).unwrap();
+        assert_eq!(p.family.as_ref().unwrap().loaded, members);
+        if matches!(op, Op::Complete { .. }) {
+            assert!(!p.holds.is_empty(), "an already completed child is held");
+            assert!(p.entry.holds.is_empty() && p.entry.family.is_none());
+        } else {
+            assert_eq!(p.entry.family, p.family);
+            assert_eq!(p.entry.holds, p.holds);
+        }
+    }
+}
+
+#[test]
+fn edit_only_save_preserves_each_edit_dependency_lifetime() {
+    use twydo_core::model::TaskKind;
+    let policy = Policy {
+        matrix: Matrix::embedded(),
+        mode: WriteMode::Verified,
+    };
+    let standalone = Env::new(WriteMode::Verified, FIXTURE);
+    let family = Env::new(WriteMode::Verified, FAMILY_FIXTURE);
+    for (env, uid, change, durable, has_family) in [
+        (
+            &standalone,
+            A,
+            Change::Kind(TaskKind::Checklist),
+            false,
+            true,
+        ),
+        (
+            &family,
+            K_MEMBERS[1],
+            Change::Summary("Updated child".into()),
+            true,
+            true,
+        ),
+        (&standalone, A, Change::Due(None), false, false),
+    ] {
+        let snap = env.snap();
+        let changes = vec![change];
+        let edit = plan(
+            &snap,
+            &Op::Edit {
+                uid: uid.into(),
+                changes: changes.clone(),
+            },
+            policy,
+            now(),
+        )
+        .unwrap();
+        let save = plan(
+            &snap,
+            &Op::Save {
+                uid: uid.into(),
+                changes,
+                to: None,
+            },
+            policy,
+            now(),
+        )
+        .unwrap();
+        assert_eq!(edit.family.is_some(), has_family);
+        assert_eq!(edit.entry.family.is_some(), durable);
+        if durable {
+            let guard = edit.family.as_ref().unwrap();
+            assert!(
+                K_MEMBERS
+                    .iter()
+                    .all(|uid| guard.parent_aliases.contains(*uid))
+            );
+            assert_eq!(edit.holds.len(), K_MEMBERS.len() - 1);
+            assert_eq!(edit.holds, edit.entry.holds);
+        }
+        assert_eq!(save.family, edit.family);
+        assert_eq!(save.entry.family, edit.entry.family);
+        assert_eq!(save.holds, edit.holds);
+        assert_eq!(save.entry.holds, edit.entry.holds);
+        assert_eq!(save.entry.writes, edit.entry.writes);
+        assert_eq!(save.entry.kind, "save");
+    }
+}
