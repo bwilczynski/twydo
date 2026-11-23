@@ -37,6 +37,11 @@ export interface DataSource {
   task(uid: string): ReadonlySignal<TasksGetResult | undefined>;
   /** The sidebar entries of the Views tab, once fetched. */
   viewsList: ReadonlySignal<ViewsListResult | undefined>;
+  /**
+   * Calls `cb` with Today's open count (the icon badge) on every newer views list or Today view,
+   * also when the count is unchanged: a push may have changed the badge meanwhile.
+   */
+  onTodayCount(cb: (n: number) => void): () => void;
   connection: ReadonlySignal<Connection>;
   /**
    * True only while the visible view was fetched successfully on the current open socket; false
@@ -149,6 +154,30 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
   };
   const taskGoneCbs = new Set<(uid: string) => void>();
   const viewsList = signal<ViewsListResult | undefined>(undefined);
+  const countCbs = new Set<(n: number) => void>();
+  // Requests run concurrently in the daemon and can answer out of order: each request that
+  // carries Today's count takes a ticket when sent, and only a newer ticket's answer is applied.
+  let issued = 0;
+  let countAt = 0;
+  let listAt = 0;
+  const ticket = () => ++issued;
+  const noteCount = (t: number, n: number) => {
+    if (t <= countAt) return;
+    countAt = t;
+    for (const cb of countCbs) cb(n);
+  };
+  const setList = (r: ViewsListResult, t: number) => {
+    if (t <= listAt) return;
+    listAt = t;
+    viewsList.value = r;
+    for (const e of r.entries) {
+      if ("view" in e && e.view.view === "today") noteCount(t, e.open_count);
+    }
+  };
+  const fetchList = async () => {
+    const t = ticket();
+    setList(await sock.call<ViewsListResult>("views.list", {}), t);
+  };
   const goneCbs = new Set<(ref: ViewRef) => void>();
   const connection = signal<Connection>("connecting");
   let visible: Visible = { view: "inbox" };
@@ -191,7 +220,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           again = false;
           const target = visible;
           if (target === "views") {
-            viewsList.value = await sock.call<ViewsListResult>("views.list", {});
+            await fetchList();
           } else if (isTask(target)) {
             try {
               taskSignal(target.task).value = await sock.call<TasksGetResult>("tasks.get", { uid: target.task });
@@ -209,6 +238,7 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
           } else {
             const params: ViewsGetParams = target.view === "list" ? { view: "list", list: target.list } : { view: target.view };
             let v: ViewsGetResult;
+            const t = ticket();
             try {
               v = await sock.call<ViewsGetResult>("views.get", params);
             } catch (e) {
@@ -226,6 +256,12 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
               throw e;
             }
             viewSignal(target).value = v;
+            if (target.view === "today") noteCount(t, v.open_count);
+          }
+          // The badge needs Today's count whichever screen is shown; Today and the views list
+          // carry it themselves. Not awaited: a failure costs only the badge.
+          if (target !== "views" && (isTask(target) || target.view !== "today")) {
+            fetchList().catch(() => {});
           }
           // Only the visible view's own fetch makes it fresh; another view's does not.
           if (sock.current === "open" && sameTarget(target, visible)) fresh.value = true;
@@ -345,11 +381,15 @@ export function createDataSource(opts: DataSourceOptions = {}): DataSource {
     view: (ref) => viewSignal(ref),
     task: (uid) => taskSignal(uid),
     viewsList,
+    onTodayCount(cb) {
+      countCbs.add(cb);
+      return () => countCbs.delete(cb);
+    },
     connection,
     fresh,
     async loadViewsList() {
       await sock.ready(READY_MS);
-      viewsList.value = await sock.call<ViewsListResult>("views.list", {});
+      await fetchList();
     },
     refresh(v) {
       if (!sameTarget(visible, v)) fresh.value = false; // unconfirmed until fetched

@@ -1,5 +1,6 @@
 import { render } from "preact";
 import { App } from "./App";
+import { setBadge } from "./badge";
 import { createDataSource } from "./data";
 import { browserStorage, createPush } from "./push";
 import "./styles.css";
@@ -20,4 +21,7 @@ const push = createPush({
   storage: browserStorage(),
 });
 
-render(<App ds={createDataSource()} push={push} />, document.getElementById("app")!);
+const ds = createDataSource();
+ds.onTodayCount((n) => setBadge(n));
+
+render(<App ds={ds} push={push} />, document.getElementById("app")!);
