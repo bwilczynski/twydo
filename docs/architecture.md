@@ -567,6 +567,12 @@ passes the existing complete Create gate before applying its saved placement.
 
 ### Relocation dependencies
 
+Move, reparent and edit-and-move planners return their source and destination guards
+alongside the writes. A compound save builds its destination files from the edited
+bytes, then builds the guards from the original snapshot, the final write paths and
+the destination UID allocated for that move. Queue and journal assembly copies these
+declared dependencies for every task operation.
+
 List relocation and candidate single-leaf reparenting persist additive `families`
 guards alongside the legacy optional `family`. Old journal/queue JSON remains
 readable. Each guard records resource/internal parent aliases and known paths;
