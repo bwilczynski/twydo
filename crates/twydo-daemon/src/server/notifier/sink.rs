@@ -118,9 +118,11 @@ impl Sink for CommandSink {
         let mut args = rest.to_vec();
         args.push(d.title.clone());
         args.push(d.body.clone());
+        let open = d.today_open.map(|n| n.to_string());
         let envs = [
             ("TWYDO_REMINDER_KEY", Some(d.key.as_str())),
             ("TWYDO_REMINDER_UID", d.uid.as_deref()),
+            ("TWYDO_TODAY_OPEN", open.as_deref()),
         ];
         run(program, &args, &envs, self.timeout)
     }
@@ -207,6 +209,7 @@ mod tests {
             uid: Some("uid-1".into()),
             title: title.into(),
             body: body.into(),
+            today_open: None,
         }
     }
 
