@@ -125,6 +125,8 @@ pub struct Delivery {
     pub uid: Option<String>,
     pub title: String,
     pub body: String,
+    /// Today's open count at delivery; the planner leaves it unset, the daemon fills it.
+    pub today_open: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,6 +220,7 @@ fn digest(snap: &Snapshot, morning: DateTime<Utc>, today: NaiveDate, tz: Tz) -> 
         uid: None,
         title,
         body: lines.join("\n"),
+        today_open: None,
     })
 }
 
@@ -258,6 +261,7 @@ pub fn plan(snap: &Snapshot, sent: &Sent, now: DateTime<Utc>, s: &Settings) -> P
             uid: Some((*uid).to_string()),
             title: title_of(task),
             body: timed_body(snap, task, entry, now, s.tz),
+            today_open: None,
         });
     }
 

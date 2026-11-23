@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use twydo_core::config::Config;
 use twydo_core::remind::{self, Settings};
+use twydo_core::views::{self, Snapshot, View};
 
 pub use sink::{CommandSink, PlatformSink, Sink};
 use state::SentState;
@@ -174,6 +175,11 @@ fn clean_text(text: &str) -> String {
     text.chars()
         .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
         .collect()
+}
+
+/// Today's open count at `at`, as `views.get` counts it (the phone's icon badge).
+fn today_open(snap: &Snapshot, at: DateTime<Utc>) -> usize {
+    views::counts(snap, &View::Today, at.with_timezone(&snap.tz())).total
 }
 
 fn cleaned(d: &remind::Delivery) -> remind::Delivery {
@@ -361,6 +367,7 @@ fn pass(core: &Core, shared: &Shared, mem: &mut Memory, now: DateTime<Utc>) -> D
     let keys: BTreeSet<&str> = plan.due.iter().map(|d| d.key.as_str()).collect();
     mem.retries.retain(|k, _| keys.contains(k.as_str()));
     let mut failure: Option<String> = None;
+    let open = (!plan.due.is_empty()).then(|| today_open(&snap.snap, now));
     for d in &plan.due {
         if mem
             .retries
@@ -369,7 +376,10 @@ fn pass(core: &Core, shared: &Shared, mem: &mut Memory, now: DateTime<Utc>) -> D
         {
             continue;
         }
-        let d = cleaned(d);
+        let d = remind::Delivery {
+            today_open: open,
+            ..cleaned(d)
+        };
         match sink.deliver(&d) {
             Ok(()) => {
                 mem.retries.remove(&d.key);
@@ -532,6 +542,10 @@ impl Shared {
             uid: None,
             title: "Twydo".into(),
             body: "Notifications work.".into(),
+            today_open: Some(today_open(
+                &self.publisher.current().1.snap,
+                self.clock.now(),
+            )),
         };
         match sink.deliver(&d) {
             Ok(()) => Ok(serde_json::json!({})),
@@ -573,6 +587,7 @@ mod tests {
             uid: None,
             title: title.into(),
             body: body.into(),
+            today_open: None,
         }
     }
 
@@ -601,6 +616,7 @@ mod tests {
             uid: None,
             title: "a\0b\u{7}c\td".into(),
             body: "line one\r\nline\0two\u{1b}[0m".into(),
+            today_open: None,
         };
         let c = cleaned(&d);
         assert_eq!(c.title, "a b c d");

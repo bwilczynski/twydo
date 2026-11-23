@@ -175,7 +175,7 @@ devices.
 |---|---|---|---|
 | `enabled` | bool | `true` | Raise desktop reminders. |
 | `catch_up_hours` | integer | `24` | How far back a missed reminder (daemon down, machine asleep) still fires. Must be at least 1. |
-| `command` | list of strings | none | Command to run instead of the desktop notification. Must not be empty when set. Twydo starts it without a shell and appends the title and the body as the last two arguments, exactly as they are; a title can start with `-`, so a wrapper script treats them as text. It also sets `TWYDO_REMINDER_KEY` (`t:<uid>@<instant>`, `d:<date>` for the digest, `test` for `tdo notify test`) and, for a task's reminder, `TWYDO_REMINDER_UID`. |
+| `command` | list of strings | none | Command to run instead of the desktop notification. Must not be empty when set. Twydo starts it without a shell and appends the title and the body as the last two arguments, exactly as they are; a title can start with `-`, so a wrapper script treats them as text. It also sets `TWYDO_REMINDER_KEY` (`t:<uid>@<instant>`, `d:<date>` for the digest, `test` for `tdo notify test`) and, for a task's reminder, `TWYDO_REMINDER_UID`. `TWYDO_TODAY_OPEN` is Today's open count at delivery, as the Today view counts it (also for `tdo notify test`). |
 
 Changes to this table apply to the running daemon at once; no restart is needed.
 

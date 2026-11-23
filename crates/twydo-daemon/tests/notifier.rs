@@ -347,9 +347,17 @@ fn env_probe_command(out: &std::path::Path) -> Vec<String> {
     vec![
         "sh".into(),
         "-c".into(),
-        "printf \"%s|%s\" \"$TWYDO_REMINDER_KEY\" \"${TWYDO_REMINDER_UID-unset}\" > \"$0\"".into(),
+        "printf \"%s|%s|%s\" \"$TWYDO_REMINDER_KEY\" \"${TWYDO_REMINDER_UID-unset}\" \"${TWYDO_TODAY_OPEN-unset}\" > \"$0\"".into(),
         out.display().to_string(),
     ]
+}
+
+/// Today's open count as the daemon's `views.get` reports it.
+fn today_open(c: &Client) -> u64 {
+    let v: serde_json::Value = c
+        .call("views.get", serde_json::json!({"view": "today"}))
+        .unwrap();
+    v["open_count"].as_u64().unwrap()
 }
 
 #[test]
@@ -365,7 +373,11 @@ fn command_gets_the_reminder_key_and_uid() {
     until("the command never ran", || {
         fs::read_to_string(&out).is_ok_and(|s| !s.is_empty())
     });
-    assert_eq!(fs::read_to_string(&out).unwrap(), format!("{KEY}|u1"));
+    let open = today_open(&td.client());
+    assert_eq!(
+        fs::read_to_string(&out).unwrap(),
+        format!("{KEY}|u1|{open}")
+    );
 }
 
 #[test]
@@ -378,7 +390,11 @@ fn notify_test_passes_the_test_key_without_uid() {
     cfg.notifications.command = Some(env_probe_command(&out));
     let td = start_cfg(&fx, cfg, &clock, Some(&sink), |_| {});
     notify_test(&td.client()).unwrap();
-    assert_eq!(fs::read_to_string(&out).unwrap(), "test|unset");
+    let open = today_open(&td.client());
+    assert_eq!(
+        fs::read_to_string(&out).unwrap(),
+        format!("test|unset|{open}")
+    );
 }
 
 #[test]

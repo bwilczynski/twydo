@@ -557,7 +557,8 @@ Live commit, queue, recovery and inverse file guards are unchanged.
 
 The notifier lives in the daemon and has no network code. For each reminder it runs the
 configured `[notifications] command`, with the title and body as the last two arguments and
-`TWYDO_REMINDER_KEY` and `TWYDO_REMINDER_UID` in the environment. Configured as
+`TWYDO_REMINDER_KEY`, `TWYDO_REMINDER_UID` and `TWYDO_TODAY_OPEN` (Today's open count, for
+the phone's icon badge) in the environment. Configured as
 `tdo gateway push`, that command opens the gateway's state directory, encrypts the message
 (RFC 8291) for every stored phone subscription, signs it with the gateway's VAPID key
 (RFC 8292) and posts it to each push service within 8 seconds. A non-zero exit puts the first
