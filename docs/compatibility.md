@@ -231,7 +231,7 @@ the shape restrictions below.
 | Yearly repeat (29 February included) | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Daily repeat | ✅ | ✅ | ✅ | — | ✅ | ✅ |
 | Weekly repeat | ✅ | ✅ | ✅ | — | ✅ | ✅ |
-| Repeat from completion | ✅ | Monthly only² | ✅ | — | ✅ | ✅ |
+| Repeat from completion | ✅ | Monthly/weekly² | ✅ | — | ✅ | ✅ |
 | Checklist | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Recurring checklist | Monthly only³ | Text; scoped scheduling/conversion below | Monthly only¹ | — | ✅ | ✅ |
 | Project | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -279,8 +279,8 @@ The newly enabled operations are:
 | `reopen.ended-daily` | Reopen the final original of a top-level date-only interval-1 daily until series, without children/start/alerts/delay |
 | `reopen.ended-monthly` | Same for plain monthly day 1–28 |
 | `reopen.history-task` | Completed detached JSON task copies with inactive recurrence metadata; held dates, starts and alarms are preserved |
-| `set-due.task` / `set-start.task` / `set-repeat.interval` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly interval 1 → 2 also passes |
-| `set-repeat.task` | Captured interval-1 transitions: plain or monthly due → monthly completion, monthly completion → weekly completion or none, and weekly completion → weekly due; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
+| `set-due.task` / `set-start.task` / `set-repeat.interval` | ²Standalone open monthly interval-1 field edits, day 1–28 date-only/floating due; no end, zoned dates or custom alarms. Pure date-only monthly/weekly interval changes pass at any interval |
+| `set-repeat.task` | Captured transitions, at any interval: plain or monthly due → monthly completion, monthly completion → weekly completion, weekly completion → weekly due, monthly or weekly completion → none, and an interval change of a monthly/weekly completion rule; standalone open JSON tasks, date-only day 1–28, no end/start/alert/delay |
 
 `until` completion now passes for top-level plain daily/monthly day 1–28 tasks with interval 1,
 date-only due/end dates, no children/start/alerts/delay and a due-date anchor. Continuation,

@@ -1515,6 +1515,12 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
         ("daily after done", false),
         ("yearly after done", false),
         ("monthly after done 3 times", false),
+        ("3m after done", true),
+        ("every 3 months after done", true),
+        ("2w after done", true),
+        ("3d after done", false),
+        ("2y after done", false),
+        ("3m after done until 2027-06-01", false),
     ] {
         let s = load_snap(dir.path());
         let op = Op::Edit {
@@ -1537,11 +1543,13 @@ fn verified_from_completion_edit_rows_do_not_enable_uncaptured_shapes() {
             true,
         ),
         ("FREQ=MONTHLY", Change::RepeatInterval(2), true),
-        ("FREQ=MONTHLY", Change::RepeatInterval(3), false),
+        ("FREQ=MONTHLY", Change::RepeatInterval(3), true),
+        ("FREQ=WEEKLY", Change::RepeatInterval(3), true),
     ] {
         let mut s = load_snap(dir.path());
         let i = s.find(uid).unwrap();
         s.tasks[i].rrule = Some(rule.into());
+        s.tasks[i].from_completion = true;
         let op = Op::Edit {
             uid: uid.into(),
             changes: vec![change],
@@ -1592,7 +1600,17 @@ fn verified_from_completion_repeat_changes_require_captured_transitions() {
         (Some("FREQ=MONTHLY"), true, None, true),
         (Some("FREQ=WEEKLY"), true, Some("monthly after done"), false),
         (Some("FREQ=WEEKLY"), true, Some("weekly"), true),
-        (Some("FREQ=WEEKLY"), true, None, false),
+        (Some("FREQ=WEEKLY"), true, None, true),
+        (None, false, Some("3m after done"), true),
+        (Some("FREQ=MONTHLY"), false, Some("3m after done"), true),
+        (
+            Some("FREQ=MONTHLY;INTERVAL=2"),
+            true,
+            Some("monthly after done"),
+            true,
+        ),
+        (Some("FREQ=WEEKLY;INTERVAL=2"), true, Some("weekly"), true),
+        (Some("FREQ=WEEKLY"), false, Some("2w after done"), false),
     ] {
         let mut s = load_snap(dir.path());
         let i = s.find(uid).unwrap();
