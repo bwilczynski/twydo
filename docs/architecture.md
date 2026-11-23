@@ -514,6 +514,20 @@ reloads and tells every client, and the TUI fetches the new snapshot. Once a min
 its clock on, so "today" and the date groups stay current. A file that cannot be parsed is listed under `:errors` and left untouched; it does not
 stop the rest from loading.
 
+### Family dependencies for task creation and deletion
+
+The create, delete and ordering planners use the same rule for a single family:
+every path they write or hold belongs in the durable membership guard. The guard
+also records the family head's resource UID and internal identity. The planner
+chooses the head and records byte holds for members whose contents it relied on.
+
+| Operation | Membership and byte dependencies |
+|---|---|
+| Create a standalone task | No existing family to guard. The write expects the new path to be absent. |
+| Append a child | Hold the parent and every existing sibling whose rank was considered. Include the new path so replay recognizes its own child. |
+| Delete one child | Guard the parent's family and hold the exact bytes of the parent and surviving siblings. |
+| Delete a top-level task | Guard the selected task and all its children, including an empty child set. A first child arriving after planning makes the deletion stale. Each removed resource has its original bytes in the write. |
+
 ### Explicit sibling order
 
 Reordering and anchored insertion use one family journal entry, submitted through the same
