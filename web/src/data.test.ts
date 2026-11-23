@@ -481,6 +481,153 @@ describe("data source", () => {
   });
 });
 
+describe("today count", () => {
+  let todayOpen = 5;
+  // Every count the source accepts, in order.
+  const track = (ds: DataSource) => {
+    const seen: number[] = [];
+    ds.onTodayCount((n) => seen.push(n));
+    return seen;
+  };
+  const withToday = () => {
+    todayOpen = 5;
+    FakeWebSocket.handlers["views.list"] = () => ({
+      epoch: "e1",
+      revision,
+      now: "2026-11-17T09:00:00+01:00",
+      today: "2026-11-17",
+      entries: [
+        { view: { view: "inbox" }, name: "Inbox", color: null, open_count: 9, due_count: 0 },
+        { view: { view: "today" }, name: "Today", color: null, open_count: todayOpen, due_count: 0 },
+      ],
+    });
+    FakeWebSocket.handlers["views.get"] = (p) =>
+      p.view === "today" ? { ...view("Today", revision), open_count: 2 } : view("Inbox", revision);
+  };
+
+  it("today_count_from_views_list", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await ds.refresh("views");
+    expect(seen.at(-1)).toBe(5);
+  });
+
+  it("today_count_from_today_view", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    // The views list (5) is not asked for while Today itself is shown.
+    await ds.refresh({ view: "today" });
+    await flush();
+    expect(seen.at(-1)).toBe(2);
+  });
+
+  it("today_count_known_when_opened_on_inbox", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    expect(seen.at(-1)).toBeUndefined();
+    await opened();
+    await flush();
+    expect(seen.at(-1)).toBe(5);
+    expect(FakeWebSocket.last.calls("views.list")).toHaveLength(1);
+  });
+
+  it("today_count_refreshes_on_data_changed", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await flush();
+    todayOpen = 4;
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    await flush();
+    expect(seen.at(-1)).toBe(4);
+  });
+
+  // A push may change the badge meanwhile: an unchanged count must still be reported.
+  it("today_count_reported_again_when_unchanged", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await flush();
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    await flush();
+    expect(seen).toEqual([5, 5]);
+  });
+
+  it("today_count_ignores_an_older_reply_that_lands_last", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await flush();
+    const ws = FakeWebSocket.last;
+    const orig = ws.send.bind(ws);
+    const held: string[] = [];
+    ws.send = (d: string) => {
+      if (JSON.parse(d).method === "views.list") held.push(d);
+      else orig(d);
+    };
+    ws.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    ws.notify("event", { type: "data.changed", seq: 2 });
+    await flush();
+    expect(held).toHaveLength(2);
+    todayOpen = 3; // the newer request answers first
+    orig(held[1]!);
+    await flush();
+    todayOpen = 4; // then the older one, with the older count
+    orig(held[0]!);
+    await flush();
+    expect(seen.at(-1)).toBe(3);
+  });
+
+  it("today_count_ignores_a_views_list_older_than_the_today_view", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await flush();
+    const ws = FakeWebSocket.last;
+    const orig = ws.send.bind(ws);
+    const held: string[] = [];
+    ws.send = (d: string) => {
+      if (JSON.parse(d).method === "views.list") held.push(d);
+      else orig(d);
+    };
+    ws.notify("event", { type: "data.changed", seq: 1 }); // Inbox refetch: a list in flight
+    await flush();
+    await ds.refresh({ view: "today" }); // Today answers 2
+    expect(seen.at(-1)).toBe(2);
+    orig(held[0]!); // the older list (5) lands last
+    await flush();
+    expect(seen.at(-1)).toBe(2);
+  });
+
+  it("today_count_survives_a_failed_views_list", async () => {
+    const ds = setup();
+    const seen = track(ds);
+    withToday();
+    await opened();
+    await flush();
+    FakeWebSocket.handlers["views.list"] = () => {
+      throw new FakeRpcError(-32603, "boom", "internal");
+    };
+    FakeWebSocket.last.notify("event", { type: "data.changed", seq: 1 });
+    await flush();
+    await flush();
+    expect(seen.at(-1)).toBe(5);
+    expect(ds.view({ view: "inbox" }).value?.title).toBe("Inbox");
+  });
+});
+
 describe("all views", () => {
   const viewsLists = () => FakeWebSocket.instances.flatMap((w) => w.calls("views.list"));
 
