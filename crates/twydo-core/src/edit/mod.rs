@@ -68,6 +68,14 @@ pub enum Change {
     Kind(TaskKind),
 }
 
+/// The title/notes capability applies only when every requested change is text.
+pub(crate) fn text_only(changes: &[Change]) -> bool {
+    !changes.is_empty()
+        && changes
+            .iter()
+            .all(|c| matches!(c, Change::Summary(_) | Change::Description(_)))
+}
+
 /// A task to create in `collection`.
 #[derive(
     Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,

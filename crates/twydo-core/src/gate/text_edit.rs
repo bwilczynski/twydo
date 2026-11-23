@@ -9,11 +9,7 @@ pub(super) fn check(
     changes: &[Change],
     checker: &Checker<'_>,
 ) -> Option<Result<(), Blocked>> {
-    if changes.is_empty()
-        || !changes
-            .iter()
-            .all(|c| matches!(c, Change::Summary(_) | Change::Description(_)))
-    {
+    if !crate::edit::text_only(changes) {
         return None;
     }
     Some((|| {

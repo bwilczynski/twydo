@@ -1,6 +1,6 @@
 //! Candidate single-leaf relocation with durable dependencies on both families.
 use super::journal::FamilyGuard;
-use super::plan::{Plan, Planner, create};
+use super::plan::{JournalReads, Plan, PlanReads, Planner, create};
 use super::{WriteError, parent_json_uid};
 use crate::edit::{new_uid, reparented_copy};
 use crate::model::{TaskKind, meta_edit::MetaJson};
@@ -70,7 +70,10 @@ impl Planner<'_> {
             }
         }
         Ok(Plan {
-            durable_family: None,
+            reads: PlanReads {
+                journal: JournalReads::Holds,
+                ..Default::default()
+            },
             kind: "reparent",
             uids: vec![uid.into(), new.clone()],
             writes: vec![create(collection, &new, &cal)?, target.remove()],

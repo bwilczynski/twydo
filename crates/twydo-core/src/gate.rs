@@ -965,6 +965,10 @@ pub fn checklist_date_change(snap: &Snapshot, idx: usize, op: &Op) -> bool {
     let Op::Edit { changes, .. } = op else {
         return false;
     };
+    checklist_date_changes(snap, idx, changes)
+}
+
+pub(crate) fn checklist_date_changes(snap: &Snapshot, idx: usize, changes: &[Change]) -> bool {
     snap.tasks[idx].kind == TaskKind::Checklist
         && changes
             .iter()
