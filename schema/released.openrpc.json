@@ -3245,6 +3245,55 @@
         "type": "string",
         "x-open": true
       },
+      "SettingsGetResult": {
+        "description": "`settings.get`: what a phone's Settings screen shows about its daemon.",
+        "properties": {
+          "protocol": {
+            "description": "The protocol generation.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reminders": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemindersSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "As in `views.get`."
+          },
+          "server": {
+            "description": "The CalDAV server's host, with the port when it is not the scheme's default; never the\nusername or path. Absent when sync is not configured.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "As in `views.get`."
+          },
+          "version": {
+            "description": "The daemon's version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "protocol"
+        ],
+        "type": "object"
+      },
       "ShutdownParams": {
         "properties": {
           "when_idle": {
@@ -5226,6 +5275,25 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ViewsGetResult"
+        }
+      },
+      "x-lifecycle": false
+    },
+    {
+      "name": "settings.get",
+      "params": [
+        {
+          "name": "params",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Empty"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SettingsGetResult"
         }
       },
       "x-lifecycle": false
