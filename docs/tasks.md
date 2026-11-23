@@ -153,9 +153,9 @@ weekdays`). Existing standalone monthly **from-completion** tasks now support ti
 notes, due date/time and start edits at interval 1, without an end. Source and resulting
 due dates must be on days 1–28; date-only and floating times with the captured automatic
 due alarm are supported, while custom alarms and zoned dates remain refused. A separate
-pure, date-only interval change from monthly interval 1 to 2 is verified through both CLI
-and card. Weekly or interval-2 from-completion scheduling edits remain unverified;
-title/notes-only edits use the independent text capability.
+pure, date-only interval change of a monthly or weekly from-completion rule is verified at any
+interval through both CLI and card. Due/start edits on weekly or interval-2+ from-completion
+tasks remain unverified; title/notes-only edits use the independent text capability.
 
 **Setting or removing a repeat:** plain daily, weekly, monthly and yearly rules can be set,
 removed or changed between those classes. Newly verified daily/yearly transitions are due
@@ -172,13 +172,19 @@ parent's inherited date; dated items lose those copies while completion state is
 Cancelled, independently dated or recurring items stay refused. This is a preservation
 generalization of the existing checklist-date evidence; see the
 [scheduling audit](reference/evidence.md). Interval edits remain
-candidate-only and refused with the shipping matrix; other schedule/type edits, other
-checklist rules and project repeat changes remain refused. Standalone tasks can
-make the captured completion-anchored changes: plain or monthly due to monthly completion,
-monthly completion to weekly completion or no repeat, and weekly completion to weekly due.
-These require interval 1, day 1–28 date-only due, no end/start/alert/delay. These are pure repeat changes;
-mixing ordinary edits or a due change into the same repeat save stays refused. Daily/yearly,
-weekday-selector and family from-completion transitions remain unverified. A plain task
+also verified (2026-11-23 repeat round). **Recurring checklist variants**: top-level date-only
+checklists due on days 1–28 can be created, converted from a task, given a new rule and
+completed with weekly or monthly rules at any interval, due-anchored or from completion, or a
+monthly rule ending on a date (`2w`, `3m after done`, `monthly until 2027-03-10`); yearly,
+count-ended and other checklist rules, and due edits on these variants, remain refused.
+**Projects** can set, change and remove their repeat like standalone tasks, including from
+completion. Standalone tasks and top-level projects can make the captured completion-anchored
+changes, at any interval: plain or monthly due to monthly completion, monthly completion to
+weekly completion or no repeat, weekly completion to weekly due or no repeat, and an interval
+change of a completion rule. These require a day 1–28 date-only due, no end, alert or delay; a
+task (not a project) may keep a date-only start. These are pure repeat changes; mixing ordinary
+edits or a due change into the same repeat save stays refused. Monthly completion back to
+monthly due, daily/yearly and weekday-selector from-completion transitions remain unverified. A plain task
 still linked to another series (including reopened history) cannot acquire completion
 recurrence; its identity transition is unverified.
 
@@ -242,9 +248,10 @@ been synced to the phone.
 moves the project to its next occurrence, adds a completed copy of the project with a completed
 copy of every item under it (items that were already done keep their own completion time), and
 reopens all the live items. The **items' dates do not move** with the project, as in 2Do.
-Completing a recurring project whose repeat has an end (count or date) or counts from
-completion is refused in every mode (`completing a recurring project that ends or repeats from
-completion is not verified yet`): 2Do's behaviour was captured for plain repeats only.
+A recurring project that repeats from completion moves to the completion day plus its interval,
+as on the phone; one with a cancelled item is refused. Completing a recurring project whose
+repeat has an end (count or date) is refused in every mode (`completing a recurring project that
+ends or repeats from completion is not verified yet`): 2Do's behaviour was not captured for it.
 
 The edit card (`r` on any task, or `i` then the Repeat field) sets, changes or removes a repeat:
 you type the rule, such as `monthly`, `2nd tue` or `mon thu after done`

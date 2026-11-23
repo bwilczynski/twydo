@@ -405,7 +405,7 @@ typed card input. See the [text-edit audit](reference/evidence.md).
 The status line says why, and nothing is written:
 
 - **`… is not verified yet`**: Twydo has not verified this write against 2Do on the iPhone,
-  for example a recurring checklist's interval edit or a project repeat change. See
+  for example a yearly recurring checklist or completing a project that ends. See
   [compatibility.md](compatibility.md#verified-mode).
 - **`… is not supported by 2Do on the iPhone`**: the repeat is one of the three kinds 2Do 3.91
   misreads (last day, last weekday, Nth weekend day). Twydo never writes them; pick another repeat.

@@ -1,6 +1,6 @@
 # Repeat unblock design (issues #172, #174, part of #29)
 
-Status: draft for review, 2026-11-23.
+Status: implemented; round passed 2026-11-23.
 
 ## Intent
 
