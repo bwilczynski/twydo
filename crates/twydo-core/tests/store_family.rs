@@ -926,6 +926,25 @@ fn save_with_family_date_change_and_move_is_one_step() {
     let journal = env.journal();
     assert_eq!(journal.len(), 1);
     assert_eq!(journal[0].kind, "save");
+    // Editing children can put their UIDs before the new parent in the combined
+    // UID list. Recovery must still guard the actual destination checklist.
+    let source = journal[0].family.as_ref().unwrap();
+    let [old, new] = journal[0].families.as_slice() else {
+        panic!("expected both relocation guards");
+    };
+    assert_eq!(old, source);
+    assert_eq!(old.parent_uid, C);
+    let after = env.snap();
+    let moved_parent = after
+        .tasks
+        .iter()
+        .find(|t| t.collection == "list2" && t.parent.is_none())
+        .unwrap();
+    assert_eq!(new.parent_uid, moved_parent.uid);
+    assert_eq!(new.collection, "list2");
+    let paths = journal[0].writes.iter().map(|w| w.path.clone()).collect();
+    assert_eq!(old.loaded, paths);
+    assert_eq!(new.loaded, paths);
     // Each source edited then removed is one write; each copy one more.
     assert_eq!(journal[0].writes.len(), 2 * (1 + C_ITEMS.len()));
 
