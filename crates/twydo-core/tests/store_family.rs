@@ -4765,3 +4765,52 @@ fn undo_identity_collision_refuses_without_blocking_later_writes() {
             .unwrap();
     }
 }
+
+/// The repeat round's P1 shape: an after-done project advances from the completion day, with
+/// the same family copy and reset as a plain recurring project.
+#[test]
+fn after_done_project_completion_advances_from_today() {
+    let (env, mut store) = reshaped_r(
+        "RRULE:FREQ=MONTHLY",
+        "RRULE:FREQ=MONTHLY;INTERVAL=3",
+        &[("RecurrenceFrom", 2), ("RecurrenceValue", 3)],
+        &[],
+    );
+    let before = env.files();
+    store
+        .apply(&env.snap(), &Op::Complete { uid: R.into() }, now())
+        .unwrap();
+    let after = env.files();
+    assert_eq!(after.len(), before.len() + 4);
+    assert_eq!(
+        value(&todo_of(&after[&key(R)]), "DUE").as_deref(),
+        Some("20270204")
+    );
+    for uid in [R1, R2, R3] {
+        assert_eq!(status(&after, uid), "NEEDS-ACTION", "{uid}");
+    }
+}
+
+/// Undoing a project repeat change restores the project's exact bytes.
+#[test]
+fn undo_project_repeat_edit_restores_bytes() {
+    let (env, mut store) = env();
+    let before = env.files();
+    let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+    let spec = twydo_core::repeatinput::parse("3m after done", today, &[])
+        .unwrap()
+        .unwrap();
+    store
+        .apply(
+            &env.snap(),
+            &Op::Edit {
+                uid: R.into(),
+                changes: vec![Change::Repeat(Some(spec))],
+            },
+            now(),
+        )
+        .unwrap();
+    assert_ne!(env.files(), before);
+    store.undo_last(later()).unwrap();
+    assert_eq!(env.files(), before);
+}
