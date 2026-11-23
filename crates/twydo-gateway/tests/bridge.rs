@@ -96,6 +96,21 @@ fn views_list_allowed_for_both_roles() {
 }
 
 #[test]
+fn settings_get_allowed_for_phone() {
+    let (m, p) = run(Role::Phone, "settings.get", Some(json!({"x": 1}))).unwrap();
+    assert_eq!(m, "settings.get");
+    assert_eq!(p, json!({}));
+    let (m, p) = run(Role::Phone, "settings.get", None).unwrap();
+    assert_eq!(m, "settings.get");
+    assert_eq!(p, json!({}));
+}
+
+#[test]
+fn settings_get_refused_for_display() {
+    assert_refused(run(Role::Display, "settings.get", None));
+}
+
+#[test]
 fn views_get_list_param_forwarded() {
     let (_, p) = run(
         Role::Phone,

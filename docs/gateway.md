@@ -139,14 +139,15 @@ sync conflict, journal recovery, sync control, natural-language input and swipe 
 Use `tdo` for these. A new task from any view goes to
 that view's capture list, as in the desktop; the New task sheet opens full screen. Both
 `views.get` and `views.list` are in the allowlist of both roles (phone and display); so is
-`tasks.get` (one task and its children). `tasks.form` (the edit form's starting values and checks) is phone-only. Only the phone role may
+`tasks.get` (one task and its children). `tasks.form` (the edit form's starting values and checks) and `settings.get` (the Settings
+screen's versions, server host and sync state) are phone-only. Only the phone role may
 write: through `op.submit` it may create (any list, kind, due, start, repeat and parent), save,
 complete, reopen and delete; `edit`, `move`, `create_at`, `reorder` and `reparent` stay refused.
 The daemon's gate and write policy decide each write as for `tdo`.
 
 | Role | Methods | `op.submit` ops |
 |---|---|---|
-| `phone` | `views.get`, `views.list`, `tasks.get`, `tasks.form`, `events.subscribe`, `events.unsubscribe`, `op.submit`, `op.undo` | `create`, `save`, `complete`, `reopen`, `delete` |
+| `phone` | `views.get`, `views.list`, `settings.get`, `tasks.get`, `tasks.form`, `events.subscribe`, `events.unsubscribe`, `op.submit`, `op.undo` | `create`, `save`, `complete`, `reopen`, `delete` |
 | `display` | `views.get`, `views.list`, `tasks.get`, `events.subscribe`, `events.unsubscribe` | none |
 
 Done is not paged: `views.get` returns every completed task in one result. Measured on the
